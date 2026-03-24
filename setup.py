@@ -95,6 +95,12 @@ class CMakeBuild(build_ext):
             "-DBUILD_PYTHON_BINDINGS=ON",
         ]
 
+        # Pass DSF_HPC_BUILD environment variable to CMake for HPC-compatible builds
+        hpc_build = os.environ.get("DSF_HPC_BUILD", "0")
+        if hpc_build in ("1", "true", "TRUE", "on", "ON"):
+            cmake_args.append("-DDSF_HPC_BUILD=ON")
+            print("HPC Build Mode enabled: using conservative -O3 optimization")
+
         if platform.system() == "Windows":
             cmake_args += [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{cfg.upper()}={extdir}"]
             if "CMAKE_TOOLCHAIN_FILE" in os.environ:

@@ -17,6 +17,7 @@ This rework consists of a full code rewriting, in order to implement more featur
 ## Table of Contents
 - [Installation](#installation)
 - [Installation (from source)](#installation-from-source)
+- [Installation (Python - HPC Variant)](#installation-python---hpc-variant)
 - [Testing](#testing)
 - [Benchmarking](#benchmarking)
 - [Citing](#citing)
@@ -91,6 +92,71 @@ print(dsf.__version__)
 ```
 
 If you encounter issues, ensure that the installation path is in your `PYTHONPATH` environment variable.
+
+## Installation (Python - HPC Variant)
+
+For high-performance computing (HPC) clusters and environments where binary portability is critical, an HPC-optimized wheel variant is available. This variant uses conservative `-O3` optimization instead of architecture-specific tuning (`-Ofast`, `-flto=auto`, `-march=native`), ensuring compatibility across diverse HPC hardware architectures.
+
+### When to Use HPC Variant
+- Deploying on HPC clusters with heterogeneous node architectures
+- Avoiding runtime errors due to unsupported CPU instructions
+- Maximizing portability across different compute nodes
+
+### Installation on HPC Systems
+
+The HPC variant wheels are distributed alongside standard wheels on PyPI with an `_hpc` suffix. You can install the HPC variant manually by downloading directly from PyPI:
+
+```shell
+# Visit https://pypi.org/project/dsf-mobility/ and download the wheel for your Python version and platform
+# For example, for Python 3.12 on Linux x86_64:
+pip install dsf_mobility-X.Y.Z-cp312-cp312-linux_x86_64_hpc.whl
+```
+
+Alternatively, you can use `pip download` to select the correct variant:
+
+```shell
+# Download HPC variants only
+pip download --only-binary :all: dsf-mobility --python-version 312 --python-tag cp312 --platform linux_x86_64
+
+# Then install from the downloaded wheel
+pip install dsf_mobility-X.Y.Z-cp312-cp312-linux_x86_64_hpc.whl
+```
+
+Or if using `uv` package manager:
+
+```shell
+# Create a virtual environment
+uv venv
+
+# Download and install the HPC variant
+uv pip install --only-binary :all: dsf-mobility
+# Then manually select the _hpc wheel, or use a direct URL
+```
+
+### Building HPC Variant Locally
+
+To build the HPC variant locally for development or testing:
+
+```shell
+DSF_HPC_BUILD=1 pip install .
+```
+
+This uses conservative `-O3` optimization for maximum portability:
+
+```shell
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DDSF_HPC_BUILD=ON
+cmake --build build -j$(nproc)
+```
+
+### Standard vs. HPC Variants
+
+| Aspect | Standard | HPC |
+|--------|----------|-----|
+| **Optimization** | `-Ofast -flto=auto` + optional `-march=native` | `-O3` only |
+| **Use Case** | Single-system deployments, development | HPC clusters, portable deployments |
+| **Performance** | Highest on optimized hardware | Portable across architectures |
+| **Portability** | Variable (CPU-specific) | Maximum (all x86_64 CPUs) |
+| **Wheel Suffix** | None (`*-linux_x86_64.whl`) | `_hpc` (`*-linux_x86_64_hpc.whl`) |
 
 ## Testing
 This project uses [Doctest](https://github.com/doctest/doctest) for testing.
