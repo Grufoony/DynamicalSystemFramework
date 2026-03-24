@@ -41,9 +41,12 @@ jobs:
         BASE_VERSION="${{ steps.extract.outputs.version }}"
 
         if [ "${{ github.event_name }}" = "pull_request" ]; then
-          # TestPyPI only: use a numeric dev suffix so the version is PEP 440 compliant.
-          # Concatenating run id and attempt keeps it unique across PRs and re-runs.
-          PUBLISH_VERSION="${BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
+          # TestPyPI only: bump patch by one, then append a numeric dev suffix
+          # so the version is PEP 440 compliant and unique across PRs/re-runs.
+          IFS='.' read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "${BASE_VERSION}"
+          VERSION_PATCH=$((VERSION_PATCH + 1))
+          PR_BASE_VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+          PUBLISH_VERSION="${PR_BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
         else
           # PyPI: publish the exact release version with no run-id suffix.
           PUBLISH_VERSION="${BASE_VERSION}"
