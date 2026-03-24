@@ -40,6 +40,8 @@ if(NOT CMAKE_BUILD_TYPE)
   endif()
 endif()
 if(BUILD_PYTHON_BINDINGS)
+  # Build all targets as PIC when producing Python extension modules.
+  # This prevents non-PIC static dependencies from failing at shared-module link time.
   set(DSF_BUILD_PIC ON)
 endif()
 
@@ -63,11 +65,7 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
       endif()
     endif()
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-    if(DSF_HPC_BUILD)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2")
-    else()
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2")
-    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2")
   endif()
 elseif(CMAKE_BUILD_TYPE MATCHES "Profile")
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -152,6 +150,9 @@ FetchContent_Declare(
 FetchContent_GetProperties(simdjson)
 if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
+  if(DSF_BUILD_PIC)
+    set_target_properties(simdjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  endif()
 endif()
 # Check if the user has TBB installed
 find_package(TBB REQUIRED CONFIG)
@@ -169,7 +170,11 @@ FetchContent_Declare(
 FetchContent_GetProperties(SQLiteCpp)
 if(NOT SQLiteCpp_POPULATED)
   FetchContent_MakeAvailable(SQLiteCpp)
+  if(DSF_BUILD_PIC)
+    set_target_properties(SQLiteCpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  endif()
 endif()
+
 
 add_library(dsf STATIC ${SOURCES})
 target_compile_definitions(dsf PRIVATE SPDLOG_USE_STD_FORMAT)

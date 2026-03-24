@@ -104,33 +104,36 @@ For high-performance computing (HPC) clusters and environments where binary port
 
 ### Installation on HPC Systems
 
-The HPC variant wheels are distributed alongside standard wheels on PyPI with an `_hpc` suffix. You can install the HPC variant manually by downloading directly from PyPI:
+The HPC build is published as a separate PyPI distribution named `dsf-mobility-hpc` (PEP-compliant), with Linux wheels intended for cluster portability. Install it directly with:
 
 ```shell
-# Visit https://pypi.org/project/dsf-mobility/ and download the wheel for your Python version and platform
-# For example, for Python 3.12 on Linux x86_64:
-pip install dsf_mobility-X.Y.Z-cp312-cp312-linux_x86_64_hpc.whl
+pip install dsf-mobility-hpc
 ```
 
-Alternatively, you can use `pip download` to select the correct variant:
+Or with `uv`:
 
 ```shell
-# Download HPC variants only
-pip download --only-binary :all: dsf-mobility --python-version 312 --python-tag cp312 --platform linux_x86_64
-
-# Then install from the downloaded wheel
-pip install dsf_mobility-X.Y.Z-cp312-cp312-linux_x86_64_hpc.whl
+uv pip install dsf-mobility-hpc
 ```
 
-Or if using `uv` package manager:
+If you need to download a wheel explicitly, use:
 
 ```shell
-# Create a virtual environment
-uv venv
+pip download --only-binary :all: dsf-mobility-hpc
+```
 
-# Download and install the HPC variant
-uv pip install --only-binary :all: dsf-mobility
-# Then manually select the _hpc wheel, or use a direct URL
+### Wheel Filename Pattern on PyPI
+
+HPC wheel filenames are standard and parseable by pip, for example:
+
+```text
+dsf_mobility_hpc-<version>-cp<pyver>-cp<pyver>-<platform_tag>.whl
+```
+
+Typical Linux example:
+
+```text
+dsf_mobility_hpc-5.3.1-cp312-cp312-manylinux_2_17_x86_64.whl
 ```
 
 ### Building HPC Variant Locally
@@ -156,7 +159,7 @@ cmake --build build -j$(nproc)
 | **Use Case** | Single-system deployments, development | HPC clusters, portable deployments |
 | **Performance** | Highest on optimized hardware | Portable across architectures |
 | **Portability** | Variable (CPU-specific) | Maximum (all x86_64 CPUs) |
-| **Wheel Suffix** | None (`*-linux_x86_64.whl`) | `_hpc` (`*-linux_x86_64_hpc.whl`) |
+| **PyPI Package** | `dsf-mobility` | `dsf-mobility-hpc` |
 
 ## Testing
 This project uses [Doctest](https://github.com/doctest/doctest) for testing.

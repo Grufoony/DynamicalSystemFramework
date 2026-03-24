@@ -7,6 +7,7 @@ process accordingly.
 """
 
 import os
+from distutils import log
 from pathlib import Path
 import platform
 import re
@@ -96,10 +97,13 @@ class CMakeBuild(build_ext):
         ]
 
         # Pass DSF_HPC_BUILD environment variable to CMake for HPC-compatible builds
-        hpc_build = os.environ.get("DSF_HPC_BUILD", "0")
-        if hpc_build in ("1", "true", "TRUE", "on", "ON"):
+        hpc_build = os.environ.get("DSF_HPC_BUILD", "0").strip().lower()
+        if hpc_build in {"1", "true", "on", "yes"}:
             cmake_args.append("-DDSF_HPC_BUILD=ON")
-            print("HPC Build Mode enabled: using conservative -O3 optimization")
+            self.announce(
+                "HPC Build Mode enabled: using conservative -O3 optimization",
+                level=log.INFO,
+            )
 
         if platform.system() == "Windows":
             cmake_args += [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{cfg.upper()}={extdir}"]
@@ -124,11 +128,16 @@ class CMakeBuild(build_ext):
 
                 cmake_prefix_path = f"{fmt_prefix};{spdlog_prefix}"
                 cmake_args.append(f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}")
-                print(f"Added macOS Homebrew prefix paths: {cmake_prefix_path}")
+                self.announce(
+                    f"Added macOS Homebrew prefix paths: {cmake_prefix_path}",
+                    level=log.INFO,
+                )
 
             except (subprocess.CalledProcessError, FileNotFoundError):
-                print(
-                    "Warning: Could not determine Homebrew prefix paths. Make sure Homebrew is installed and dependencies are available."
+                self.announce(
+                    "Warning: Could not determine Homebrew prefix paths. "
+                    "Make sure Homebrew is installed and dependencies are available.",
+                    level=log.WARN,
                 )
                 # Fallback to common Homebrew paths
                 cmake_args.append("-DCMAKE_PREFIX_PATH=/opt/homebrew;/usr/local")
