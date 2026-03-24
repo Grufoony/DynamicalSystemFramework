@@ -162,7 +162,7 @@ jobs:
       env:
         CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-        DSF_HPC_BUILD: ${{ matrix.build_variant == 'hpc' ? '1' : '0' }}
+        DSF_HPC_BUILD: ${{ matrix.build_variant == 'hpc' && '1' || '0' }}
       run: |
         rm -rf dist wheelhouse
         python -m build --wheel
@@ -231,7 +231,7 @@ jobs:
       env:
         CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-        DSF_HPC_BUILD: ${{ matrix.build_variant == 'hpc' ? '1' : '0' }}
+        DSF_HPC_BUILD: ${{ matrix.build_variant == 'hpc' && '1' || '0' }}
       run: python -m build --wheel
 
     - name: Repair wheel (bundle libraries)
@@ -295,7 +295,7 @@ jobs:
       env:
         CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-        DSF_HPC_BUILD: ${{ matrix.build_variant == 'hpc' ? '1' : '0' }}
+        DSF_HPC_BUILD: ${{ matrix.build_variant == 'hpc' && '1' || '0' }}
       run: python -m build --wheel
 
     - name: Rename HPC wheels with _hpc suffix
