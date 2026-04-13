@@ -89,7 +89,7 @@ TEST_CASE("FirstOrderDynamics") {
         auto& tl = defaultNetwork.makeTrafficLight(0, 2);
         FirstOrderDynamics dynamics{defaultNetwork, false, 69};
         THEN("The node is a traffic light") {
-          CHECK(dynamics.graph().node(0)->isTrafficLight());
+          CHECK(dynamics.graph().node(0).isTrafficLight());
           CHECK_EQ(tl.cycleTime(), 2);
         }
       }
@@ -97,13 +97,13 @@ TEST_CASE("FirstOrderDynamics") {
         defaultNetwork.makeRoundabout(0);
         FirstOrderDynamics dynamics{defaultNetwork, false, 69};
         THEN("The node is a roundabout") {
-          CHECK(dynamics.graph().node(0)->isRoundabout());
+          CHECK(dynamics.graph().node(0).isRoundabout());
         }
       }
       WHEN("We put a coil on the street and create the dynamics") {
         defaultNetwork.addCoil(8);
         FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-        THEN("The street has a coil") { CHECK(dynamics.graph().edge(8)->hasCoil()); }
+        THEN("The street has a coil") { CHECK(dynamics.graph().edge(8).hasCoil()); }
       }
       WHEN("We call summary") {
         FirstOrderDynamics dynamics{defaultNetwork, false, 69};
@@ -210,24 +210,19 @@ TEST_CASE("FirstOrderDynamics") {
             "the itinerary") {
           CHECK_EQ(dynamics.nAgents(), 3);
 #ifdef __APPLE__
-          CHECK_EQ(dynamics.graph().edge(422)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(422)->movingAgents().top()->itinerary()->id(),
-                   2);
-          CHECK_EQ(dynamics.graph().edge(199)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(199)->movingAgents().top()->itinerary()->id(),
-                   2);
-          CHECK_EQ(dynamics.graph().edge(166)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(166)->movingAgents().top()->itinerary()->id(),
-                   1);
+          CHECK_EQ(dynamics.graph().edge(422).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(422).movingAgents().top()->itinerary()->id(), 2);
+          CHECK_EQ(dynamics.graph().edge(199).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(199).movingAgents().top()->itinerary()->id(), 2);
+          CHECK_EQ(dynamics.graph().edge(166).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(166).movingAgents().top()->itinerary()->id(), 1);
 #else
-          CHECK_EQ(dynamics.graph().edge(13)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(13)->movingAgents().top()->itinerary()->id(), 2);
-          CHECK_EQ(dynamics.graph().edge(370)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(370)->movingAgents().top()->itinerary()->id(),
-                   1);
-          CHECK_EQ(dynamics.graph().edge(404)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(404)->movingAgents().top()->itinerary()->id(),
-                   2);
+          CHECK_EQ(dynamics.graph().edge(13).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(13).movingAgents().top()->itinerary()->id(), 2);
+          CHECK_EQ(dynamics.graph().edge(370).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(370).movingAgents().top()->itinerary()->id(), 1);
+          CHECK_EQ(dynamics.graph().edge(404).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(404).movingAgents().top()->itinerary()->id(), 2);
 #endif
         }
       }
@@ -602,8 +597,8 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);  // Agent goes into node 0
         dynamics.evolve(false);  // Agent goes from node 0 to street 0->1
         THEN("The agent evolves") {
-          CHECK_EQ(network.edge(0)->movingAgents().size(), 1);
-          auto const& pAgent{network.edge(0)->movingAgents().top()};
+          CHECK_EQ(network.edge(0).movingAgents().size(), 1);
+          auto const& pAgent{network.edge(0).movingAgents().top()};
           CHECK(pAgent);
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), dynamics.time_step());
           CHECK_EQ(pAgent->freeTime(), dynamics.time_step());
@@ -612,7 +607,7 @@ TEST_CASE("FirstOrderDynamics") {
         }
         dynamics.evolve(false);  // Agent enqueues on street 0->1 and changes street
         THEN("The agent evolves again, changing street") {
-          auto const& pAgent{network.edge(1)->movingAgents().top()};
+          auto const& pAgent{network.edge(1).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), dynamics.time_step());
           CHECK_EQ(pAgent->freeTime(), dynamics.time_step());
           CHECK_EQ(pAgent->streetId().value(), 1);
@@ -638,7 +633,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         THEN("The agent evolves") {
-          auto const& pAgent{dynamics.graph().edge(0)->movingAgents().top()};
+          auto const& pAgent{dynamics.graph().edge(0).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), 2);
           CHECK_EQ(pAgent->freeTime(), dynamics.time_step());
           CHECK_EQ(pAgent->streetId().value(), 0);
@@ -666,7 +661,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         THEN("The agent evolves") {
-          auto const& pAgent{dynamics.graph().edge(0)->movingAgents().top()};
+          auto const& pAgent{dynamics.graph().edge(0).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), 2);
           CHECK_EQ(pAgent->freeTime(), dynamics.time_step());
           CHECK_EQ(pAgent->streetId().value(), 0);
@@ -699,7 +694,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(true);
         dynamics.evolve(true);
         THEN("The agent has correct values") {
-          auto const& pAgent{dynamics.graph().edge(0)->movingAgents().top()};
+          auto const& pAgent{dynamics.graph().edge(0).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), 2);
           CHECK_EQ(pAgent->freeTime(), dynamics.time_step());
           CHECK_EQ(pAgent->streetId().value(), 0);
@@ -709,7 +704,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(true);
         // dynamics.evolve(true);
         THEN("The agent is reinserted") {
-          CHECK(dynamics.graph().node(0)->density() > 0.);
+          CHECK(dynamics.graph().node(0).density() > 0.);
           CHECK_EQ(dynamics.nAgents(), 1);
         }
       }
@@ -738,14 +733,14 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         THEN("The agent goes first into node 2") {
-          auto const& pAgent{dynamics.graph().edge(5)->queue(0).front()};
+          auto const& pAgent{dynamics.graph().edge(5).queue(0).front()};
           CHECK_EQ(pAgent->streetId().value(), 5);
           CHECK_EQ(pAgent->distance(), 60.);
         }
         dynamics.evolve(false);
         dynamics.evolve(false);
         THEN("The agent goes then to node 1") {
-          auto const& pAgent{dynamics.graph().edge(7)->queue(0).front()};
+          auto const& pAgent{dynamics.graph().edge(7).queue(0).front()};
           CHECK_EQ(pAgent->streetId().value(), 7);
           CHECK_EQ(pAgent->distance(), 90.);
         }
@@ -777,14 +772,14 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);  // Agent moves onto street 0
         THEN("The agent is alive and on street 0") {
           CHECK_EQ(dynamics.nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(0)->nMovingAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(0)->nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(0).nMovingAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(0).nAgents(), 1);
         }
         dynamics.evolve(false);  // Agent reaches dead-end at node 1: killed
         THEN("The agent is killed instead of throwing an exception") {
           CHECK_EQ(dynamics.nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(0)->nMovingAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(0)->nAgents(), 0);
+          CHECK_EQ(dynamics.graph().edge(0).nMovingAgents(), 0);
+          CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
         }
       }
     }
@@ -822,15 +817,15 @@ TEST_CASE("FirstOrderDynamics") {
           for (uint8_t i{0}; i < 5; ++i) {
             dynamics.evolve(false);
             if (i < 3) {
-              CHECK_EQ(network.edge(1)->nAgents(), 1);
+              CHECK_EQ(network.edge(1).nAgents(), 1);
             } else {
-              CHECK_EQ(network.edge(7)->nAgents(), 1);
+              CHECK_EQ(network.edge(7).nAgents(), 1);
             }
             if (i == 2) {
-              CHECK_EQ(network.edge(1)->queue(0).front()->distance(), 30.);
+              CHECK_EQ(network.edge(1).queue(0).front()->distance(), 30.);
             }
           }
-          CHECK_EQ(network.edge(7)->queue(0).front()->distance(), 60.);
+          CHECK_EQ(network.edge(7).queue(0).front()->distance(), 60.);
         }
         // Logger::setLogLevel(dsf::log_level_t::INFO);
       }
@@ -883,18 +878,18 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);  // Counter 0
         dynamics.evolve(false);  // Counter 1
         THEN("The agents are correctly placed") {
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
         }
         dynamics.evolve(false);  // Counter 2
         dynamics.evolve(false);  // Counter 3
         THEN("The agent 0 passes and agent 1 waits") {
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(7)->nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(7).nAgents(), 1);
         }
         dynamics.evolve(false);  // Counter 4
         THEN("The agent 1 passes") {
-          CHECK_EQ(dynamics.graph().edge(7)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(9)->nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(7).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(9).nAgents(), 1);
         }
         // Logger::setLogLevel(dsf::log_level_t::INFO);
       }
@@ -944,28 +939,28 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);  // Counter 0
         dynamics.evolve(false);  // Counter 1
         THEN("The agents are correctly placed") {
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
         }
         dynamics.evolve(false);  // Counter 2
         dynamics.evolve(false);  // Counter 3
         THEN("The agents are still") {
-          CHECK_EQ(dynamics.graph().edge(1)->nExitingAgents(), 2);
-          CHECK_EQ(dynamics.graph().edge(1)->nExitingAgents(Direction::ANY, true),
+          CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::ANY, true),
                    doctest::Approx(0.666667));
-          CHECK_EQ(dynamics.graph().edge(1)->nExitingAgents(Direction::RIGHT), 0);
-          CHECK_EQ(dynamics.graph().edge(1)->nExitingAgents(Direction::STRAIGHT), 1);
-          CHECK_EQ(dynamics.graph().edge(1)->nExitingAgents(Direction::LEFT), 1);
+          CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::RIGHT), 0);
+          CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::STRAIGHT), 1);
+          CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::LEFT), 1);
         }
         dynamics.evolve(false);  // Counter 4
         dynamics.evolve(false);  // Counter 5
         dynamics.evolve(false);  // Counter 0
         THEN("The agent 0 passes and agent 1 waits") {
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(7)->nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(7).nAgents(), 1);
         }
         dynamics.evolve(false);  // Counter 1
         dynamics.evolve(false);  // Counter 2
-        THEN("The agent 1 passes") { CHECK_EQ(dynamics.graph().edge(9)->nAgents(), 1); }
+        THEN("The agent 1 passes") { CHECK_EQ(dynamics.graph().edge(9).nAgents(), 1); }
       }
     }
     SUBCASE("Traffic Lights optimization algorithm") {
@@ -1064,22 +1059,22 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);  // Agents from queues to roundabout
         auto const& network{dynamics.graph()};
         THEN("The agents are trapped into the roundabout") {
-          CHECK_EQ(network.edge(1)->nAgents(), 0);
-          CHECK_EQ(network.edge(5)->nAgents(), 1);
-          CHECK_EQ(network.edge(7)->nAgents(), 1);
+          CHECK_EQ(network.edge(1).nAgents(), 0);
+          CHECK_EQ(network.edge(5).nAgents(), 1);
+          CHECK_EQ(network.edge(7).nAgents(), 1);
           CHECK_EQ(rb.agents().size(), 1);
         }
         dynamics.evolve(false);
         THEN("The agent with priority leaves the roundabout") {
-          CHECK_EQ(network.edge(3)->nAgents(), 1);
-          CHECK_EQ(network.edge(5)->nAgents(), 1);
-          CHECK_EQ(network.edge(7)->nAgents(), 0);
+          CHECK_EQ(network.edge(3).nAgents(), 1);
+          CHECK_EQ(network.edge(5).nAgents(), 1);
+          CHECK_EQ(network.edge(7).nAgents(), 0);
           CHECK(rb.agents().empty());
         }
         dynamics.evolve(false);
         THEN("The agent with priority leaves the roundabout") {
-          CHECK_EQ(network.edge(3)->nAgents(), 0);
-          CHECK_EQ(network.edge(5)->nAgents(), 0);
+          CHECK_EQ(network.edge(3).nAgents(), 0);
+          CHECK_EQ(network.edge(5).nAgents(), 0);
           CHECK(rb.agents().empty());
         }
       }
@@ -1102,7 +1097,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         THEN("The agent has travelled the correct distance") {
-          auto const& pAgent{dynamics.graph().edge(5)->movingAgents().top()};
+          auto const& pAgent{dynamics.graph().edge(5).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), 3);
           CHECK_EQ(pAgent->freeTime(), dynamics.time_step());
           CHECK_EQ(pAgent->streetId().value(), 5);
@@ -1160,9 +1155,9 @@ TEST_CASE("FirstOrderDynamics") {
       FirstOrderDynamics dynamics{graph2, false, 69};
       dynamics.setWeightFunction(dsf::PathWeight::LENGTH, 0.);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-      dynamics.graph().node(0)->setCapacity(3);
-      dynamics.graph().node(0)->setTransportCapacity(1);
-      auto& nodeO{dynamic_cast<Intersection&>(*dynamics.graph().node(0))};
+      dynamics.graph().node(0).setCapacity(3);
+      dynamics.graph().node(0).setTransportCapacity(1);
+      auto& nodeO{dynamic_cast<Intersection&>(dynamics.graph().node(0))};
       dynamics.addItinerary(1, 1);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -1175,19 +1170,19 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         THEN("The agent in A passes first") {
-          CHECK_EQ(dynamics.graph().edge(2)->nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
           CHECK_EQ(nodeO.agents().size(), 2);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
         }
         dynamics.evolve(false);
         THEN("The agent in D passes second") {
-          CHECK_EQ(dynamics.graph().edge(2)->nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
           CHECK_EQ(nodeO.agents().size(), 1);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 15);
         }
         dynamics.evolve(false);
         THEN("The agent in C passes last") {
-          CHECK_EQ(dynamics.graph().edge(2)->nAgents(), 3);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 3);
           CHECK(nodeO.agents().empty());
         }
       }
@@ -1199,19 +1194,19 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         THEN("The agent in D passes first") {
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
           CHECK_EQ(nodeO.agents().size(), 2);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 15);
         }
         dynamics.evolve(false);
         THEN("The agent in C passes second") {
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
           CHECK_EQ(nodeO.agents().size(), 1);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 10);
         }
         dynamics.evolve(false);
         THEN("The agent in C passes last") {
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 3);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
           CHECK(nodeO.agents().empty());
         }
       }
@@ -1224,7 +1219,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         THEN("The agent in A passes first because it's on the main road") {
-          CHECK_EQ(dynamics.graph().edge(2)->nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
           CHECK_EQ(nodeO.agents().size(), 1);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
         }
@@ -1608,7 +1603,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         dynamics.evolve(false);
-        CHECK_EQ(dynamics.graph().edge(0)->nAgents(), 6);
+        CHECK_EQ(dynamics.graph().edge(0).nAgents(), 6);
         dynamics.evolve(false);
         dynamics.evolve(false);
         dynamics.evolve(false);
@@ -1618,9 +1613,9 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
 
         THEN("The distribution of agents follows the transition probabilities") {
-          CHECK_EQ(dynamics.graph().edge(0)->nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 4);
-          CHECK_EQ(dynamics.graph().edge(2)->nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 4);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
         }
         // spdlog::set_level(spdlog::level::info);
       }
@@ -1658,7 +1653,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
         dynamics.evolve(false);
         dynamics.evolve(false);
-        CHECK_EQ(dynamics.graph().edge(0)->nAgents(), 6);
+        CHECK_EQ(dynamics.graph().edge(0).nAgents(), 6);
         dynamics.evolve(false);
         dynamics.evolve(false);
         dynamics.evolve(false);
@@ -1667,10 +1662,10 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve(false);
 
         THEN("The distribution of agents follows the transition probabilities") {
-          CHECK_EQ(dynamics.graph().edge(0)->nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(1)->nAgents(), 2);
-          CHECK_EQ(dynamics.graph().edge(2)->nAgents(), 2);
-          CHECK_EQ(dynamics.graph().edge(3)->nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 2);
         }
       }
     }
@@ -1722,13 +1717,13 @@ TEST_CASE("Stationary Weights Impact on Random Navigation") {
 
   // Set stationary weights
   // Street 0: weight 1.0
-  network.edge(0)->setStationaryWeight(1.0);
+  network.edge(0).setStationaryWeight(1.0);
 
   // Street 1: weight 1.0
-  network.edge(1)->setStationaryWeight(1.0);
+  network.edge(1).setStationaryWeight(1.0);
 
   // Street 2: weight 4.0
-  network.edge(2)->setStationaryWeight(4.0);
+  network.edge(2).setStationaryWeight(4.0);
 
   // Adjust node capacities to match street capacities
   network.adjustNodeCapacities();
@@ -1743,7 +1738,7 @@ TEST_CASE("Stationary Weights Impact on Random Navigation") {
     agent->setStreetId(0);
     agent->setSpeed(10.0);
     agent->setFreeTime(0);
-    dynamics.graph().edge(0)->addAgent(std::move(agent), dynamics.time_step());
+    dynamics.graph().edge(0).addAgent(std::move(agent), dynamics.time_step());
   }
 
   // Evolve simulation
@@ -1754,8 +1749,8 @@ TEST_CASE("Stationary Weights Impact on Random Navigation") {
   dynamics.evolve();
 
   // Count agents on Street 1 and Street 2
-  size_t countStreet1 = dynamics.graph().edge(1)->nAgents();
-  size_t countStreet2 = dynamics.graph().edge(2)->nAgents();
+  size_t countStreet1 = dynamics.graph().edge(1).nAgents();
+  size_t countStreet2 = dynamics.graph().edge(2).nAgents();
 
   // Expected probabilities:
   // P(1) ~ speed * speed * sqrt(1/1) = 100

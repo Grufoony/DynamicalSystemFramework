@@ -119,6 +119,9 @@ namespace dsf {
     /// @brief Get the graph
     /// @return const network_t&, The graph
     inline auto const& graph() const { return m_graph; };
+    /// @brief Get the graph (mutable)
+    /// @return network_t&, The graph
+    inline auto& graph() { return m_graph; };
     /// @brief Get the id of the simulation
     /// @return const Id&, The id of the simulation
     inline auto const& id() const { return m_id; };

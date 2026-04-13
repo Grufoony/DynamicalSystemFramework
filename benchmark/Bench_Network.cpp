@@ -63,8 +63,8 @@ static void BM_RoadNetwork_AllPathsTo(benchmark::State& state) {
   network.importNodeProperties((DATA_FOLDER / "forlì_nodes.csv").string());
   auto itNode = network.nodes().cbegin();
   for (auto _ : state) {
-    auto paths = network.allPathsTo(itNode->first,
-                                    [](auto const& pEdge) { return pEdge->length(); });
+    auto paths =
+        network.allPathsTo(itNode->first, [](auto const& edge) { return edge.length(); });
     ++itNode;
   }
 }
@@ -75,9 +75,8 @@ static void BM_RoadNetwork_ShortestPath(benchmark::State& state) {
   auto itSource = network.nodes().cbegin();
   auto itTarget = std::next(network.nodes().cbegin(), network.nodes().size() / 2);
   for (auto _ : state) {
-    auto path = network.shortestPath(itSource->first,
-                                     itTarget->first,
-                                     [](auto const& pEdge) { return pEdge->length(); });
+    auto path = network.shortestPath(
+        itSource->first, itTarget->first, [](auto const& edge) { return edge.length(); });
     benchmark::DoNotOptimize(path);
     ++itSource;
     ++itTarget;

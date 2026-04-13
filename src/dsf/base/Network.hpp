@@ -65,22 +65,22 @@ namespace dsf {
 
     /// @brief Get a node by id
     /// @param nodeId The node's id
-    /// @return std::unique_ptr<node_t> const& A const reference to the node
-    std::unique_ptr<node_t> const& node(Id nodeId) const;
+    /// @return const node_t& A reference to the node
+    inline const auto& node(Id nodeId) const { return *m_nodes.at(nodeId); };
     /// @brief Get a node by id
     /// @param nodeId The node's id
-    /// @return std::unique_ptr<node_t>& A reference to the node
-    std::unique_ptr<node_t>& node(Id nodeId);
+    /// @return node_t& A reference to the node
+    inline auto& node(Id nodeId) { return *m_nodes.at(nodeId); };
     /// @brief Get an edge by id
     /// @param edgeId The edge's id
-    /// @return std::unique_ptr<edge_t> const& A const reference to the edge
-    std::unique_ptr<edge_t> const& edge(Id edgeId) const;
+    /// @return const edge_t& A reference to the edge
+    inline const auto& edge(Id edgeId) const { return *m_edges.at(edgeId); };
     /// @brief Get an edge by id
     /// @param edgeId The edge's id
-    /// @return std::unique_ptr<edge_t>& A reference to the edge
-    std::unique_ptr<edge_t>& edge(Id edgeId);
+    /// @return edge_t& A reference to the edge
+    inline auto& edge(Id edgeId) { return *m_edges.at(edgeId); }
 
-    std::unique_ptr<edge_t> const& edge(Id source, Id target) const;
+    edge_t& edge(Id source, Id target) const;
     /// @brief Get a node by id
     /// @tparam TNode The type of the node
     /// @param nodeId The node's id
@@ -97,8 +97,8 @@ namespace dsf {
     TEdge& edge(Id edgeId);
 
     /// @brief Compute betweenness centralities for all nodes using Brandes' algorithm
-    /// @tparam WeightFunc A callable type that takes a const reference to a unique_ptr<edge_t> and returns a double representing the edge weight
-    /// @param getEdgeWeight A callable that takes a const reference to a unique_ptr<edge_t> and returns a double (must be positive)
+    /// @tparam WeightFunc A callable type that takes a const reference to edge_t and returns a double representing the edge weight
+    /// @param getEdgeWeight A callable that takes a const reference to edge_t and returns a double (must be positive)
     /// @details Implements Brandes' algorithm for directed weighted graphs.
     ///          The computed centrality for each node v is:
     ///          C_B(v) = sum_{s != v != t} sigma_st(v) / sigma_st
@@ -106,12 +106,12 @@ namespace dsf {
     ///          and sigma_st(v) is the number of those paths passing through v.
     ///          Results are stored via Node::setBetweennessCentrality.
     template <typename WeightFunc>
-      requires(std::is_invocable_r_v<double, WeightFunc, std::unique_ptr<edge_t> const&>)
+      requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
     void computeBetweennessCentralities(WeightFunc getEdgeWeight);
 
     /// @brief Compute edge betweenness centralities for all edges using Brandes' algorithm
-    /// @tparam WeightFunc A callable type that takes a const reference to a unique_ptr<edge_t> and returns a double representing the edge weight
-    /// @param getEdgeWeight A callable that takes a const reference to a unique_ptr<edge_t> and returns a double (must be positive)
+    /// @tparam WeightFunc A callable type that takes a const reference to edge_t and returns a double representing the edge weight
+    /// @param getEdgeWeight A callable that takes a const reference to edge_t and returns a double (must be positive)
     /// @details Implements Brandes' algorithm for directed weighted graphs.
     ///          The computed centrality for each edge e is:
     ///          C_B(e) = sum_{s != t} sigma_st(e) / sigma_st
@@ -119,7 +119,7 @@ namespace dsf {
     ///          and sigma_st(e) is the number of those paths using edge e.
     ///          Results are stored via Edge::setBetweennessCentrality.
     template <typename WeightFunc>
-      requires(std::is_invocable_r_v<double, WeightFunc, std::unique_ptr<edge_t> const&>)
+      requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
     void computeEdgeBetweennessCentralities(WeightFunc getEdgeWeight);
   };
   template <typename node_t, typename edge_t>
@@ -213,14 +213,14 @@ namespace dsf {
     }
 
     // Get fresh references to both nodes after all potential vector reallocations
-    auto const& sourceNode = node(sourceNodeId);
-    auto const& targetNode = node(targetNodeId);
-    sourceNode->addOutgoingEdge(tmpEdge.id());
-    targetNode->addIngoingEdge(tmpEdge.id());
+    auto& sourceNode = node(sourceNodeId);
+    auto& targetNode = node(targetNodeId);
+    sourceNode.addOutgoingEdge(tmpEdge.id());
+    targetNode.addIngoingEdge(tmpEdge.id());
     if (geometry.empty()) {
-      if (sourceNode->geometry().has_value() && targetNode->geometry().has_value()) {
+      if (sourceNode.geometry().has_value() && targetNode.geometry().has_value()) {
         tmpEdge.setGeometry(
-            dsf::geometry::PolyLine{*sourceNode->geometry(), *targetNode->geometry()});
+            dsf::geometry::PolyLine{*sourceNode.geometry(), *targetNode.geometry()});
       }
     }
     m_edges.emplace(tmpEdge.id(), std::make_unique<TEdge>(std::move(tmpEdge)));
@@ -228,28 +228,7 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  std::unique_ptr<node_t> const& Network<node_t, edge_t>::node(Id nodeId) const {
-    return m_nodes.at(nodeId);
-  }
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  std::unique_ptr<node_t>& Network<node_t, edge_t>::node(Id nodeId) {
-    return m_nodes.at(nodeId);
-  }
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  std::unique_ptr<edge_t> const& Network<node_t, edge_t>::edge(Id edgeId) const {
-    return m_edges.at(edgeId);
-  }
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  std::unique_ptr<edge_t>& Network<node_t, edge_t>::edge(Id edgeId) {
-    return m_edges.at(edgeId);
-  }
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  std::unique_ptr<edge_t> const& Network<node_t, edge_t>::edge(Id source,
-                                                               Id target) const {
+  edge_t& Network<node_t, edge_t>::edge(Id source, Id target) const {
     auto const it = std::find_if(
         m_edges.cbegin(), m_edges.cend(), [source, target](auto const& pair) {
           return pair.second->source() == source && pair.second->target() == target;
@@ -258,7 +237,7 @@ namespace dsf {
       throw std::out_of_range(
           std::format("Edge with source {} and target {} not found.", source, target));
     }
-    return it->second;
+    return *it->second;
   }
 
   template <typename node_t, typename edge_t>
@@ -266,20 +245,20 @@ namespace dsf {
   template <typename TNode>
     requires(std::is_base_of_v<node_t, TNode>)
   TNode& Network<node_t, edge_t>::node(Id nodeId) {
-    return dynamic_cast<TNode&>(*node(nodeId));
+    return dynamic_cast<TNode&>(node(nodeId));
   }
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   template <typename TEdge>
     requires(std::is_base_of_v<edge_t, TEdge>)
   TEdge& Network<node_t, edge_t>::edge(Id edgeId) {
-    return dynamic_cast<TEdge&>(*edge(edgeId));
+    return dynamic_cast<TEdge&>(edge(edgeId));
   }
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   template <typename WeightFunc>
-    requires(std::is_invocable_r_v<double, WeightFunc, std::unique_ptr<edge_t> const&>)
+    requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
   void Network<node_t, edge_t>::computeBetweennessCentralities(WeightFunc getEdgeWeight) {
     // Initialize all node betweenness centralities to 0
     for (auto& [nodeId, pNode] : m_nodes) {
@@ -321,12 +300,12 @@ namespace dsf {
         S.push(v);
 
         for (auto const& edgeId : m_nodes.at(v)->outgoingEdges()) {
-          auto const& pEdge = m_edges.at(edgeId);
-          Id w = pEdge->target();
+          auto const& edgeObj = *m_edges.at(edgeId);
+          Id w = edgeObj.target();
           if (visited.contains(w)) {
             continue;
           }
-          double edgeWeight = getEdgeWeight(pEdge);
+          double edgeWeight = getEdgeWeight(edgeObj);
           double newDist = dist[v] + edgeWeight;
 
           if (newDist < dist[w]) {
@@ -364,7 +343,7 @@ namespace dsf {
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   template <typename WeightFunc>
-    requires(std::is_invocable_r_v<double, WeightFunc, std::unique_ptr<edge_t> const&>)
+    requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
   void Network<node_t, edge_t>::computeEdgeBetweennessCentralities(
       WeightFunc getEdgeWeight) {
     // Initialize all edge betweenness centralities to 0
@@ -408,12 +387,12 @@ namespace dsf {
         S.push(v);
 
         for (auto const& eId : m_nodes.at(v)->outgoingEdges()) {
-          auto const& pEdge = m_edges.at(eId);
-          Id w = pEdge->target();
+          auto const& edgeObj = *m_edges.at(eId);
+          Id w = edgeObj.target();
           if (visited.contains(w)) {
             continue;
           }
-          double edgeWeight = getEdgeWeight(pEdge);
+          double edgeWeight = getEdgeWeight(edgeObj);
           double newDist = dist[v] + edgeWeight;
 
           if (newDist < dist[w]) {

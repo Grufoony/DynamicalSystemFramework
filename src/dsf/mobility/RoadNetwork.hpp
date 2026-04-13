@@ -233,8 +233,8 @@ namespace dsf::mobility {
     /// @brief Get a street from the graph
     /// @param source The source node
     /// @param destination The destination node
-    /// @return A std::unique_ptr to the street if it exists, nullptr otherwise
-    const std::unique_ptr<Street>* street(Id source, Id destination) const;
+    /// @return A pointer to the street if it exists, nullptr otherwise
+    Street const* street(Id source, Id destination) const;
 
     /// @brief Get the maximum agent capacity
     /// @return std::size_t The maximum agent capacity of the graph
@@ -248,7 +248,7 @@ namespace dsf::mobility {
     /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target
     /// @throws std::out_of_range if the target node does not exist
     template <typename DynamicsFunc>
-      requires(std::is_invocable_r_v<double, DynamicsFunc, std::unique_ptr<Street> const&>)
+      requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
     PathCollection allPathsTo(Id const targetId,
                               DynamicsFunc getEdgeWeight,
                               double const threshold = 1e-9) const;
@@ -264,7 +264,7 @@ namespace dsf::mobility {
     /// @details Uses Dijkstra's algorithm to find shortest paths from source to target.
     ///          Like allPathsTo, this method tracks all equivalent paths within the threshold, allowing for multiple next hops per node.
     template <typename DynamicsFunc>
-      requires(std::is_invocable_r_v<double, DynamicsFunc, std::unique_ptr<Street> const&>)
+      requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
     PathCollection shortestPath(Id const sourceId,
                                 Id const targetId,
                                 DynamicsFunc getEdgeWeight,
@@ -354,7 +354,7 @@ namespace dsf::mobility {
   }
 
   template <typename DynamicsFunc>
-    requires(std::is_invocable_r_v<double, DynamicsFunc, std::unique_ptr<Street> const&>)
+    requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
   PathCollection RoadNetwork::allPathsTo(Id const targetId,
                                          DynamicsFunc f,
                                          double const threshold) const {
@@ -392,13 +392,13 @@ namespace dsf::mobility {
       }
 
       // Explore all incoming edges (nodes that can reach currentNode)
-      auto const& inEdges = node(currentNode)->ingoingEdges();
+      auto const& inEdges = node(currentNode).ingoingEdges();
       for (auto const& inEdgeId : inEdges) {
         // Skip closed roads
-        if (edge(inEdgeId)->roadStatus() == RoadStatus::CLOSED) {
+        if (edge(inEdgeId).roadStatus() == RoadStatus::CLOSED) {
           continue;
         }
-        Id neighborId = edge(inEdgeId)->source();
+        Id neighborId = edge(inEdgeId).source();
 
         // Calculate the weight of the edge from neighbor to currentNode using the dynamics function
         double edgeWeight = f(this->edge(inEdgeId));
@@ -443,7 +443,7 @@ namespace dsf::mobility {
   }
 
   template <typename DynamicsFunc>
-    requires(std::is_invocable_r_v<double, DynamicsFunc, std::unique_ptr<Street> const&>)
+    requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
   PathCollection RoadNetwork::shortestPath(Id const sourceId,
                                            Id const targetId,
                                            DynamicsFunc f,
@@ -501,13 +501,13 @@ namespace dsf::mobility {
       }
 
       // Explore all incoming edges (nodes that can reach currentNode)
-      auto const& inEdges = node(currentNode)->ingoingEdges();
+      auto const& inEdges = node(currentNode).ingoingEdges();
       for (auto const& inEdgeId : inEdges) {
         // Skip closed roads
-        if (edge(inEdgeId)->roadStatus() == RoadStatus::CLOSED) {
+        if (edge(inEdgeId).roadStatus() == RoadStatus::CLOSED) {
           continue;
         }
-        Id neighborId = edge(inEdgeId)->source();
+        Id neighborId = edge(inEdgeId).source();
 
         // Calculate the weight of the edge from neighbor to currentNode using the dynamics function
         double edgeWeight = f(this->edge(inEdgeId));

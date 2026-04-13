@@ -74,7 +74,7 @@ int main() {
   graph.addStreets(s01, s12, s23, s34);
   graph.adjustNodeCapacities();
   graph.addCoil(19);
-  auto const& coil = graph.edge(19);
+  auto& coil = graph.edge(19);
 
   // Create the dynamics
   FirstOrderDynamics dynamics{graph, false, 69};
@@ -101,8 +101,8 @@ int main() {
         ++it;
       }
       if (progress % 300 == 0) {
-        ofs << progress << ';' << coil->counts() << std::endl;
-        coil->resetCounter();
+        ofs << progress << ';' << coil.counts() << std::endl;
+        coil.resetCounter();
       }
       dynamics.addAgents(*it, pItinerary, 0);
     }
