@@ -61,7 +61,7 @@ namespace dsf::mobility {
     tbb::concurrent_unordered_map<Id, std::size_t> m_destinationCounts;
     std::atomic<std::size_t> m_nAgents{0}, m_nAddedAgents{0}, m_nInsertedAgents{0},
         m_nKilledAgents{0}, m_nArrivedAgents{0};
-    std::function<double(std::unique_ptr<Street> const&)> m_speedFunction;
+    std::function<double(Street const&)> m_speedFunction;
     std::string m_speedFunctionDescription;
 
   protected:
@@ -73,7 +73,7 @@ namespace dsf::mobility {
     std::time_t m_previousOptimizationTime{0};
 
   protected:
-    std::function<double(std::unique_ptr<Street> const&)> m_weightFunction;
+    std::function<double(Street const&)> m_weightFunction;
     std::optional<double> m_errorProbability{std::nullopt};
     std::optional<double> m_passageProbability{std::nullopt};
     std::optional<double> m_meanTravelDistance{std::nullopt};
@@ -108,16 +108,16 @@ namespace dsf::mobility {
     /// @param pNode A std::unique_ptr to the current node
     /// @return Id The id of the randomly selected next street
     std::optional<Id> m_nextStreetId(const std::unique_ptr<Agent>& pAgent,
-                                     const std::unique_ptr<RoadJunction>& pNode);
+                                     RoadJunction const* pNode);
     /// @brief Evolve a street
     /// @param pStreet A std::unique_ptr to the street
     /// @param reinsert_agents If true, the agents are reinserted in the simulation after they reach their destination
     /// @details If possible, removes the first agent of the street's queue, putting it in the destination node.
     /// If the agent is going into the destination node, it is removed from the simulation (and then reinserted if reinsert_agents is true)
-    void m_evolveStreet(std::unique_ptr<Street> const& pStreet, bool reinsert_agents);
+    void m_evolveStreet(Street* pStreet, bool reinsert_agents);
     /// @brief If possible, removes one agent from the node, putting it on the next street.
     /// @param pNode A std::unique_ptr to the node
-    void m_evolveNode(const std::unique_ptr<RoadJunction>& pNode);
+    void m_evolveNode(RoadJunction* pNode);
     /// @brief Evolve the agents.
     /// @details Puts all new agents on a street, if possible, decrements all delays
     /// and increments all travel times.
@@ -126,9 +126,8 @@ namespace dsf::mobility {
     void m_trafficlightSingleTailOptimizer(double const& beta,
                                            std::optional<std::ofstream>& logStream);
 
-    inline double m_streetEstimatedTravelTime(
-        std::unique_ptr<Street> const& pStreet) const {
-      return pStreet->length() / m_speedFunction(pStreet);
+    inline double m_streetEstimatedTravelTime(Street const& pStreet) const {
+      return pStreet.length() / m_speedFunction(pStreet);
     };
 
     /// @brief Initialize the street data table.
@@ -470,10 +469,10 @@ namespace dsf::mobility {
         } else if constexpr (!std::is_invocable_r_v<
                                  double,
                                  std::tuple_element_t<0, std::tuple<TArgs...>>,
-                                 std::unique_ptr<Street> const&>) {
+                                 Street const&>) {
           throw std::invalid_argument(
               "Custom speed function requires a callable argument with signature "
-              "double(std::unique_ptr<Street> const&)");
+              "double(Street const&)");
         } else {
           m_speedFunction = std::get<0>(std::forward_as_tuple(args...));
           m_speedFunctionDescription = "CUSTOM";
@@ -498,8 +497,8 @@ namespace dsf::mobility {
             throw std::invalid_argument(
                 std::format("The alpha parameter ({}) must be in [0., 1)", alpha));
           }
-          m_speedFunction = [alpha](std::unique_ptr<Street> const& pStreet) {
-            return pStreet->maxSpeed() * (1. - alpha * pStreet->density(true));
+          m_speedFunction = [alpha](Street const& pStreet) {
+            return pStreet.maxSpeed() * (1. - alpha * pStreet.density(true));
           };
           m_speedFunctionDescription = std::format("LINEAR(alpha={})", alpha);
         }

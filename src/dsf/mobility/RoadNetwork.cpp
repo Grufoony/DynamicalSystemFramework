@@ -95,22 +95,22 @@ namespace dsf::mobility {
               return std::tolower(c);
             });
         if (strType.find("motorway") != std::string::npos) {
-          edge(streetId)->setRoadType(RoadType::HIGHWAY);
+          edge(streetId).setRoadType(RoadType::HIGHWAY);
         } else if (strType.find("primary") != std::string::npos) {
-          edge(streetId)->setRoadType(RoadType::PRIMARY);
+          edge(streetId).setRoadType(RoadType::PRIMARY);
         } else if (strType.find("secondary") != std::string::npos) {
-          edge(streetId)->setRoadType(RoadType::SECONDARY);
+          edge(streetId).setRoadType(RoadType::SECONDARY);
         } else if (strType.find("tertiary") != std::string::npos) {
-          edge(streetId)->setRoadType(RoadType::TERTIARY);
+          edge(streetId).setRoadType(RoadType::TERTIARY);
         } else if (strType.find("residential") != std::string::npos) {
-          edge(streetId)->setRoadType(RoadType::RESIDENTIAL);
+          edge(streetId).setRoadType(RoadType::RESIDENTIAL);
         }
       }
 
       if (bHasPriority) {
         try {
           if (row["priority"].get<bool>()) {
-            edge(streetId)->setPriority();
+            edge(streetId).setPriority();
           }
         } catch (...) {
           spdlog::warn("Invalid priority for edge {}.", streetId);
@@ -131,9 +131,9 @@ namespace dsf::mobility {
       }
       if (bHasCustomWeight) {
         try {
-          edge(streetId)->setWeight(row["customWeight"].get<double>());
+          edge(streetId).setWeight(row["customWeight"].get<double>());
         } catch (...) {
-          spdlog::warn("Invalid custom weight for {}", *edge(streetId));
+          spdlog::warn("Invalid custom weight for {}", edge(streetId));
         }
       }
     }
@@ -141,7 +141,7 @@ namespace dsf::mobility {
     this->m_edges.rehash(0);
     // Parse forbidden turns
     // for (auto const& [streetId, forbiddenTurns] : mapForbiddenTurns) {
-    //   auto const& pStreet{edge(streetId)};
+    //   auto* pStreet{&edge(streetId)};
     //   std::istringstream iss{forbiddenTurns};
     //   std::string pair;
     //   while (std::getline(iss, pair, ',')) {
@@ -155,7 +155,7 @@ namespace dsf::mobility {
     //     Id const sourceId{std::stoul(strSourceId)};
     //     Id const targetId{std::stoul(strTargetId)};
 
-    //     pStreet->addForbiddenTurn(edge(sourceId, targetId)->id());
+    //     pStreet->addForbiddenTurn(edge(sourceId, targetId).id());
     //   }
     // }
   }
@@ -185,12 +185,12 @@ namespace dsf::mobility {
       auto const& strGeometry = row["geometry"].get<std::string>();
       if (!strGeometry.empty()) {
         auto const point = geometry::Point(strGeometry);
-        auto const& pNode{node(nodeId)};
+        auto& nodeRef{node(nodeId)};
         // Assign geometry or check if these geometry match the existing ones
-        if (!pNode->geometry().has_value()) {
-          pNode->setGeometry(point);
+        if (!nodeRef.geometry().has_value()) {
+          nodeRef.setGeometry(point);
         } else {
-          auto const& [oldLon, oldLat] = pNode->geometry().value();
+          auto const& [oldLon, oldLat] = nodeRef.geometry().value();
           auto const& [newLon, newLat] = point;
           if (std::abs(oldLat - newLat) > 1e-4 || std::abs(oldLon - newLon) > 1e-4) {
             spdlog::error(
@@ -313,15 +313,15 @@ namespace dsf::mobility {
               return std::tolower(c);
             });
         if (strType.find("motorway") != std::string::npos) {
-          edge(edge_id)->setRoadType(RoadType::HIGHWAY);
+          edge(edge_id).setRoadType(RoadType::HIGHWAY);
         } else if (strType.find("primary") != std::string::npos) {
-          edge(edge_id)->setRoadType(RoadType::PRIMARY);
+          edge(edge_id).setRoadType(RoadType::PRIMARY);
         } else if (strType.find("secondary") != std::string::npos) {
-          edge(edge_id)->setRoadType(RoadType::SECONDARY);
+          edge(edge_id).setRoadType(RoadType::SECONDARY);
         } else if (strType.find("tertiary") != std::string::npos) {
-          edge(edge_id)->setRoadType(RoadType::TERTIARY);
+          edge(edge_id).setRoadType(RoadType::TERTIARY);
         } else if (strType.find("residential") != std::string::npos) {
-          edge(edge_id)->setRoadType(RoadType::RESIDENTIAL);
+          edge(edge_id).setRoadType(RoadType::RESIDENTIAL);
         }
       }
       // Check if there is coilcode property
@@ -345,7 +345,7 @@ namespace dsf::mobility {
       if (!edge_properties.at_key("customWeight").error()) {
         auto const& epCustomWeight = edge_properties["customWeight"];
         if (epCustomWeight.is_number()) {
-          edge(edge_id)->setWeight(epCustomWeight.get_double());
+          edge(edge_id).setWeight(epCustomWeight.get_double());
         } else {
           spdlog::warn("Invalid custom weight for edge {}, keeping default", edge_id);
         }
@@ -355,7 +355,7 @@ namespace dsf::mobility {
         auto const& epPriority = edge_properties["priority"];
         if (epPriority.is_bool()) {
           if (epPriority.get_bool()) {
-            edge(edge_id)->setPriority();
+            edge(edge_id).setPriority();
           }
         } else {
           spdlog::warn("Invalid priority for edge {}, keeping default", edge_id);
@@ -416,7 +416,7 @@ namespace dsf::mobility {
             return;
           }
           for (auto const& edgeId : inNeighbours) {
-            auto const& pStreet{edge(edgeId)};
+            auto* pStreet{&edge(edgeId)};
 
             double const speed{pStreet->maxSpeed()};
             int const nLan{pStreet->nLanes()};
@@ -540,7 +540,7 @@ namespace dsf::mobility {
             greenTimes = std::make_pair(mainGreenTime, secondaryGreenTime);
           }
           std::for_each(inNeighbours.begin(), inNeighbours.end(), [&](auto const& edgeId) {
-            auto const streetId{this->edge(edgeId)->id()};
+            auto const streetId{this->edge(edgeId).id()};
             auto const nLane{nLanes.at(streetId)};
             Delay greenTime{greenTimes.first};
             Delay phase{0};
@@ -583,14 +583,14 @@ namespace dsf::mobility {
       std::for_each(inNeighbours.cbegin(),
                     inNeighbours.cend(),
                     [this, &maxEstimatedFlow](auto const& edgeId) {
-                      auto const& pStreet{this->edge(edgeId)};
+                      auto* pStreet{&this->edge(edgeId)};
                       auto const estFlow{pStreet->maxSpeed() * pStreet->nLanes()};
                       maxEstimatedFlow = std::max(maxEstimatedFlow, estFlow);
                     });
       std::for_each(outNeighbours.cbegin(),
                     outNeighbours.cend(),
                     [this, &maxEstimatedFlow](auto const& edgeId) {
-                      auto const& pStreet{this->edge(edgeId)};
+                      auto* pStreet{&this->edge(edgeId)};
                       auto const estFlow{pStreet->maxSpeed() * pStreet->nLanes()};
                       maxEstimatedFlow = std::max(maxEstimatedFlow, estFlow);
                     });
@@ -598,7 +598,7 @@ namespace dsf::mobility {
           inNeighbours.cbegin(),
           inNeighbours.cend(),
           [this, &pNode, &outNeighbours, &maxEstimatedFlow](auto const& edgeId) {
-            auto const& pInStreet{this->edge(edgeId)};
+            auto* pInStreet{&this->edge(edgeId)};
             auto const nLanes{pInStreet->nLanes()};
             if (nLanes == 1) {
               return;
@@ -608,7 +608,7 @@ namespace dsf::mobility {
                 outNeighbours.cbegin(),
                 outNeighbours.cend(),
                 [this, &pInStreet, &allowedTurns, &maxEstimatedFlow](auto const& edgeId) {
-                  auto const& pOutStreet{this->edge(edgeId)};
+                  auto const* pOutStreet{&this->edge(edgeId)};
                   if (pOutStreet->target() == pInStreet->source() ||
                       pInStreet->forbiddenTurns().contains(pOutStreet->id())) {
                     return;
@@ -621,8 +621,8 @@ namespace dsf::mobility {
                   }
                   // Actually going straight means remain on the same road, thus...
                   auto const inEstFlow{pInStreet->maxSpeed() * pInStreet->nLanes()};
-                  auto const outEstFlow{outOppositeStreet->get()->maxSpeed() *
-                                        outOppositeStreet->get()->nLanes()};
+                  auto const outEstFlow{outOppositeStreet->maxSpeed() *
+                                        outOppositeStreet->nLanes()};
                   if (((inEstFlow == maxEstimatedFlow) ==
                        (outEstFlow == maxEstimatedFlow)) &&
                       !allowedTurns.contains(Direction::STRAIGHT)) {
@@ -804,7 +804,7 @@ namespace dsf::mobility {
       // first when selecting streets to mark as priority roads.
       std::multimap<RoadType, Id> types;
       for (auto const& edgeId : inNeighbours) {
-        auto const& pStreet{this->edge(edgeId)};
+        auto* pStreet{&this->edge(edgeId)};
         auto const roadType = pStreet->roadType();
         if (roadType.has_value()) {
           types.emplace(roadType.value(), pStreet->id());
@@ -837,7 +837,7 @@ namespace dsf::mobility {
       }
 
       for (auto const& streetId : priorityRoads) {
-        auto const& pStreet{this->edge(streetId)};
+        auto* pStreet{&this->edge(streetId)};
         pStreet->setPriority();
         spdlog::debug("Setting priority to street {}", pStreet->id());
       }
@@ -858,13 +858,13 @@ namespace dsf::mobility {
     for (auto const& [_, pNode] : nodes()) {
       value = 0.;
       for (auto const& edgeId : pNode->ingoingEdges()) {
-        auto const& pStreet{this->edge(edgeId)};
+        auto* pStreet{&this->edge(edgeId)};
         value += pStreet->nLanes() * pStreet->transportCapacity();
       }
       pNode->setCapacity(value);
       value = 0.;
       for (auto const& edgeId : pNode->outgoingEdges()) {
-        auto const& pStreet{this->edge(edgeId)};
+        auto* pStreet{&this->edge(edgeId)};
         value += pStreet->nLanes() * pStreet->transportCapacity();
       }
       pNode->setTransportCapacity(value == 0. ? 1. : value);
@@ -896,13 +896,14 @@ namespace dsf::mobility {
 
       auto const cycleTime{static_cast<Delay>(std::stoul(strCycleTime))};
       // Cast node(id) to traffic light
-      auto& pNode{node(std::stoul(strId))};
+      auto const nodeId = static_cast<Id>(std::stoul(strId));
+      auto& pNode = m_nodes.at(nodeId);
       if (!pNode->isTrafficLight()) {
         pNode = std::make_unique<TrafficLight>(
             pNode->id(), cycleTime, pNode->geometry().value());
       }
       auto& tl = static_cast<TrafficLight&>(*pNode);
-      auto const streetId{edge(std::stoul(streetSource), pNode->id())->id()};
+      auto const streetId{edge(std::stoul(streetSource), pNode->id()).id()};
       auto const greenTime{static_cast<Delay>(std::stoul(strGT))};
       if (!storedGreenTimes.contains(pNode->id())) {
         storedGreenTimes.emplace(pNode->id(), greenTime);
@@ -921,24 +922,24 @@ namespace dsf::mobility {
   TrafficLight& RoadNetwork::makeTrafficLight(Id const nodeId,
                                               Delay const cycleTime,
                                               Delay const counter) {
-    auto& pNode = node(nodeId);
+    auto& pNode = m_nodes.at(nodeId);
     pNode = std::make_unique<TrafficLight>(*pNode, cycleTime, counter);
     return node<TrafficLight>(nodeId);
   }
 
   Roundabout& RoadNetwork::makeRoundabout(Id nodeId) {
-    auto& pNode = node(nodeId);
+    auto& pNode = m_nodes.at(nodeId);
     pNode = std::make_unique<Roundabout>(*pNode);
     return node<Roundabout>(nodeId);
   }
 
   Station& RoadNetwork::makeStation(Id nodeId, const unsigned int managementTime) {
-    auto& pNode = node(nodeId);
+    auto& pNode = m_nodes.at(nodeId);
     pNode = std::make_unique<Station>(*pNode, managementTime);
     return node<Station>(nodeId);
   }
   void RoadNetwork::addCoil(Id streetId, std::string const& name) {
-    edge(streetId)->enableCounter(name);
+    edge(streetId).enableCounter(name);
   }
 
   void RoadNetwork::addStreet(Street&& street) {
@@ -966,7 +967,7 @@ namespace dsf::mobility {
 
   void RoadNetwork::setStreetStatusById(Id const streetId, RoadStatus const status) {
     try {
-      auto const& pStreet{edge(streetId)};
+      auto* pStreet{&edge(streetId)};
       pStreet->setStatus(status);
       spdlog::info("Changed status of {} to {}", *pStreet, status);
     } catch (const std::out_of_range&) {
@@ -994,7 +995,7 @@ namespace dsf::mobility {
                                            int const nLanes,
                                            std::optional<double> const speedFactor) {
     try {
-      edge(streetId)->changeNLanes(nLanes, speedFactor);
+      edge(streetId).changeNLanes(nLanes, speedFactor);
     } catch (const std::out_of_range&) {
       throw std::out_of_range(std::format("Street with id {} not found", streetId));
     }
@@ -1022,7 +1023,7 @@ namespace dsf::mobility {
   }
   void RoadNetwork::changeStreetCapacityById(Id const streetId, double const factor) {
     try {
-      auto const& pStreet{edge(streetId)};
+      auto* pStreet{&edge(streetId)};
       auto const& currentCapacity{pStreet->capacity()};
       pStreet->setCapacity(std::ceil(currentCapacity * factor));
     } catch (const std::out_of_range&) {
@@ -1065,12 +1066,14 @@ namespace dsf::mobility {
                   });
   }
 
-  const std::unique_ptr<Street>* RoadNetwork::street(Id source, Id destination) const {
-    // Get the iterator at id m_cantorPairingHashing(source, destination)
-    try {
-      return &(edge(source, destination));
-    } catch (const std::out_of_range&) {
+  Street const* RoadNetwork::street(Id source, Id destination) const {
+    auto const it = std::find_if(
+        m_edges.cbegin(), m_edges.cend(), [source, destination](auto const& pair) {
+          return pair.second->source() == source && pair.second->target() == destination;
+        });
+    if (it == m_edges.cend()) {
       return nullptr;
     }
+    return it->second.get();
   }
 }  // namespace dsf::mobility

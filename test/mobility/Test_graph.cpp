@@ -52,11 +52,11 @@ TEST_CASE("RoadNetwork") {
     graph.addEdge<Street>(5, std::make_pair(2, 3));
     CHECK_EQ(graph.nEdges(), 5);
     CHECK_EQ(graph.nNodes(), 4);
-    CHECK(graph.edge(0, 1));
-    CHECK(graph.edge(1, 2));
-    CHECK(graph.edge(0, 2));
-    CHECK(graph.edge(0, 3));
-    CHECK(graph.edge(2, 3));
+    CHECK_NOTHROW(graph.edge(0, 1));
+    CHECK_NOTHROW(graph.edge(1, 2));
+    CHECK_NOTHROW(graph.edge(0, 2));
+    CHECK_NOTHROW(graph.edge(0, 3));
+    CHECK_NOTHROW(graph.edge(2, 3));
   }
   SUBCASE("Construction with addStreets") {
     Street s1(1, std::make_pair(0, 1));
@@ -68,11 +68,11 @@ TEST_CASE("RoadNetwork") {
     graph.addStreets(s1, s2, s3, s4, s5);
     CHECK_EQ(graph.nEdges(), 5);
     CHECK_EQ(graph.nNodes(), 4);
-    CHECK(graph.edge(0, 1));
-    CHECK(graph.edge(1, 2));
-    CHECK(graph.edge(0, 2));
-    CHECK(graph.edge(0, 3));
-    CHECK(graph.edge(2, 3));
+    CHECK_NOTHROW(graph.edge(0, 1));
+    CHECK_NOTHROW(graph.edge(1, 2));
+    CHECK_NOTHROW(graph.edge(0, 2));
+    CHECK_NOTHROW(graph.edge(0, 3));
+    CHECK_NOTHROW(graph.edge(2, 3));
     // Test describe method
     std::ostringstream oss;
     graph.describe(oss);
@@ -104,24 +104,24 @@ TEST_CASE("RoadNetwork") {
         graph.autoMapStreetLanes();
         // dsf::Logger::setLogLevel(dsf::log_level_t::INFO);
         THEN("The lanes are correctly mapped") {
-          CHECK_EQ(graph.edge(0, 1)->laneMapping().size(), 3);
-          CHECK_EQ(graph.edge(0, 1)->laneMapping()[0], dsf::Direction::ANY);
-          CHECK_EQ(graph.edge(0, 1)->laneMapping()[1], dsf::Direction::ANY);
-          CHECK_EQ(graph.edge(0, 1)->laneMapping()[2], dsf::Direction::ANY);
-          CHECK_EQ(graph.edge(1, 0)->laneMapping().size(), 3);
-          CHECK_EQ(graph.edge(1, 0)->laneMapping()[0], dsf::Direction::RIGHT);
-          CHECK_EQ(graph.edge(1, 0)->laneMapping()[1], dsf::Direction::RIGHT);
-          CHECK_EQ(graph.edge(1, 0)->laneMapping()[2], dsf::Direction::LEFT);
-          CHECK_EQ(graph.edge(0, 2)->laneMapping().size(), 1);
-          CHECK_EQ(graph.edge(0, 2)->laneMapping()[0], dsf::Direction::ANY);
-          CHECK_EQ(graph.edge(2, 0)->laneMapping().size(), 1);
-          CHECK_EQ(graph.edge(2, 0)->laneMapping()[0], dsf::Direction::ANY);
-          CHECK_EQ(graph.edge(0, 3)->laneMapping().size(), 2);
-          CHECK_EQ(graph.edge(0, 3)->laneMapping()[0], dsf::Direction::ANY);
-          CHECK_EQ(graph.edge(0, 3)->laneMapping()[1], dsf::Direction::ANY);
-          CHECK_EQ(graph.edge(3, 0)->laneMapping().size(), 2);
-          CHECK_EQ(graph.edge(3, 0)->laneMapping()[0], dsf::Direction::RIGHT);
-          CHECK_EQ(graph.edge(3, 0)->laneMapping()[1], dsf::Direction::STRAIGHT);
+          CHECK_EQ(graph.edge(0, 1).laneMapping().size(), 3);
+          CHECK_EQ(graph.edge(0, 1).laneMapping()[0], dsf::Direction::ANY);
+          CHECK_EQ(graph.edge(0, 1).laneMapping()[1], dsf::Direction::ANY);
+          CHECK_EQ(graph.edge(0, 1).laneMapping()[2], dsf::Direction::ANY);
+          CHECK_EQ(graph.edge(1, 0).laneMapping().size(), 3);
+          CHECK_EQ(graph.edge(1, 0).laneMapping()[0], dsf::Direction::RIGHT);
+          CHECK_EQ(graph.edge(1, 0).laneMapping()[1], dsf::Direction::RIGHT);
+          CHECK_EQ(graph.edge(1, 0).laneMapping()[2], dsf::Direction::LEFT);
+          CHECK_EQ(graph.edge(0, 2).laneMapping().size(), 1);
+          CHECK_EQ(graph.edge(0, 2).laneMapping()[0], dsf::Direction::ANY);
+          CHECK_EQ(graph.edge(2, 0).laneMapping().size(), 1);
+          CHECK_EQ(graph.edge(2, 0).laneMapping()[0], dsf::Direction::ANY);
+          CHECK_EQ(graph.edge(0, 3).laneMapping().size(), 2);
+          CHECK_EQ(graph.edge(0, 3).laneMapping()[0], dsf::Direction::ANY);
+          CHECK_EQ(graph.edge(0, 3).laneMapping()[1], dsf::Direction::ANY);
+          CHECK_EQ(graph.edge(3, 0).laneMapping().size(), 2);
+          CHECK_EQ(graph.edge(3, 0).laneMapping()[0], dsf::Direction::RIGHT);
+          CHECK_EQ(graph.edge(3, 0).laneMapping()[1], dsf::Direction::STRAIGHT);
         }
       }
     }
@@ -189,7 +189,7 @@ TEST_CASE("RoadNetwork") {
           CHECK_EQ(graph2.nEdges(), graph.nEdges());
           CHECK_EQ(graph2.nNodes(), graph.nNodes());
           for (auto const& [edgeId, pEdge] : graph2.edges()) {
-            CHECK_EQ(*pEdge, *graph.edge(edgeId));
+            CHECK_EQ(*pEdge, graph.edge(edgeId));
           }
         }
       }
@@ -238,10 +238,10 @@ TEST_CASE("RoadNetwork") {
         graphWithPriority.importEdges(tmpCsvPath.string());
 
         THEN("Priority is correctly imported from CSV") {
-          REQUIRE(graphWithPriority.edge(static_cast<Id>(100)));
-          REQUIRE(graphWithPriority.edge(static_cast<Id>(101)));
-          CHECK(graphWithPriority.edge(static_cast<Id>(100))->hasPriority());
-          CHECK_FALSE(graphWithPriority.edge(static_cast<Id>(101))->hasPriority());
+          REQUIRE_NOTHROW(graphWithPriority.edge(static_cast<Id>(100)));
+          REQUIRE_NOTHROW(graphWithPriority.edge(static_cast<Id>(101)));
+          CHECK(graphWithPriority.edge(static_cast<Id>(100)).hasPriority());
+          CHECK_FALSE(graphWithPriority.edge(static_cast<Id>(101)).hasPriority());
           std::filesystem::remove(tmpCsvPath);
         }
       }
@@ -299,10 +299,10 @@ TEST_CASE("RoadNetwork") {
         graphWithPriority.importEdges(tmpGeoJsonPath.string());
 
         THEN("Priority is correctly imported from GeoJSON") {
-          REQUIRE(graphWithPriority.edge(static_cast<Id>(200)));
-          REQUIRE(graphWithPriority.edge(static_cast<Id>(201)));
-          CHECK(graphWithPriority.edge(static_cast<Id>(200))->hasPriority());
-          CHECK_FALSE(graphWithPriority.edge(static_cast<Id>(201))->hasPriority());
+          REQUIRE_NOTHROW(graphWithPriority.edge(static_cast<Id>(200)));
+          REQUIRE_NOTHROW(graphWithPriority.edge(static_cast<Id>(201)));
+          CHECK(graphWithPriority.edge(static_cast<Id>(200)).hasPriority());
+          CHECK_FALSE(graphWithPriority.edge(static_cast<Id>(201)).hasPriority());
           std::filesystem::remove(tmpGeoJsonPath);
         }
       }
@@ -316,9 +316,9 @@ TEST_CASE("RoadNetwork") {
       auto result = graph.street(0, 1);
       CHECK(result);
       const auto& street2 = *result;
-      CHECK_EQ(street2->id(), 1);
-      CHECK_EQ(street2->length(), 1.);
-      CHECK_EQ(street2->capacity(), 1);
+      CHECK_EQ(street2.id(), 1);
+      CHECK_EQ(street2.length(), 1.);
+      CHECK_EQ(street2.capacity(), 1);
       CHECK_FALSE(graph.street(1, 0));
     }
     SUBCASE("make trafficlight") {
@@ -435,8 +435,8 @@ TEST_CASE("RoadNetwork") {
         WHEN("We auto-init Traffic Lights") {
           graph.autoInitTrafficLights();
           THEN("Node is converted to intersection") {
-            CHECK_FALSE(graph.node(0)->isTrafficLight());
-            CHECK(graph.node(0)->isIntersection());
+            CHECK_FALSE(graph.node(0).isTrafficLight());
+            CHECK(graph.node(0).isIntersection());
           }
         }
       }
@@ -552,7 +552,7 @@ TEST_CASE("RoadNetwork") {
       graph.addStreet(Street{1, std::make_pair(0, 1)});
       WHEN("We make node 0 a traffic light") {
         auto& tl = graph.makeTrafficLight(0, 60);
-        THEN("The node 0 is a traffic light") { CHECK(graph.node(0)->isTrafficLight()); }
+        THEN("The node 0 is a traffic light") { CHECK(graph.node(0).isTrafficLight()); }
         THEN("The traffic light has the correct parameters") {
           CHECK_EQ(tl.id(), 0);
           CHECK_EQ(tl.cycleTime(), 60);
@@ -566,7 +566,7 @@ TEST_CASE("RoadNetwork") {
       graph.addStreet(Street{1, std::make_pair(0, 1)});
       WHEN("We make node 0 a roundabout") {
         graph.makeRoundabout(0);
-        THEN("The node 0 is a roundabout") { CHECK(graph.node(0)->isRoundabout()); }
+        THEN("The node 0 is a roundabout") { CHECK(graph.node(0).isRoundabout()); }
       }
     }
   }
@@ -576,7 +576,7 @@ TEST_CASE("RoadNetwork") {
       graph.addEdge(Street{0, std::make_pair(0, 1)});
       WHEN("We add a coil to the street") {
         graph.addCoil(0);
-        THEN("The street has a coil") { CHECK(graph.edge(0)->hasCoil()); }
+        THEN("The street has a coil") { CHECK(graph.edge(0).hasCoil()); }
       }
     }
   }
@@ -592,9 +592,9 @@ TEST_CASE("RoadNetwork") {
         THEN("The street is found and has correct values") {
           CHECK(result);
           const auto& road = *result;
-          CHECK_EQ(road->id(), 1);
-          CHECK_EQ(road->length(), 1.);
-          CHECK_EQ(road->capacity(), 1);
+          CHECK_EQ(road.id(), 1);
+          CHECK_EQ(road.length(), 1.);
+          CHECK_EQ(road.capacity(), 1);
         }
       }
       WHEN("We search for the opposite street") {
@@ -602,9 +602,9 @@ TEST_CASE("RoadNetwork") {
         THEN("The opposite street is found and has correct values") {
           CHECK(result);
           const auto& road = *result;
-          CHECK_EQ(road->id(), 2);
-          CHECK_EQ(road->length(), 1.);
-          CHECK_EQ(road->capacity(), 1);
+          CHECK_EQ(road.id(), 2);
+          CHECK_EQ(road.length(), 1.);
+          CHECK_EQ(road.capacity(), 1);
         }
       }
       WHEN("We search for a not existing street") {
@@ -627,27 +627,27 @@ TEST_CASE("RoadNetwork") {
       WHEN("We adjust node capacities") {
         graph.adjustNodeCapacities();
         THEN("The node capacities are correct") {
-          CHECK_EQ(graph.node(0)->capacity(), 1);
-          CHECK_EQ(graph.node(1)->capacity(), 4);
-          CHECK_EQ(graph.node(2)->capacity(), 2);
-          CHECK_EQ(graph.node(3)->capacity(), 3);
-          CHECK_EQ(graph.node(4)->capacity(), 1);
+          CHECK_EQ(graph.node(0).capacity(), 1);
+          CHECK_EQ(graph.node(1).capacity(), 4);
+          CHECK_EQ(graph.node(2).capacity(), 2);
+          CHECK_EQ(graph.node(3).capacity(), 3);
+          CHECK_EQ(graph.node(4).capacity(), 1);
         }
         THEN("The transport capacities are correct") {
-          CHECK_EQ(graph.node(0)->transportCapacity(), 1);
-          CHECK_EQ(graph.node(1)->transportCapacity(), 3);
-          CHECK_EQ(graph.node(2)->transportCapacity(), 1);
-          CHECK_EQ(graph.node(3)->transportCapacity(), 3);
-          CHECK_EQ(graph.node(4)->transportCapacity(), 1);
+          CHECK_EQ(graph.node(0).transportCapacity(), 1);
+          CHECK_EQ(graph.node(1).transportCapacity(), 3);
+          CHECK_EQ(graph.node(2).transportCapacity(), 1);
+          CHECK_EQ(graph.node(3).transportCapacity(), 3);
+          CHECK_EQ(graph.node(4).transportCapacity(), 1);
         }
       }
       WHEN("We normalize street capacities") {
         // graph.normalizeStreetCapacities();
         THEN("The street capacities are correct") {
-          CHECK_EQ(graph.edge(0, 1)->capacity(), 2);
-          CHECK_EQ(graph.edge(1, 2)->capacity(), 16);
-          CHECK_EQ(graph.edge(3, 1)->capacity(), 45);
-          CHECK_EQ(graph.edge(1, 4)->capacity(), 11);
+          CHECK_EQ(graph.edge(0, 1).capacity(), 2);
+          CHECK_EQ(graph.edge(1, 2).capacity(), 16);
+          CHECK_EQ(graph.edge(3, 1).capacity(), 45);
+          CHECK_EQ(graph.edge(1, 4).capacity(), 11);
         }
       }
     }
@@ -674,9 +674,9 @@ TEST_CASE("RoadNetwork") {
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
         THEN("The priorities are assigned to the most important roads") {
-          CHECK(graph.edge(1)->hasPriority());
-          CHECK(graph.edge(2)->hasPriority());
-          CHECK_FALSE(graph.edge(3)->hasPriority());
+          CHECK(graph.edge(1).hasPriority());
+          CHECK(graph.edge(2).hasPriority());
+          CHECK_FALSE(graph.edge(3).hasPriority());
         }
       }
     }
@@ -689,7 +689,7 @@ TEST_CASE("RoadNetwork") {
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
-        THEN("No priorities are assigned") { CHECK_FALSE(graph.edge(1)->hasPriority()); }
+        THEN("No priorities are assigned") { CHECK_FALSE(graph.edge(1).hasPriority()); }
       }
     }
 
@@ -706,9 +706,9 @@ TEST_CASE("RoadNetwork") {
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
         THEN("No priorities are assigned since count != 2") {
-          CHECK_FALSE(graph.edge(1)->hasPriority());
-          CHECK_FALSE(graph.edge(2)->hasPriority());
-          CHECK_FALSE(graph.edge(3)->hasPriority());
+          CHECK_FALSE(graph.edge(1).hasPriority());
+          CHECK_FALSE(graph.edge(2).hasPriority());
+          CHECK_FALSE(graph.edge(3).hasPriority());
         }
       }
     }
@@ -723,9 +723,9 @@ TEST_CASE("RoadNetwork") {
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
         THEN("No priorities are assigned") {
-          CHECK_FALSE(graph.edge(1)->hasPriority());
-          CHECK_FALSE(graph.edge(2)->hasPriority());
-          CHECK_FALSE(graph.edge(3)->hasPriority());
+          CHECK_FALSE(graph.edge(1).hasPriority());
+          CHECK_FALSE(graph.edge(2).hasPriority());
+          CHECK_FALSE(graph.edge(3).hasPriority());
         }
       }
     }
@@ -749,11 +749,11 @@ TEST_CASE("RoadNetwork") {
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
         THEN("Priorities go to the SECONDARY roads (first type with count == 2)") {
-          CHECK_FALSE(graph.edge(1)->hasPriority());
-          CHECK_FALSE(graph.edge(2)->hasPriority());
-          CHECK_FALSE(graph.edge(3)->hasPriority());
-          CHECK(graph.edge(4)->hasPriority());
-          CHECK(graph.edge(5)->hasPriority());
+          CHECK_FALSE(graph.edge(1).hasPriority());
+          CHECK_FALSE(graph.edge(2).hasPriority());
+          CHECK_FALSE(graph.edge(3).hasPriority());
+          CHECK(graph.edge(4).hasPriority());
+          CHECK(graph.edge(5).hasPriority());
         }
       }
     }
@@ -771,9 +771,9 @@ TEST_CASE("RoadNetwork") {
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
         THEN("Priorities are assigned to PRIMARY roads") {
-          CHECK(graph.edge(1)->hasPriority());
-          CHECK(graph.edge(2)->hasPriority());
-          CHECK_FALSE(graph.edge(3)->hasPriority());
+          CHECK(graph.edge(1).hasPriority());
+          CHECK(graph.edge(2).hasPriority());
+          CHECK_FALSE(graph.edge(3).hasPriority());
         }
       }
     }
@@ -793,10 +793,10 @@ TEST_CASE("RoadNetwork") {
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
         THEN("Priorities are assigned to RESIDENTIAL roads (first with count == 2)") {
-          CHECK_FALSE(graph.edge(1)->hasPriority());
-          CHECK_FALSE(graph.edge(2)->hasPriority());
-          CHECK(graph.edge(3)->hasPriority());
-          CHECK(graph.edge(4)->hasPriority());
+          CHECK_FALSE(graph.edge(1).hasPriority());
+          CHECK_FALSE(graph.edge(2).hasPriority());
+          CHECK(graph.edge(3).hasPriority());
+          CHECK(graph.edge(4).hasPriority());
         }
       }
     }
@@ -823,13 +823,13 @@ TEST_CASE("RoadNetwork") {
         graph.autoAssignRoadPriorities();
         THEN("Both nodes have correct priorities assigned") {
           // Node 1: HIGHWAY roads get priority
-          CHECK(graph.edge(1)->hasPriority());
-          CHECK(graph.edge(2)->hasPriority());
-          CHECK_FALSE(graph.edge(3)->hasPriority());
+          CHECK(graph.edge(1).hasPriority());
+          CHECK(graph.edge(2).hasPriority());
+          CHECK_FALSE(graph.edge(3).hasPriority());
           // Node 5: TERTIARY roads get priority
-          CHECK(graph.edge(4)->hasPriority());
-          CHECK(graph.edge(5)->hasPriority());
-          CHECK_FALSE(graph.edge(6)->hasPriority());
+          CHECK(graph.edge(4).hasPriority());
+          CHECK(graph.edge(5).hasPriority());
+          CHECK_FALSE(graph.edge(6).hasPriority());
         }
       }
     }
@@ -847,7 +847,7 @@ TEST_CASE("Dijkstra") {
     graph.addStreets(s1, s2, s3, s4, s5);
 
     auto const& pathMap =
-        graph.allPathsTo(2, [](auto const& pEdge) { return pEdge->length(); });
+        graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(2));
     CHECK_EQ(pathMap.at(3).size(), 1);
     CHECK_EQ(pathMap.at(3)[0], 0);
@@ -865,7 +865,7 @@ TEST_CASE("Dijkstra") {
     graph.addStreets(s1, s2, s3);
 
     auto const& pathMap =
-        graph.allPathsTo(2, [](auto const& pEdge) { return pEdge->length(); });
+        graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(2));
     CHECK_EQ(pathMap.at(0).size(), 1);
     CHECK_EQ(pathMap.at(0)[0], 1);
@@ -881,7 +881,7 @@ TEST_CASE("Dijkstra") {
     graph.addStreets(s1, s2, s3);
 
     auto const& pathMap =
-        graph.allPathsTo(2, [](auto const& pEdge) { return pEdge->length(); });
+        graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(2));
     CHECK_EQ(pathMap.at(0).size(), 1);
     CHECK_EQ(pathMap.at(0)[0], 2);
@@ -908,7 +908,7 @@ TEST_CASE("Dijkstra") {
     graph.addStreets(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14);
 
     auto const& pathMap =
-        graph.allPathsTo(4, [](auto const& pEdge) { return pEdge->length(); });
+        graph.allPathsTo(4, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(4));
     CHECK_EQ(pathMap.at(0).size(), 1);
     CHECK_EQ(pathMap.at(0)[0], 1);
@@ -944,7 +944,7 @@ TEST_CASE("Dijkstra") {
         s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17, s18);
 
     auto const& pathMap =
-        graph.allPathsTo(6, [](auto const& pEdge) { return pEdge->length(); });
+        graph.allPathsTo(6, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(6));
     CHECK_EQ(pathMap.at(0).size(), 1);
     CHECK_EQ(pathMap.at(0)[0], 1);
@@ -984,7 +984,7 @@ TEST_CASE("Dijkstra") {
         s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17, s18);
 
     auto const& pathMap =
-        graph.allPathsTo(4, [](auto const& pEdge) { return pEdge->length(); });
+        graph.allPathsTo(4, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(4));
     CHECK_EQ(pathMap.at(0).size(), 1);
     CHECK_EQ(pathMap.at(0)[0], 2);
@@ -1007,7 +1007,7 @@ TEST_CASE("Dijkstra") {
     graph.addStreets(s1, s2, s3);
 
     auto const& pathMap =
-        graph.allPathsTo(1, [](auto const& pEdge) { return pEdge->length(); });
+        graph.allPathsTo(1, [](auto const& pEdge) { return pEdge.length(); });
     CHECK(pathMap.empty());
   }
 
@@ -1018,9 +1018,8 @@ TEST_CASE("Dijkstra") {
     RoadNetwork graph{};
     graph.addStreets(s1, s2, s3);
 
-    CHECK_THROWS_AS(
-        graph.allPathsTo(3, [](auto const& pEdge) { return pEdge->length(); }),
-        std::out_of_range);
+    CHECK_THROWS_AS(graph.allPathsTo(3, [](auto const& pEdge) { return pEdge.length(); }),
+                    std::out_of_range);
   }
 
   SUBCASE("Case 9 - Equal Lengths") {
@@ -1031,7 +1030,7 @@ TEST_CASE("Dijkstra") {
     CHECK_EQ(graph.nEdges(), 436);
 
     auto const& path =
-        graph.allPathsTo(118, [](auto const& pEdge) { return pEdge->length(); });
+        graph.allPathsTo(118, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_EQ(path.size(), 119);
     CHECK_FALSE(path.contains(118));
   }
@@ -1056,7 +1055,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreets(s01, s12, s03, s32);
 
     auto pathMap =
-        graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge.length(); });
 
     // Verify the shortest path is 0 -> 1 -> 2
     REQUIRE(pathMap.contains(0));
@@ -1080,7 +1079,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreet(std::move(s01));
 
     auto pathMap =
-        graph.shortestPath(0, 0, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 0, [](auto const& pEdge) { return pEdge.length(); });
 
     // When source equals target, should return empty map (no hops needed)
     CHECK(pathMap.empty());
@@ -1093,7 +1092,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreets(s01, s23);
 
     auto pathMap =
-        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge.length(); });
 
     // No path exists, should return empty map
     CHECK(pathMap.empty());
@@ -1105,7 +1104,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreet(std::move(s01));
 
     CHECK_THROWS_AS(
-        graph.shortestPath(99, 1, [](auto const& pEdge) { return pEdge->length(); }),
+        graph.shortestPath(99, 1, [](auto const& pEdge) { return pEdge.length(); }),
         std::out_of_range);
   }
 
@@ -1115,7 +1114,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreet(std::move(s01));
 
     CHECK_THROWS_AS(
-        graph.shortestPath(0, 99, [](auto const& pEdge) { return pEdge->length(); }),
+        graph.shortestPath(0, 99, [](auto const& pEdge) { return pEdge.length(); }),
         std::out_of_range);
   }
 
@@ -1129,7 +1128,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreets(s01, s02, s13, s23);
 
     auto pathMap =
-        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge.length(); });
 
     // Verify the shortest path is 0 -> 1 -> 3 (length 20)
     REQUIRE(pathMap.contains(0));
@@ -1159,7 +1158,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreets(s01, s02, s13, s23);
 
     auto pathMap =
-        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge.length(); });
 
     // Both paths have same length (100), so node 0 should have two next hops
     REQUIRE(pathMap.contains(0));
@@ -1187,7 +1186,7 @@ TEST_CASE("ShortestPath") {
     CHECK_EQ(graph.nEdges(), 436);
 
     auto pathMap =
-        graph.shortestPath(0, 119, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 119, [](auto const& pEdge) { return pEdge.length(); });
 
     // Verify that a path exists
     CHECK_FALSE(pathMap.empty());
@@ -1202,7 +1201,7 @@ TEST_CASE("ShortestPath") {
     // Verify connectivity: for each node in pathMap, verify edges exist to next hops
     for (auto const& [nodeId, nextHops] : pathMap) {
       for (auto const& nextHop : nextHops) {
-        CHECK(graph.edge(nodeId, nextHop));
+        CHECK_NOTHROW(graph.edge(nodeId, nextHop));
       }
     }
   }
@@ -1219,7 +1218,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreets(s01, s02, s13, s23);
 
     auto pathMap =
-        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge->length(); }, 0.01);
+        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge.length(); }, 0.01);
 
     // Check that node 0 has multiple next hops (both 1 and 2)
     REQUIRE(pathMap.contains(0));
@@ -1275,7 +1274,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreets(s01, s02, s13, s24, s35, s45);
 
     auto pathMap =
-        graph.shortestPath(0, 5, [](auto const& pEdge) { return pEdge->length(); }, 0.01);
+        graph.shortestPath(0, 5, [](auto const& pEdge) { return pEdge.length(); }, 0.01);
 
     // Test explode function
     auto allPaths = pathMap.explode(0, 5);
@@ -1318,7 +1317,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreets(s01, s12, s03, s14, s25, s34, s45);
 
     auto pathMap =
-        graph.shortestPath(0, 5, [](auto const& pEdge) { return pEdge->length(); }, 0.01);
+        graph.shortestPath(0, 5, [](auto const& pEdge) { return pEdge.length(); }, 0.01);
 
     // Test explode function
     auto allPaths = pathMap.explode(0, 5);
@@ -1343,7 +1342,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreets(s01, s12, s23);
 
     auto pathMap =
-        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 3, [](auto const& pEdge) { return pEdge.length(); });
 
     // Test explode function - should return only one path
     auto allPaths = pathMap.explode(0, 3);
@@ -1396,17 +1395,17 @@ TEST_CASE("RoadStatus") {
     graph.addStreets(s01, s12);
 
     // Initially all streets are OPEN
-    CHECK_EQ(graph.edge(0)->roadStatus(), RoadStatus::OPEN);
-    CHECK_EQ(graph.edge(1)->roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(1).roadStatus(), RoadStatus::OPEN);
 
     // Close street by id
     graph.setStreetStatusById(0, RoadStatus::CLOSED);
-    CHECK_EQ(graph.edge(0)->roadStatus(), RoadStatus::CLOSED);
-    CHECK_EQ(graph.edge(1)->roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::CLOSED);
+    CHECK_EQ(graph.edge(1).roadStatus(), RoadStatus::OPEN);
 
     // Re-open street
     graph.setStreetStatusById(0, RoadStatus::OPEN);
-    CHECK_EQ(graph.edge(0)->roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::OPEN);
   }
 
   SUBCASE("setStreetStatusByName") {
@@ -1422,20 +1421,20 @@ TEST_CASE("RoadStatus") {
     graph.addStreets(s01, s12, s23);
 
     // Initially all streets are OPEN
-    CHECK_EQ(graph.edge(0)->roadStatus(), RoadStatus::OPEN);
-    CHECK_EQ(graph.edge(1)->roadStatus(), RoadStatus::OPEN);
-    CHECK_EQ(graph.edge(2)->roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(1).roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(2).roadStatus(), RoadStatus::OPEN);
 
     // Close all streets with name "Main Street"
     graph.setStreetStatusByName("Main Street", RoadStatus::CLOSED);
-    CHECK_EQ(graph.edge(0)->roadStatus(), RoadStatus::CLOSED);
-    CHECK_EQ(graph.edge(1)->roadStatus(), RoadStatus::CLOSED);
-    CHECK_EQ(graph.edge(2)->roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::CLOSED);
+    CHECK_EQ(graph.edge(1).roadStatus(), RoadStatus::CLOSED);
+    CHECK_EQ(graph.edge(2).roadStatus(), RoadStatus::OPEN);
 
     // Re-open Main Street
     graph.setStreetStatusByName("Main Street", RoadStatus::OPEN);
-    CHECK_EQ(graph.edge(0)->roadStatus(), RoadStatus::OPEN);
-    CHECK_EQ(graph.edge(1)->roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(graph.edge(1).roadStatus(), RoadStatus::OPEN);
   }
 
   SUBCASE("setStreetStatusByName - partial match") {
@@ -1450,8 +1449,8 @@ TEST_CASE("RoadStatus") {
 
     // Close all streets containing "Roma" in the name
     graph.setStreetStatusByName("Roma", RoadStatus::CLOSED);
-    CHECK_EQ(graph.edge(0)->roadStatus(), RoadStatus::CLOSED);
-    CHECK_EQ(graph.edge(1)->roadStatus(), RoadStatus::CLOSED);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::CLOSED);
+    CHECK_EQ(graph.edge(1).roadStatus(), RoadStatus::CLOSED);
   }
 }
 
@@ -1476,7 +1475,7 @@ TEST_CASE("ShortestPath with closed roads") {
 
     // Initially, shortest path is 0 -> 1 -> 2
     auto pathMap =
-        graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge.length(); });
     REQUIRE(pathMap.contains(0));
     CHECK_EQ(pathMap.at(0)[0], 1);
 
@@ -1484,7 +1483,7 @@ TEST_CASE("ShortestPath with closed roads") {
     graph.setStreetStatusById(0, RoadStatus::CLOSED);
 
     // Now shortest path should be 0 -> 3 -> 2
-    pathMap = graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge->length(); });
+    pathMap = graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge.length(); });
     REQUIRE(pathMap.contains(0));
     CHECK_EQ(pathMap.at(0).size(), 1);
     CHECK_EQ(pathMap.at(0)[0], 3);
@@ -1510,7 +1509,7 @@ TEST_CASE("ShortestPath with closed roads") {
 
     // No path should exist from 0 to 2
     auto pathMap =
-        graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK(pathMap.empty());
   }
 
@@ -1527,11 +1526,11 @@ TEST_CASE("ShortestPath with closed roads") {
     // Close and then reopen
     graph.setStreetStatusById(0, RoadStatus::CLOSED);
     auto pathMap =
-        graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge->length(); });
+        graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK(pathMap.empty());
 
     graph.setStreetStatusById(0, RoadStatus::OPEN);
-    pathMap = graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge->length(); });
+    pathMap = graph.shortestPath(0, 2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.empty());
     REQUIRE(pathMap.contains(0));
     CHECK_EQ(pathMap.at(0)[0], 1);
@@ -1559,7 +1558,7 @@ TEST_CASE("allPathsTo with closed roads") {
     graph.setStreetStatusById(0, RoadStatus::CLOSED);
 
     // allPathsTo should not include node 1 as next hop from 0
-    auto pathMap = graph.allPathsTo(2, [](auto const& pEdge) { return pEdge->length(); });
+    auto pathMap = graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
 
     REQUIRE(pathMap.contains(0));
     // Node 0 should only have node 3 as next hop (not 1, since 0->1 is closed)
@@ -1585,7 +1584,7 @@ TEST_CASE("allPathsTo with closed roads") {
     // Close the only path to node 2
     graph.setStreetStatusById(1, RoadStatus::CLOSED);
 
-    auto pathMap = graph.allPathsTo(2, [](auto const& pEdge) { return pEdge->length(); });
+    auto pathMap = graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
 
     // Node 0 should not have a path to 2
     CHECK_FALSE(pathMap.contains(0));
@@ -1609,7 +1608,7 @@ TEST_CASE("allPathsTo with closed roads") {
     // Close all "Main Road" streets
     graph.setStreetStatusByName("Main Road", RoadStatus::CLOSED);
 
-    auto pathMap = graph.allPathsTo(2, [](auto const& pEdge) { return pEdge->length(); });
+    auto pathMap = graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
 
     // From node 0, only path should be via node 3
     REQUIRE(pathMap.contains(0));
@@ -1637,17 +1636,17 @@ TEST_CASE("Change Street Lanes") {
 
       auto const* pStreet01 = graph.street(0, 1);
       REQUIRE(pStreet01 != nullptr);
-      auto const initialCapacity = (*pStreet01)->capacity();
-      auto const initialMaxSpeed = (*pStreet01)->maxSpeed();
+      auto const initialCapacity = pStreet01->capacity();
+      auto const initialMaxSpeed = pStreet01->maxSpeed();
 
       WHEN("Lanes are increased for street by id") {
         graph.changeStreetNLanesById(10, 4);
 
         THEN("The street's properties are updated correctly") {
-          CHECK_EQ((*pStreet01)->nLanes(), 4);
-          CHECK_EQ((*pStreet01)->capacity(), initialCapacity * 2);
-          CHECK_EQ((*pStreet01)->maxSpeed(), initialMaxSpeed);
-          CHECK_EQ((*pStreet01)->exitQueues().size(), 4);
+          CHECK_EQ(pStreet01->nLanes(), 4);
+          CHECK_EQ(pStreet01->capacity(), initialCapacity * 2);
+          CHECK_EQ(pStreet01->maxSpeed(), initialMaxSpeed);
+          CHECK_EQ(pStreet01->exitQueues().size(), 4);
         }
       }
 
@@ -1655,8 +1654,8 @@ TEST_CASE("Change Street Lanes") {
         graph.changeStreetNLanesById(10, 1, 0.6);
 
         THEN("Both lanes and speed are updated") {
-          CHECK_EQ((*pStreet01)->nLanes(), 1);
-          CHECK_EQ((*pStreet01)->maxSpeed(), doctest::Approx(initialMaxSpeed * 0.6));
+          CHECK_EQ(pStreet01->nLanes(), 1);
+          CHECK_EQ(pStreet01->maxSpeed(), doctest::Approx(initialMaxSpeed * 0.6));
         }
       }
 
@@ -1699,21 +1698,21 @@ TEST_CASE("Change Street Lanes") {
       REQUIRE(pSideRoad1 != nullptr);
       REQUIRE(pSideRoad2 != nullptr);
 
-      auto const initialMainSpeed1 = (*pMainStreet1)->maxSpeed();
-      auto const initialMainSpeed2 = (*pMainStreet2)->maxSpeed();
-      auto const initialSideSpeed1 = (*pSideRoad1)->maxSpeed();
-      auto const initialSideSpeed2 = (*pSideRoad2)->maxSpeed();
+      auto const initialMainSpeed1 = pMainStreet1->maxSpeed();
+      auto const initialMainSpeed2 = pMainStreet2->maxSpeed();
+      auto const initialSideSpeed1 = pSideRoad1->maxSpeed();
+      auto const initialSideSpeed2 = pSideRoad2->maxSpeed();
 
       WHEN("All streets with 'Main' in name are changed") {
         graph.changeStreetNLanesByName("Main", 1);
 
         THEN("Only Main Streets are affected") {
-          CHECK_EQ((*pMainStreet1)->nLanes(), 1);
-          CHECK_EQ((*pMainStreet2)->nLanes(), 1);
-          CHECK_EQ((*pSideRoad1)->nLanes(), 1);  // unchanged
-          CHECK_EQ((*pSideRoad2)->nLanes(), 2);  // unchanged
-          CHECK_EQ((*pMainStreet1)->maxSpeed(), initialMainSpeed1);
-          CHECK_EQ((*pMainStreet2)->maxSpeed(), initialMainSpeed2);
+          CHECK_EQ(pMainStreet1->nLanes(), 1);
+          CHECK_EQ(pMainStreet2->nLanes(), 1);
+          CHECK_EQ(pSideRoad1->nLanes(), 1);  // unchanged
+          CHECK_EQ(pSideRoad2->nLanes(), 2);  // unchanged
+          CHECK_EQ(pMainStreet1->maxSpeed(), initialMainSpeed1);
+          CHECK_EQ(pMainStreet2->maxSpeed(), initialMainSpeed2);
         }
       }
 
@@ -1721,14 +1720,14 @@ TEST_CASE("Change Street Lanes") {
         graph.changeStreetNLanesByName("Side", 3, 0.8);
 
         THEN("Only Side Roads are affected with both changes") {
-          CHECK_EQ((*pSideRoad1)->nLanes(), 3);
-          CHECK_EQ((*pSideRoad2)->nLanes(), 3);
-          CHECK_EQ((*pMainStreet1)->nLanes(), 2);  // unchanged
-          CHECK_EQ((*pMainStreet2)->nLanes(), 3);  // unchanged
-          CHECK_EQ((*pSideRoad1)->maxSpeed(), doctest::Approx(initialSideSpeed1 * 0.8));
-          CHECK_EQ((*pSideRoad2)->maxSpeed(), doctest::Approx(initialSideSpeed2 * 0.8));
-          CHECK_EQ((*pMainStreet1)->maxSpeed(), initialMainSpeed1);  // unchanged
-          CHECK_EQ((*pMainStreet2)->maxSpeed(), initialMainSpeed2);  // unchanged
+          CHECK_EQ(pSideRoad1->nLanes(), 3);
+          CHECK_EQ(pSideRoad2->nLanes(), 3);
+          CHECK_EQ(pMainStreet1->nLanes(), 2);  // unchanged
+          CHECK_EQ(pMainStreet2->nLanes(), 3);  // unchanged
+          CHECK_EQ(pSideRoad1->maxSpeed(), doctest::Approx(initialSideSpeed1 * 0.8));
+          CHECK_EQ(pSideRoad2->maxSpeed(), doctest::Approx(initialSideSpeed2 * 0.8));
+          CHECK_EQ(pMainStreet1->maxSpeed(), initialMainSpeed1);  // unchanged
+          CHECK_EQ(pMainStreet2->maxSpeed(), initialMainSpeed2);  // unchanged
         }
       }
 
@@ -1736,10 +1735,10 @@ TEST_CASE("Change Street Lanes") {
         graph.changeStreetNLanesByName("NonExistent", 5);
 
         THEN("No streets are changed") {
-          CHECK_EQ((*pMainStreet1)->nLanes(), 2);
-          CHECK_EQ((*pMainStreet2)->nLanes(), 3);
-          CHECK_EQ((*pSideRoad1)->nLanes(), 1);
-          CHECK_EQ((*pSideRoad2)->nLanes(), 2);
+          CHECK_EQ(pMainStreet1->nLanes(), 2);
+          CHECK_EQ(pMainStreet2->nLanes(), 3);
+          CHECK_EQ(pSideRoad1->nLanes(), 1);
+          CHECK_EQ(pSideRoad2->nLanes(), 2);
         }
       }
 
@@ -1747,10 +1746,10 @@ TEST_CASE("Change Street Lanes") {
         graph.changeStreetNLanesByName("Street", 4);
 
         THEN("All streets with 'Street' in name are changed") {
-          CHECK_EQ((*pMainStreet1)->nLanes(), 4);
-          CHECK_EQ((*pMainStreet2)->nLanes(), 4);
-          CHECK_EQ((*pSideRoad1)->nLanes(), 1);  // unchanged
-          CHECK_EQ((*pSideRoad2)->nLanes(), 2);  // unchanged
+          CHECK_EQ(pMainStreet1->nLanes(), 4);
+          CHECK_EQ(pMainStreet2->nLanes(), 4);
+          CHECK_EQ(pSideRoad1->nLanes(), 1);  // unchanged
+          CHECK_EQ(pSideRoad2->nLanes(), 2);  // unchanged
         }
       }
     }
@@ -1774,20 +1773,20 @@ TEST_CASE("BetweennessCentrality") {
     graph.computeBetweennessCentralities(unitWeight);
 
     // Node 0: source only, never an intermediate -> BC = 0
-    REQUIRE(graph.node(0)->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(0)->betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(0).betweennessCentrality().has_value());
+    CHECK_EQ(*graph.node(0).betweennessCentrality(), doctest::Approx(0.0));
 
     // Node 1: on path 0->2 and 0->3 -> BC = 2
-    REQUIRE(graph.node(1)->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(1)->betweennessCentrality(), doctest::Approx(2.0));
+    REQUIRE(graph.node(1).betweennessCentrality().has_value());
+    CHECK_EQ(*graph.node(1).betweennessCentrality(), doctest::Approx(2.0));
 
     // Node 2: on path 0->3 and 1->3 -> BC = 2
-    REQUIRE(graph.node(2)->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(2)->betweennessCentrality(), doctest::Approx(2.0));
+    REQUIRE(graph.node(2).betweennessCentrality().has_value());
+    CHECK_EQ(*graph.node(2).betweennessCentrality(), doctest::Approx(2.0));
 
     // Node 3: sink only, never an intermediate -> BC = 0
-    REQUIRE(graph.node(3)->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(3)->betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(3).betweennessCentrality().has_value());
+    CHECK_EQ(*graph.node(3).betweennessCentrality(), doctest::Approx(0.0));
   }
 
   SUBCASE("Star topology: center node") {
@@ -1802,8 +1801,8 @@ TEST_CASE("BetweennessCentrality") {
     graph.computeBetweennessCentralities(unitWeight);
 
     for (Id i = 0; i <= 3; ++i) {
-      REQUIRE(graph.node(i)->betweennessCentrality().has_value());
-      CHECK_EQ(*graph.node(i)->betweennessCentrality(), doctest::Approx(0.0));
+      REQUIRE(graph.node(i).betweennessCentrality().has_value());
+      CHECK_EQ(*graph.node(i).betweennessCentrality(), doctest::Approx(0.0));
     }
   }
 
@@ -1824,15 +1823,15 @@ TEST_CASE("BetweennessCentrality") {
     graph.addStreets(s01, s02, s13, s23);
 
     graph.computeBetweennessCentralities(
-        [](auto const& pEdge) { return pEdge->length(); });
+        [](auto const& pEdge) { return pEdge.length(); });
 
     // Node 1 is on the only shortest path 0->3 -> BC = 1
-    REQUIRE(graph.node(1)->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(1)->betweennessCentrality(), doctest::Approx(1.0));
+    REQUIRE(graph.node(1).betweennessCentrality().has_value());
+    CHECK_EQ(*graph.node(1).betweennessCentrality(), doctest::Approx(1.0));
 
     // Node 2 is not on any shortest path between other pairs -> BC = 0
-    REQUIRE(graph.node(2)->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(2)->betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(2).betweennessCentrality().has_value());
+    CHECK_EQ(*graph.node(2).betweennessCentrality(), doctest::Approx(0.0));
   }
 
   SUBCASE("Single edge") {
@@ -1842,10 +1841,10 @@ TEST_CASE("BetweennessCentrality") {
 
     graph.computeBetweennessCentralities(unitWeight);
 
-    REQUIRE(graph.node(0)->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(0)->betweennessCentrality(), doctest::Approx(0.0));
-    REQUIRE(graph.node(1)->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(1)->betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(0).betweennessCentrality().has_value());
+    CHECK_EQ(*graph.node(0).betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(1).betweennessCentrality().has_value());
+    CHECK_EQ(*graph.node(1).betweennessCentrality(), doctest::Approx(0.0));
   }
 
   SUBCASE("Disconnected graph") {
@@ -1859,8 +1858,8 @@ TEST_CASE("BetweennessCentrality") {
     graph.computeBetweennessCentralities(unitWeight);
 
     for (Id i = 0; i <= 3; ++i) {
-      REQUIRE(graph.node(i)->betweennessCentrality().has_value());
-      CHECK_EQ(*graph.node(i)->betweennessCentrality(), doctest::Approx(0.0));
+      REQUIRE(graph.node(i).betweennessCentrality().has_value());
+      CHECK_EQ(*graph.node(i).betweennessCentrality(), doctest::Approx(0.0));
     }
   }
 }
@@ -1881,16 +1880,16 @@ TEST_CASE("EdgeBetweennessCentrality") {
 
     graph.computeEdgeBetweennessCentralities(unitWeight);
 
-    REQUIRE(graph.edge(static_cast<Id>(0))->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.edge(static_cast<Id>(0))->betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(0)).betweennessCentrality().has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(0)).betweennessCentrality(),
              doctest::Approx(3.0));
 
-    REQUIRE(graph.edge(static_cast<Id>(1))->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.edge(static_cast<Id>(1))->betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(1)).betweennessCentrality().has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(1)).betweennessCentrality(),
              doctest::Approx(4.0));
 
-    REQUIRE(graph.edge(static_cast<Id>(2))->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.edge(static_cast<Id>(2))->betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(2)).betweennessCentrality().has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(2)).betweennessCentrality(),
              doctest::Approx(3.0));
   }
 
@@ -1911,26 +1910,26 @@ TEST_CASE("EdgeBetweennessCentrality") {
     graph.addStreets(s01, s02, s13, s23);
 
     graph.computeEdgeBetweennessCentralities(
-        [](auto const& pEdge) { return pEdge->length(); });
+        [](auto const& pEdge) { return pEdge.length(); });
 
     // Edge 0->1: used by 0->1 and 0->3 (via 0->1->3) => EBC = 2
-    REQUIRE(graph.edge(static_cast<Id>(0))->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.edge(static_cast<Id>(0))->betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(0)).betweennessCentrality().has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(0)).betweennessCentrality(),
              doctest::Approx(2.0));
 
     // Edge 0->2: used only by 0->2 => EBC = 1
-    REQUIRE(graph.edge(static_cast<Id>(1))->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.edge(static_cast<Id>(1))->betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(1)).betweennessCentrality().has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(1)).betweennessCentrality(),
              doctest::Approx(1.0));
 
     // Edge 1->3: used by 1->3 and 0->3 => EBC = 2
-    REQUIRE(graph.edge(static_cast<Id>(2))->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.edge(static_cast<Id>(2))->betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(2)).betweennessCentrality().has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(2)).betweennessCentrality(),
              doctest::Approx(2.0));
 
     // Edge 2->3: used only by 2->3 => EBC = 1
-    REQUIRE(graph.edge(static_cast<Id>(3))->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.edge(static_cast<Id>(3))->betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(3)).betweennessCentrality().has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(3)).betweennessCentrality(),
              doctest::Approx(1.0));
   }
 
@@ -1942,8 +1941,8 @@ TEST_CASE("EdgeBetweennessCentrality") {
     graph.computeEdgeBetweennessCentralities(unitWeight);
 
     // Only one path: 0->1, using edge 0 => EBC = 1
-    REQUIRE(graph.edge(static_cast<Id>(0))->betweennessCentrality().has_value());
-    CHECK_EQ(*graph.edge(static_cast<Id>(0))->betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(0)).betweennessCentrality().has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(0)).betweennessCentrality(),
              doctest::Approx(1.0));
   }
 }

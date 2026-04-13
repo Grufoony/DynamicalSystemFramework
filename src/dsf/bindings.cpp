@@ -258,16 +258,16 @@ PYBIND11_MODULE(dsf_cpp, m) {
             return self.shortestPath(
                 sourceId,
                 targetId,
-                [weightFunction](const std::unique_ptr<dsf::mobility::Street>& street) {
+                [weightFunction](const dsf::mobility::Street& street) {
                   switch (weightFunction) {
                     case dsf::PathWeight::LENGTH:
-                      return street->length();
+                      return street.length();
                     case dsf::PathWeight::TRAVELTIME:
-                      return street->length() / street->maxSpeed();
+                      return street.length() / street.maxSpeed();
                     case dsf::PathWeight::WEIGHT:
-                      return street->weight();
+                      return street.weight();
                     default:
-                      return street->length() / street->maxSpeed();
+                      return street.length() / street.maxSpeed();
                   }
                 },
                 threshold);
@@ -289,20 +289,19 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def(
           "computeBetweennessCentralities",
           [](dsf::mobility::RoadNetwork& self, const std::string& weight) {
-            auto weightFunc =
-                [&weight](const std::unique_ptr<dsf::mobility::Street>& street) {
-                  if (weight == "length") {
-                    return street->length();
-                  } else if (weight == "traveltime") {
-                    return street->length() / street->maxSpeed();
-                  } else if (weight == "weight") {
-                    return street->weight();
-                  } else {
-                    throw std::invalid_argument(
-                        "Invalid weight function: '" + weight +
-                        "'. Valid options are: 'length', 'traveltime', 'weight'.");
-                  }
-                };
+            auto weightFunc = [&weight](const dsf::mobility::Street& street) {
+              if (weight == "length") {
+                return street.length();
+              } else if (weight == "traveltime") {
+                return street.length() / street.maxSpeed();
+              } else if (weight == "weight") {
+                return street.weight();
+              } else {
+                throw std::invalid_argument(
+                    "Invalid weight function: '" + weight +
+                    "'. Valid options are: 'length', 'traveltime', 'weight'.");
+              }
+            };
             self.computeBetweennessCentralities(weightFunc);
           },
           pybind11::arg("weight") = "length",
@@ -316,20 +315,19 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def(
           "computeEdgeBetweennessCentralities",
           [](dsf::mobility::RoadNetwork& self, const std::string& weight) {
-            auto weightFunc =
-                [&weight](const std::unique_ptr<dsf::mobility::Street>& street) {
-                  if (weight == "length") {
-                    return street->length();
-                  } else if (weight == "traveltime") {
-                    return street->length() / street->maxSpeed();
-                  } else if (weight == "weight") {
-                    return street->weight();
-                  } else {
-                    throw std::invalid_argument(
-                        "Invalid weight function: '" + weight +
-                        "'. Valid options are: 'length', 'traveltime', 'weight'.");
-                  }
-                };
+            auto weightFunc = [&weight](const dsf::mobility::Street& street) {
+              if (weight == "length") {
+                return street.length();
+              } else if (weight == "traveltime") {
+                return street.length() / street.maxSpeed();
+              } else if (weight == "weight") {
+                return street.weight();
+              } else {
+                throw std::invalid_argument(
+                    "Invalid weight function: '" + weight +
+                    "'. Valid options are: 'length', 'traveltime', 'weight'.");
+              }
+            };
             self.computeEdgeBetweennessCentralities(weightFunc);
           },
           pybind11::arg("weight") = "length",
