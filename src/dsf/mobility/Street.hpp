@@ -165,6 +165,7 @@ namespace dsf::mobility {
     movingAgents() {
       return m_movingAgents;
     }
+    inline const auto& movingAgents() const { return m_movingAgents; }
     static inline auto agentData() {
       if (!m_agentData.has_value()) {
         throw std::runtime_error(

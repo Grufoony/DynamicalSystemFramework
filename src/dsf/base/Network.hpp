@@ -65,20 +65,20 @@ namespace dsf {
 
     /// @brief Get a node by id
     /// @param nodeId The node's id
-    /// @return node_t& A reference to the node
-    inline node_t& node(Id nodeId) const { return *m_nodes.at(nodeId); };
+    /// @return const node_t& A reference to the node
+    inline const auto& node(Id nodeId) const { return *m_nodes.at(nodeId); };
     /// @brief Get a node by id
     /// @param nodeId The node's id
     /// @return node_t& A reference to the node
-    inline node_t& node(Id nodeId) { return *m_nodes.at(nodeId); };
+    inline auto& node(Id nodeId) { return *m_nodes.at(nodeId); };
+    /// @brief Get an edge by id
+    /// @param edgeId The edge's id
+    /// @return const edge_t& A reference to the edge
+    inline const auto& edge(Id edgeId) const { return *m_edges.at(edgeId); };
     /// @brief Get an edge by id
     /// @param edgeId The edge's id
     /// @return edge_t& A reference to the edge
-    inline edge_t& edge(Id edgeId) const { return *m_edges.at(edgeId); };
-    /// @brief Get an edge by id
-    /// @param edgeId The edge's id
-    /// @return edge_t& A reference to the edge
-    inline edge_t& edge(Id edgeId) { return *m_edges.at(edgeId); }
+    inline auto& edge(Id edgeId) { return *m_edges.at(edgeId); }
 
     edge_t& edge(Id source, Id target) const;
     /// @brief Get a node by id

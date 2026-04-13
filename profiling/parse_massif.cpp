@@ -16,19 +16,17 @@ std::vector<long> parse_massif(const std::string& file_path) {
 
   const char equal{'='};
   std::string buffer;
-  while (getline(file, buffer)) {
+  while (std::getline(file, buffer)) {
     if (buffer.find("mem_heap_B") != std::string::npos) {
       std::stringstream buffer_stream(buffer);
       std::string value;
-      getline(buffer_stream, value, equal);
+      std::getline(buffer_stream, value, equal);
       if (value == "mem_heap_B") {
-        getline(buffer_stream, value);
+        std::getline(buffer_stream, value);
         mem_values.push_back(std::stol(value));
       }
     }
   }
-
-  file.close();
   return mem_values;
 };
 
@@ -39,7 +37,12 @@ int main(int argc, char* argv[]) {
   }
 
   auto mem_values{parse_massif(argv[1])};
-  long long int integral{std::accumulate(mem_values.begin(), mem_values.end(), 0)};
+  if (mem_values.empty()) {
+    std::cerr << "No mem_heap_B values found in file: " << argv[1] << '\n';
+    return 1;
+  }
+
+  long long integral{std::accumulate(mem_values.begin(), mem_values.end(), 0LL)};
   long max_mem{*std::max_element(mem_values.begin(), mem_values.end())};
 
   std::cout << "integral: " << integral << " B\n";
