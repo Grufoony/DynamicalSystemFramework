@@ -142,23 +142,39 @@ namespace dsf::mobility {
     m_nAddedAgents += nAgents;
     if (m_ODs.size() == 1) {
       auto [originId, destinationId, weight] = m_ODs.at(0);
-      this->addAgents(nAgents, this->itineraries().at(destinationId), originId);
+      auto const itineraryIt = this->itineraries().find(destinationId);
+      if (itineraryIt == this->itineraries().cend()) {
+        spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
+        return;
+      }
+      this->addAgents(nAgents, itineraryIt->second, originId);
       return;
     }
     std::uniform_real_distribution<double> uniformDist{
         0., 1.};  // Weight distribution should be normalized to 1
     while (nAgents--) {
-      Id originId{0}, destinationId{0};
       auto randValue = uniformDist(this->m_generator);
-      for (auto const& [origin, destination, weight] : m_ODs) {
-        if (randValue < weight) {
-          originId = origin;
-          destinationId = destination;
+      auto selectedOdIt = m_ODs.cend();
+      for (std::size_t idx = 0; idx < m_ODs.size(); ++idx) {
+        auto const& [origin, destination, weight] = m_ODs[idx];
+        if (randValue < weight || idx + 1 == m_ODs.size()) {
+          selectedOdIt = m_ODs.cbegin() + idx;
           break;
         }
         randValue -= weight;
       }
-      this->addAgent(this->itineraries().at(destinationId), originId);
+      if (selectedOdIt == m_ODs.cend()) {
+        spdlog::warn("Skipping ODS insertion: no origin-destination pair selected");
+        continue;
+      }
+
+      auto const& [originId, destinationId, weight] = *selectedOdIt;
+      auto const itineraryIt = this->itineraries().find(destinationId);
+      if (itineraryIt == this->itineraries().cend()) {
+        spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
+        continue;
+      }
+      this->addAgent(itineraryIt->second, originId);
     }
   }
   void FirstOrderDynamics::m_addAgentsRandomODs(std::size_t nAgents) {
