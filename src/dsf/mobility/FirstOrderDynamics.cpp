@@ -280,7 +280,16 @@ namespace dsf::mobility {
     // Get path targets for non-random agents
     std::vector<Id> pathTargets;
     if (!pAgent->isRandom()) {
-      pathTargets = pAgent->itinerary()->path().at(pNode->id());
+      auto const& path = pAgent->itinerary()->path();
+      auto const pathIt = path.find(pNode->id());
+      if (pathIt == path.cend()) {
+        spdlog::debug(
+            "No itinerary path entry for {} at node {}. Returning no transition.",
+            *pAgent,
+            pNode->id());
+        return std::nullopt;
+      }
+      pathTargets = pathIt->second;
     }
 
     // Calculate transition probabilities for all valid outgoing edges
