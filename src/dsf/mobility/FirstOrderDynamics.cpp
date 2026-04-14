@@ -142,23 +142,36 @@ namespace dsf::mobility {
     m_nAddedAgents += nAgents;
     if (m_ODs.size() == 1) {
       auto [originId, destinationId, weight] = m_ODs.at(0);
-      this->addAgents(nAgents, this->itineraries().at(destinationId), originId);
+      auto const itineraryIt = this->itineraries().find(destinationId);
+      if (itineraryIt == this->itineraries().cend()) {
+        spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
+        return;
+      }
+      this->addAgents(nAgents, itineraryIt->second, originId);
       return;
     }
     std::uniform_real_distribution<double> uniformDist{
         0., 1.};  // Weight distribution should be normalized to 1
     while (nAgents--) {
-      Id originId{0}, destinationId{0};
       auto randValue = uniformDist(this->m_generator);
-      for (auto const& [origin, destination, weight] : m_ODs) {
-        if (randValue < weight) {
-          originId = origin;
-          destinationId = destination;
+      auto selectedOdIt = m_ODs.cend();
+      for (std::size_t idx = 0; idx < m_ODs.size(); ++idx) {
+        auto const& weight = std::get<2>(m_ODs[idx]);
+        if (randValue < weight || idx + 1 == m_ODs.size()) {
+          selectedOdIt = m_ODs.cbegin() + idx;
           break;
         }
         randValue -= weight;
       }
-      this->addAgent(this->itineraries().at(destinationId), originId);
+
+      auto const& originId = std::get<0>(*selectedOdIt);
+      auto const& destinationId = std::get<1>(*selectedOdIt);
+      auto const itineraryIt = this->itineraries().find(destinationId);
+      if (itineraryIt == this->itineraries().cend()) {
+        spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
+        continue;
+      }
+      this->addAgent(itineraryIt->second, originId);
     }
   }
   void FirstOrderDynamics::m_addAgentsRandomODs(std::size_t nAgents) {
@@ -280,7 +293,16 @@ namespace dsf::mobility {
     // Get path targets for non-random agents
     std::vector<Id> pathTargets;
     if (!pAgent->isRandom()) {
-      pathTargets = pAgent->itinerary()->path().at(pNode->id());
+      auto const& path = pAgent->itinerary()->path();
+      auto const pathIt = path.find(pNode->id());
+      if (pathIt == path.cend()) {
+        spdlog::debug(
+            "No itinerary path entry for {} at node {}. Returning no transition.",
+            *pAgent,
+            pNode->id());
+        return std::nullopt;
+      }
+      pathTargets = pathIt->second;
     }
 
     // Calculate transition probabilities for all valid outgoing edges
