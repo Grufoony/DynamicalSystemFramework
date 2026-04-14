@@ -156,19 +156,16 @@ namespace dsf::mobility {
       auto randValue = uniformDist(this->m_generator);
       auto selectedOdIt = m_ODs.cend();
       for (std::size_t idx = 0; idx < m_ODs.size(); ++idx) {
-        auto const& [origin, destination, weight] = m_ODs[idx];
+        auto const& weight = std::get<2>(m_ODs[idx]);
         if (randValue < weight || idx + 1 == m_ODs.size()) {
           selectedOdIt = m_ODs.cbegin() + idx;
           break;
         }
         randValue -= weight;
       }
-      if (selectedOdIt == m_ODs.cend()) {
-        spdlog::warn("Skipping ODS insertion: no origin-destination pair selected");
-        continue;
-      }
 
-      auto const& [originId, destinationId, weight] = *selectedOdIt;
+      auto const& originId = std::get<0>(*selectedOdIt);
+      auto const& destinationId = std::get<1>(*selectedOdIt);
       auto const itineraryIt = this->itineraries().find(destinationId);
       if (itineraryIt == this->itineraries().cend()) {
         spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
