@@ -236,7 +236,7 @@ if(DSF_TESTS)
   FetchContent_Declare(
     doctest
     GIT_REPOSITORY https://github.com/doctest/doctest.git
-    GIT_TAG v2.4.12)
+    GIT_TAG v2.5.2)
   FetchContent_GetProperties(doctest)
   if(NOT doctest_POPULATED)
     FetchContent_MakeAvailable(doctest)
