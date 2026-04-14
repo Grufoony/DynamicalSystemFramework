@@ -1299,6 +1299,71 @@ TEST_CASE("ShortestPath") {
     CHECK(foundPath2);
   }
 
+  SUBCASE("Threshold - deep alternative paths") {
+    Street s1(0, std::make_pair(0, 1), 3.);
+    Street s2(1, std::make_pair(1, 2), 3.);
+    Street s3(2, std::make_pair(2, 4), 3.);
+    Street s4(3, std::make_pair(0, 3), 5.);
+    Street s5(4, std::make_pair(3, 4), 5.);
+    RoadNetwork graph{};
+    graph.addStreets(s1, s2, s3, s4, s5);
+
+    auto const& pathMap =
+        graph.allPathsTo(4, [](auto const& pEdge) { return pEdge.length(); }, 0.7);
+    CHECK_EQ(pathMap.at(0).size(), 2);
+  }
+
+  SUBCASE("Threshold - full path budget without accumulation") {
+    // Best path: 0 -> 1 -> 2 -> 5 = 10.0
+    // Alternative: 0 -> 1 -> 3 -> 5 = 10.89 (within 10%)
+    // Over-budget path: 0 -> 1 -> 3 -> 4 -> 5 = 11.39 (must be excluded)
+    Street s01(0, std::make_pair(0, 1), 1.0);
+    Street s12(1, std::make_pair(1, 2), 4.0);
+    Street s25(2, std::make_pair(2, 5), 5.0);
+    Street s13(3, std::make_pair(1, 3), 4.89);
+    Street s35(4, std::make_pair(3, 5), 5.0);
+    Street s34(5, std::make_pair(3, 4), 0.5);
+    Street s45(6, std::make_pair(4, 5), 5.0);
+
+    RoadNetwork graph{};
+    graph.addStreets(s01, s12, s25, s13, s35, s34, s45);
+
+    auto const pathMap =
+        graph.shortestPath(0, 5, [](auto const& pEdge) { return pEdge.length(); }, 0.1);
+
+    auto const allPaths = pathMap.explode(0, 5);
+    CHECK_EQ(allPaths.size(), 2);
+
+    bool foundBestPath{false};
+    bool foundValidAlternative{false};
+    bool foundOverBudgetPath{false};
+
+    for (auto const& path : allPaths) {
+      double totalWeight{0.0};
+      for (std::size_t i = 0; i + 1 < path.size(); ++i) {
+        totalWeight += graph.edge(path[i], path[i + 1]).length();
+      }
+      CHECK_LE(totalWeight, 11.0 + 1e-9);
+
+      if (path.size() == 4 && path[0] == 0 && path[1] == 1 && path[2] == 2 &&
+          path[3] == 5) {
+        foundBestPath = true;
+      }
+      if (path.size() == 4 && path[0] == 0 && path[1] == 1 && path[2] == 3 &&
+          path[3] == 5) {
+        foundValidAlternative = true;
+      }
+      if (path.size() == 5 && path[0] == 0 && path[1] == 1 && path[2] == 3 &&
+          path[3] == 4 && path[4] == 5) {
+        foundOverBudgetPath = true;
+      }
+    }
+
+    CHECK(foundBestPath);
+    CHECK(foundValidAlternative);
+    CHECK_FALSE(foundOverBudgetPath);
+  }
+
   SUBCASE("PathCollection::explode - Many Equivalent Paths") {
     // Create a grid-like network with many equivalent paths
     //   0 -> 1 -> 2

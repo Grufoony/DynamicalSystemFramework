@@ -396,7 +396,7 @@ TEST_CASE("FirstOrderDynamics") {
       RoadNetwork graph2;
       graph2.addStreets(s1, s2, s3);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
+      dynamics.setWeightFunction(dsf::PathWeight::LENGTH, 0.0);
       WHEN("We add an itinerary and update the paths") {
         dynamics.addItinerary(std::make_shared<Itinerary>(0, 2));
         dynamics.updatePaths();
