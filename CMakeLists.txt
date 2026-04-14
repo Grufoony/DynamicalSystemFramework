@@ -104,7 +104,7 @@ include(FetchContent)
 FetchContent_Declare(
   csv-parser
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser
-  GIT_TAG 3.1.0)
+  GIT_TAG 3.2.0)
 FetchContent_GetProperties(csv-parser)
 if(NOT csv-parser_POPULATED)
   FetchContent_MakeAvailable(csv-parser)
@@ -236,7 +236,7 @@ if(DSF_TESTS)
   FetchContent_Declare(
     doctest
     GIT_REPOSITORY https://github.com/doctest/doctest.git
-    GIT_TAG v2.4.12)
+    GIT_TAG v2.5.2)
   FetchContent_GetProperties(doctest)
   if(NOT doctest_POPULATED)
     FetchContent_MakeAvailable(doctest)
