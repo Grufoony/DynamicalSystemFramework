@@ -245,8 +245,7 @@ namespace dsf::mobility {
     /// @tparam DynamicsFunc A callable type that takes a const reference to a Street and returns a double representing the edge weight
     /// @param targetId The id of the target node
     /// @param getEdgeWeight A callable that takes a const reference to a Street and returns a double representing the edge weight
-    /// @param threshold Relative tolerance on full path cost from each node to the
-    /// target
+    /// @param threshold Relative tolerance on full path cost from each node to the target
     /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target
     /// @throws std::out_of_range if the target node does not exist
     template <typename DynamicsFunc>
