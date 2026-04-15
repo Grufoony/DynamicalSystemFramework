@@ -1946,3 +1946,90 @@ TEST_CASE("EdgeBetweennessCentrality") {
              doctest::Approx(1.0));
   }
 }
+
+TEST_CASE("computeEdgeKBetweennessCentralities") {
+  Road::setMeanVehicleLength(5.);
+  auto unitWeight = []([[maybe_unused]] auto const& pEdge) { return 1.0; };
+
+  SUBCASE("K=1 matches normalized standard edge BC on linear chain") {
+    RoadNetwork standardGraph{};
+    Street stdS01(0, std::make_pair(0, 1), 10.0);
+    Street stdS12(1, std::make_pair(1, 2), 10.0);
+    Street stdS23(2, std::make_pair(2, 3), 10.0);
+    standardGraph.addStreets(stdS01, stdS12, stdS23);
+
+    standardGraph.computeEdgeBetweennessCentralities(unitWeight);
+
+    size_t const nNodes = standardGraph.nNodes();
+    double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
+    REQUIRE(norm > 0.0);
+
+    auto const stdBc0 = standardGraph.edge(static_cast<Id>(0)).betweennessCentrality();
+    auto const stdBc1 = standardGraph.edge(static_cast<Id>(1)).betweennessCentrality();
+    auto const stdBc2 = standardGraph.edge(static_cast<Id>(2)).betweennessCentrality();
+    REQUIRE(stdBc0.has_value());
+    REQUIRE(stdBc1.has_value());
+    REQUIRE(stdBc2.has_value());
+
+    double const expected0 = *stdBc0 / norm;
+    double const expected1 = *stdBc1 / norm;
+    double const expected2 = *stdBc2 / norm;
+
+    RoadNetwork yenGraph{};
+    Street yenS01(0, std::make_pair(0, 1), 10.0);
+    Street yenS12(1, std::make_pair(1, 2), 10.0);
+    Street yenS23(2, std::make_pair(2, 3), 10.0);
+    yenGraph.addStreets(yenS01, yenS12, yenS23);
+
+    yenGraph.computeEdgeKBetweennessCentralities(unitWeight, 1);
+
+    auto const yenBc0 = yenGraph.edge(static_cast<Id>(0)).betweennessCentrality();
+    auto const yenBc1 = yenGraph.edge(static_cast<Id>(1)).betweennessCentrality();
+    auto const yenBc2 = yenGraph.edge(static_cast<Id>(2)).betweennessCentrality();
+    REQUIRE(yenBc0.has_value());
+    REQUIRE(yenBc1.has_value());
+    REQUIRE(yenBc2.has_value());
+
+    CHECK_EQ(*yenBc0, doctest::Approx(expected0));
+    CHECK_EQ(*yenBc1, doctest::Approx(expected1));
+    CHECK_EQ(*yenBc2, doctest::Approx(expected2));
+  }
+
+  SUBCASE("K=2 captures additional shortest-path alternatives") {
+    RoadNetwork graphK1{};
+    Street k1S01(0, std::make_pair(0, 1), 10.0);
+    Street k1S02(1, std::make_pair(0, 2), 10.0);
+    Street k1S13(2, std::make_pair(1, 3), 10.0);
+    Street k1S23(3, std::make_pair(2, 3), 10.0);
+    graphK1.addStreets(k1S01, k1S02, k1S13, k1S23);
+    graphK1.computeEdgeKBetweennessCentralities(unitWeight, 1);
+
+    RoadNetwork graphK2{};
+    Street k2S01(0, std::make_pair(0, 1), 10.0);
+    Street k2S02(1, std::make_pair(0, 2), 10.0);
+    Street k2S13(2, std::make_pair(1, 3), 10.0);
+    Street k2S23(3, std::make_pair(2, 3), 10.0);
+    graphK2.addStreets(k2S01, k2S02, k2S13, k2S23);
+    graphK2.computeEdgeKBetweennessCentralities(unitWeight, 2);
+
+    bool hasStrictIncrease = false;
+    Id const edgeIds[] = {static_cast<Id>(0),
+                          static_cast<Id>(1),
+                          static_cast<Id>(2),
+                          static_cast<Id>(3)};
+
+    for (Id const edgeId : edgeIds) {
+      auto const k1Bc = graphK1.edge(edgeId).betweennessCentrality();
+      auto const k2Bc = graphK2.edge(edgeId).betweennessCentrality();
+      REQUIRE(k1Bc.has_value());
+      REQUIRE(k2Bc.has_value());
+
+      CHECK(*k2Bc + 1e-12 >= *k1Bc);
+      if (*k2Bc > *k1Bc + 1e-12) {
+        hasStrictIncrease = true;
+      }
+    }
+
+    CHECK(hasStrictIncrease);
+  }
+}
