@@ -126,11 +126,20 @@ def get_cartography(
         if "lanes" in data:
             lanes_value = data["lanes"]
             if isinstance(lanes_value, list):
-                edge_updates["nlanes"] = max(
-                    min([int(v) for v in lanes_value]), 1
-                )  # Take max if list, ensure at least 1 lane
+                n = max(min([int(v) for v in lanes_value]), 1)
             else:
-                edge_updates["nlanes"] = max(int(lanes_value), 1)
+                n = max(int(lanes_value), 1)
+
+            # If the road is bidirectional, OSM reports total lanes (both directions).
+            # Since the DiGraph has one edge per direction, divide by 2.
+            oneway_val = data.get("oneway", False)
+            is_oneway = (
+                oneway_val is True or oneway_val == "yes" or oneway_val == "True"
+            )
+            if not is_oneway:
+                n = max(n // 2, 1)  # integer division, ensure at least 1
+
+            edge_updates["nlanes"] = n
             edge_updates["_remove_lanes"] = True
         else:
             edge_updates["nlanes"] = 1
