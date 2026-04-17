@@ -846,7 +846,7 @@ TEST_CASE("Dijkstra") {
     RoadNetwork graph{};
     graph.addStreets(s1, s2, s3, s4, s5);
 
-    auto const& pathMap =
+    auto const pathMap =
         graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(2));
     CHECK_EQ(pathMap.at(3).size(), 1);
@@ -864,7 +864,7 @@ TEST_CASE("Dijkstra") {
     RoadNetwork graph{};
     graph.addStreets(s1, s2, s3);
 
-    auto const& pathMap =
+    auto const pathMap =
         graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(2));
     CHECK_EQ(pathMap.at(0).size(), 1);
@@ -880,7 +880,7 @@ TEST_CASE("Dijkstra") {
     RoadNetwork graph{};
     graph.addStreets(s1, s2, s3);
 
-    auto const& pathMap =
+    auto const pathMap =
         graph.allPathsTo(2, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(2));
     CHECK_EQ(pathMap.at(0).size(), 1);
@@ -907,7 +907,7 @@ TEST_CASE("Dijkstra") {
     RoadNetwork graph{};
     graph.addStreets(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14);
 
-    auto const& pathMap =
+    auto const pathMap =
         graph.allPathsTo(4, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(4));
     CHECK_EQ(pathMap.at(0).size(), 1);
@@ -943,7 +943,7 @@ TEST_CASE("Dijkstra") {
     graph.addStreets(
         s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17, s18);
 
-    auto const& pathMap =
+    auto const pathMap =
         graph.allPathsTo(6, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(6));
     CHECK_EQ(pathMap.at(0).size(), 1);
@@ -983,7 +983,7 @@ TEST_CASE("Dijkstra") {
     graph.addStreets(
         s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17, s18);
 
-    auto const& pathMap =
+    auto const pathMap =
         graph.allPathsTo(4, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_FALSE(pathMap.contains(4));
     CHECK_EQ(pathMap.at(0).size(), 1);
@@ -1006,7 +1006,7 @@ TEST_CASE("Dijkstra") {
     RoadNetwork graph{};
     graph.addStreets(s1, s2, s3);
 
-    auto const& pathMap =
+    auto const pathMap =
         graph.allPathsTo(1, [](auto const& pEdge) { return pEdge.length(); });
     CHECK(pathMap.empty());
   }
@@ -1029,7 +1029,7 @@ TEST_CASE("Dijkstra") {
     CHECK_EQ(graph.nNodes(), 120);
     CHECK_EQ(graph.nEdges(), 436);
 
-    auto const& path =
+    auto const path =
         graph.allPathsTo(118, [](auto const& pEdge) { return pEdge.length(); });
     CHECK_EQ(path.size(), 119);
     CHECK_FALSE(path.contains(118));
@@ -1308,7 +1308,7 @@ TEST_CASE("ShortestPath") {
     RoadNetwork graph{};
     graph.addStreets(s1, s2, s3, s4, s5);
 
-    auto const& pathMap =
+    auto const pathMap =
         graph.allPathsTo(4, [](auto const& pEdge) { return pEdge.length(); }, 0.7);
     CHECK_EQ(pathMap.at(0).size(), 2);
   }

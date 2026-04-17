@@ -248,6 +248,9 @@ namespace dsf::mobility {
     /// @param threshold Relative tolerance on full path cost from each node to the target
     /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target
     /// @throws std::out_of_range if the target node does not exist
+    /// @details Keeps only transitions that strictly decrease the precomputed
+    ///          shortest distance to target. This makes the hop graph acyclic,
+    ///          so PathCollection::explode remains finite.
     template <typename DynamicsFunc>
       requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
     PathCollection allPathsTo(Id const targetId,
@@ -263,8 +266,11 @@ namespace dsf::mobility {
     /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target. Returns an empty map if no path exists
     /// @throws std::out_of_range if the source or target node does not exist
     /// @details Uses Dijkstra's algorithm to compute strict distances to target, then
-    ///          includes only next hops that belong to full source-to-target paths
-    ///          within the threshold budget.
+    ///          includes only transitions that both: (1) strictly decrease the
+    ///          target distance (acyclic), and (2) are consistent with shortest
+    ///          source-distance labels. The second constraint keeps the returned
+    ///          PathCollection sound when exploded, i.e. it avoids combining
+    ///          prefix-dependent hops into over-budget paths.
     template <typename DynamicsFunc>
       requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
     PathCollection shortestPath(Id const sourceId,
@@ -407,6 +413,56 @@ namespace dsf::mobility {
 
       return distToTarget;
     }
+
+    template <typename DynamicsFunc>
+      requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
+    std::unordered_map<Id, double> computeDistancesFromSource(
+        RoadNetwork const& graph, Id const sourceId, DynamicsFunc const& getEdgeWeight) {
+      if (!graph.nodes().contains(sourceId)) {
+        throw std::out_of_range(
+            std::format("Source node with id {} does not exist in the graph", sourceId));
+      }
+
+      std::unordered_map<Id, double> distFromSource;
+      distFromSource.reserve(graph.nNodes());
+      for (auto const& [nodeId, pNode] : graph.nodes()) {
+        (void)pNode;
+        distFromSource[nodeId] = std::numeric_limits<double>::infinity();
+      }
+
+      std::priority_queue<std::pair<double, Id>,
+                          std::vector<std::pair<double, Id>>,
+                          std::greater<>>
+          pq;
+
+      distFromSource[sourceId] = 0.0;
+      pq.push({0.0, sourceId});
+
+      while (!pq.empty()) {
+        auto const [currentDist, currentNode] = pq.top();
+        pq.pop();
+
+        if (currentDist > distFromSource[currentNode]) {
+          continue;
+        }
+
+        for (auto const& outEdgeId : graph.node(currentNode).outgoingEdges()) {
+          auto const& outEdge = graph.edge(outEdgeId);
+          if (outEdge.roadStatus() == RoadStatus::CLOSED) {
+            continue;
+          }
+
+          auto const neighborId = outEdge.target();
+          auto const candidateDistance = currentDist + getEdgeWeight(outEdge);
+          if (candidateDistance < distFromSource[neighborId]) {
+            distFromSource[neighborId] = candidateDistance;
+            pq.push({candidateDistance, neighborId});
+          }
+        }
+      }
+
+      return distFromSource;
+    }
   }  // namespace detail
 
   template <typename DynamicsFunc>
@@ -490,19 +546,20 @@ namespace dsf::mobility {
     }
 
     auto const sourceBudget = (1. + threshold) * sourceBestDistance;
+    auto const distFromSource = detail::computeDistancesFromSource(*this, sourceId, f);
 
-    PathCollection result;
+    PathCollection candidate;
+    std::unordered_map<Id, std::vector<Id>> reverseCandidate;
 
-    std::function<bool(Id, double)> buildPathsWithinBudget;
-    buildPathsWithinBudget = [&](Id const currentNode, double const prefixCost) -> bool {
-      if (currentNode == targetId) {
-        return true;
+    for (auto const& [nodeId, pNode] : this->nodes()) {
+      auto const nodeDistFromSource = distFromSource.at(nodeId);
+      auto const nodeDistToTarget = distToTarget.at(nodeId);
+      if (nodeDistFromSource == std::numeric_limits<double>::infinity() ||
+          nodeDistToTarget == std::numeric_limits<double>::infinity()) {
+        continue;
       }
 
-      auto const currentDistToTarget = distToTarget.at(currentNode);
-      bool hasValidPathToTarget{false};
-
-      for (auto const& outEdgeId : this->node(currentNode).outgoingEdges()) {
+      for (auto const& outEdgeId : pNode->outgoingEdges()) {
         auto const& outEdge = this->edge(outEdgeId);
         if (outEdge.roadStatus() == RoadStatus::CLOSED) {
           continue;
@@ -514,31 +571,111 @@ namespace dsf::mobility {
           continue;
         }
 
-        // Keep recursion acyclic and guaranteed to converge toward target.
-        if (nextDistToTarget + detail::kPathBudgetEpsilon >= currentDistToTarget) {
+        // Keep transitions acyclic and convergent for finite path expansion.
+        if (nextDistToTarget + detail::kPathBudgetEpsilon >= nodeDistToTarget) {
           continue;
         }
 
         auto const edgeWeight = f(outEdge);
-        auto const newPrefixCost = prefixCost + edgeWeight;
-        auto const optimisticCost = newPrefixCost + nextDistToTarget;
+        auto const nextDistFromSource = distFromSource.at(nextNodeId);
+        auto const projectedDistFromSource = nodeDistFromSource + edgeWeight;
+
+        // Keep intermediate transitions source-distance-consistent so all
+        // prefixes to a node share the same cost label. For target hops this
+        // constraint is unnecessary because no further expansion occurs.
+        if (nextNodeId != targetId &&
+            (projectedDistFromSource > nextDistFromSource + detail::kPathBudgetEpsilon ||
+             projectedDistFromSource + detail::kPathBudgetEpsilon < nextDistFromSource)) {
+          continue;
+        }
+
+        auto const optimisticCost = projectedDistFromSource + nextDistToTarget;
         if (optimisticCost > sourceBudget + detail::kPathBudgetEpsilon) {
           continue;
         }
 
-        if (buildPathsWithinBudget(nextNodeId, newPrefixCost)) {
-          auto& hops = result[currentNode];
-          if (std::find(hops.begin(), hops.end(), nextNodeId) == hops.end()) {
-            hops.push_back(nextNodeId);
+        auto& hops = candidate[nodeId];
+        if (std::find(hops.begin(), hops.end(), nextNodeId) == hops.end()) {
+          hops.push_back(nextNodeId);
+
+          auto& reverseHops = reverseCandidate[nextNodeId];
+          if (std::find(reverseHops.begin(), reverseHops.end(), nodeId) ==
+              reverseHops.end()) {
+            reverseHops.push_back(nodeId);
           }
-          hasValidPathToTarget = true;
+        }
+      }
+    }
+
+    std::unordered_set<Id> reachableFromSource;
+    std::vector<Id> stack{sourceId};
+    while (!stack.empty()) {
+      auto const currentNode = stack.back();
+      stack.pop_back();
+
+      if (!reachableFromSource.insert(currentNode).second) {
+        continue;
+      }
+
+      auto const it = candidate.find(currentNode);
+      if (it == candidate.end()) {
+        continue;
+      }
+
+      for (auto const nextNodeId : it->second) {
+        if (!reachableFromSource.contains(nextNodeId)) {
+          stack.push_back(nextNodeId);
+        }
+      }
+    }
+
+    std::unordered_set<Id> canReachTarget;
+    stack.push_back(targetId);
+    while (!stack.empty()) {
+      auto const currentNode = stack.back();
+      stack.pop_back();
+
+      if (!canReachTarget.insert(currentNode).second) {
+        continue;
+      }
+
+      auto const it = reverseCandidate.find(currentNode);
+      if (it == reverseCandidate.end()) {
+        continue;
+      }
+
+      for (auto const previousNodeId : it->second) {
+        if (!canReachTarget.contains(previousNodeId)) {
+          stack.push_back(previousNodeId);
+        }
+      }
+    }
+
+    if (!reachableFromSource.contains(targetId)) {
+      return PathCollection{};
+    }
+
+    PathCollection result;
+    for (auto const& [nodeId, hops] : candidate) {
+      if (!reachableFromSource.contains(nodeId) || !canReachTarget.contains(nodeId)) {
+        continue;
+      }
+
+      std::vector<Id> filteredHops;
+      filteredHops.reserve(hops.size());
+      for (auto const nextNodeId : hops) {
+        if (reachableFromSource.contains(nextNodeId) &&
+            canReachTarget.contains(nextNodeId) &&
+            std::find(filteredHops.begin(), filteredHops.end(), nextNodeId) ==
+                filteredHops.end()) {
+          filteredHops.push_back(nextNodeId);
         }
       }
 
-      return hasValidPathToTarget;
-    };
-
-    (void)buildPathsWithinBudget(sourceId, 0.0);
+      if (!filteredHops.empty()) {
+        result[nodeId] = std::move(filteredHops);
+      }
+    }
 
     return result;
   }
