@@ -282,7 +282,8 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "    targetId (int): The id of the target node\n"
           "    weightFunction (PathWeight): The weight function to use (LENGTH, "
           "TRAVELTIME, or WEIGHT)\n"
-          "    threshold (float): A threshold value to consider alternative paths\n\n"
+          "    threshold (float): Relative tolerance applied to the full "
+          "source-to-target path cost\n\n"
           "Returns:\n"
           "    PathCollection: A map where each key is a node id and the value is a "
           "vector of next hop node ids toward the target")

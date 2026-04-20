@@ -84,7 +84,7 @@ namespace dsf::mobility {
     }
     auto const oldSize{pItinerary->path().size()};
 
-    auto const& path{this->graph().allPathsTo(
+    auto const path{this->graph().allPathsTo(
         pItinerary->destination(), m_weightFunction, m_weightTreshold)};
     pItinerary->setPath(path);
     auto const newSize{pItinerary->path().size()};
