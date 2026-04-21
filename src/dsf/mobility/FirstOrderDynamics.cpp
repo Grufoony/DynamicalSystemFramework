@@ -280,16 +280,12 @@ namespace dsf::mobility {
     std::set<Id> forbiddenTurns;
     double speedCurrent{1.0};
     double lengthCurrent{1.0};
-    double stationaryWeightCurrent = 1.0;
-    double bcCurrent{1.0};
     if (pAgent->streetId().has_value()) {
       auto const* pStreetCurrent{&this->graph().edge(pAgent->streetId().value())};
       previousNodeId = pStreetCurrent->source();
       forbiddenTurns = pStreetCurrent->forbiddenTurns();
       speedCurrent = pStreetCurrent->maxSpeed();
       lengthCurrent = pStreetCurrent->length();
-      stationaryWeightCurrent = pStreetCurrent->stationaryWeight();
-      bcCurrent = pStreetCurrent->betweennessCentrality().value_or(1.0);
     }
 
     // Get path targets for non-random agents
@@ -335,13 +331,8 @@ namespace dsf::mobility {
       // Calculate base probability
       auto const speedNext{pStreetOut->maxSpeed()};
       auto const lengthNext{pStreetOut->length()};
-      auto const bcNext{pStreetOut->betweennessCentrality().value_or(1.0)};
-      double const stationaryWeightNext = pStreetOut->stationaryWeight();
-      auto const weightRatio{stationaryWeightNext /
-                             stationaryWeightCurrent};  // SQRT (p_i / p_j)
       double probability =
-          std::sqrt((bcCurrent * bcNext) * (speedCurrent / lengthCurrent) *
-                    (speedNext / lengthNext) * weightRatio);
+          std::sqrt((speedCurrent / lengthCurrent) * (speedNext / lengthNext));
 
       // Apply error probability for non-random agents
       if (this->m_errorProbability.has_value() && !pathTargets.empty()) {
@@ -1273,9 +1264,6 @@ namespace dsf::mobility {
       case PathWeight::TRAVELTIME:
         insertSimStmt.bind(4, "TRAVELTIME");
         break;
-      case PathWeight::WEIGHT:
-        insertSimStmt.bind(4, "WEIGHT");
-        break;
     }
     insertSimStmt.bind(5, this->m_weightTreshold);
     if (this->m_errorProbability.has_value()) {
@@ -1429,10 +1417,6 @@ namespace dsf::mobility {
         };
         m_weightTreshold = weightTreshold.value_or(0.0069);
         break;
-      case PathWeight::WEIGHT:
-        m_weightFunction = [](Street const& pStreet) { return pStreet.weight(); };
-        m_weightTreshold = weightTreshold.value_or(1.);
-        break;
       default:
         spdlog::error("Invalid weight function. Defaulting to traveltime");
         m_weightFunction = [this](Street const& pStreet) {
@@ -1448,17 +1432,9 @@ namespace dsf::mobility {
     m_originNodes.reserve(originNodes.size());
     if (originNodes.empty()) {
       // If no origin nodes are provided, try to set origin nodes basing on streets' stationary weights
-      double totalStationaryWeight = 0.0;
+      auto const nEdges{this->graph().nEdges()};
       for (auto const& [edgeId, pEdge] : this->graph().edges()) {
-        auto const& weight = pEdge->stationaryWeight();
-        if (weight <= 0.) {
-          continue;
-        }
-        m_originNodes.push_back({pEdge->source(), weight});
-        totalStationaryWeight += weight;
-      }
-      for (auto& [nodeId, weight] : m_originNodes) {
-        weight /= totalStationaryWeight;
+        m_originNodes.push_back({pEdge->source(), 1. / nEdges});
       }
       return;
     }

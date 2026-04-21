@@ -38,7 +38,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
   pybind11::enum_<dsf::PathWeight>(mobility, "PathWeight")
       .value("LENGTH", dsf::PathWeight::LENGTH)
       .value("TRAVELTIME", dsf::PathWeight::TRAVELTIME)
-      .value("WEIGHT", dsf::PathWeight::WEIGHT)
       .export_values();
 
   // Bind TrafficLightOptimization enum
@@ -318,8 +317,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
                       return street.length();
                     case dsf::PathWeight::TRAVELTIME:
                       return street.length() / street.maxSpeed();
-                    case dsf::PathWeight::WEIGHT:
-                      return street.weight();
                     default:
                       return street.length() / street.maxSpeed();
                   }
@@ -349,8 +346,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
                 return street.length();
               } else if (weight == "traveltime") {
                 return street.length() / street.maxSpeed();
-              } else if (weight == "weight") {
-                return street.weight();
               } else {
                 throw std::invalid_argument(
                     "Invalid weight function: '" + weight +
@@ -375,8 +370,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
                 return street.length();
               } else if (weight == "traveltime") {
                 return street.length() / street.maxSpeed();
-              } else if (weight == "weight") {
-                return street.weight();
               } else {
                 throw std::invalid_argument(
                     "Invalid weight function: '" + weight +
