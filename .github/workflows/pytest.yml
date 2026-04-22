@@ -26,7 +26,7 @@ jobs:
         sudo apt update
         sudo apt install -y cmake build-essential doxygen libtbb-dev
         python -m pip install --upgrade pip
-        pip install pytest pytest-cov
+        pip install pytest pytest-cov pandas polars
     
     - name: Install package
       run: |
@@ -34,4 +34,4 @@ jobs:
     
     - name: Run tests with pytest
       run: |
-        pytest test/*py -v --cov=src/dsf --cov-report=term-missing
+        pytest test -v --cov=src/dsf --cov-report=term-missing -o "python_files=Test_*.py test_*.py Bind_*.py"
