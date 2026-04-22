@@ -10,7 +10,6 @@
 #include "../utility/queue.hpp"
 #include "../utility/Typedef.hpp"
 
-#include <any>
 #include <functional>
 #include <utility>
 #include <stdexcept>
@@ -19,6 +18,8 @@
 #include <format>
 #include <cassert>
 #include <string>
+#include <unordered_map>
+#include <variant>
 
 namespace dsf {
   /// @brief The Node class represents the concept of a node in the network.
@@ -29,7 +30,10 @@ namespace dsf {
     std::string m_name;
     std::vector<Id> m_ingoingEdges;
     std::vector<Id> m_outgoingEdges;
-    std::unordered_map<std::string, std::any> m_attributes;
+    std::unordered_map<
+        std::string,
+        std::variant<std::monostate, bool, std::int64_t, double, std::string>>
+        m_attributes;
 
   public:
     /// @brief Construct a new Node object with capacity 1
@@ -102,7 +106,10 @@ namespace dsf {
     /// @brief Set an attribute for the node
     /// @param name The attribute's name
     /// @param value The attribute's value
-    inline void setAttribute(std::string const& name, std::any const& value) {
+    inline void setAttribute(
+        std::string const& name,
+        std::variant<std::monostate, bool, std::int64_t, double, std::string> const&
+            value) {
       m_attributes[name] = value;
     }
 
@@ -122,23 +129,20 @@ namespace dsf {
     /// @return std::vector<Id> A vector of the node's outgoing edge ids
     inline auto const& outgoingEdges() const noexcept { return m_outgoingEdges; }
     /// @brief Get the node's attributes
-    /// @return std::unordered_map<std::string, std::any> A map of the node's attributes, where the key is the attribute's name and the value is the attribute's value
+    /// @return std::unordered_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> A map of the node's attributes, where the key is the attribute's name and the value is the attribute's value
     inline auto const& attributes() const noexcept { return m_attributes; }
     /// @brief Get a specific attribute of the node
     /// @tparam T The type of the attribute's value
     /// @param name The attribute's name
     /// @return std::optional<T> The attribute's value if it exists and can be cast to the specified type, std::nullopt otherwise
     template <typename T>
-    inline std::optional<T> getAttribute(std::string_view const name) const {
+    inline std::optional<T> getAttribute(std::string const& name) const {
       auto it = m_attributes.find(name);
-      if (it != m_attributes.end()) {
-        try {
-          return std::any_cast<T>(it->second);
-        } catch (const std::bad_any_cast&) {
-          return std::nullopt;
-        }
+      if (it == m_attributes.end()) {
+        return std::nullopt;
       }
-      return std::nullopt;
+      const T* value = std::get_if<T>(&(it->second));
+      return value ? std::optional<T>(*value) : std::nullopt;
     }
   };
 };  // namespace dsf

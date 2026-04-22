@@ -36,7 +36,9 @@ namespace dsf {
       m_angle = 0.;
     }
   }
-  void Edge::setAttribute(std::string const& name, std::any const& value) {
+  void Edge::setAttribute(
+      std::string const& name,
+      std::variant<std::monostate, bool, std::int64_t, double, std::string> const& value) {
     m_attributes[name] = value;
   }
 

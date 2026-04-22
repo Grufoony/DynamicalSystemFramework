@@ -4,12 +4,12 @@
 #include "../geometry/PolyLine.hpp"
 #include "../utility/Typedef.hpp"
 
-#include <any>
 #include <format>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace dsf {
@@ -19,7 +19,10 @@ namespace dsf {
     Id m_id;
     std::pair<Id, Id> m_nodePair;
     double m_angle;
-    std::unordered_map<std::string, std::any> m_attributes;
+    std::unordered_map<
+        std::string,
+        std::variant<std::monostate, bool, std::int64_t, double, std::string>>
+        m_attributes;
 
     void m_setAngle(geometry::Point srcNodeCoordinates,
                     geometry::Point dstNodeCoordinates);
@@ -41,7 +44,10 @@ namespace dsf {
     /// @brief Set an attribute for the edge
     /// @param name The attribute's name
     /// @param value The attribute's value
-    void setAttribute(std::string const& name, std::any const& value);
+    void setAttribute(
+        std::string const& name,
+        std::variant<std::monostate, bool, std::int64_t, double, std::string> const&
+            value);
 
     /// @brief Get the edge's id
     /// @return Id The edge's id
@@ -64,23 +70,20 @@ namespace dsf {
     /// @return double The edge's angle, in radians
     inline auto angle() const { return m_angle; }
     /// @brief Get the edge's attributes
-    /// @return std::unordered_map<std::string, std::any> The edge's attributes, where the key is the attribute's name and the value is the attribute's value
+    /// @return std::unordered_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> The edge's attributes, where the key is the attribute's name and the value is the attribute's value
     inline auto const& attributes() const { return m_attributes; }
     /// @brief Get an attribute of the edge by name
     /// @tparam T The expected type of the attribute's value
     /// @param name The attribute's name
     /// @return std::optional<T> The attribute's value if it exists and can be cast to the expected type, std::nullopt otherwise
     template <typename T>
-    inline std::optional<T> getAttribute(std::string_view const name) const {
+    inline std::optional<T> getAttribute(std::string const& name) const {
       auto it = m_attributes.find(name);
-      if (it != m_attributes.end()) {
-        try {
-          return std::any_cast<T>(it->second);
-        } catch (const std::bad_any_cast&) {
-          return std::nullopt;
-        }
+      if (it == m_attributes.end()) {
+        return std::nullopt;
       }
-      return std::nullopt;
+      const T* value = std::get_if<T>(&(it->second));
+      return value ? std::optional<T>(*value) : std::nullopt;
     }
 
     virtual bool isFull() const = 0;
@@ -94,10 +97,15 @@ struct std::formatter<dsf::Edge> {
   constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
   template <typename FormatContext>
   auto format(const dsf::Edge& edge, FormatContext&& ctx) const {
+    std::string strAttributes;
+    for (const auto& [key, value] : edge.attributes()) {
+      strAttributes += std::format(" ,{}={}", key, value);
+    }
     return std::format_to(ctx.out(),
-                          "Edge(id={}, source={}, target={})",
+                          "Edge(id={}, source={}, target={}{})",
                           edge.id(),
                           edge.source(),
-                          edge.target());
+                          edge.target(),
+                          strAttributes);
   }
 };
