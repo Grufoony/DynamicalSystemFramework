@@ -541,13 +541,10 @@ TEST_CASE("FirstOrderDynamics") {
       RoadNetwork graph;
       graph.addStreets(s1, s2, s3, s4);
       FirstOrderDynamics dynamics{graph, false, 69};
-      dynamics.setWeightFunction(
-          dsf::PathWeight::CUSTOM,
-          0.0,
-          [](Street const& street) {
-            auto const customCost = street.getAttribute<double>("custom_cost");
-            return customCost.value_or(street.length());
-          });
+      dynamics.setWeightFunction(dsf::PathWeight::CUSTOM, 0.0, [](Street const& street) {
+        auto const customCost = street.getAttribute<double>("custom_cost");
+        return customCost.value_or(street.length());
+      });
       dynamics.addItinerary(0, 2);
 
       WHEN("We update the paths") {
@@ -585,12 +582,11 @@ TEST_CASE("FirstOrderDynamics") {
 
       WHEN("A built-in path weight receives an extra callable") {
         THEN("An invalid_argument exception is thrown") {
-          CHECK_THROWS_AS(
-              dynamics.setWeightFunction(
-                  dsf::PathWeight::LENGTH,
-                  std::nullopt,
-                  [](Street const& street) { return street.length(); }),
-              std::invalid_argument);
+          CHECK_THROWS_AS(dynamics.setWeightFunction(
+                              dsf::PathWeight::LENGTH,
+                              std::nullopt,
+                              [](Street const& street) { return street.length(); }),
+                          std::invalid_argument);
         }
       }
     }

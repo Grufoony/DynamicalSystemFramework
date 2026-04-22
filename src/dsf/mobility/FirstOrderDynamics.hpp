@@ -340,8 +340,8 @@ namespace dsf::mobility {
     ///          properties or imported attributes.
     template <typename... TArgs>
     void setWeightFunction(PathWeight const pathWeight,
-                 std::optional<double> weightThreshold = std::nullopt,
-                 TArgs&&... args);
+                           std::optional<double> weightThreshold = std::nullopt,
+                           TArgs&&... args);
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
