@@ -1838,20 +1838,24 @@ TEST_CASE("BetweennessCentrality") {
     graph.computeBetweennessCentralities(unitWeight);
 
     // Node 0: source only, never an intermediate -> BC = 0
-    REQUIRE(graph.node(0).betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(0).betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(0).getAttribute<double>("betweennessCentrality").has_value());
+    CHECK_EQ(*graph.node(0).getAttribute<double>("betweennessCentrality"),
+             doctest::Approx(0.0));
 
     // Node 1: on path 0->2 and 0->3 -> BC = 2
-    REQUIRE(graph.node(1).betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(1).betweennessCentrality(), doctest::Approx(2.0));
+    REQUIRE(graph.node(1).getAttribute<double>("betweennessCentrality").has_value());
+    CHECK_EQ(*graph.node(1).getAttribute<double>("betweennessCentrality"),
+             doctest::Approx(2.0));
 
     // Node 2: on path 0->3 and 1->3 -> BC = 2
-    REQUIRE(graph.node(2).betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(2).betweennessCentrality(), doctest::Approx(2.0));
+    REQUIRE(graph.node(2).getAttribute<double>("betweennessCentrality").has_value());
+    CHECK_EQ(*graph.node(2).getAttribute<double>("betweennessCentrality"),
+             doctest::Approx(2.0));
 
     // Node 3: sink only, never an intermediate -> BC = 0
-    REQUIRE(graph.node(3).betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(3).betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(3).getAttribute<double>("betweennessCentrality").has_value());
+    CHECK_EQ(*graph.node(3).getAttribute<double>("betweennessCentrality"),
+             doctest::Approx(0.0));
   }
 
   SUBCASE("Star topology: center node") {
@@ -1866,8 +1870,9 @@ TEST_CASE("BetweennessCentrality") {
     graph.computeBetweennessCentralities(unitWeight);
 
     for (Id i = 0; i <= 3; ++i) {
-      REQUIRE(graph.node(i).betweennessCentrality().has_value());
-      CHECK_EQ(*graph.node(i).betweennessCentrality(), doctest::Approx(0.0));
+      REQUIRE(graph.node(i).getAttribute<double>("betweennessCentrality").has_value());
+      CHECK_EQ(*graph.node(i).getAttribute<double>("betweennessCentrality"),
+               doctest::Approx(0.0));
     }
   }
 
@@ -1891,12 +1896,14 @@ TEST_CASE("BetweennessCentrality") {
         [](auto const& pEdge) { return pEdge.length(); });
 
     // Node 1 is on the only shortest path 0->3 -> BC = 1
-    REQUIRE(graph.node(1).betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(1).betweennessCentrality(), doctest::Approx(1.0));
+    REQUIRE(graph.node(1).getAttribute<double>("betweennessCentrality").has_value());
+    CHECK_EQ(*graph.node(1).getAttribute<double>("betweennessCentrality"),
+             doctest::Approx(1.0));
 
     // Node 2 is not on any shortest path between other pairs -> BC = 0
-    REQUIRE(graph.node(2).betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(2).betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(2).getAttribute<double>("betweennessCentrality").has_value());
+    CHECK_EQ(*graph.node(2).getAttribute<double>("betweennessCentrality"),
+             doctest::Approx(0.0));
   }
 
   SUBCASE("Single edge") {
@@ -1906,10 +1913,12 @@ TEST_CASE("BetweennessCentrality") {
 
     graph.computeBetweennessCentralities(unitWeight);
 
-    REQUIRE(graph.node(0).betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(0).betweennessCentrality(), doctest::Approx(0.0));
-    REQUIRE(graph.node(1).betweennessCentrality().has_value());
-    CHECK_EQ(*graph.node(1).betweennessCentrality(), doctest::Approx(0.0));
+    REQUIRE(graph.node(0).getAttribute<double>("betweennessCentrality").has_value());
+    CHECK_EQ(*graph.node(0).getAttribute<double>("betweennessCentrality"),
+             doctest::Approx(0.0));
+    REQUIRE(graph.node(1).getAttribute<double>("betweennessCentrality").has_value());
+    CHECK_EQ(*graph.node(1).getAttribute<double>("betweennessCentrality"),
+             doctest::Approx(0.0));
   }
 
   SUBCASE("Disconnected graph") {
@@ -1923,8 +1932,9 @@ TEST_CASE("BetweennessCentrality") {
     graph.computeBetweennessCentralities(unitWeight);
 
     for (Id i = 0; i <= 3; ++i) {
-      REQUIRE(graph.node(i).betweennessCentrality().has_value());
-      CHECK_EQ(*graph.node(i).betweennessCentrality(), doctest::Approx(0.0));
+      REQUIRE(graph.node(i).getAttribute<double>("betweennessCentrality").has_value());
+      CHECK_EQ(*graph.node(i).getAttribute<double>("betweennessCentrality"),
+               doctest::Approx(0.0));
     }
   }
 }
@@ -1945,16 +1955,28 @@ TEST_CASE("EdgeBetweennessCentrality") {
 
     graph.computeEdgeBetweennessCentralities(unitWeight);
 
-    REQUIRE(graph.edge(static_cast<Id>(0)).betweennessCentrality().has_value());
-    CHECK_EQ(graph.edge(static_cast<Id>(0)).betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(0))
+                .getAttribute<double>("betweennessCentrality")
+                .has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(0))
+                 .getAttribute<double>("betweennessCentrality")
+                 .value(),
              doctest::Approx(3.0));
 
-    REQUIRE(graph.edge(static_cast<Id>(1)).betweennessCentrality().has_value());
-    CHECK_EQ(graph.edge(static_cast<Id>(1)).betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(1))
+                .getAttribute<double>("betweennessCentrality")
+                .has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(1))
+                 .getAttribute<double>("betweennessCentrality")
+                 .value(),
              doctest::Approx(4.0));
 
-    REQUIRE(graph.edge(static_cast<Id>(2)).betweennessCentrality().has_value());
-    CHECK_EQ(graph.edge(static_cast<Id>(2)).betweennessCentrality(),
+    REQUIRE(graph.edge(static_cast<Id>(2))
+                .getAttribute<double>("betweennessCentrality")
+                .has_value());
+    CHECK_EQ(graph.edge(static_cast<Id>(2))
+                 .getAttribute<double>("betweennessCentrality")
+                 .value(),
              doctest::Approx(3.0));
   }
 
@@ -1978,24 +2000,36 @@ TEST_CASE("EdgeBetweennessCentrality") {
         [](auto const& pEdge) { return pEdge.length(); });
 
     // Edge 0->1: used by 0->1 and 0->3 (via 0->1->3) => EBC = 2
-    REQUIRE(graph.edge(static_cast<Id>(0)).betweennessCentrality().has_value());
-    CHECK_EQ(graph.edge(static_cast<Id>(0)).betweennessCentrality(),
-             doctest::Approx(2.0));
+    REQUIRE(graph.edge(static_cast<Id>(0))
+                .getAttribute<double>("betweennessCentrality")
+                .has_value());
+    CHECK_EQ(
+        *graph.edge(static_cast<Id>(0)).getAttribute<double>("betweennessCentrality"),
+        doctest::Approx(2.0));
 
     // Edge 0->2: used only by 0->2 => EBC = 1
-    REQUIRE(graph.edge(static_cast<Id>(1)).betweennessCentrality().has_value());
-    CHECK_EQ(graph.edge(static_cast<Id>(1)).betweennessCentrality(),
-             doctest::Approx(1.0));
+    REQUIRE(graph.edge(static_cast<Id>(1))
+                .getAttribute<double>("betweennessCentrality")
+                .has_value());
+    CHECK_EQ(
+        *graph.edge(static_cast<Id>(1)).getAttribute<double>("betweennessCentrality"),
+        doctest::Approx(1.0));
 
     // Edge 1->3: used by 1->3 and 0->3 => EBC = 2
-    REQUIRE(graph.edge(static_cast<Id>(2)).betweennessCentrality().has_value());
-    CHECK_EQ(graph.edge(static_cast<Id>(2)).betweennessCentrality(),
-             doctest::Approx(2.0));
+    REQUIRE(graph.edge(static_cast<Id>(2))
+                .getAttribute<double>("betweennessCentrality")
+                .has_value());
+    CHECK_EQ(
+        *graph.edge(static_cast<Id>(2)).getAttribute<double>("betweennessCentrality"),
+        doctest::Approx(2.0));
 
     // Edge 2->3: used only by 2->3 => EBC = 1
-    REQUIRE(graph.edge(static_cast<Id>(3)).betweennessCentrality().has_value());
-    CHECK_EQ(graph.edge(static_cast<Id>(3)).betweennessCentrality(),
-             doctest::Approx(1.0));
+    REQUIRE(graph.edge(static_cast<Id>(3))
+                .getAttribute<double>("betweennessCentrality")
+                .has_value());
+    CHECK_EQ(
+        *graph.edge(static_cast<Id>(3)).getAttribute<double>("betweennessCentrality"),
+        doctest::Approx(1.0));
   }
 
   SUBCASE("Single edge") {
@@ -2006,8 +2040,11 @@ TEST_CASE("EdgeBetweennessCentrality") {
     graph.computeEdgeBetweennessCentralities(unitWeight);
 
     // Only one path: 0->1, using edge 0 => EBC = 1
-    REQUIRE(graph.edge(static_cast<Id>(0)).betweennessCentrality().has_value());
-    CHECK_EQ(graph.edge(static_cast<Id>(0)).betweennessCentrality(),
-             doctest::Approx(1.0));
+    REQUIRE(graph.edge(static_cast<Id>(0))
+                .getAttribute<double>("betweennessCentrality")
+                .has_value());
+    CHECK_EQ(
+        *graph.edge(static_cast<Id>(0)).getAttribute<double>("betweennessCentrality"),
+        doctest::Approx(1.0));
   }
 }

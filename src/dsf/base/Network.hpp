@@ -184,7 +184,7 @@ namespace dsf {
     requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
   void Network<node_t, edge_t>::computeBetweennessCentralities(WeightFunc getEdgeWeight) {
     for (auto& [nodeId, pNode] : m_nodes) {
-      pNode->setBetweennessCentrality(0.0);
+      pNode->setAttribute("betweennessCentrality", 0.0);
     }
 
     for (auto const& [sourceId, sourceNode] : m_nodes) {
@@ -249,8 +249,10 @@ namespace dsf {
           delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w]);
         }
         if (w != sourceId) {
-          auto currentBC = m_nodes.at(w)->betweennessCentrality();
-          m_nodes.at(w)->setBetweennessCentrality(*currentBC + delta[w]);
+          auto currentBC = m_nodes.at(w)
+                               ->template getAttribute<double>("betweennessCentrality")
+                               .value_or(0.0);
+          m_nodes.at(w)->setAttribute("betweennessCentrality", currentBC + delta[w]);
         }
       }
     }
@@ -263,7 +265,7 @@ namespace dsf {
   void Network<node_t, edge_t>::computeEdgeBetweennessCentralities(
       WeightFunc getEdgeWeight) {
     for (auto& [edgeId, pEdge] : m_edges) {
-      pEdge->setBetweennessCentrality(0.0);
+      pEdge->setAttribute("betweennessCentrality", 0.0);
     }
 
     for (auto const& [sourceId, sourceNode] : m_nodes) {
@@ -327,8 +329,10 @@ namespace dsf {
         for (auto const& [v, eId] : P[w]) {
           double c = (sigma[v] / sigma[w]) * (1.0 + delta[w]);
           delta[v] += c;
-          auto currentBC = m_edges.at(eId)->betweennessCentrality();
-          m_edges.at(eId)->setBetweennessCentrality(*currentBC + c);
+          auto currentBC = m_edges.at(eId)
+                               ->template getAttribute<double>("betweennessCentrality")
+                               .value_or(0.0);
+          m_edges.at(eId)->setAttribute("betweennessCentrality", currentBC + c);
         }
       }
     }

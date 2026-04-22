@@ -123,6 +123,7 @@ namespace dsf::mobility {
     /// - coilcode: An integer code to identify the coil located on the street
     /// - customWeight: will be stored in the `weight` parameter of the Edge class. You can use it for the shortest path via dsf::weight_functions::customWeight.
     /// - priority: boolean, whether the street is a priority road or not. This information can be used in the traffic light cycle generation.
+    /// - any additional CSV column will be imported as an edge attribute, with automatic type inference among bool, int64, double, string and null.
     /// @param args Additional arguments
     template <typename... TArgs>
     void importEdges(const std::string& fileName, TArgs&&... args);
@@ -226,10 +227,6 @@ namespace dsf::mobility {
     /// @param name The name to match
     /// @param factor The factor to multiply the capacity by
     void changeStreetCapacityByName(std::string const& name, double const factor);
-
-    /// @brief Set the streets' stationary weights
-    /// @param streetWeights A map where the key is the street id and the value is the street stationary weight. If a street id is not present in the map, its stationary weight is set to 1.0.
-    void setStreetStationaryWeights(std::unordered_map<Id, double> const& streetWeights);
 
     /// @brief Get a street from the graph
     /// @param source The source node

@@ -96,9 +96,24 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("length",
            &dsf::mobility::Street::length,
            dsf::g_docstrings.at("dsf::mobility::Road::length").c_str())
+      .def("nLanes",
+           &dsf::mobility::Street::nLanes,
+           dsf::g_docstrings.at("dsf::mobility::Road::nLanes").c_str())
       .def("maxSpeed",
            &dsf::mobility::Street::maxSpeed,
-           dsf::g_docstrings.at("dsf::mobility::Road::maxSpeed").c_str());
+           dsf::g_docstrings.at("dsf::mobility::Road::maxSpeed").c_str())
+      .def("capacity",
+           &dsf::mobility::Street::capacity,
+           dsf::g_docstrings.at("dsf::mobility::Road::capacity").c_str())
+      .def("transportCapacity",
+           &dsf::mobility::Street::transportCapacity,
+           dsf::g_docstrings.at("dsf::mobility::Road::transportCapacity").c_str())
+      .def("roadStatus",
+           &dsf::mobility::Street::roadStatus,
+           dsf::g_docstrings.at("dsf::mobility::Road::roadStatus").c_str())
+      .def("attributes",
+           &dsf::mobility::Street::attributes,
+           dsf::g_docstrings.at("dsf::Edge::attributes").c_str());
 
   // Bind RoadJunction class to mobility submodule
   pybind11::class_<dsf::mobility::RoadJunction>(mobility, "RoadJunction")
@@ -111,10 +126,12 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("capacity",
            &dsf::mobility::RoadJunction::capacity,
            dsf::g_docstrings.at("dsf::mobility::RoadJunction::capacity").c_str())
-      .def(
-          "transportCapacity",
-          &dsf::mobility::RoadJunction::transportCapacity,
-          dsf::g_docstrings.at("dsf::mobility::RoadJunction::transportCapacity").c_str());
+      .def("transportCapacity",
+           &dsf::mobility::RoadJunction::transportCapacity,
+           dsf::g_docstrings.at("dsf::mobility::RoadJunction::transportCapacity").c_str())
+      .def("attributes",
+           &dsf::mobility::RoadJunction::attributes,
+           dsf::g_docstrings.at("dsf::Node::attributes").c_str());
 
   // Bind Measurement to main module (can be used across different contexts)
   pybind11::class_<dsf::Measurement<double>>(m, "Measurement")
@@ -197,11 +214,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("autoAssignRoadPriorities",
            &dsf::mobility::RoadNetwork::autoAssignRoadPriorities,
            dsf::g_docstrings.at("dsf::mobility::RoadNetwork::autoAssignRoadPriorities")
-               .c_str())
-      .def("setStreetStationaryWeights",
-           &dsf::mobility::RoadNetwork::setStreetStationaryWeights,
-           pybind11::arg("weights"),
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::setStreetStationaryWeights")
                .c_str())
       .def(
           "importEdges",
@@ -392,7 +404,8 @@ PYBIND11_MODULE(dsf_cpp, m) {
           [](const dsf::mobility::RoadNetwork& self) {
             std::unordered_map<dsf::Id, std::optional<double>> result;
             for (auto const& [nodeId, pNode] : self.nodes()) {
-              result[nodeId] = pNode->betweennessCentrality();
+              result[nodeId] =
+                  pNode->template getAttribute<double>("betweennessCentrality");
             }
             return result;
           },
@@ -405,7 +418,8 @@ PYBIND11_MODULE(dsf_cpp, m) {
           [](const dsf::mobility::RoadNetwork& self) {
             std::unordered_map<dsf::Id, std::optional<double>> result;
             for (auto const& [edgeId, pEdge] : self.edges()) {
-              result[edgeId] = pEdge->betweennessCentrality();
+              result[edgeId] =
+                  pEdge->template getAttribute<double>("betweennessCentrality");
             }
             return result;
           },
