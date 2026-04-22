@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pytest
@@ -47,7 +47,7 @@ def test_dynamics_set_init_time_accepts_epoch_and_datetime(dynamics):
     dynamics.setInitTime(epoch)
     assert dynamics.time() == epoch
 
-    dt = datetime.fromtimestamp(epoch + 3600)
+    dt = datetime.fromtimestamp(epoch + 3600, tz=timezone.utc)
     dynamics.setInitTime(dt)
     assert dynamics.time() == int(dt.timestamp())
 
