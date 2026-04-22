@@ -78,6 +78,45 @@ PYBIND11_MODULE(dsf_cpp, m) {
 
   m.def("get_log_level", &spdlog::get_level, "Get the current global log level");
 
+  // Bind Street class to mobility submodule
+  pybind11::class_<dsf::mobility::Street>(mobility, "Street")
+      .def(
+          "id", &dsf::mobility::Street::id, dsf::g_docstrings.at("dsf::Edge::id").c_str())
+      .def("source",
+           &dsf::mobility::Street::source,
+           dsf::g_docstrings.at("dsf::Edge::source").c_str())
+      .def("target",
+           &dsf::mobility::Street::target,
+           dsf::g_docstrings.at("dsf::Edge::target").c_str())
+      .def("geometry",
+           &dsf::mobility::Street::geometry,
+           dsf::g_docstrings.at("dsf::Edge::geometry").c_str())
+      .def("name",
+           &dsf::mobility::Street::name,
+           dsf::g_docstrings.at("dsf::mobility::Road::name").c_str())
+      .def("length",
+           &dsf::mobility::Street::length,
+           dsf::g_docstrings.at("dsf::mobility::Road::length").c_str())
+      .def("maxSpeed",
+           &dsf::mobility::Street::maxSpeed,
+           dsf::g_docstrings.at("dsf::mobility::Road::maxSpeed").c_str());
+
+  // Bind RoadJunction class to mobility submodule
+  pybind11::class_<dsf::mobility::RoadJunction>(mobility, "RoadJunction")
+      .def("id",
+           &dsf::mobility::RoadJunction::id,
+           dsf::g_docstrings.at("dsf::Node::id").c_str())
+      .def("geometry",
+           &dsf::mobility::RoadJunction::geometry,
+           dsf::g_docstrings.at("dsf::Node::geometry").c_str())
+      .def("capacity",
+           &dsf::mobility::RoadJunction::capacity,
+           dsf::g_docstrings.at("dsf::mobility::RoadJunction::capacity").c_str())
+      .def(
+          "transportCapacity",
+          &dsf::mobility::RoadJunction::transportCapacity,
+          dsf::g_docstrings.at("dsf::mobility::RoadJunction::transportCapacity").c_str());
+
   // Bind Measurement to main module (can be used across different contexts)
   pybind11::class_<dsf::Measurement<double>>(m, "Measurement")
       .def(pybind11::init<double, double, std::size_t>(),
@@ -120,6 +159,19 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("nTrafficLights",
            &dsf::mobility::RoadNetwork::nTrafficLights,
            dsf::g_docstrings.at("dsf::mobility::RoadNetwork::nTrafficLights").c_str())
+      // Bind node and edge Network accessors, which return a ref or a cost ref
+      // node should return a RoadJunction and edge should return a Street
+      .def(
+          "node",
+          static_cast<dsf::mobility::RoadJunction& (
+              dsf::mobility::RoadNetwork::*)(dsf::Id)>(&dsf::mobility::RoadNetwork::node),
+          pybind11::arg("nodeId"),
+          dsf::g_docstrings.at("dsf::Network::node").c_str())
+      .def("edge",
+           static_cast<dsf::mobility::Street& (dsf::mobility::RoadNetwork::*)(dsf::Id)>(
+               &dsf::mobility::RoadNetwork::edge),
+           pybind11::arg("edgeId"),
+           dsf::g_docstrings.at("dsf::Network::edge").c_str())
       .def("capacity",
            &dsf::mobility::RoadNetwork::capacity,
            dsf::g_docstrings.at("dsf::mobility::RoadNetwork::capacity").c_str())
@@ -470,7 +522,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
                 self.setSpeedFunction(
                     dsf::SpeedFunction::CUSTOM,
                     [func_ptr](dsf::mobility::Street const& street) -> double {
-                      // No GIL needed — this is pure C
                       return func_ptr(street.maxSpeed(), street.density(true));
                     });
                 break;
@@ -499,9 +550,9 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def(
           "setInitTime",
           [](dsf::mobility::FirstOrderDynamics& self, pybind11::object datetime_obj) {
-            auto const epoch =
-                pybind11::cast<std::time_t>(datetime_obj.attr("timestamp")());
-            self.setInitTime(epoch);
+            auto const epoch_seconds =
+                pybind11::cast<double>(datetime_obj.attr("timestamp")());
+            self.setInitTime(static_cast<std::time_t>(epoch_seconds));
           },
           pybind11::arg("datetime"),
           dsf::g_docstrings.at("dsf::Dynamics::setInitTime").c_str())
