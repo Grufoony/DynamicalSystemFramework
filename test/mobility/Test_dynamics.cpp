@@ -1281,11 +1281,7 @@ TEST_CASE("FirstOrderDynamics") {
                              "_" + dynamics.name() + "_road_data.csv";
         std::filesystem::remove(csvPath);
 
-        dynamics.connectDataBase(testDbPath);
         dynamics.saveData(1, false, true, false);
-
-        // Drop the database connection to trigger CSV fallback during evolve()
-        dynamics.database().reset();
 
         for (int i = 0; i < 3; ++i) {
           dynamics.evolve(true);
@@ -1334,12 +1330,8 @@ TEST_CASE("FirstOrderDynamics") {
                              "_" + dynamics.name() + "_avg_stats.csv";
         std::filesystem::remove(csvPath);
 
-        dynamics.connectDataBase(testDbPath);
         dynamics.saveData(1, true, false, false);
         dynamics.addAgents(10, AgentInsertionMethod::RANDOM);
-
-        // Drop the database connection to trigger CSV fallback during evolve()
-        dynamics.database().reset();
 
         for (int i = 0; i < 10; ++i) {
           dynamics.evolve(true);
@@ -1388,11 +1380,7 @@ TEST_CASE("FirstOrderDynamics") {
                              "_" + dynamics.name() + "_travel_data.csv";
         std::filesystem::remove(csvPath);
 
-        dynamics.connectDataBase(testDbPath);
         dynamics.saveData(1, false, false, true);
-
-        // Drop the database connection to trigger CSV fallback during evolve()
-        dynamics.database().reset();
 
         for (int iter = 0; iter < 1000 && dynamics.nAgents() > 0; ++iter) {
           dynamics.evolve(false);
@@ -1438,11 +1426,7 @@ TEST_CASE("FirstOrderDynamics") {
                              "_" + dynamics.name() + "_agent_data.csv";
         std::filesystem::remove(csvPath);
 
-        dynamics.connectDataBase(testDbPath);
         dynamics.saveData(1, false, false, false, true);
-
-        // Drop the database connection to trigger CSV fallback during evolve()
-        dynamics.database().reset();
 
         for (int iter = 0; iter < 50; ++iter) {
           dynamics.evolve(false);

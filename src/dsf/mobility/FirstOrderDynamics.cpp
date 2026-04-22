@@ -1550,22 +1550,26 @@ namespace dsf::mobility {
     m_bSaveTravelData = saveTravelData;
     m_bSaveAgentData = saveAgentData;
 
-    // Initialize the required tables
-    if (saveStreetData) {
-      m_initStreetTable();
-    }
-    if (saveAverageStats) {
-      m_initAvgStatsTable();
-    }
-    if (saveTravelData) {
-      m_initTravelDataTable();
+    if (this->database() != nullptr) {
+      // Initialize the required tables
+      if (saveStreetData) {
+        m_initStreetTable();
+      }
+      if (saveAverageStats) {
+        m_initAvgStatsTable();
+      }
+      if (saveTravelData) {
+        m_initTravelDataTable();
+      }
+      if (saveAgentData) {
+        m_initAgentDataTable();
+      }
+      this->m_dumpSimInfo();
+      this->m_dumpNetwork();
     }
     if (saveAgentData) {
-      m_initAgentDataTable();
       Street::acquireAgentData();
     }
-    this->m_dumpSimInfo();
-    this->m_dumpNetwork();
 
     spdlog::info(
         "Data saving configured: interval={}s, avg_stats={}, street_data={}, "
