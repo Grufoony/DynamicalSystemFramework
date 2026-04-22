@@ -930,7 +930,8 @@ namespace dsf::mobility {
       spdlog::debug("No street data records to save for time step {}.", time_step);
       return;
     }
-    auto const filename{std::format("{}_{}_road_data.csv", simulation_id, this->name())};
+    auto const filename{
+        std::format("{}_{}_road_data.csv", simulation_id, this->m_safeName())};
     // Check if the file exists to write the header
     bool fileExists = std::filesystem::exists(filename);
     std::ofstream outFile(filename, std::ios::app);
@@ -955,11 +956,12 @@ namespace dsf::mobility {
       }
       outFile << CSV_SEPARATOR << record.density << CSV_SEPARATOR;
       if (record.avgSpeed.has_value()) {
-        outFile << record.avgSpeed.value() << CSV_SEPARATOR << record.stdSpeed.value();
+        outFile << record.avgSpeed.value() << CSV_SEPARATOR << record.stdSpeed.value()
+                << CSV_SEPARATOR;
       } else {
         outFile << CSV_SEPARATOR << CSV_SEPARATOR;
       }
-      outFile << CSV_SEPARATOR << record.nObservations.value_or(0) << CSV_SEPARATOR;
+      outFile << record.nObservations.value_or(0) << CSV_SEPARATOR;
       if (record.counts.has_value()) {
         outFile << record.counts.value();
       }
@@ -1042,7 +1044,8 @@ namespace dsf::mobility {
                                              const double std_density,
                                              const double mean_traveltime,
                                              const double meanQueueLength) const {
-    auto const filename{std::format("{}_{}_avg_stats.csv", simulation_id, this->name())};
+    auto const filename{
+        std::format("{}_{}_avg_stats.csv", simulation_id, this->m_safeName())};
     // Check if the file exists to write the header
     bool fileExists = std::filesystem::exists(filename);
     std::ofstream outFile(filename, std::ios::app);
@@ -1066,8 +1069,8 @@ namespace dsf::mobility {
               << CSV_SEPARATOR << std_density << CSV_SEPARATOR << mean_traveltime
               << CSV_SEPARATOR;
     } else {
-      outFile << CSV_SEPARATOR << CSV_SEPARATOR << CSV_SEPARATOR << CSV_SEPARATOR
-              << CSV_SEPARATOR;
+      outFile << CSV_SEPARATOR << CSV_SEPARATOR << mean_density << CSV_SEPARATOR
+              << std_density << CSV_SEPARATOR << CSV_SEPARATOR;
     }
     outFile << meanQueueLength << "\n";
     // Flush and close the file
@@ -1121,7 +1124,7 @@ namespace dsf::mobility {
       const std::int64_t simulation_id,
       tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
     auto const filename{
-        std::format("{}_{}_travel_data.csv", simulation_id, this->name())};
+        std::format("{}_{}_travel_data.csv", simulation_id, this->m_safeName())};
     // Check if the file exists to write the header
     bool fileExists = std::filesystem::exists(filename);
     std::ofstream outFile(filename, std::ios::app);
@@ -1199,7 +1202,8 @@ namespace dsf::mobility {
       spdlog::debug("No agent data records to save for time step {}.", time_step);
       return;
     }
-    auto const filename{std::format("{}_{}_agent_data.csv", simulation_id, this->name())};
+    auto const filename{
+        std::format("{}_{}_agent_data.csv", simulation_id, this->m_safeName())};
     // Check if the file exists to write the header
     bool fileExists = std::filesystem::exists(filename);
     std::ofstream outFile(filename, std::ios::app);

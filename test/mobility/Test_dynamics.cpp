@@ -1317,7 +1317,7 @@ TEST_CASE("FirstOrderDynamics") {
                 ++separatorCount;
               }
             }
-            CHECK_EQ(separatorCount, 10);
+            CHECK_EQ(separatorCount, 9);
           }
           CHECK(rowCount >= 2);
         }

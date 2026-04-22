@@ -276,7 +276,7 @@ namespace dsf::mobility {
     /// @brief Save agent data to a CSV file.
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
-    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the
+    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the time step in and the time step out
     void m_saveAgentDataCSV(
         const std::int64_t time_step,
         const std::int64_t simulation_id,
