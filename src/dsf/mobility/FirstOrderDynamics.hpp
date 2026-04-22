@@ -334,8 +334,14 @@ namespace dsf::mobility {
     /// @brief Set the weight function
     /// @param pathWeight The dsf::PathWeight function to use for the pathfinding
     /// @param weightThreshold The weight threshold for updating the paths (default is std::nullopt)
+    /// @details Built-in path weights (LENGTH, TRAVELTIME) require no callable.
+    ///          CUSTOM requires one callable argument with signature
+    ///          double(Street const&), so users can derive the weight from street
+    ///          properties or imported attributes.
+    template <typename... TArgs>
     void setWeightFunction(PathWeight const pathWeight,
-                           std::optional<double> weightThreshold = std::nullopt);
+                 std::optional<double> weightThreshold = std::nullopt,
+                 TArgs&&... args);
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
@@ -562,6 +568,60 @@ namespace dsf::mobility {
     /// - Current number of agents in the simulation
     void summary(std::ostream& os = std::cout) const;
   };
+
+  template <typename... TArgs>
+  void FirstOrderDynamics::setWeightFunction(PathWeight const pathWeight,
+                                             std::optional<double> weightThreshold,
+                                             TArgs&&... args) {
+    m_pathWeight = pathWeight;
+
+    switch (pathWeight) {
+      case PathWeight::CUSTOM:
+        if constexpr (sizeof...(args) != 1) {
+          throw std::invalid_argument(std::format(
+              "Custom weight function requires exactly one argument, but {} were "
+              "provided",
+              sizeof...(args)));
+        } else if constexpr (!std::is_invocable_r_v<
+                                 double,
+                                 std::tuple_element_t<0, std::tuple<TArgs...>>,
+                                 Street const&>) {
+          throw std::invalid_argument(
+              "Custom weight function requires a callable argument with signature "
+              "double(Street const&)");
+        } else {
+          m_weightFunction = std::get<0>(std::forward_as_tuple(args...));
+          m_weightTreshold = weightThreshold.value_or(1.);
+        }
+        break;
+      case PathWeight::LENGTH:
+        if constexpr (sizeof...(args) != 0) {
+          throw std::invalid_argument(std::format(
+              "Length weight function does not accept custom callables, but {} "
+              "extra arguments were provided",
+              sizeof...(args)));
+        } else {
+          m_weightFunction = [](Street const& pStreet) { return pStreet.length(); };
+          m_weightTreshold = weightThreshold.value_or(1.);
+        }
+        break;
+      case PathWeight::TRAVELTIME:
+        if constexpr (sizeof...(args) != 0) {
+          throw std::invalid_argument(std::format(
+              "Traveltime weight function does not accept custom callables, but {} "
+              "extra arguments were provided",
+              sizeof...(args)));
+        } else {
+          m_weightFunction = [this](Street const& pStreet) {
+            return this->m_streetEstimatedTravelTime(pStreet);
+          };
+          m_weightTreshold = weightThreshold.value_or(0.0069);
+        }
+        break;
+      default:
+        throw std::invalid_argument("Invalid path weight type");
+    }
+  }
 
   template <typename... TArgs>
   void FirstOrderDynamics::setSpeedFunction(SpeedFunction const speedFunction,

@@ -82,3 +82,53 @@ def test_dynamics_smoke_step_with_linear_speed(dynamics):
 def test_compute_betweenness_rejects_invalid_weight(loaded_road_network):
     with pytest.raises(Exception, match="Invalid weight function"):
         loaded_road_network.computeBetweennessCentralities("invalid")
+
+
+def test_dynamics_custom_weight_callable_uses_street_attributes(tmp_path):
+    edge_file = tmp_path / "custom_edges.csv"
+    edge_file.write_text(
+        "id;source;target;length;maxspeed;nlanes;name;type;custom_cost\n"
+        "0;0;1;5;50;1;s01;residential;100\n"
+        "1;1;2;5;50;1;s12;residential;100\n"
+        "2;0;3;5;50;1;s03;residential;1\n"
+        "3;3;2;5;50;1;s32;residential;1\n",
+        encoding="utf-8",
+    )
+
+    network = mobility.RoadNetwork()
+    network.importEdges(str(edge_file), ";")
+    dynamics = mobility.Dynamics(network, seed=69)
+    dynamics.setDestinationNodes([2])
+
+    calls = {"count": 0}
+    seen_custom_costs = set()
+
+    def custom_weight(street):
+        calls["count"] += 1
+        attrs = street.attributes()
+        if "custom_cost" in attrs:
+            seen_custom_costs.add(float(attrs["custom_cost"]))
+        return float(attrs.get("custom_cost", street.length()))
+
+    dynamics.setWeightFunction(mobility.PathWeight.CUSTOM, 0.0, custom_weight)
+    dynamics.updatePaths()
+
+    assert calls["count"] > 0
+    assert seen_custom_costs == {1.0, 100.0}
+
+
+def test_dynamics_custom_weight_requires_callable(dynamics):
+    with pytest.raises(Exception, match="PathWeight.CUSTOM requires a callable"):
+        dynamics.setWeightFunction(mobility.PathWeight.CUSTOM)
+
+
+def test_dynamics_builtin_weight_rejects_callable_arg(dynamics):
+    with pytest.raises(Exception, match="Built-in PathWeight values do not accept"):
+        dynamics.setWeightFunction(
+            mobility.PathWeight.LENGTH, None, lambda street: street.length()
+        )
+
+
+def test_shortest_path_rejects_custom_weight(loaded_road_network):
+    with pytest.raises(Exception, match="PathWeight.CUSTOM is not supported"):
+        loaded_road_network.shortestPath(0, 119, mobility.PathWeight.CUSTOM)

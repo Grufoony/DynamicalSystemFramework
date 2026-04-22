@@ -1258,10 +1258,16 @@ namespace dsf::mobility {
     insertSimStmt.bind(2, this->name());
     insertSimStmt.bind(3, this->m_speedFunctionDescription);
     switch (this->m_pathWeight) {
+      case PathWeight::CUSTOM:
+        insertSimStmt.bind(4, "CUSTOM");
+        break;
       case PathWeight::LENGTH:
         insertSimStmt.bind(4, "LENGTH");
         break;
       case PathWeight::TRAVELTIME:
+        insertSimStmt.bind(4, "TRAVELTIME");
+        break;
+      default:
         insertSimStmt.bind(4, "TRAVELTIME");
         break;
     }
@@ -1402,29 +1408,6 @@ namespace dsf::mobility {
           "The time tolerance factor ({}) must be positive", timeToleranceFactor));
     }
     m_timeToleranceFactor = timeToleranceFactor;
-  }
-  void FirstOrderDynamics::setWeightFunction(PathWeight const pathWeight,
-                                             std::optional<double> weightTreshold) {
-    m_pathWeight = pathWeight;
-    switch (pathWeight) {
-      case PathWeight::LENGTH:
-        m_weightFunction = [](Street const& pStreet) { return pStreet.length(); };
-        m_weightTreshold = weightTreshold.value_or(1.);
-        break;
-      case PathWeight::TRAVELTIME:
-        m_weightFunction = [this](Street const& pStreet) {
-          return this->m_streetEstimatedTravelTime(pStreet);
-        };
-        m_weightTreshold = weightTreshold.value_or(0.0069);
-        break;
-      default:
-        spdlog::error("Invalid weight function. Defaulting to traveltime");
-        m_weightFunction = [this](Street const& pStreet) {
-          return this->m_streetEstimatedTravelTime(pStreet);
-        };
-        m_weightTreshold = weightTreshold.value_or(0.0069);
-        break;
-    }
   }
   void FirstOrderDynamics::setOriginNodes(
       std::unordered_map<Id, double> const& originNodes) {

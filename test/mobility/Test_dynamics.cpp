@@ -528,6 +528,72 @@ TEST_CASE("FirstOrderDynamics") {
         }
       }
     }
+    GIVEN("A dynamics object with a custom path weight callable") {
+      Street s1{0, std::make_pair(0, 1), 5.};
+      Street s2{1, std::make_pair(1, 2), 5.};
+      Street s3{2, std::make_pair(0, 3), 5.};
+      Street s4{3, std::make_pair(3, 2), 5.};
+      s1.setAttribute("custom_cost", 100.0);
+      s2.setAttribute("custom_cost", 100.0);
+      s3.setAttribute("custom_cost", 1.0);
+      s4.setAttribute("custom_cost", 1.0);
+
+      RoadNetwork graph;
+      graph.addStreets(s1, s2, s3, s4);
+      FirstOrderDynamics dynamics{graph, false, 69};
+      dynamics.setWeightFunction(
+          dsf::PathWeight::CUSTOM,
+          0.0,
+          [](Street const& street) {
+            auto const customCost = street.getAttribute<double>("custom_cost");
+            return customCost.value_or(street.length());
+          });
+      dynamics.addItinerary(0, 2);
+
+      WHEN("We update the paths") {
+        dynamics.updatePaths();
+        THEN("The custom attribute-based weight drives the selected branch") {
+          auto const& path{dynamics.itineraries().at(0)->path()};
+          CHECK_EQ(path.at(0).size(), 1);
+          CHECK_EQ(path.at(0)[0], 3);
+          CHECK_EQ(path.at(3).size(), 1);
+          CHECK_EQ(path.at(3)[0], 2);
+          CHECK_FALSE(path.at(0)[0] == 1);
+        }
+      }
+    }
+    GIVEN("A dynamics object with invalid path weight arguments") {
+      Street s1{0, std::make_pair(0, 1), 10.};
+      RoadNetwork graph;
+      graph.addStreets(s1);
+      FirstOrderDynamics dynamics{graph, false, 69};
+
+      WHEN("CUSTOM is set without a callable") {
+        THEN("An invalid_argument exception is thrown") {
+          CHECK_THROWS_AS(dynamics.setWeightFunction(dsf::PathWeight::CUSTOM),
+                          std::invalid_argument);
+        }
+      }
+
+      WHEN("CUSTOM is set with a non-callable argument") {
+        THEN("An invalid_argument exception is thrown") {
+          CHECK_THROWS_AS(
+              dynamics.setWeightFunction(dsf::PathWeight::CUSTOM, std::nullopt, 42),
+              std::invalid_argument);
+        }
+      }
+
+      WHEN("A built-in path weight receives an extra callable") {
+        THEN("An invalid_argument exception is thrown") {
+          CHECK_THROWS_AS(
+              dynamics.setWeightFunction(
+                  dsf::PathWeight::LENGTH,
+                  std::nullopt,
+                  [](Street const& street) { return street.length(); }),
+              std::invalid_argument);
+        }
+      }
+    }
     GIVEN("A disconnected graph") {
       Street s1{0, std::make_pair(0, 1), 10.};
       RoadNetwork graph;

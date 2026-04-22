@@ -36,6 +36,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
 
   // Bind PathWeight enum
   pybind11::enum_<dsf::PathWeight>(mobility, "PathWeight")
+      .value("CUSTOM", dsf::PathWeight::CUSTOM)
       .value("LENGTH", dsf::PathWeight::LENGTH)
       .value("TRAVELTIME", dsf::PathWeight::TRAVELTIME)
       .export_values();
@@ -325,6 +326,12 @@ PYBIND11_MODULE(dsf_cpp, m) {
                 targetId,
                 [weightFunction](const dsf::mobility::Street& street) {
                   switch (weightFunction) {
+                    case dsf::PathWeight::CUSTOM:
+                      throw std::invalid_argument(
+                          "PathWeight.CUSTOM is not supported in "
+                          "RoadNetwork.shortestPath. "
+                          "Use Dynamics.setWeightFunction(PathWeight.CUSTOM, ..., "
+                          "callable) and updatePaths().");
                     case dsf::PathWeight::LENGTH:
                       return street.length();
                     case dsf::PathWeight::TRAVELTIME:
@@ -343,8 +350,8 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "Args:\n"
           "    sourceId (int): The id of the source node\n"
           "    targetId (int): The id of the target node\n"
-          "    weightFunction (PathWeight): The weight function to use (LENGTH, "
-          "TRAVELTIME, or WEIGHT)\n"
+          "    weightFunction (PathWeight): The weight function to use (LENGTH "
+          "or TRAVELTIME)\n"
           "    threshold (float): Relative tolerance applied to the full "
           "source-to-target path cost\n\n"
           "Returns:\n"
@@ -608,10 +615,61 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("errorProbability"),
            dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setErrorProbability")
                .c_str())
-      .def("setWeightFunction",
-           &dsf::mobility::FirstOrderDynamics::setWeightFunction,
-           pybind11::arg("weightFunction"),
-           pybind11::arg("weightThreshold") = std::nullopt)
+      .def(
+          "setWeightFunction",
+          [](dsf::mobility::FirstOrderDynamics& self,
+             dsf::PathWeight weightFunction,
+             std::optional<double> weightThreshold,
+             pybind11::object arg) {
+            switch (weightFunction) {
+              case dsf::PathWeight::LENGTH:
+              case dsf::PathWeight::TRAVELTIME:
+                if (!arg.is_none()) {
+                  throw std::invalid_argument(
+                      "Built-in PathWeight values do not accept a custom callable. "
+                      "Use arg only with PathWeight.CUSTOM.");
+                }
+                self.setWeightFunction(weightFunction, weightThreshold);
+                break;
+              case dsf::PathWeight::CUSTOM: {
+                if (arg.is_none()) {
+                  throw std::invalid_argument(
+                      "PathWeight.CUSTOM requires a callable argument with "
+                      "signature func(street) -> float.");
+                }
+                if (PyCallable_Check(arg.ptr()) == 0) {
+                  throw std::invalid_argument(
+                      "PathWeight.CUSTOM requires a callable argument with "
+                      "signature func(street) -> float.");
+                }
+                auto callback = arg.cast<pybind11::function>();
+                self.setWeightFunction(
+                    dsf::PathWeight::CUSTOM,
+                    weightThreshold,
+                    [callback = std::move(callback)](
+                        dsf::mobility::Street const& street) -> double {
+                      pybind11::gil_scoped_acquire gil;
+                      auto const result = callback(pybind11::cast(
+                          &street, pybind11::return_value_policy::reference));
+                      return result.cast<double>();
+                    });
+                break;
+              }
+              default:
+                throw std::invalid_argument("Invalid weight function type");
+            }
+          },
+          pybind11::arg("weightFunction"),
+          pybind11::arg("weightThreshold") = std::nullopt,
+          pybind11::arg("arg") = pybind11::none(),
+          "Set the path weight function used by dynamics path updates.\n\n"
+          "Args:\n"
+          "    weightFunction (PathWeight): The weight function type (LENGTH, "
+          "TRAVELTIME, or CUSTOM)\n"
+          "    weightThreshold (float | None): Optional relative threshold used "
+          "when building admissible path transitions\n"
+          "    arg: Required only for CUSTOM. A callable with signature "
+          "func(street) -> float")
       .def("killStagnantAgents",
            &dsf::mobility::FirstOrderDynamics::killStagnantAgents,
            pybind11::arg("timeToleranceFactor") = 3.,
