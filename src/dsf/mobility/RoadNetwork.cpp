@@ -368,6 +368,33 @@ namespace dsf::mobility {
           spdlog::warn("Invalid priority for edge {}, keeping default", edge_id);
         }
       }
+      // Handle additional attributes
+      for (auto const& [attrName, attrValue] : edge_properties.get_object()) {
+        if (std::find(EDGE_DEFAULT_ATTRIBUTES.begin(),
+                      EDGE_DEFAULT_ATTRIBUTES.end(),
+                      attrName) != EDGE_DEFAULT_ATTRIBUTES.end()) {
+          continue;  // Skip default attributes
+        }
+        auto const strAttrName{std::string(attrName)};
+        if (attrValue.is_null()) {
+          edge(edge_id).setAttribute(strAttrName, std::monostate{});
+        } else if (attrValue.is_bool()) {
+          edge(edge_id).setAttribute(strAttrName, attrValue.get_bool());
+        } else if (attrValue.is_number()) {
+          if (attrValue.is_int64()) {
+            edge(edge_id).setAttribute(strAttrName, attrValue.get_int64());
+          } else {
+            edge(edge_id).setAttribute(strAttrName, attrValue.get_double());
+          }
+        } else if (attrValue.is_string()) {
+          edge(edge_id).setAttribute(strAttrName,
+                                     std::string(attrValue.get_string().value()));
+        } else {
+          spdlog::warn("Unsupported attribute type for attribute {} of edge {}",
+                       strAttrName,
+                       edge_id);
+        }
+      }
     }
     this->m_nodes.rehash(0);
     this->m_edges.rehash(0);

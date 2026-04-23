@@ -99,7 +99,17 @@ struct std::formatter<dsf::Edge> {
   auto format(const dsf::Edge& edge, FormatContext&& ctx) const {
     std::string strAttributes;
     for (const auto& [key, value] : edge.attributes()) {
-      strAttributes += std::format(" ,{}={}", key, value);
+      const std::string strValue = std::visit(
+          [](const auto& attributeValue) -> std::string {
+            using AttributeType = std::decay_t<decltype(attributeValue)>;
+            if constexpr (std::is_same_v<AttributeType, std::monostate>) {
+              return "";
+            } else {
+              return std::format("{}", attributeValue);
+            }
+          },
+          value);
+      strAttributes += std::format(" ,{}={}", key, strValue);
     }
     return std::format_to(ctx.out(),
                           "Edge(id={}, source={}, target={}{})",
