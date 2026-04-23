@@ -1,0 +1,16 @@
+var searchData=
+[
+  ['target_0',['target',['../classdsf_1_1Edge.html#a5f495ab2d143e69fc9d9d5421f19091f',1,'dsf::Edge']]],
+  ['time_1',['time',['../classdsf_1_1Dynamics.html#a280a15319a4509d2aa8268630f3a6ddd',1,'dsf::Dynamics']]],
+  ['time_5fstep_2',['time_step',['../classdsf_1_1Dynamics.html#a214148ca20ccf95cc2027f511c6c46e7',1,'dsf::Dynamics']]],
+  ['to_5fcsv_3',['to_csv',['../classdsf_1_1mdt_1_1TrajectoryCollection.html#a0895b85c9ebbdf9171c7fbee3c9d3e70',1,'dsf::mdt::TrajectoryCollection']]],
+  ['to_5ffolium_5fmap_4',['to_folium_map',['../namespacedsf_1_1cartography_1_1cartography.html#af03add608ab9297408a113f227559a1a',1,'dsf::cartography::cartography']]],
+  ['trafficlight_5',['TrafficLight',['../classdsf_1_1mobility_1_1TrafficLight.html#a95dd8a099db411ef884572396fc259a0',1,'dsf::mobility::TrafficLight::TrafficLight(Id id, Delay cycleTime)'],['../classdsf_1_1mobility_1_1TrafficLight.html#aba4fd0575ed0fe2b27843b91e20d01db',1,'dsf::mobility::TrafficLight::TrafficLight(Id id, Delay cycleTime, geometry::Point point)'],['../classdsf_1_1mobility_1_1TrafficLight.html#a5083742daab2021c576cf3f8a9605a6b',1,'dsf::mobility::TrafficLight::TrafficLight(RoadJunction const &amp;node, Delay const cycleTime, Delay const counter=0)']]],
+  ['trafficlightcycle_6',['TrafficLightCycle',['../classdsf_1_1mobility_1_1TrafficLightCycle.html#ae5f87a910e3d7cd3c76b5b8bf25d01df',1,'dsf::mobility::TrafficLightCycle']]],
+  ['trajectories_7',['trajectories',['../classdsf_1_1mdt_1_1TrajectoryCollection.html#a111e865206a82c7291baf8f21ae12a25',1,'dsf::mdt::TrajectoryCollection']]],
+  ['trajectorycollection_8',['TrajectoryCollection',['../classdsf_1_1mdt_1_1TrajectoryCollection.html#af79ea28a2b174f6c4b946b78e0366b66',1,'dsf::mdt::TrajectoryCollection::TrajectoryCollection(std::unordered_map&lt; std::string, std::variant&lt; std::vector&lt; Id &gt;, std::vector&lt; std::time_t &gt;, std::vector&lt; double &gt; &gt; &gt; &amp;&amp;dataframe, std::array&lt; double, 4 &gt; const &amp;bbox={})'],['../classdsf_1_1mdt_1_1TrajectoryCollection.html#a4c5307d6b32656827bd123e838cb510f',1,'dsf::mdt::TrajectoryCollection::TrajectoryCollection(std::string const &amp;fileName=std::string(), std::unordered_map&lt; std::string, std::string &gt; const &amp;column_mapping={}, char const sep=&apos;;&apos;, std::array&lt; double, 4 &gt; const &amp;bbox={})']]],
+  ['transportcapacity_9',['transportCapacity',['../classdsf_1_1mobility_1_1Road.html#a6169428ba119fc37a4a5f145c5f4005b',1,'dsf::mobility::Road::transportCapacity()'],['../classdsf_1_1mobility_1_1RoadJunction.html#a450c54ba4fb1162973da585d8d68a496',1,'dsf::mobility::RoadJunction::transportCapacity()']]],
+  ['trip_10',['trip',['../classdsf_1_1mobility_1_1Agent.html#a000c15241383ee0a96939643500da088',1,'dsf::mobility::Agent']]],
+  ['turncounts_11',['turnCounts',['../classdsf_1_1mobility_1_1FirstOrderDynamics.html#add5a3ba210176f682c27403cf04f73ee',1,'dsf::mobility::FirstOrderDynamics']]],
+  ['turndirection_12',['turnDirection',['../classdsf_1_1mobility_1_1Road.html#a40e24d7125afa540c0b81c3f03fc2e3f',1,'dsf::mobility::Road']]]
+];
