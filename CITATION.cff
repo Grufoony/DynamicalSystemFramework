@@ -11,6 +11,6 @@ authors:
     orcid: 'https://orcid.org/0009-0004-7797-9138'
 repository-code: 'https://github.com/Grufoony/DynamicalSystemFramework'
 url: 'https://grufoony.github.io/DynamicalSystemFramework/'
-license: AGPL-3.0-or-later
+license: AGPL-3.0-only
 version: 5.4.0
 date-released: '2026-04-20'

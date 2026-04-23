@@ -7,7 +7,7 @@ name = "dsf-mobility"
 description = "DSF C++ core with Python bindings via pybind11"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
-license = "AGPL-3.0-or-later"
+license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 authors = [
 	{ name = "Grufoony", email = "gregorio.berselli@studio.unibo.it" },
