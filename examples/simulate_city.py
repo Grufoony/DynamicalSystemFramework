@@ -14,7 +14,6 @@ from dsf.mobility import (
     RoadNetwork,
     Dynamics,
     AgentInsertionMethod,
-    PathWeight,
     SpeedFunction,
 )
 
@@ -99,7 +98,6 @@ if __name__ == "__main__":
 
     # Create a dynamics model for the road network
     dynamics = Dynamics(road_network, seed=args.seed)
-    dynamics.setWeightFunction(PathWeight.TRAVELTIME)
     dynamics.setSpeedFunction(SpeedFunction.LINEAR, 0.8)
     # To use a custom speed function, you must pass the pointer to the compiled function using the address attribute
     # dynamics.setSpeedFunction(SpeedFunction.CUSTOM, custom_speed.address)

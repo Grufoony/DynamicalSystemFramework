@@ -879,6 +879,41 @@ namespace dsf::mobility {
     spdlog::debug("Done auto-assigning road priorities.");
   }
 
+  void RoadNetwork::setEdgeWeight(std::string_view const strv_weight,
+                                  std::optional<double> const threshold) {
+    if (strv_weight == "traveltime") {
+      m_weightFunction = [](Street const& street) {
+        return street.length() / street.maxSpeed();
+      };
+    } else if (strv_weight == "length") {
+      m_weightFunction = [](Street const& street) { return street.length(); };
+    } else {  // Custom attribute
+      m_weightFunction = [strv_weight](Street const& street) {
+        auto it = std::find_if(
+            street.attributes().cbegin(),
+            street.attributes().cend(),
+            [strv_weight](auto const& pair) { return pair.first == strv_weight; });
+        if (it == street.attributes().end()) {
+          throw std::runtime_error(std::format(
+              "Attribute {} not found in street {}", strv_weight, street.id()));
+        }
+        auto const& attrValue = it->second;
+        return std::visit(
+            [](auto&& value) -> double {
+              using T = std::decay_t<decltype(value)>;
+              if constexpr (std::is_arithmetic_v<T>) {
+                return static_cast<double>(value);
+              } else {
+                throw std::runtime_error(
+                    "Custom weight attribute is not a numeric type.");
+              }
+            },
+            attrValue);
+      };
+    }
+    m_weightThreshold = threshold;
+  }
+
   void RoadNetwork::describe(std::ostream& os) const {
     os << "RoadNetwork with " << nNodes() << " nodes and " << nEdges()
        << " edges. Total capacity: " << m_capacity << " vehicles.\n"

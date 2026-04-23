@@ -10,8 +10,7 @@ namespace dsf::mobility {
                                          bool useCache,
                                          std::optional<unsigned int> seed)
       : Dynamics<RoadNetwork>(graph, seed), m_bCacheEnabled{useCache} {
-    // Set defaults for weight and speed functions
-    this->setWeightFunction(PathWeight::TRAVELTIME);
+    // Set defaults for speed function
     this->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
     if (m_bCacheEnabled) {
       if (!std::filesystem::exists(CACHE_FOLDER)) {
@@ -86,8 +85,7 @@ namespace dsf::mobility {
     }
     auto const oldSize{pItinerary->path().size()};
 
-    auto const path{this->graph().allPathsTo(
-        pItinerary->destination(), m_weightFunction, m_weightTreshold)};
+    auto const path{this->graph().allPathsTo(pItinerary->destination())};
     pItinerary->setPath(path);
     auto const newSize{pItinerary->path().size()};
     if (oldSize > 0 && newSize != oldSize) {
@@ -1232,8 +1230,6 @@ namespace dsf::mobility {
                                       "id INTEGER PRIMARY KEY, "
                                       "name TEXT, "
                                       "speed_function TEXT, "
-                                      "weight_function TEXT, "
-                                      "weight_threshold REAL NOT NULL, "
                                       "error_probability REAL, "
                                       "passage_probability REAL, "
                                       "mean_travel_distance_m REAL, "
@@ -1248,60 +1244,44 @@ namespace dsf::mobility {
     // Insert simulation parameters into the simulations table
     SQLite::Statement insertSimStmt(
         *this->database(),
-        "INSERT INTO simulations (id, name, speed_function, weight_function, "
-        "weight_threshold, error_probability, passage_probability, "
-        "mean_travel_distance_m, mean_travel_time_s, stagnant_tolerance_factor, "
-        "force_priorities, save_avg_stats, save_road_data, save_travel_data, "
-        "save_agent_data) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        "INSERT INTO simulations (id, name, speed_function, error_probability, "
+        "passage_probability, mean_travel_distance_m, mean_travel_time_s, "
+        "stagnant_tolerance_factor, force_priorities, save_avg_stats, save_road_data, "
+        "save_travel_data, save_agent_data) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     insertSimStmt.bind(1, static_cast<std::int64_t>(this->id()));
     insertSimStmt.bind(2, this->name());
     insertSimStmt.bind(3, this->m_speedFunctionDescription);
-    switch (this->m_pathWeight) {
-      case PathWeight::CUSTOM:
-        insertSimStmt.bind(4, "CUSTOM");
-        break;
-      case PathWeight::LENGTH:
-        insertSimStmt.bind(4, "LENGTH");
-        break;
-      case PathWeight::TRAVELTIME:
-        insertSimStmt.bind(4, "TRAVELTIME");
-        break;
-      default:
-        insertSimStmt.bind(4, "TRAVELTIME");
-        break;
-    }
-    insertSimStmt.bind(5, this->m_weightTreshold);
     if (this->m_errorProbability.has_value()) {
-      insertSimStmt.bind(6, *this->m_errorProbability);
+      insertSimStmt.bind(4, *this->m_errorProbability);
+    } else {
+      insertSimStmt.bind(4);
+    }
+    if (this->m_passageProbability.has_value()) {
+      insertSimStmt.bind(5, *this->m_passageProbability);
+    } else {
+      insertSimStmt.bind(5);
+    }
+    if (this->m_meanTravelDistance.has_value()) {
+      insertSimStmt.bind(6, *this->m_meanTravelDistance);
     } else {
       insertSimStmt.bind(6);
     }
-    if (this->m_passageProbability.has_value()) {
-      insertSimStmt.bind(7, *this->m_passageProbability);
+    if (this->m_meanTravelTime.has_value()) {
+      insertSimStmt.bind(7, static_cast<int64_t>(*this->m_meanTravelTime));
     } else {
       insertSimStmt.bind(7);
     }
-    if (this->m_meanTravelDistance.has_value()) {
-      insertSimStmt.bind(8, *this->m_meanTravelDistance);
+    if (this->m_timeToleranceFactor.has_value()) {
+      insertSimStmt.bind(8, *this->m_timeToleranceFactor);
     } else {
       insertSimStmt.bind(8);
     }
-    if (this->m_meanTravelTime.has_value()) {
-      insertSimStmt.bind(9, static_cast<int64_t>(*this->m_meanTravelTime));
-    } else {
-      insertSimStmt.bind(9);
-    }
-    if (this->m_timeToleranceFactor.has_value()) {
-      insertSimStmt.bind(10, *this->m_timeToleranceFactor);
-    } else {
-      insertSimStmt.bind(10);
-    }
-    insertSimStmt.bind(11, this->m_forcePriorities);
-    insertSimStmt.bind(12, this->m_bSaveAverageStats);
-    insertSimStmt.bind(13, this->m_bSaveStreetData);
-    insertSimStmt.bind(14, this->m_bSaveTravelData);
-    insertSimStmt.bind(15, this->m_bSaveAgentData);
+    insertSimStmt.bind(9, this->m_forcePriorities);
+    insertSimStmt.bind(10, this->m_bSaveAverageStats);
+    insertSimStmt.bind(11, this->m_bSaveStreetData);
+    insertSimStmt.bind(12, this->m_bSaveTravelData);
+    insertSimStmt.bind(13, this->m_bSaveAgentData);
     insertSimStmt.exec();
   }
   void FirstOrderDynamics::m_dumpNetwork() const {
