@@ -17,6 +17,7 @@ This rework consists of a full code rewriting, in order to implement more featur
 ## Table of Contents
 - [Installation](#installation)
 - [Installation (from source)](#installation-from-source)
+- [Installation (Python - HPC Variant)](#installation-python---hpc-variant)
 - [Testing](#testing)
 - [Benchmarking](#benchmarking)
 - [Citing](#citing)
@@ -91,6 +92,74 @@ print(dsf.__version__)
 ```
 
 If you encounter issues, ensure that the installation path is in your `PYTHONPATH` environment variable.
+
+## Installation (Python - HPC Variant)
+
+For high-performance computing (HPC) clusters and environments where binary portability is critical, an HPC-optimized wheel variant is available. This variant uses conservative `-O3` optimization instead of architecture-specific tuning (`-Ofast`, `-flto=auto`, `-march=native`), ensuring compatibility across diverse HPC hardware architectures.
+
+### When to Use HPC Variant
+- Deploying on HPC clusters with heterogeneous node architectures
+- Avoiding runtime errors due to unsupported CPU instructions
+- Maximizing portability across different compute nodes
+
+### Installation on HPC Systems
+
+The HPC build is published as a separate PyPI distribution named `dsf-mobility-hpc` (PEP-compliant), with Linux wheels intended for cluster portability. Install it directly with:
+
+```shell
+pip install dsf-mobility-hpc
+```
+
+Or with `uv`:
+
+```shell
+uv pip install dsf-mobility-hpc
+```
+
+If you need to download a wheel explicitly, use:
+
+```shell
+pip download --only-binary :all: dsf-mobility-hpc
+```
+
+### Wheel Filename Pattern on PyPI
+
+HPC wheel filenames are standard and parseable by pip, for example:
+
+```text
+dsf_mobility_hpc-<version>-cp<pyver>-cp<pyver>-<platform_tag>.whl
+```
+
+Typical Linux example:
+
+```text
+dsf_mobility_hpc-5.3.1-cp312-cp312-manylinux_2_17_x86_64.whl
+```
+
+### Building HPC Variant Locally
+
+To build the HPC variant locally for development or testing:
+
+```shell
+DSF_HPC_BUILD=1 pip install .
+```
+
+This uses conservative `-O3` optimization for maximum portability:
+
+```shell
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DDSF_HPC_BUILD=ON
+cmake --build build -j$(nproc)
+```
+
+### Standard vs. HPC Variants
+
+| Aspect | Standard | HPC |
+|--------|----------|-----|
+| **Optimization** | `-Ofast -flto=auto` + optional `-march=native` | `-O3` only |
+| **Use Case** | Single-system deployments, development | HPC clusters, portable deployments |
+| **Performance** | Highest on optimized hardware | Portable across architectures |
+| **Portability** | Variable (CPU-specific) | Maximum (all x86_64 CPUs) |
+| **PyPI Package** | `dsf-mobility` | `dsf-mobility-hpc` |
 
 ## Testing
 This project uses [Doctest](https://github.com/doctest/doctest) for testing.

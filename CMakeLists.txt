@@ -23,6 +23,7 @@ option(DSF_BENCHMARKS "Build DSF benchmarks" OFF)
 option(DSF_BUILD_PIC "Build DSF with position-independent code" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings" OFF)
 option(DSF_OPTIMIZE_ARCH "Optimize for native architecture" ON)
+option(DSF_HPC_BUILD "Build with conservative -O3 for HPC cluster portability" OFF)
 
 # If CMAKE_BUILD_TYPE not set, default to Debug
 if(NOT CMAKE_BUILD_TYPE)
@@ -39,6 +40,8 @@ if(NOT CMAKE_BUILD_TYPE)
   endif()
 endif()
 if(BUILD_PYTHON_BINDINGS)
+  # Build all targets as PIC when producing Python extension modules.
+  # This prevents non-PIC static dependencies from failing at shared-module link time.
   set(DSF_BUILD_PIC ON)
 endif()
 
@@ -50,9 +53,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Ensure optimization flags are applied only in Release mode
 if(CMAKE_BUILD_TYPE MATCHES "Release")
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast -flto=auto")
-    if(DSF_OPTIMIZE_ARCH)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+    if(DSF_HPC_BUILD)
+      # HPC mode: conservative -O3 for maximum portability on HPC clusters
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+      message(STATUS "HPC Build Mode enabled: using -O3 for portability")
+    else()
+      # Standard mode: aggressive optimization
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast -flto=auto")
+      if(DSF_OPTIMIZE_ARCH)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+      endif()
     endif()
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2")
@@ -140,6 +150,9 @@ FetchContent_Declare(
 FetchContent_GetProperties(simdjson)
 if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
+  if(DSF_BUILD_PIC)
+    set_target_properties(simdjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  endif()
 endif()
 # Check if the user has TBB installed
 find_package(TBB REQUIRED CONFIG)
@@ -157,7 +170,11 @@ FetchContent_Declare(
 FetchContent_GetProperties(SQLiteCpp)
 if(NOT SQLiteCpp_POPULATED)
   FetchContent_MakeAvailable(SQLiteCpp)
+  if(DSF_BUILD_PIC)
+    set_target_properties(SQLiteCpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  endif()
 endif()
+
 
 add_library(dsf STATIC ${SOURCES})
 target_compile_definitions(dsf PRIVATE SPDLOG_USE_STD_FORMAT)

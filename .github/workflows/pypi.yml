@@ -41,9 +41,12 @@ jobs:
         BASE_VERSION="${{ steps.extract.outputs.version }}"
 
         if [ "${{ github.event_name }}" = "pull_request" ]; then
-          # TestPyPI only: use a numeric dev suffix so the version is PEP 440 compliant.
-          # Concatenating run id and attempt keeps it unique across PRs and re-runs.
-          PUBLISH_VERSION="${BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
+          # TestPyPI only: bump patch by one, then append a numeric dev suffix
+          # so the version is PEP 440 compliant and unique across PRs/re-runs.
+          IFS='.' read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "${BASE_VERSION}"
+          VERSION_PATCH=$((VERSION_PATCH + 1))
+          PR_BASE_VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+          PUBLISH_VERSION="${PR_BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
         else
           # PyPI: publish the exact release version with no run-id suffix.
           PUBLISH_VERSION="${BASE_VERSION}"
@@ -63,23 +66,27 @@ jobs:
           exit 0
         fi
 
-        PYPI_URL="https://pypi.org/pypi/dsf-mobility/${VERSION}/json"
         PYPI_NAME="PyPI"
-        
-        echo "Checking if dsf-mobility version ${VERSION} exists on ${PYPI_NAME}..."
-        
-        # Check PyPI/TestPyPI API for the specific version
-        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PYPI_URL}")
-        
-        if [ "$HTTP_STATUS" = "200" ]; then
-          echo "Version ${VERSION} already exists on ${PYPI_NAME}"
-          echo "Version already published; skipping build and publish jobs."
-          echo "should_build=false" >> "$GITHUB_OUTPUT"
-          exit 0
-        else
-          echo "Version ${VERSION} does not exist on ${PYPI_NAME} (HTTP ${HTTP_STATUS})"
-          echo "should_build=true" >> "$GITHUB_OUTPUT"
-        fi
+        PACKAGES=("dsf-mobility" "dsf-mobility-hpc")
+
+        for PACKAGE in "${PACKAGES[@]}"; do
+          PYPI_URL="https://pypi.org/pypi/${PACKAGE}/${VERSION}/json"
+          echo "Checking if ${PACKAGE} version ${VERSION} exists on ${PYPI_NAME}..."
+
+          # Check PyPI API for the specific version
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PYPI_URL}")
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "Version ${VERSION} already exists for ${PACKAGE} on ${PYPI_NAME}."
+            echo "Version already published for at least one package; skipping build and publish jobs."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Version ${VERSION} does not exist for ${PACKAGE} on ${PYPI_NAME} (HTTP ${HTTP_STATUS})"
+        done
+
+        echo "should_build=true" >> "$GITHUB_OUTPUT"
 
   uv-validate:
     name: Validate uv workflows
@@ -130,13 +137,14 @@ jobs:
         python -c "import dsf; print(dsf.__version__)"
 
   build-wheels-linux:
-    name: Build wheels on Linux (Python ${{ matrix.python-version }})
+    name: Build wheels on Linux (Python ${{ matrix.python-version }} - ${{ matrix.build_variant }})
     needs: [check-version, uv-validate]
     runs-on: ubuntu-latest
     if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     strategy:
       matrix:
         python-version: ['3.10', '3.12']
+        build_variant: ['standard', 'hpc']
 
     steps:
     - name: Checkout repository
@@ -157,12 +165,33 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install build wheel setuptools pybind11-stubgen auditwheel
 
+    - name: Switch package name for HPC distribution
+      if: matrix.build_variant == 'hpc'
+      run: |
+        python - <<'PY'
+        from pathlib import Path
+
+        pyproject_path = Path("pyproject.toml")
+        content = pyproject_path.read_text(encoding="utf-8")
+        old = 'name = "dsf-mobility"'
+        new = 'name = "dsf-mobility-hpc"'
+        if old not in content:
+            raise RuntimeError("Unable to locate project name in pyproject.toml")
+        pyproject_path.write_text(content.replace(old, new, 1), encoding="utf-8")
+        print("Switched project name to dsf-mobility-hpc for HPC build")
+        PY
+
+    - name: Clean previous build artifacts
+      run: |
+        rm -rf dist wheelhouse
+        rm -rf build/temp.* build/lib.*
+
     - name: Build wheel
       env:
         CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        DSF_HPC_BUILD: ${{ matrix.build_variant == 'hpc' && '1' || '0' }}
       run: |
-        rm -rf dist wheelhouse
         python -m build --wheel
 
     - name: Repair wheel (auditwheel)
@@ -178,7 +207,7 @@ jobs:
     - name: Upload wheels as artifacts
       uses: actions/upload-artifact@v6
       with:
-        name: wheel-linux-${{ matrix.python-version }}
+        name: wheel-linux-${{ matrix.python-version }}-${{ matrix.build_variant }}
         path: wheelhouse/*.whl
 
   build-wheels-macos:
@@ -213,10 +242,16 @@ jobs:
         echo "ARCHFLAGS=-arch $(uname -m)" >> $GITHUB_ENV
         echo "_PYTHON_HOST_PLATFORM=macosx-$(sw_vers -productVersion | cut -d. -f1)-$(uname -m)" >> $GITHUB_ENV
 
+    - name: Clean previous build artifacts
+      run: |
+        rm -rf dist wheelhouse
+        rm -rf build/temp.* build/lib.*
+
     - name: Build wheel
       env:
         CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        DSF_HPC_BUILD: "0"
       run: python -m build --wheel
 
     - name: Repair wheel (bundle libraries)
@@ -264,10 +299,17 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install build wheel setuptools pybind11-stubgen
 
+    - name: Clean previous build artifacts
+      shell: bash
+      run: |
+        rm -rf dist wheelhouse
+        rm -rf build/temp.* build/lib.*
+
     - name: Build wheel
       env:
         CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        DSF_HPC_BUILD: "0"
       run: python -m build --wheel
 
     - name: Upload wheels as artifacts
