@@ -6,7 +6,10 @@
 
 #include <format>
 #include <optional>
+#include <string>
+#include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace dsf {
@@ -15,9 +18,11 @@ namespace dsf {
     geometry::PolyLine m_geometry;
     Id m_id;
     std::pair<Id, Id> m_nodePair;
-    std::optional<double> m_betweennessCentrality{std::nullopt};
-    std::optional<double> m_weight{std::nullopt};
     double m_angle;
+    std::unordered_map<
+        std::string,
+        std::variant<std::monostate, bool, std::int64_t, double, std::string>>
+        m_attributes;
 
     void m_setAngle(geometry::Point srcNodeCoordinates,
                     geometry::Point dstNodeCoordinates);
@@ -36,15 +41,13 @@ namespace dsf {
     /// @brief Set the edge's geometry
     /// @param geometry dsf::geometry::PolyLine The edge's geometry, a vector of pairs of doubles representing the coordinates of the edge's geometry
     void setGeometry(geometry::PolyLine geometry);
-    /// @brief Set the edge's betweenness centrality
-    /// @param betweennessCentrality The edge's betweenness centrality
-    inline void setBetweennessCentrality(double const betweennessCentrality) {
-      m_betweennessCentrality = betweennessCentrality;
-    }
-    /// @brief Set the edge's weight
-    /// @param weight The edge's weight
-    /// @throws std::invalid_argument if the weight is less or equal to 0
-    void setWeight(double const weight);
+    /// @brief Set an attribute for the edge
+    /// @param name The attribute's name
+    /// @param value The attribute's value
+    void setAttribute(
+        std::string const& name,
+        std::variant<std::monostate, bool, std::int64_t, double, std::string> const&
+            value);
 
     /// @brief Get the edge's id
     /// @return Id The edge's id
@@ -62,16 +65,26 @@ namespace dsf {
     /// @brief Get the edge's geometry
     /// @return dsf::geometry::PolyLine The edge's geometry, a vector of pairs of doubles representing the coordinates of the edge's geometry
     inline auto const& geometry() const { return m_geometry; }
-    /// @brief Get the edge's betweenness centrality
-    /// @return std::optional<double> The edge's betweenness centrality
-    inline auto const& betweennessCentrality() const { return m_betweennessCentrality; }
 
     /// @brief Get the edge's angle, in radians, between the source and target nodes
     /// @return double The edge's angle, in radians
     inline auto angle() const { return m_angle; }
-    /// @brief Get the edge's weight
-    /// @return double The edge's weight
-    double weight() const;
+    /// @brief Get the edge's attributes
+    /// @return std::unordered_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> The edge's attributes, where the key is the attribute's name and the value is the attribute's value
+    inline auto const& attributes() const { return m_attributes; }
+    /// @brief Get an attribute of the edge by name
+    /// @tparam T The expected type of the attribute's value
+    /// @param name The attribute's name
+    /// @return std::optional<T> The attribute's value if it exists and can be cast to the expected type, std::nullopt otherwise
+    template <typename T>
+    inline std::optional<T> getAttribute(std::string const& name) const {
+      auto it = m_attributes.find(name);
+      if (it == m_attributes.end()) {
+        return std::nullopt;
+      }
+      const T* value = std::get_if<T>(&(it->second));
+      return value ? std::optional<T>(*value) : std::nullopt;
+    }
 
     virtual bool isFull() const = 0;
 
@@ -84,10 +97,25 @@ struct std::formatter<dsf::Edge> {
   constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
   template <typename FormatContext>
   auto format(const dsf::Edge& edge, FormatContext&& ctx) const {
+    std::string strAttributes;
+    for (const auto& [key, value] : edge.attributes()) {
+      const std::string strValue = std::visit(
+          [](const auto& attributeValue) -> std::string {
+            using AttributeType = std::decay_t<decltype(attributeValue)>;
+            if constexpr (std::is_same_v<AttributeType, std::monostate>) {
+              return "";
+            } else {
+              return std::format("{}", attributeValue);
+            }
+          },
+          value);
+      strAttributes += std::format(" ,{}={}", key, strValue);
+    }
     return std::format_to(ctx.out(),
-                          "Edge(id={}, source={}, target={})",
+                          "Edge(id={}, source={}, target={}{})",
                           edge.id(),
                           edge.source(),
-                          edge.target());
+                          edge.target(),
+                          strAttributes);
   }
 };

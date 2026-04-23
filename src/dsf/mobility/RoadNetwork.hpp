@@ -47,6 +47,10 @@ namespace dsf::mobility {
   class RoadNetwork : public Network<RoadJunction, Street> {
   private:
     std::size_t m_capacity;
+    std::function<double(Street const&)> m_weightFunction = [](Street const& street) {
+      return street.length() / street.maxSpeed();
+    };
+    std::optional<double> m_weightThreshold = std::nullopt;
 
     /// @brief If every node has coordinates, set the street angles
     /// @details The street angles are set using the node's coordinates.
@@ -97,6 +101,11 @@ namespace dsf::mobility {
     void autoMapStreetLanes();
     /// @brief Automatically assigns road priorities at intersections, basing on road types
     void autoAssignRoadPriorities();
+    /// @brief Set the edge weight function based on a string identifier
+    /// @param strv_weight The string identifier of the weight function. Supported values are "travelTime", "length" and any custom attribute name.
+    /// @param threshold An optional threshold to apply to the weight function. The effective weight will be weight * (1 + threshold). This can be used to increase the weight of certain paths and thus make them less likely to be chosen by agents when using a weight-based path update strategy.
+    void setEdgeWeight(std::string_view const strv_weight,
+                       std::optional<double> const threshold = std::nullopt);
 
     /// @brief Describe the RoadNetwork
     /// @param os The output stream to write the description to (default is std::cout)
@@ -121,8 +130,8 @@ namespace dsf::mobility {
     /// - type: The type of the street (e.g. residential, primary, secondary, etc.)
     /// - forbiddenTurns: The forbidden turns of the street, encoding information about street into which the street cannot output agents. The format is a string "sourceId1-targetid1, sourceId2-targetid2,..."
     /// - coilcode: An integer code to identify the coil located on the street
-    /// - customWeight: will be stored in the `weight` parameter of the Edge class. You can use it for the shortest path via dsf::weight_functions::customWeight.
     /// - priority: boolean, whether the street is a priority road or not. This information can be used in the traffic light cycle generation.
+    /// - any additional CSV column or JSON field will be imported as an edge attribute, with automatic type inference among bool, int64, double, string and null.
     /// @param args Additional arguments
     template <typename... TArgs>
     void importEdges(const std::string& fileName, TArgs&&... args);
@@ -227,10 +236,6 @@ namespace dsf::mobility {
     /// @param factor The factor to multiply the capacity by
     void changeStreetCapacityByName(std::string const& name, double const factor);
 
-    /// @brief Set the streets' stationary weights
-    /// @param streetWeights A map where the key is the street id and the value is the street stationary weight. If a street id is not present in the map, its stationary weight is set to 1.0.
-    void setStreetStationaryWeights(std::unordered_map<Id, double> const& streetWeights);
-
     /// @brief Get a street from the graph
     /// @param source The source node
     /// @param destination The destination node
@@ -242,27 +247,17 @@ namespace dsf::mobility {
     inline auto capacity() const noexcept { return m_capacity; }
 
     /// @brief Perform a global Dijkstra search to a target node from all other nodes in the graph
-    /// @tparam DynamicsFunc A callable type that takes a const reference to a Street and returns a double representing the edge weight
-    /// @param targetId The id of the target node
-    /// @param getEdgeWeight A callable that takes a const reference to a Street and returns a double representing the edge weight
     /// @param threshold Relative tolerance on full path cost from each node to the target
     /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target
     /// @throws std::out_of_range if the target node does not exist
     /// @details Keeps only transitions that strictly decrease the precomputed
     ///          shortest distance to target. This makes the hop graph acyclic,
     ///          so PathCollection::explode remains finite.
-    template <typename DynamicsFunc>
-      requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
-    PathCollection allPathsTo(Id const targetId,
-                              DynamicsFunc getEdgeWeight,
-                              double const threshold = 1e-9) const;
+    PathCollection allPathsTo(Id const targetId) const;
 
     /// @brief Find the shortest path between two nodes using Dijkstra's algorithm
-    /// @tparam DynamicsFunc A callable type that takes a const reference to a Street and returns a double representing the edge weight
     /// @param sourceId The id of the source node
     /// @param targetId The id of the target node
-    /// @param getEdgeWeight A callable that takes a const reference to a Street and returns a double representing the edge weight
-    /// @param threshold Relative tolerance on the full source-to-target path cost
     /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target. Returns an empty map if no path exists
     /// @throws std::out_of_range if the source or target node does not exist
     /// @details Uses Dijkstra's algorithm to compute strict distances to target, then
@@ -271,12 +266,7 @@ namespace dsf::mobility {
     ///          source-distance labels. The second constraint keeps the returned
     ///          PathCollection sound when exploded, i.e. it avoids combining
     ///          prefix-dependent hops into over-budget paths.
-    template <typename DynamicsFunc>
-      requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
-    PathCollection shortestPath(Id const sourceId,
-                                Id const targetId,
-                                DynamicsFunc getEdgeWeight,
-                                double const threshold = 1e-9) const;
+    PathCollection shortestPath(Id const sourceId, Id const targetId) const;
   };
 
   template <typename... TArgs>
@@ -364,10 +354,10 @@ namespace dsf::mobility {
   namespace detail {
     constexpr double kPathBudgetEpsilon = 1e-9;
 
-    template <typename DynamicsFunc>
-      requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
-    std::unordered_map<Id, double> computeDistancesToTarget(
-        RoadNetwork const& graph, Id const targetId, DynamicsFunc const& getEdgeWeight) {
+    inline std::unordered_map<Id, double> computeDistancesToTarget(
+        RoadNetwork const& graph,
+        Id const targetId,
+        std::function<double(Street const&)> const& getEdgeWeight) {
       if (!graph.nodes().contains(targetId)) {
         throw std::out_of_range(
             std::format("Target node with id {} does not exist in the graph", targetId));
@@ -414,10 +404,10 @@ namespace dsf::mobility {
       return distToTarget;
     }
 
-    template <typename DynamicsFunc>
-      requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
-    std::unordered_map<Id, double> computeDistancesFromSource(
-        RoadNetwork const& graph, Id const sourceId, DynamicsFunc const& getEdgeWeight) {
+    inline std::unordered_map<Id, double> computeDistancesFromSource(
+        RoadNetwork const& graph,
+        Id const sourceId,
+        std::function<double(Street const&)> const& getEdgeWeight) {
       if (!graph.nodes().contains(sourceId)) {
         throw std::out_of_range(
             std::format("Source node with id {} does not exist in the graph", sourceId));
@@ -465,12 +455,9 @@ namespace dsf::mobility {
     }
   }  // namespace detail
 
-  template <typename DynamicsFunc>
-    requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
-  PathCollection RoadNetwork::allPathsTo(Id const targetId,
-                                         DynamicsFunc f,
-                                         double const threshold) const {
-    auto const distToTarget = detail::computeDistancesToTarget(*this, targetId, f);
+  inline PathCollection RoadNetwork::allPathsTo(Id const targetId) const {
+    auto const distToTarget =
+        detail::computeDistancesToTarget(*this, targetId, m_weightFunction);
     PathCollection result;
     for (auto const& [nodeId, pNode] : this->nodes()) {
       if (nodeId == targetId) {
@@ -482,7 +469,10 @@ namespace dsf::mobility {
         continue;
       }
 
-      auto const nodeBudget = (1. + threshold) * nodeDistToTarget;
+      double nodeBudget = nodeDistToTarget;
+      if (m_weightThreshold.has_value()) {
+        nodeBudget *= (1. + *m_weightThreshold);
+      }
       std::vector<Id> hops;
       hops.reserve(pNode->outgoingEdges().size());
 
@@ -503,7 +493,7 @@ namespace dsf::mobility {
           continue;
         }
 
-        auto const fullPathCost = f(outEdge) + nextDistToTarget;
+        auto const fullPathCost = m_weightFunction(outEdge) + nextDistToTarget;
         if (fullPathCost <= nodeBudget + detail::kPathBudgetEpsilon &&
             std::find(hops.begin(), hops.end(), nextNodeId) == hops.end()) {
           hops.push_back(nextNodeId);
@@ -518,12 +508,8 @@ namespace dsf::mobility {
     return result;
   }
 
-  template <typename DynamicsFunc>
-    requires(std::is_invocable_r_v<double, DynamicsFunc, Street const&>)
-  PathCollection RoadNetwork::shortestPath(Id const sourceId,
-                                           Id const targetId,
-                                           DynamicsFunc f,
-                                           double const threshold) const {
+  inline PathCollection RoadNetwork::shortestPath(Id const sourceId,
+                                                  Id const targetId) const {
     // If source equals target, return empty map (no intermediate hops needed)
     if (sourceId == targetId) {
       return PathCollection{};
@@ -538,15 +524,20 @@ namespace dsf::mobility {
       throw std::out_of_range(
           std::format("Target node with id {} does not exist in the graph", targetId));
     }
-    auto const distToTarget = detail::computeDistancesToTarget(*this, targetId, f);
+    auto const distToTarget =
+        detail::computeDistancesToTarget(*this, targetId, m_weightFunction);
 
     auto const sourceBestDistance = distToTarget.at(sourceId);
     if (sourceBestDistance == std::numeric_limits<double>::infinity()) {
       return PathCollection{};
     }
 
-    auto const sourceBudget = (1. + threshold) * sourceBestDistance;
-    auto const distFromSource = detail::computeDistancesFromSource(*this, sourceId, f);
+    double sourceBudget = sourceBestDistance;
+    if (m_weightThreshold.has_value()) {
+      sourceBudget *= (1. + *m_weightThreshold);
+    }
+    auto const distFromSource =
+        detail::computeDistancesFromSource(*this, sourceId, m_weightFunction);
 
     PathCollection candidate;
     std::unordered_map<Id, std::vector<Id>> reverseCandidate;
@@ -576,7 +567,7 @@ namespace dsf::mobility {
           continue;
         }
 
-        auto const edgeWeight = f(outEdge);
+        auto const edgeWeight = m_weightFunction(outEdge);
         auto const nextDistFromSource = distFromSource.at(nextNodeId);
         auto const projectedDistFromSource = nodeDistFromSource + edgeWeight;
 

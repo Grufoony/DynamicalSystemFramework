@@ -34,13 +34,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .value("RANDOM_ODS", dsf::mobility::AgentInsertionMethod::RANDOM_ODS)
       .export_values();
 
-  // Bind PathWeight enum
-  pybind11::enum_<dsf::PathWeight>(mobility, "PathWeight")
-      .value("LENGTH", dsf::PathWeight::LENGTH)
-      .value("TRAVELTIME", dsf::PathWeight::TRAVELTIME)
-      .value("WEIGHT", dsf::PathWeight::WEIGHT)
-      .export_values();
-
   // Bind TrafficLightOptimization enum
   pybind11::enum_<dsf::TrafficLightOptimization>(mobility, "TrafficLightOptimization")
       .value("SINGLE_TAIL", dsf::TrafficLightOptimization::SINGLE_TAIL)
@@ -97,9 +90,24 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("length",
            &dsf::mobility::Street::length,
            dsf::g_docstrings.at("dsf::mobility::Road::length").c_str())
+      .def("nLanes",
+           &dsf::mobility::Street::nLanes,
+           dsf::g_docstrings.at("dsf::mobility::Road::nLanes").c_str())
       .def("maxSpeed",
            &dsf::mobility::Street::maxSpeed,
-           dsf::g_docstrings.at("dsf::mobility::Road::maxSpeed").c_str());
+           dsf::g_docstrings.at("dsf::mobility::Road::maxSpeed").c_str())
+      .def("capacity",
+           &dsf::mobility::Street::capacity,
+           dsf::g_docstrings.at("dsf::mobility::Road::capacity").c_str())
+      .def("transportCapacity",
+           &dsf::mobility::Street::transportCapacity,
+           dsf::g_docstrings.at("dsf::mobility::Road::transportCapacity").c_str())
+      .def("roadStatus",
+           &dsf::mobility::Street::roadStatus,
+           dsf::g_docstrings.at("dsf::mobility::Road::roadStatus").c_str())
+      .def("attributes",
+           &dsf::mobility::Street::attributes,
+           dsf::g_docstrings.at("dsf::Edge::attributes").c_str());
 
   // Bind RoadJunction class to mobility submodule
   pybind11::class_<dsf::mobility::RoadJunction>(mobility, "RoadJunction")
@@ -112,10 +120,12 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("capacity",
            &dsf::mobility::RoadJunction::capacity,
            dsf::g_docstrings.at("dsf::mobility::RoadJunction::capacity").c_str())
-      .def(
-          "transportCapacity",
-          &dsf::mobility::RoadJunction::transportCapacity,
-          dsf::g_docstrings.at("dsf::mobility::RoadJunction::transportCapacity").c_str());
+      .def("transportCapacity",
+           &dsf::mobility::RoadJunction::transportCapacity,
+           dsf::g_docstrings.at("dsf::mobility::RoadJunction::transportCapacity").c_str())
+      .def("attributes",
+           &dsf::mobility::RoadJunction::attributes,
+           dsf::g_docstrings.at("dsf::Node::attributes").c_str());
 
   // Bind Measurement to main module (can be used across different contexts)
   pybind11::class_<dsf::Measurement<double>>(m, "Measurement")
@@ -189,6 +199,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("autoMapStreetLanes",
            &dsf::mobility::RoadNetwork::autoMapStreetLanes,
            dsf::g_docstrings.at("dsf::mobility::RoadNetwork::autoMapStreetLanes").c_str())
+      .def("setEdgeWeight",
+           &dsf::mobility::RoadNetwork::setEdgeWeight,
+           pybind11::arg("weight"),
+           pybind11::arg("threshold") = std::nullopt,
+           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::setEdgeWeight").c_str())
       .def(
           "describe",
           [](dsf::mobility::RoadNetwork& self) {
@@ -198,11 +213,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("autoAssignRoadPriorities",
            &dsf::mobility::RoadNetwork::autoAssignRoadPriorities,
            dsf::g_docstrings.at("dsf::mobility::RoadNetwork::autoAssignRoadPriorities")
-               .c_str())
-      .def("setStreetStationaryWeights",
-           &dsf::mobility::RoadNetwork::setStreetStationaryWeights,
-           pybind11::arg("weights"),
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::setStreetStationaryWeights")
                .c_str())
       .def(
           "importEdges",
@@ -302,45 +312,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("streetId"),
            pybind11::arg("name") = std::string(),
            dsf::g_docstrings.at("dsf::mobility::RoadNetwork::addCoil").c_str())
-      .def(
-          "shortestPath",
-          [](const dsf::mobility::RoadNetwork& self,
-             dsf::Id sourceId,
-             dsf::Id targetId,
-             dsf::PathWeight weightFunction,
-             double threshold) {
-            return self.shortestPath(
-                sourceId,
-                targetId,
-                [weightFunction](const dsf::mobility::Street& street) {
-                  switch (weightFunction) {
-                    case dsf::PathWeight::LENGTH:
-                      return street.length();
-                    case dsf::PathWeight::TRAVELTIME:
-                      return street.length() / street.maxSpeed();
-                    case dsf::PathWeight::WEIGHT:
-                      return street.weight();
-                    default:
-                      return street.length() / street.maxSpeed();
-                  }
-                },
-                threshold);
-          },
-          pybind11::arg("sourceId"),
-          pybind11::arg("targetId"),
-          pybind11::arg("weightFunction") = dsf::PathWeight::TRAVELTIME,
-          pybind11::arg("threshold") = 1e-9,
-          "Find the shortest path between two nodes using Dijkstra's algorithm.\n\n"
-          "Args:\n"
-          "    sourceId (int): The id of the source node\n"
-          "    targetId (int): The id of the target node\n"
-          "    weightFunction (PathWeight): The weight function to use (LENGTH, "
-          "TRAVELTIME, or WEIGHT)\n"
-          "    threshold (float): Relative tolerance applied to the full "
-          "source-to-target path cost\n\n"
-          "Returns:\n"
-          "    PathCollection: A map where each key is a node id and the value is a "
-          "vector of next hop node ids toward the target")
+      .def("shortestPath",
+           &dsf::mobility::RoadNetwork::shortestPath,
+           pybind11::arg("sourceId"),
+           pybind11::arg("targetId"),
+           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::shortestPath").c_str())
       .def(
           "computeBetweennessCentralities",
           [](dsf::mobility::RoadNetwork& self, const std::string& weight) {
@@ -349,8 +325,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
                 return street.length();
               } else if (weight == "traveltime") {
                 return street.length() / street.maxSpeed();
-              } else if (weight == "weight") {
-                return street.weight();
               } else {
                 throw std::invalid_argument(
                     "Invalid weight function: '" + weight +
@@ -375,8 +349,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
                 return street.length();
               } else if (weight == "traveltime") {
                 return street.length() / street.maxSpeed();
-              } else if (weight == "weight") {
-                return street.weight();
               } else {
                 throw std::invalid_argument(
                     "Invalid weight function: '" + weight +
@@ -399,7 +371,8 @@ PYBIND11_MODULE(dsf_cpp, m) {
           [](const dsf::mobility::RoadNetwork& self) {
             std::unordered_map<dsf::Id, std::optional<double>> result;
             for (auto const& [nodeId, pNode] : self.nodes()) {
-              result[nodeId] = pNode->betweennessCentrality();
+              result[nodeId] =
+                  pNode->template getAttribute<double>("betweennessCentrality");
             }
             return result;
           },
@@ -412,7 +385,8 @@ PYBIND11_MODULE(dsf_cpp, m) {
           [](const dsf::mobility::RoadNetwork& self) {
             std::unordered_map<dsf::Id, std::optional<double>> result;
             for (auto const& [edgeId, pEdge] : self.edges()) {
-              result[edgeId] = pEdge->betweennessCentrality();
+              result[edgeId] =
+                  pEdge->template getAttribute<double>("betweennessCentrality");
             }
             return result;
           },
@@ -601,10 +575,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("errorProbability"),
            dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setErrorProbability")
                .c_str())
-      .def("setWeightFunction",
-           &dsf::mobility::FirstOrderDynamics::setWeightFunction,
-           pybind11::arg("weightFunction"),
-           pybind11::arg("weightThreshold") = std::nullopt)
       .def("killStagnantAgents",
            &dsf::mobility::FirstOrderDynamics::killStagnantAgents,
            pybind11::arg("timeToleranceFactor") = 3.,

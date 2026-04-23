@@ -83,15 +83,12 @@ namespace dsf::mobility {
     std::time_t m_previousOptimizationTime{0};
 
   protected:
-    std::function<double(Street const&)> m_weightFunction;
     std::optional<double> m_errorProbability{std::nullopt};
     std::optional<double> m_passageProbability{std::nullopt};
     std::optional<double> m_meanTravelDistance{std::nullopt};
     std::optional<std::time_t> m_meanTravelTime{std::nullopt};
     std::optional<Delay> m_dataUpdatePeriod;
     bool m_bCacheEnabled;
-    PathWeight m_pathWeight = PathWeight::TRAVELTIME;
-    double m_weightTreshold;
     std::optional<double> m_timeToleranceFactor{std::nullopt};
     bool m_forcePriorities{false};
     // Saving variables
@@ -331,11 +328,6 @@ namespace dsf::mobility {
     /// @param timeToleranceFactor The time tolerance factor
     /// @throw std::invalid_argument If the time tolerance factor is not positive
     void killStagnantAgents(double timeToleranceFactor = 3.);
-    /// @brief Set the weight function
-    /// @param pathWeight The dsf::PathWeight function to use for the pathfinding
-    /// @param weightThreshold The weight threshold for updating the paths (default is std::nullopt)
-    void setWeightFunction(PathWeight const pathWeight,
-                           std::optional<double> weightThreshold = std::nullopt);
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.

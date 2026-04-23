@@ -12,7 +12,8 @@ def test_road_network_import_counts(loaded_road_network):
 
 
 def test_shortest_path_returns_path_collection(loaded_road_network):
-    path_map = loaded_road_network.shortestPath(0, 119, mobility.PathWeight.LENGTH)
+    loaded_road_network.setEdgeWeight("length")
+    path_map = loaded_road_network.shortestPath(0, 119)
 
     assert isinstance(path_map, mobility.PathCollection)
     assert len(path_map) > 0
@@ -64,7 +65,7 @@ def test_dynamics_accepts_origin_destination_overloads(dynamics):
 
 
 def test_dynamics_smoke_step_with_linear_speed(dynamics):
-    dynamics.setWeightFunction(mobility.PathWeight.LENGTH)
+    dynamics.graph().setEdgeWeight("length")
     dynamics.setSpeedFunction(mobility.SpeedFunction.LINEAR, 0.8)
     dynamics.setDestinationNodes([0, 1, 2])
     dynamics.setOriginNodes({3: 1.0, 4: 1.0, 5: 1.0})

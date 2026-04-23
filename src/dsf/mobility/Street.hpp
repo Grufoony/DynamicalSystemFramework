@@ -59,7 +59,6 @@ namespace dsf::mobility {
     std::vector<Direction> m_laneMapping;
     std::optional<Counter> m_counter;
     CounterPosition m_counterPosition{CounterPosition::EXIT};
-    double m_stationaryWeight{1.0};
     static std::optional<tbb::concurrent_unordered_map<
         Id,
         std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
@@ -109,12 +108,6 @@ namespace dsf::mobility {
     /// @param meanVehicleLength The mean vehicle length
     /// @throw std::invalid_argument If the mean vehicle length is negative
     static void setMeanVehicleLength(double meanVehicleLength);
-    /// @brief Set the street's stationary weight
-    /// @param weight The street's stationary weight
-    inline void setStationaryWeight(double const weight) {
-      weight > 0. ? m_stationaryWeight = weight
-                  : throw std::invalid_argument("Stationary weight must be positive");
-    }
     /// @brief Change the number of lanes of the street. Usually if there is a construction site, you may want to
     /// reduce the number of lanes and possibly the max speed.
     /// @param nLanes The new number of lanes
@@ -143,9 +136,6 @@ namespace dsf::mobility {
     /// @brief  Get the number of agents on the street
     /// @return std::size_t, The number of agents on the street
     std::size_t nAgents() const final;
-    /// @brief Get the street's stationary weight
-    /// @return double The street's stationary weight
-    inline auto stationaryWeight() const noexcept { return m_stationaryWeight; }
     /// @brief Get the name of the counter
     /// @return std::string The name of the counter
     inline auto counterName() const {

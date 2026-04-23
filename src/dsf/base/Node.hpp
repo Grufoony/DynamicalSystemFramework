@@ -14,11 +14,12 @@
 #include <utility>
 #include <stdexcept>
 #include <optional>
-#include <set>
 #include <map>
 #include <format>
 #include <cassert>
 #include <string>
+#include <unordered_map>
+#include <variant>
 
 namespace dsf {
   /// @brief The Node class represents the concept of a node in the network.
@@ -29,7 +30,10 @@ namespace dsf {
     std::string m_name;
     std::vector<Id> m_ingoingEdges;
     std::vector<Id> m_outgoingEdges;
-    std::optional<double> m_betweennessCentrality{std::nullopt};
+    std::unordered_map<
+        std::string,
+        std::variant<std::monostate, bool, std::int64_t, double, std::string>>
+        m_attributes;
 
   public:
     /// @brief Construct a new Node object with capacity 1
@@ -47,7 +51,7 @@ namespace dsf {
           m_name{other.m_name},
           m_ingoingEdges{other.m_ingoingEdges},
           m_outgoingEdges{other.m_outgoingEdges},
-          m_betweennessCentrality{other.m_betweennessCentrality} {}
+          m_attributes{other.m_attributes} {}
     virtual ~Node() = default;
 
     Node& operator=(Node const& other) {
@@ -57,7 +61,7 @@ namespace dsf {
         m_name = other.m_name;
         m_ingoingEdges = other.m_ingoingEdges;
         m_outgoingEdges = other.m_outgoingEdges;
-        m_betweennessCentrality = other.m_betweennessCentrality;
+        m_attributes = other.m_attributes;
       }
       return *this;
     }
@@ -99,10 +103,14 @@ namespace dsf {
       }
       m_outgoingEdges.push_back(edgeId);
     }
-    /// @brief Set the node's betweenness centrality
-    /// @param betweennessCentrality The node's betweenness centrality
-    inline void setBetweennessCentrality(double const betweennessCentrality) noexcept {
-      m_betweennessCentrality = betweennessCentrality;
+    /// @brief Set an attribute for the node
+    /// @param name The attribute's name
+    /// @param value The attribute's value
+    inline void setAttribute(
+        std::string const& name,
+        std::variant<std::monostate, bool, std::int64_t, double, std::string> const&
+            value) {
+      m_attributes[name] = value;
     }
 
     /// @brief Get the node's id
@@ -120,10 +128,21 @@ namespace dsf {
     /// @brief Get the node's outgoing edges
     /// @return std::vector<Id> A vector of the node's outgoing edge ids
     inline auto const& outgoingEdges() const noexcept { return m_outgoingEdges; }
-    /// @brief Get the node's betweenness centrality
-    /// @return std::optional<double> The node's betweenness centrality, or std::nullopt if not set
-    inline auto const& betweennessCentrality() const noexcept {
-      return m_betweennessCentrality;
+    /// @brief Get the node's attributes
+    /// @return std::unordered_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> A map of the node's attributes, where the key is the attribute's name and the value is the attribute's value
+    inline auto const& attributes() const noexcept { return m_attributes; }
+    /// @brief Get a specific attribute of the node
+    /// @tparam T The type of the attribute's value
+    /// @param name The attribute's name
+    /// @return std::optional<T> The attribute's value if it exists and can be cast to the specified type, std::nullopt otherwise
+    template <typename T>
+    inline std::optional<T> getAttribute(std::string const& name) const {
+      auto it = m_attributes.find(name);
+      if (it == m_attributes.end()) {
+        return std::nullopt;
+      }
+      const T* value = std::get_if<T>(&(it->second));
+      return value ? std::optional<T>(*value) : std::nullopt;
     }
   };
 };  // namespace dsf

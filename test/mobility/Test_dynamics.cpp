@@ -66,11 +66,11 @@ TEST_CASE("FirstOrderDynamics") {
   auto defaultNetwork = RoadNetwork{};
   defaultNetwork.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
   defaultNetwork.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
+  defaultNetwork.setEdgeWeight("length");
   SUBCASE("Constructor") {
     GIVEN("A graph object") {
       WHEN("A dynamics object is created") {
         FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-        dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
         THEN("The node and the street sets are the same") {
           CHECK_EQ(dynamics.graph().nNodes(), 120);
           CHECK_EQ(dynamics.graph().nEdges(), 436);
@@ -149,7 +149,6 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("setDestinationNodes") {
     GIVEN("A dynamics object and a destination node") {
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       WHEN("We add a span of destination nodes") {
         std::array<dsf::Id, 3> nodes{0, 1, 2};
         dynamics.setDestinationNodes(nodes);
@@ -166,7 +165,6 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("addAgent") {
     GIVEN("A dynamics object, a source node and a destination node") {
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.addItinerary(2, 2);
       WHEN("We add the agent") {
         dynamics.addAgent(dynamics.itineraries().at(2), 0);
@@ -183,7 +181,6 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("addAgentsUniformly") {
     GIVEN("A dynamics object and an itinerary") {
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       WHEN("We add a random agent") {
         dynamics.addItinerary(2, 2);
@@ -197,7 +194,6 @@ TEST_CASE("FirstOrderDynamics") {
     }
     GIVEN("A dynamics object and many itineraries") {
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.addItinerary(1, 1);
@@ -232,7 +228,6 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("addAgentsRandomly") {
     GIVEN("A graph object") {
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       WHEN("We add one agent for existing itinerary") {
         std::unordered_map<dsf::Id, double> src{{0, 1.}};
         std::unordered_map<dsf::Id, double> dst{{2, 1.}};
@@ -269,7 +264,6 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("addAgentsODs") {
     GIVEN("A graph object") {
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       WHEN("We add agents with a single OD pair") {
         std::vector<std::tuple<dsf::Id, dsf::Id, double>> ods{{0, 2, 1.}};
         dynamics.setODs(ods);
@@ -318,7 +312,6 @@ TEST_CASE("FirstOrderDynamics") {
       auto const n{100};
       // graph.adjustNodeCapacities();
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
 #ifdef __APPLE__
       {
@@ -372,7 +365,6 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("addAgents") {
     GIVEN("A dynamics object and one itinerary") {
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.addItinerary(2, 2);
       WHEN("We add an agent with itinerary 2") {
         dynamics.addAgent(dynamics.itineraries().at(2), 0);
@@ -395,9 +387,9 @@ TEST_CASE("FirstOrderDynamics") {
       Street s2{1, std::make_pair(1, 2), 5.};
       Street s3{2, std::make_pair(0, 2), 10.};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length", 0.0);
       graph2.addStreets(s1, s2, s3);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH, 0.0);
       WHEN("We add an itinerary and update the paths") {
         dynamics.addItinerary(std::make_shared<Itinerary>(0, 2));
         dynamics.updatePaths();
@@ -426,7 +418,6 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addEdge(6, std::make_pair(5, 4), 10.);
       FirstOrderDynamics dynamics{graph2, false, 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-      dynamics.setWeightFunction(dsf::PathWeight::TRAVELTIME);
       WHEN("We add an iitinerary to node 3 and update paths") {
         dynamics.addItinerary(3, 3);
         dynamics.updatePaths();
@@ -452,7 +443,6 @@ TEST_CASE("FirstOrderDynamics") {
         "A dynamics objects, many streets and many itinearies with same "
         "destination") {
       FirstOrderDynamics dynamics{defaultNetwork, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.addItinerary(0, 118);
       dynamics.addItinerary(1, 118);
       dynamics.addItinerary(2, 118);
@@ -481,9 +471,9 @@ TEST_CASE("FirstOrderDynamics") {
       Street s3{2, std::make_pair(0, 3), 5.};
       Street s4{3, std::make_pair(3, 2), 5.};
       RoadNetwork graph;
+      graph.setEdgeWeight("length");
       graph.addStreets(s1, s2, s3, s4);
       FirstOrderDynamics dynamics{graph, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.addItinerary(0, 2);
       WHEN("We update the paths") {
         dynamics.updatePaths();
@@ -513,7 +503,6 @@ TEST_CASE("FirstOrderDynamics") {
       graph.addStreets(s1, s2, s3, s4);
       FirstOrderDynamics dynamics{graph, false, 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-      dynamics.setWeightFunction(dsf::PathWeight::TRAVELTIME, 1.);
       dynamics.addItinerary(0, 2);
       WHEN("We update the paths") {
         dynamics.updatePaths();
@@ -528,12 +517,40 @@ TEST_CASE("FirstOrderDynamics") {
         }
       }
     }
+    GIVEN("A dynamics object with a custom path weight callable") {
+      Street s1{0, std::make_pair(0, 1), 5.};
+      Street s2{1, std::make_pair(1, 2), 5.};
+      Street s3{2, std::make_pair(0, 3), 5.};
+      Street s4{3, std::make_pair(3, 2), 5.};
+      s1.setAttribute("custom_cost", 100.0);
+      s2.setAttribute("custom_cost", 100.0);
+      s3.setAttribute("custom_cost", 1.0);
+      s4.setAttribute("custom_cost", 1.0);
+
+      RoadNetwork graph;
+      graph.setEdgeWeight("custom_cost");
+      graph.addStreets(s1, s2, s3, s4);
+      FirstOrderDynamics dynamics{graph, false, 69};
+      dynamics.addItinerary(0, 2);
+
+      WHEN("We update the paths") {
+        dynamics.updatePaths();
+        THEN("The custom attribute-based weight drives the selected branch") {
+          auto const& path{dynamics.itineraries().at(0)->path()};
+          CHECK_EQ(path.at(0).size(), 1);
+          CHECK_EQ(path.at(0)[0], 3);
+          CHECK_EQ(path.at(3).size(), 1);
+          CHECK_EQ(path.at(3)[0], 2);
+          CHECK_FALSE(path.at(0)[0] == 1);
+        }
+      }
+    }
     GIVEN("A disconnected graph") {
       Street s1{0, std::make_pair(0, 1), 10.};
       RoadNetwork graph;
+      graph.setEdgeWeight("length");
       graph.addStreets(s1);
       FirstOrderDynamics dynamics{graph, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
 
       WHEN(
           "We add an impossible itinerary (to source node) and update paths with "
@@ -556,9 +573,9 @@ TEST_CASE("FirstOrderDynamics") {
       Street s1{0, std::make_pair(0, 1), 13.8888888889};
       Street s2{1, std::make_pair(1, 0), 13.8888888889};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s1, s2);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(1, 1);
       dynamics.updatePaths();
@@ -586,9 +603,9 @@ TEST_CASE("FirstOrderDynamics") {
       Street s2{1, std::make_pair(1, 2), 5.};
       Street s3{2, std::make_pair(0, 2), 10.};
       RoadNetwork graph;
+      graph.setEdgeWeight("length");
       graph.addStreets(s1, s2, s3);
       FirstOrderDynamics dynamics{graph, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -623,9 +640,9 @@ TEST_CASE("FirstOrderDynamics") {
       Street s1{0, std::make_pair(0, 1), 13.8888888889};
       Street s2{1, std::make_pair(1, 0), 13.8888888889};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s1, s2);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(1, 1);
       dynamics.updatePaths();
@@ -651,9 +668,9 @@ TEST_CASE("FirstOrderDynamics") {
       Street s2{1, std::make_pair(1, 0), 13.8888888889};
       s1.setTransportCapacity(0.3);
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s1, s2);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(std::make_shared<Itinerary>(0, 1));
       dynamics.updatePaths();
@@ -685,8 +702,8 @@ TEST_CASE("FirstOrderDynamics") {
       Street s2{1, std::make_pair(1, 0), 13.8888888889};
       RoadNetwork graph2;
       graph2.addStreets(s1, s2);
+      graph2.setEdgeWeight("length");
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(1, 1);
       dynamics.updatePaths();
@@ -717,10 +734,10 @@ TEST_CASE("FirstOrderDynamics") {
       Street s1_2{5, std::make_pair(1, 2), 30., 15.};
       Street s2_1{7, std::make_pair(2, 1), 30., 15.};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s0_1, s1_0, s1_2, s2_1);
       graph2.makeRoundabout(2);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setDestinationNodes({1, 2});
       dynamics.updatePaths();
@@ -756,9 +773,9 @@ TEST_CASE("FirstOrderDynamics") {
     GIVEN("A non-random agent at a dead-end node with no valid next street") {
       Street s0{0, std::make_pair(0, 1), 13.8888888889};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s0);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       // Manually construct an itinerary whose path leads through node 1, but
       // node 1 has no outgoing edges. m_nextStreetId will return nullopt and
@@ -795,13 +812,13 @@ TEST_CASE("FirstOrderDynamics") {
       Street s3{16, std::make_pair(3, 1), 30., 15.};
       Street s4{9, std::make_pair(1, 4), 30., 15.};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addNode<TrafficLight>(1, 4);
       graph2.addStreets(s1, s2, s3, s4);
       auto& tl = graph2.node<TrafficLight>(1);
       tl.setCycle(1, dsf::Direction::ANY, {2, 0});
       tl.setCycle(16, dsf::Direction::ANY, {2, 2});
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -846,6 +863,7 @@ TEST_CASE("FirstOrderDynamics") {
       Street s1_4{9, std::make_pair(1, 4), 30., 15.};
 
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       {
         graph2.addNode<TrafficLight>(1, 6, dsf::geometry::Point(0., 0.));
         auto& tl = graph2.node<TrafficLight>(1);
@@ -863,7 +881,6 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.adjustNodeCapacities();
 
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setDestinationNodes({0, 2, 3, 4});
       dynamics.updatePaths();
@@ -910,6 +927,7 @@ TEST_CASE("FirstOrderDynamics") {
       Street s1_4{9, std::make_pair(1, 4), 30., 15.};
 
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       {
         graph2.addNode<TrafficLight>(1, 6, dsf::geometry::Point(0, 0));
         auto& tl = graph2.node<TrafficLight>(1);
@@ -929,7 +947,6 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.autoMapStreetLanes();
 
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setDestinationNodes({0, 2, 3, 4});
       dynamics.updatePaths();
@@ -976,6 +993,7 @@ TEST_CASE("FirstOrderDynamics") {
         Street s_14{9, std::make_pair(1, 4), length, max_speed};
         Street s_41{21, std::make_pair(4, 1), length, max_speed};
         RoadNetwork graph2;
+        graph2.setEdgeWeight("length");
         graph2.addStreets(s_01, s_10, s_12, s_21, s_13, s_31, s_14, s_41);
         auto& tl = graph2.makeTrafficLight(1, 8, 3);
         tl.addStreetPriority(1);
@@ -985,7 +1003,6 @@ TEST_CASE("FirstOrderDynamics") {
         tl.setComplementaryCycle(16, 11);
         tl.setComplementaryCycle(21, 11);
         FirstOrderDynamics dynamics{graph2, false, 69};
-        dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
         dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
         dynamics.setDestinationNodes({0, 2, 3, 4});
         dynamics.updatePaths();
@@ -1038,11 +1055,11 @@ TEST_CASE("FirstOrderDynamics") {
       Street s3{3, std::make_pair(1, 0), 10., 10.};
       Street s4{5, std::make_pair(1, 2), 10., 10.};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s1, s2, s3, s4);
       auto& rb = graph2.makeRoundabout(1);
       graph2.adjustNodeCapacities();
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(0, 0);
       dynamics.addItinerary(2, 2);
@@ -1086,9 +1103,9 @@ TEST_CASE("FirstOrderDynamics") {
       Street s1{0, std::make_pair(0, 1), 3.};
       Street s2{5, std::make_pair(1, 2), 1.};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s1, s2);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -1114,9 +1131,9 @@ TEST_CASE("FirstOrderDynamics") {
       Street s2{1, std::make_pair(1, 2), 1.};
       s1.setTransportCapacity(0.3);
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s1, s2);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -1140,6 +1157,7 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("Intersection right of way") {
     GIVEN("A dynamics object with five nodes and eight streets") {
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addNode<Intersection>(0, dsf::geometry::Point(0, 0));
       graph2.addNode<Intersection>(1, dsf::geometry::Point(1, -1));   // A
       graph2.addNode<Intersection>(2, dsf::geometry::Point(1, 1));    // B
@@ -1154,7 +1172,6 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addEdge<Street>(15, std::make_pair(3, 0), 10., 10.);
       graph2.addEdge<Street>(20, std::make_pair(4, 0), 10., 10.);
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH, 0.);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.graph().node(0).setCapacity(3);
       dynamics.graph().node(0).setTransportCapacity(1);
@@ -1232,10 +1249,10 @@ TEST_CASE("FirstOrderDynamics") {
       Street s1{0, std::make_pair(0, 1), 30., 15.};
       Street s2{1, std::make_pair(1, 2), 30., 15.};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s1, s2);
       graph2.addCoil(0);  // Add coil for testing road_data with coils
       FirstOrderDynamics dynamics{graph2, false, 69};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -1673,8 +1690,6 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK(simColumns.count("id") == 1);
           CHECK(simColumns.count("name") == 1);
           CHECK(simColumns.count("speed_function") == 1);
-          CHECK(simColumns.count("weight_function") == 1);
-          CHECK(simColumns.count("weight_threshold") == 1);
           CHECK(simColumns.count("error_probability") == 1);
           CHECK(simColumns.count("passage_probability") == 1);
           CHECK(simColumns.count("mean_travel_distance_m") == 1);
@@ -1777,9 +1792,9 @@ TEST_CASE("FirstOrderDynamics") {
       graph.addStreets(s0, s1, s2);
       graph.autoMapStreetLanes();
       graph.adjustNodeCapacities();
+      graph.setEdgeWeight("length");
 
       FirstOrderDynamics dynamics{graph, false, 42};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setOriginNodes({{0, 1.0}});
 
@@ -1828,9 +1843,9 @@ TEST_CASE("FirstOrderDynamics") {
       graph.addStreets(s0, s1, s2, s3);
       graph.autoMapStreetLanes();
       graph.adjustNodeCapacities();
+      graph.setEdgeWeight("length");
 
       FirstOrderDynamics dynamics{graph, false, 123};
-      dynamics.setWeightFunction(dsf::PathWeight::LENGTH);
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.);
       dynamics.setOriginNodes({{0, 1.0}});
 
@@ -1864,105 +1879,6 @@ TEST_CASE("FirstOrderDynamics") {
   }
 }
 
-TEST_CASE("Stationary Weights Impact on Random Navigation") {
-  RoadNetwork network;
-
-  network.addNode<Intersection>(0);
-  network.addNode<Intersection>(1);
-  network.addNode<Intersection>(2);
-  network.addNode<Intersection>(3);
-
-  const int numAgents = 3000;
-  const int highCapacity = numAgents + 100;
-
-  // Street 0: 0 -> 1
-  // High length to hold all agents, high transport capacity to move them all at once
-  network.addStreet(Street(0,
-                           {0, 1},
-                           100.0,
-                           10.0,
-                           1,
-                           "Street 0",
-                           {},
-                           highCapacity,
-                           static_cast<double>(highCapacity)));
-  // Street 1: 1 -> 2
-  network.addStreet(Street(1,
-                           {1, 2},
-                           100.0,
-                           10.0,
-                           1,
-                           "Street 1",
-                           {},
-                           highCapacity,
-                           static_cast<double>(highCapacity)));
-  // Street 2: 1 -> 3
-  network.addStreet(Street(2,
-                           {1, 3},
-                           100.0,
-                           10.0,
-                           1,
-                           "Street 2",
-                           {},
-                           highCapacity,
-                           static_cast<double>(highCapacity)));
-
-  // Set stationary weights
-  // Street 0: weight 1.0
-  network.edge(0).setStationaryWeight(1.0);
-
-  // Street 1: weight 1.0
-  network.edge(1).setStationaryWeight(1.0);
-
-  // Street 2: weight 4.0
-  network.edge(2).setStationaryWeight(4.0);
-
-  // Adjust node capacities to match street capacities
-  network.adjustNodeCapacities();
-
-  // Initialize dynamics
-  FirstOrderDynamics dynamics(network, false, 42);
-  dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-
-  // Add many random agents to Street 0
-  for (int i = 0; i < numAgents; ++i) {
-    auto agent = std::make_unique<Agent>(i, 0, nullptr, 0);
-    agent->setStreetId(0);
-    agent->setSpeed(10.0);
-    agent->setFreeTime(0);
-    dynamics.graph().edge(0).addAgent(std::move(agent), dynamics.time_step());
-  }
-
-  // Evolve simulation
-  // Step 1: Agents move from Street 0 to Node 1
-  dynamics.evolve();
-
-  // Step 2: Agents move from Node 1 to Street 1 or 2
-  dynamics.evolve();
-
-  // Count agents on Street 1 and Street 2
-  size_t countStreet1 = dynamics.graph().edge(1).nAgents();
-  size_t countStreet2 = dynamics.graph().edge(2).nAgents();
-
-  // Expected probabilities:
-  // P(1) ~ speed * speed * sqrt(1/1) = 100
-  // P(2) ~ speed * speed * sqrt(4/1) = 200
-  // Ratio 1:2 -> P(1) = 1/3, P(2) = 2/3
-
-  double ratio =
-      (countStreet1 > 0) ? static_cast<double>(countStreet2) / countStreet1 : 0.0;
-
-  std::cout << "Agents on Street 1: " << countStreet1 << std::endl;
-  std::cout << "Agents on Street 2: " << countStreet2 << std::endl;
-  std::cout << "Ratio (Street 2 / Street 1): " << ratio << std::endl;
-
-  // Check if ratio is close to 2.0
-  CHECK_EQ(ratio, doctest::Approx(2.0).epsilon(0.1));  // Allow 10% error margin
-
-  // Check total agents preserved (some might be in transit or node if something went wrong)
-  CHECK_EQ(countStreet1 + countStreet2, numAgents);
-}
-
 TEST_CASE("RoadDynamics Configuration") {
   auto defaultNetwork = RoadNetwork{};
   // We need at least some nodes to add agents
@@ -1977,9 +1893,9 @@ TEST_CASE("RoadDynamics Configuration") {
       Street s1{0, std::make_pair(0, 1), 13.8888888889};
       Street s2{1, std::make_pair(1, 2), 13.8888888889};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s1, s2);
       FirstOrderDynamics dyn{graph2, false, 42};
-      dyn.setWeightFunction(dsf::PathWeight::LENGTH);
       dyn.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dyn.addItinerary(2, 2);
       dyn.updatePaths();
@@ -2029,9 +1945,9 @@ TEST_CASE("RoadDynamics Configuration") {
       Street s1_2{1, std::make_pair(1, 2), 13.8888888889};
       Street s1_3{2, std::make_pair(1, 3), 13.8888888889};
       RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
       graph2.addStreets(s0_1, s1_2, s1_3);
       FirstOrderDynamics dyn{graph2, false, 42};
-      dyn.setWeightFunction(dsf::PathWeight::LENGTH);
       dyn.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dyn.setDestinationNodes({2, 3});
       dyn.updatePaths();

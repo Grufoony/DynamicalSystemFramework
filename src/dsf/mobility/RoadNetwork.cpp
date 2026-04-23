@@ -12,6 +12,19 @@
 // Default traffic light cycle duration in seconds
 constexpr dsf::Delay TRAFFICLIGHT_DEFAULT_CYCLE = 90;
 
+static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
+    std::to_array<std::string_view>({"id",
+                                     "source",
+                                     "target",
+                                     "length",
+                                     "maxspeed",
+                                     "nlanes",
+                                     "name",
+                                     "type",
+                                     "coilcode",
+                                     "priority",
+                                     "geometry"});
+
 namespace dsf::mobility {
   void RoadNetwork::m_updateMaxAgentCapacity() {
     m_capacity = 0;
@@ -27,6 +40,15 @@ namespace dsf::mobility {
     csv::CSVReader reader(fileName, format);
 
     auto const& colNames = reader.get_col_names();
+    // Create a vector of attributes not in EDGE_DEFAULT_ATTRIBUTES
+    std::vector<std::string_view> additionalAttributes;
+    for (auto const& colName : colNames) {
+      if (std::find(EDGE_DEFAULT_ATTRIBUTES.begin(),
+                    EDGE_DEFAULT_ATTRIBUTES.end(),
+                    colName) == EDGE_DEFAULT_ATTRIBUTES.end()) {
+        additionalAttributes.push_back(colName);
+      }
+    }
     bool const bHasGeometry =
         (std::find(colNames.begin(), colNames.end(), "geometry") != colNames.end());
     if (!bHasGeometry) {
@@ -38,8 +60,6 @@ namespace dsf::mobility {
         (std::find(colNames.begin(), colNames.end(), "nlanes") != colNames.end());
     bool const bHasCoilcode =
         (std::find(colNames.begin(), colNames.end(), "coilcode") != colNames.end());
-    bool const bHasCustomWeight =
-        (std::find(colNames.begin(), colNames.end(), "customWeight") != colNames.end());
     bool const bHasPriority =
         (std::find(colNames.begin(), colNames.end(), "priority") != colNames.end());
 
@@ -129,35 +149,31 @@ namespace dsf::mobility {
           addCoil(streetId, strCoilCode);
         }
       }
-      if (bHasCustomWeight) {
-        try {
-          edge(streetId).setWeight(row["customWeight"].get<double>());
-        } catch (...) {
-          spdlog::warn("Invalid custom weight for {}", edge(streetId));
+      // Handle additional attributes
+      for (auto const attrName : additionalAttributes) {
+        auto const strAttrName{std::string(attrName)};
+        auto const attrValue = row[strAttrName].get<std::string>();
+        if (attrValue.empty()) {
+          edge(streetId).setAttribute(strAttrName, std::monostate{});
+        } else if (attrValue == "true" || attrValue == "false") {
+          edge(streetId).setAttribute(strAttrName, attrValue == "true");
+        } else {
+          try {
+            int64_t intValue = std::stoll(attrValue);
+            edge(streetId).setAttribute(strAttrName, intValue);
+          } catch (...) {
+            try {
+              double doubleValue = std::stod(attrValue);
+              edge(streetId).setAttribute(strAttrName, doubleValue);
+            } catch (...) {
+              edge(streetId).setAttribute(strAttrName, attrValue);
+            }
+          }
         }
       }
     }
     this->m_nodes.rehash(0);
     this->m_edges.rehash(0);
-    // Parse forbidden turns
-    // for (auto const& [streetId, forbiddenTurns] : mapForbiddenTurns) {
-    //   auto* pStreet{&edge(streetId)};
-    //   std::istringstream iss{forbiddenTurns};
-    //   std::string pair;
-    //   while (std::getline(iss, pair, ',')) {
-    //     // Decompose pair = sourceId-targetId
-    //     std::istringstream pairStream(pair);
-    //     std::string strSourceId, strTargetId;
-    //     std::getline(pairStream, strSourceId, '-');
-    //     // targetId is the remaining part
-    //     std::getline(pairStream, strTargetId);
-
-    //     Id const sourceId{std::stoul(strSourceId)};
-    //     Id const targetId{std::stoul(strTargetId)};
-
-    //     pStreet->addForbiddenTurn(edge(sourceId, targetId).id());
-    //   }
-    // }
   }
   void RoadNetwork::m_csvNodePropertiesImporter(const std::string& fileName,
                                                 const char separator) {
@@ -341,15 +357,6 @@ namespace dsf::mobility {
           addCoil(edge_id);
         }
       }
-      // Check if there is custom weight property
-      if (!edge_properties.at_key("customWeight").error()) {
-        auto const& epCustomWeight = edge_properties["customWeight"];
-        if (epCustomWeight.is_number()) {
-          edge(edge_id).setWeight(epCustomWeight.get_double());
-        } else {
-          spdlog::warn("Invalid custom weight for edge {}, keeping default", edge_id);
-        }
-      }
       // Check if there is priority property
       if (!edge_properties.at_key("priority").error()) {
         auto const& epPriority = edge_properties["priority"];
@@ -359,6 +366,33 @@ namespace dsf::mobility {
           }
         } else {
           spdlog::warn("Invalid priority for edge {}, keeping default", edge_id);
+        }
+      }
+      // Handle additional attributes
+      for (auto const& [attrName, attrValue] : edge_properties.get_object()) {
+        if (std::find(EDGE_DEFAULT_ATTRIBUTES.begin(),
+                      EDGE_DEFAULT_ATTRIBUTES.end(),
+                      attrName) != EDGE_DEFAULT_ATTRIBUTES.end()) {
+          continue;  // Skip default attributes
+        }
+        auto const strAttrName{std::string(attrName)};
+        if (attrValue.is_null()) {
+          edge(edge_id).setAttribute(strAttrName, std::monostate{});
+        } else if (attrValue.is_bool()) {
+          edge(edge_id).setAttribute(strAttrName, attrValue.get_bool());
+        } else if (attrValue.is_number()) {
+          if (attrValue.is_int64()) {
+            edge(edge_id).setAttribute(strAttrName, attrValue.get_int64());
+          } else {
+            edge(edge_id).setAttribute(strAttrName, attrValue.get_double());
+          }
+        } else if (attrValue.is_string()) {
+          edge(edge_id).setAttribute(strAttrName,
+                                     std::string(attrValue.get_string().value()));
+        } else {
+          spdlog::warn("Unsupported attribute type for attribute {} of edge {}",
+                       strAttrName,
+                       edge_id);
         }
       }
     }
@@ -845,6 +879,41 @@ namespace dsf::mobility {
     spdlog::debug("Done auto-assigning road priorities.");
   }
 
+  void RoadNetwork::setEdgeWeight(std::string_view const strv_weight,
+                                  std::optional<double> const threshold) {
+    if (strv_weight == "traveltime") {
+      m_weightFunction = [](Street const& street) {
+        return street.length() / street.maxSpeed();
+      };
+    } else if (strv_weight == "length") {
+      m_weightFunction = [](Street const& street) { return street.length(); };
+    } else {  // Custom attribute
+      m_weightFunction = [strv_weight](Street const& street) {
+        auto it = std::find_if(
+            street.attributes().cbegin(),
+            street.attributes().cend(),
+            [strv_weight](auto const& pair) { return pair.first == strv_weight; });
+        if (it == street.attributes().end()) {
+          throw std::runtime_error(std::format(
+              "Attribute {} not found in street {}", strv_weight, street.id()));
+        }
+        auto const& attrValue = it->second;
+        return std::visit(
+            [](auto&& value) -> double {
+              using T = std::decay_t<decltype(value)>;
+              if constexpr (std::is_arithmetic_v<T>) {
+                return static_cast<double>(value);
+              } else {
+                throw std::runtime_error(
+                    "Custom weight attribute is not a numeric type.");
+              }
+            },
+            attrValue);
+      };
+    }
+    m_weightThreshold = threshold;
+  }
+
   void RoadNetwork::describe(std::ostream& os) const {
     os << "RoadNetwork with " << nNodes() << " nodes and " << nEdges()
        << " edges. Total capacity: " << m_capacity << " vehicles.\n"
@@ -1048,22 +1117,6 @@ namespace dsf::mobility {
         factor,
         nAffectedRoads.load(),
         streetName);
-  }
-
-  void RoadNetwork::setStreetStationaryWeights(
-      std::unordered_map<Id, double> const& weights) {
-    std::for_each(DSF_EXECUTION m_edges.cbegin(),
-                  m_edges.cend(),
-                  [this, &weights](auto const& pair) {
-                    auto const streetId = pair.first;
-                    auto const& pStreet = pair.second;
-                    auto it = weights.find(streetId);
-                    if (it != weights.end()) {
-                      pStreet->setStationaryWeight(it->second);
-                    } else {
-                      pStreet->setStationaryWeight(1.0);
-                    }
-                  });
   }
 
   Street const* RoadNetwork::street(Id source, Id destination) const {

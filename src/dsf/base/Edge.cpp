@@ -36,17 +36,10 @@ namespace dsf {
       m_angle = 0.;
     }
   }
-  void Edge::setWeight(double const weight) {
-    if (weight <= 0.) {
-      throw std::invalid_argument(
-          std::format("Edge weight ({}) must be greater than 0.", weight));
-    }
-    m_weight = weight;
-  }
-
-  double Edge::weight() const {
-    return m_weight.has_value() ? *m_weight
-                                : throw std::runtime_error("Edge weight is not set.");
+  void Edge::setAttribute(
+      std::string const& name,
+      std::variant<std::monostate, bool, std::int64_t, double, std::string> const& value) {
+    m_attributes[name] = value;
   }
 
   double Edge::deltaAngle(double const previousEdgeAngle) const {

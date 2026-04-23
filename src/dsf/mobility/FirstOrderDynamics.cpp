@@ -10,8 +10,7 @@ namespace dsf::mobility {
                                          bool useCache,
                                          std::optional<unsigned int> seed)
       : Dynamics<RoadNetwork>(graph, seed), m_bCacheEnabled{useCache} {
-    // Set defaults for weight and speed functions
-    this->setWeightFunction(PathWeight::TRAVELTIME);
+    // Set defaults for speed function
     this->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
     if (m_bCacheEnabled) {
       if (!std::filesystem::exists(CACHE_FOLDER)) {
@@ -86,8 +85,7 @@ namespace dsf::mobility {
     }
     auto const oldSize{pItinerary->path().size()};
 
-    auto const path{this->graph().allPathsTo(
-        pItinerary->destination(), m_weightFunction, m_weightTreshold)};
+    auto const path{this->graph().allPathsTo(pItinerary->destination())};
     pItinerary->setPath(path);
     auto const newSize{pItinerary->path().size()};
     if (oldSize > 0 && newSize != oldSize) {
@@ -280,16 +278,12 @@ namespace dsf::mobility {
     std::set<Id> forbiddenTurns;
     double speedCurrent{1.0};
     double lengthCurrent{1.0};
-    double stationaryWeightCurrent = 1.0;
-    double bcCurrent{1.0};
     if (pAgent->streetId().has_value()) {
       auto const* pStreetCurrent{&this->graph().edge(pAgent->streetId().value())};
       previousNodeId = pStreetCurrent->source();
       forbiddenTurns = pStreetCurrent->forbiddenTurns();
       speedCurrent = pStreetCurrent->maxSpeed();
       lengthCurrent = pStreetCurrent->length();
-      stationaryWeightCurrent = pStreetCurrent->stationaryWeight();
-      bcCurrent = pStreetCurrent->betweennessCentrality().value_or(1.0);
     }
 
     // Get path targets for non-random agents
@@ -335,13 +329,8 @@ namespace dsf::mobility {
       // Calculate base probability
       auto const speedNext{pStreetOut->maxSpeed()};
       auto const lengthNext{pStreetOut->length()};
-      auto const bcNext{pStreetOut->betweennessCentrality().value_or(1.0)};
-      double const stationaryWeightNext = pStreetOut->stationaryWeight();
-      auto const weightRatio{stationaryWeightNext /
-                             stationaryWeightCurrent};  // SQRT (p_i / p_j)
       double probability =
-          std::sqrt((bcCurrent * bcNext) * (speedCurrent / lengthCurrent) *
-                    (speedNext / lengthNext) * weightRatio);
+          std::sqrt((speedCurrent / lengthCurrent) * (speedNext / lengthNext));
 
       // Apply error probability for non-random agents
       if (this->m_errorProbability.has_value() && !pathTargets.empty()) {
@@ -1241,8 +1230,6 @@ namespace dsf::mobility {
                                       "id INTEGER PRIMARY KEY, "
                                       "name TEXT, "
                                       "speed_function TEXT, "
-                                      "weight_function TEXT, "
-                                      "weight_threshold REAL NOT NULL, "
                                       "error_probability REAL, "
                                       "passage_probability REAL, "
                                       "mean_travel_distance_m REAL, "
@@ -1257,57 +1244,44 @@ namespace dsf::mobility {
     // Insert simulation parameters into the simulations table
     SQLite::Statement insertSimStmt(
         *this->database(),
-        "INSERT INTO simulations (id, name, speed_function, weight_function, "
-        "weight_threshold, error_probability, passage_probability, "
-        "mean_travel_distance_m, mean_travel_time_s, stagnant_tolerance_factor, "
-        "force_priorities, save_avg_stats, save_road_data, save_travel_data, "
-        "save_agent_data) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        "INSERT INTO simulations (id, name, speed_function, error_probability, "
+        "passage_probability, mean_travel_distance_m, mean_travel_time_s, "
+        "stagnant_tolerance_factor, force_priorities, save_avg_stats, save_road_data, "
+        "save_travel_data, save_agent_data) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     insertSimStmt.bind(1, static_cast<std::int64_t>(this->id()));
     insertSimStmt.bind(2, this->name());
     insertSimStmt.bind(3, this->m_speedFunctionDescription);
-    switch (this->m_pathWeight) {
-      case PathWeight::LENGTH:
-        insertSimStmt.bind(4, "LENGTH");
-        break;
-      case PathWeight::TRAVELTIME:
-        insertSimStmt.bind(4, "TRAVELTIME");
-        break;
-      case PathWeight::WEIGHT:
-        insertSimStmt.bind(4, "WEIGHT");
-        break;
-    }
-    insertSimStmt.bind(5, this->m_weightTreshold);
     if (this->m_errorProbability.has_value()) {
-      insertSimStmt.bind(6, *this->m_errorProbability);
+      insertSimStmt.bind(4, *this->m_errorProbability);
+    } else {
+      insertSimStmt.bind(4);
+    }
+    if (this->m_passageProbability.has_value()) {
+      insertSimStmt.bind(5, *this->m_passageProbability);
+    } else {
+      insertSimStmt.bind(5);
+    }
+    if (this->m_meanTravelDistance.has_value()) {
+      insertSimStmt.bind(6, *this->m_meanTravelDistance);
     } else {
       insertSimStmt.bind(6);
     }
-    if (this->m_passageProbability.has_value()) {
-      insertSimStmt.bind(7, *this->m_passageProbability);
+    if (this->m_meanTravelTime.has_value()) {
+      insertSimStmt.bind(7, static_cast<int64_t>(*this->m_meanTravelTime));
     } else {
       insertSimStmt.bind(7);
     }
-    if (this->m_meanTravelDistance.has_value()) {
-      insertSimStmt.bind(8, *this->m_meanTravelDistance);
+    if (this->m_timeToleranceFactor.has_value()) {
+      insertSimStmt.bind(8, *this->m_timeToleranceFactor);
     } else {
       insertSimStmt.bind(8);
     }
-    if (this->m_meanTravelTime.has_value()) {
-      insertSimStmt.bind(9, static_cast<int64_t>(*this->m_meanTravelTime));
-    } else {
-      insertSimStmt.bind(9);
-    }
-    if (this->m_timeToleranceFactor.has_value()) {
-      insertSimStmt.bind(10, *this->m_timeToleranceFactor);
-    } else {
-      insertSimStmt.bind(10);
-    }
-    insertSimStmt.bind(11, this->m_forcePriorities);
-    insertSimStmt.bind(12, this->m_bSaveAverageStats);
-    insertSimStmt.bind(13, this->m_bSaveStreetData);
-    insertSimStmt.bind(14, this->m_bSaveTravelData);
-    insertSimStmt.bind(15, this->m_bSaveAgentData);
+    insertSimStmt.bind(9, this->m_forcePriorities);
+    insertSimStmt.bind(10, this->m_bSaveAverageStats);
+    insertSimStmt.bind(11, this->m_bSaveStreetData);
+    insertSimStmt.bind(12, this->m_bSaveTravelData);
+    insertSimStmt.bind(13, this->m_bSaveAgentData);
     insertSimStmt.exec();
   }
   void FirstOrderDynamics::m_dumpNetwork() const {
@@ -1415,50 +1389,15 @@ namespace dsf::mobility {
     }
     m_timeToleranceFactor = timeToleranceFactor;
   }
-  void FirstOrderDynamics::setWeightFunction(PathWeight const pathWeight,
-                                             std::optional<double> weightTreshold) {
-    m_pathWeight = pathWeight;
-    switch (pathWeight) {
-      case PathWeight::LENGTH:
-        m_weightFunction = [](Street const& pStreet) { return pStreet.length(); };
-        m_weightTreshold = weightTreshold.value_or(1.);
-        break;
-      case PathWeight::TRAVELTIME:
-        m_weightFunction = [this](Street const& pStreet) {
-          return this->m_streetEstimatedTravelTime(pStreet);
-        };
-        m_weightTreshold = weightTreshold.value_or(0.0069);
-        break;
-      case PathWeight::WEIGHT:
-        m_weightFunction = [](Street const& pStreet) { return pStreet.weight(); };
-        m_weightTreshold = weightTreshold.value_or(1.);
-        break;
-      default:
-        spdlog::error("Invalid weight function. Defaulting to traveltime");
-        m_weightFunction = [this](Street const& pStreet) {
-          return this->m_streetEstimatedTravelTime(pStreet);
-        };
-        m_weightTreshold = weightTreshold.value_or(0.0069);
-        break;
-    }
-  }
   void FirstOrderDynamics::setOriginNodes(
       std::unordered_map<Id, double> const& originNodes) {
     m_originNodes.clear();
     m_originNodes.reserve(originNodes.size());
     if (originNodes.empty()) {
       // If no origin nodes are provided, try to set origin nodes basing on streets' stationary weights
-      double totalStationaryWeight = 0.0;
+      auto const nEdges{this->graph().nEdges()};
       for (auto const& [edgeId, pEdge] : this->graph().edges()) {
-        auto const& weight = pEdge->stationaryWeight();
-        if (weight <= 0.) {
-          continue;
-        }
-        m_originNodes.push_back({pEdge->source(), weight});
-        totalStationaryWeight += weight;
-      }
-      for (auto& [nodeId, weight] : m_originNodes) {
-        weight /= totalStationaryWeight;
+        m_originNodes.push_back({pEdge->source(), 1. / nEdges});
       }
       return;
     }
