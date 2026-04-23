@@ -51,7 +51,6 @@ namespace dsf::mobility {
   };
   // Struct to collect street data for batch insert after parallel section
   struct StreetDataRecord {
-    Id streetId;
     std::optional<std::string> coilName;
     double density;
     std::optional<double> avgSpeed;
@@ -160,12 +159,17 @@ namespace dsf::mobility {
     /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
-    /// @param streetDataRecords A vector of StreetDataRecord containing the data to be saved
+    /// @param streetDataRecords A map of StreetDataRecord containing the data to be saved
     void m_saveStreetDataSQL(
         const std::string& datetime,
         const std::int64_t time_step,
         const std::int64_t simulation_id,
-        tbb::concurrent_vector<StreetDataRecord> streetDataRecords) const;
+        tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
+    void m_saveStreetDataCSV(
+        const std::string& datetime,
+        const std::int64_t time_step,
+        const std::int64_t simulation_id,
+        tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
     /// @brief Initialize the average stats table.
     /// This table contains the average stats of the simulation at each time step. Columns are:
     /// - id: The entry id (auto-incremented)
@@ -200,6 +204,27 @@ namespace dsf::mobility {
                            const double std_density,
                            const double mean_traveltime,
                            const double meanQueueLength) const;
+    /// @brief Save average stats to a CSV file.
+    /// @param datetime The datetime of the data entry
+    /// @param time_step The time step of the data entry
+    /// @param simulation_id The id of the simulation
+    /// @param n_valid_edges The number of valid edges (i.e. edges with speed observations)
+    /// @param mean_speed The mean speed of the agents in kilometers per hour
+    /// @param std_speed The standard deviation of the speed of the agents in kilometers per hour
+    /// @param mean_density The mean density of the streets in vehicles per kilometer
+    /// @param std_density The standard deviation of the density of the streets in vehicles per kilometer
+    /// @param mean_traveltime The mean travel time of the agents in seconds
+    /// @param meanQueueLength The mean queue length of the streets
+    void m_saveAvgStatsCSV(const std::string& datetime,
+                           const std::int64_t time_step,
+                           const std::int64_t simulation_id,
+                           const std::size_t n_valid_edges,
+                           const double mean_speed,
+                           const double std_speed,
+                           const double mean_density,
+                           const double std_density,
+                           const double mean_traveltime,
+                           const double meanQueueLength) const;
     /// @brief Initialize the travel data table.
     /// This table contains the travel data of the agents. Columns are:
     /// - id: The entry id (auto-incremented)
@@ -219,6 +244,16 @@ namespace dsf::mobility {
         const std::int64_t time_step,
         const std::int64_t simulation_id,
         tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
+    /// @brief Save travel data to a CSV file.
+    /// @param datetime The datetime of the data entry
+    /// @param time_step The time step of the data entry
+    /// @param simulation_id The id of the simulation
+    /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
+    void m_saveTravelDataCSV(
+        const std::string& datetime,
+        const std::int64_t time_step,
+        const std::int64_t simulation_id,
+        tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
     /// @brief Initialize the agent data table.
     /// This table contains the agent data of the agents. Columns are:
     /// - id: The entry id (auto-incremented)
@@ -233,6 +268,16 @@ namespace dsf::mobility {
     /// @param simulation_id The id of the simulation
     /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the time step in and the time step out
     void m_saveAgentDataSQL(
+        const std::int64_t time_step,
+        const std::int64_t simulation_id,
+        tbb::concurrent_unordered_map<
+            Id,
+            std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
+    /// @brief Save agent data to a CSV file.
+    /// @param time_step The time step of the data entry
+    /// @param simulation_id The id of the simulation
+    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the time step in and the time step out
+    void m_saveAgentDataCSV(
         const std::int64_t time_step,
         const std::int64_t simulation_id,
         tbb::concurrent_unordered_map<

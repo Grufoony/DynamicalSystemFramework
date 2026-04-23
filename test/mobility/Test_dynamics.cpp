@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -1269,6 +1270,197 @@ TEST_CASE("FirstOrderDynamics") {
           }
         }
 
+        std::filesystem::remove(testDbPath);
+      }
+
+      WHEN(
+          "We configure saveData with street data and then evolve without an active "
+          "database") {
+        dynamics.setName("csv_street_data_test");
+        auto const csvPath = std::to_string(static_cast<std::uint64_t>(dynamics.id())) +
+                             "_" + dynamics.name() + "_road_data.csv";
+        std::filesystem::remove(csvPath);
+
+        dynamics.saveData(1, false, true, false);
+
+        for (int i = 0; i < 3; ++i) {
+          dynamics.evolve(true);
+        }
+
+        THEN("Street data is saved to CSV with header and rows") {
+          REQUIRE(std::filesystem::exists(csvPath));
+
+          std::ifstream csvFile(csvPath);
+          REQUIRE(csvFile.is_open());
+
+          std::string header;
+          REQUIRE(std::getline(csvFile, header));
+          CHECK_EQ(
+              header,
+              "datetime;time_step;street_id;coil;density_vpk;avg_speed_kph;std_speed_kph;"
+              "n_observations;counts;queue_length");
+
+          std::string row;
+          int rowCount = 0;
+          while (std::getline(csvFile, row)) {
+            if (row.empty()) {
+              continue;
+            }
+            ++rowCount;
+            int separatorCount = 0;
+            for (char c : row) {
+              if (c == ';') {
+                ++separatorCount;
+              }
+            }
+            CHECK_EQ(separatorCount, 9);
+          }
+          CHECK(rowCount >= 2);
+        }
+
+        std::filesystem::remove(csvPath);
+        std::filesystem::remove(testDbPath);
+      }
+
+      WHEN(
+          "We configure saveData with average stats and then evolve without an "
+          "active database") {
+        dynamics.setName("csv_avg_stats_test");
+        auto const csvPath = std::to_string(static_cast<std::uint64_t>(dynamics.id())) +
+                             "_" + dynamics.name() + "_avg_stats.csv";
+        std::filesystem::remove(csvPath);
+
+        dynamics.saveData(1, true, false, false);
+        dynamics.addAgents(10, AgentInsertionMethod::RANDOM);
+
+        for (int i = 0; i < 10; ++i) {
+          dynamics.evolve(true);
+        }
+
+        THEN("Average stats are saved to CSV with header and rows") {
+          REQUIRE(std::filesystem::exists(csvPath));
+
+          std::ifstream csvFile(csvPath);
+          REQUIRE(csvFile.is_open());
+
+          std::string header;
+          REQUIRE(std::getline(csvFile, header));
+          CHECK_EQ(
+              header,
+              "datetime;time_step;n_ghost_agents;n_agents;mean_speed_kph;std_speed_kph;"
+              "mean_density_vpk;std_density_vpk;mean_travel_time_s;mean_queue_length");
+
+          std::string row;
+          int rowCount = 0;
+          while (std::getline(csvFile, row)) {
+            if (row.empty()) {
+              continue;
+            }
+            ++rowCount;
+            int separatorCount = 0;
+            for (char c : row) {
+              if (c == ';') {
+                ++separatorCount;
+              }
+            }
+            CHECK_EQ(separatorCount, 9);
+          }
+          CHECK(rowCount >= 1);
+        }
+
+        std::filesystem::remove(csvPath);
+        std::filesystem::remove(testDbPath);
+      }
+
+      WHEN(
+          "We configure saveData with travel data and then evolve without an active "
+          "database") {
+        dynamics.setName("csv_travel_data_test");
+        auto const csvPath = std::to_string(static_cast<std::uint64_t>(dynamics.id())) +
+                             "_" + dynamics.name() + "_travel_data.csv";
+        std::filesystem::remove(csvPath);
+
+        dynamics.saveData(1, false, false, true);
+
+        for (int iter = 0; iter < 1000 && dynamics.nAgents() > 0; ++iter) {
+          dynamics.evolve(false);
+        }
+
+        THEN("Travel data is saved to CSV with header and rows") {
+          REQUIRE(std::filesystem::exists(csvPath));
+
+          std::ifstream csvFile(csvPath);
+          REQUIRE(csvFile.is_open());
+
+          std::string header;
+          REQUIRE(std::getline(csvFile, header));
+          CHECK_EQ(header, "datetime;time_step;distance_m;travel_time_s");
+
+          std::string row;
+          int rowCount = 0;
+          while (std::getline(csvFile, row)) {
+            if (row.empty()) {
+              continue;
+            }
+            ++rowCount;
+            int separatorCount = 0;
+            for (char c : row) {
+              if (c == ';') {
+                ++separatorCount;
+              }
+            }
+            CHECK_EQ(separatorCount, 3);
+          }
+          CHECK(rowCount >= 1);
+        }
+
+        std::filesystem::remove(csvPath);
+        std::filesystem::remove(testDbPath);
+      }
+
+      WHEN(
+          "We configure saveData with agent data and then evolve without an active "
+          "database") {
+        dynamics.setName("csv_agent_data_test");
+        auto const csvPath = std::to_string(static_cast<std::uint64_t>(dynamics.id())) +
+                             "_" + dynamics.name() + "_agent_data.csv";
+        std::filesystem::remove(csvPath);
+
+        dynamics.saveData(1, false, false, false, true);
+
+        for (int iter = 0; iter < 50; ++iter) {
+          dynamics.evolve(false);
+        }
+
+        THEN("Agent data is saved to CSV with header and rows") {
+          REQUIRE(std::filesystem::exists(csvPath));
+
+          std::ifstream csvFile(csvPath);
+          REQUIRE(csvFile.is_open());
+
+          std::string header;
+          REQUIRE(std::getline(csvFile, header));
+          CHECK_EQ(header, "simulation_id;agent_id;edge_id;time_step_in;time_step_out");
+
+          std::string row;
+          int rowCount = 0;
+          while (std::getline(csvFile, row)) {
+            if (row.empty()) {
+              continue;
+            }
+            ++rowCount;
+            int separatorCount = 0;
+            for (char c : row) {
+              if (c == ';') {
+                ++separatorCount;
+              }
+            }
+            CHECK_EQ(separatorCount, 4);
+          }
+          CHECK(rowCount >= 1);
+        }
+
+        std::filesystem::remove(csvPath);
         std::filesystem::remove(testDbPath);
       }
 
