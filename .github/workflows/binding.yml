@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 env:
   BUILD_TYPE: Release
@@ -18,6 +19,7 @@ jobs:
         python-version: ["3.10", "3.12"]
 
     runs-on: ${{ matrix.os }}
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     steps:
     - name: Checkout repository
@@ -174,6 +176,7 @@ jobs:
 
   test-binding-development:
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     
     steps:
     - name: Checkout repository

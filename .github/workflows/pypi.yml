@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 env:
   BUILD_TYPE: Release
@@ -14,6 +15,7 @@ jobs:
   check-version:
     name: Check if version exists on PyPI/TestPyPI
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       version: ${{ steps.extract.outputs.version }}
@@ -83,7 +85,7 @@ jobs:
     name: Validate uv workflows
     needs: [check-version]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true'
+    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
 
     steps:
     - name: Checkout repository
@@ -131,7 +133,7 @@ jobs:
     name: Build wheels on Linux (Python ${{ matrix.python-version }})
     needs: [check-version, uv-validate]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true'
+    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     strategy:
       matrix:
         python-version: ['3.10', '3.12']
@@ -183,7 +185,7 @@ jobs:
     name: Build wheels on macOS (Python ${{ matrix.python-version }})
     needs: [check-version, uv-validate]
     runs-on: macos-latest
-    if: needs.check-version.outputs.should_build == 'true'
+    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     strategy:
       matrix:
         python-version: ['3.10', '3.12']
@@ -232,7 +234,7 @@ jobs:
     name: Build wheels on Windows (Python ${{ matrix.python-version }})
     needs: [check-version, uv-validate]
     runs-on: windows-latest
-    if: needs.check-version.outputs.should_build == 'true'
+    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     strategy:
       matrix:
         python-version: ['3.10', '3.12']
@@ -278,7 +280,7 @@ jobs:
     name: Build source distribution
     needs: [check-version, uv-validate]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true'
+    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     
     steps:
     - name: Checkout repository
@@ -314,7 +316,7 @@ jobs:
     name: Publish to PyPI
     needs: [check-version, uv-validate, build-wheels-linux, build-wheels-macos, build-wheels-windows, build-sdist]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true'
+    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     
     steps:
     - name: Download all artifacts
