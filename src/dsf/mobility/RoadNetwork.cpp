@@ -3,7 +3,9 @@
 #include "../geometry/PolyLine.hpp"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
+#include <fstream>
 #include <ranges>
 
 #include <csv.hpp>
@@ -22,6 +24,8 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "nlanes",
                                      "name",
                                      "type",
+                                     "capacity",
+                                     "status",
                                      "coilcode",
                                      "priority",
                                      "geometry"});
