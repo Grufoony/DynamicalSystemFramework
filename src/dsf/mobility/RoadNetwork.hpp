@@ -48,7 +48,7 @@ namespace dsf::mobility {
   private:
     std::size_t m_capacity;
     std::function<double(Street const&)> m_weightFunction = [](Street const& street) {
-      return street.length() / street.maxSpeed();
+      return street.estimatedTravelTime();
     };
     std::optional<double> m_weightThreshold = std::nullopt;
 

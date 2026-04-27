@@ -25,6 +25,7 @@
 #include <numbers>
 #include <format>
 #include <cassert>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -59,11 +60,13 @@ namespace dsf::mobility {
     std::vector<Direction> m_laneMapping;
     std::optional<Counter> m_counter;
     CounterPosition m_counterPosition{CounterPosition::EXIT};
+    static std::function<double(Street const&)> m_estimatedTravelTimeFunction;
     static std::optional<tbb::concurrent_unordered_map<
         Id,
         std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
         m_agentData;
 
+  private:
     /// @brief Update the street's lane mapping
     /// @param nLanes The street's number of lanes
     void m_updateLaneMapping(int const nLanes);
@@ -108,6 +111,19 @@ namespace dsf::mobility {
     /// @param meanVehicleLength The mean vehicle length
     /// @throw std::invalid_argument If the mean vehicle length is negative
     static void setMeanVehicleLength(double meanVehicleLength);
+    /// @brief Set the global street travel-time estimator.
+    /// @param estimatedTravelTimeFunction A callable with signature double(Street const&)
+    /// @throw std::invalid_argument If the function is empty
+    static void setEstimatedTravelTimeFunction(
+        std::function<double(Street const&)> estimatedTravelTimeFunction);
+    /// @brief Get the global street travel-time estimator.
+    static std::function<double(Street const&)> const&
+    estimatedTravelTimeFunction() noexcept;
+    /// @brief Get this street estimated travel time using the active global estimator.
+    /// @return double Estimated travel time in seconds
+    inline auto estimatedTravelTime() const {
+      return m_estimatedTravelTimeFunction(*this);
+    };
     /// @brief Change the number of lanes of the street. Usually if there is a construction site, you may want to
     /// reduce the number of lanes and possibly the max speed.
     /// @param nLanes The new number of lanes
@@ -136,6 +152,7 @@ namespace dsf::mobility {
     /// @brief  Get the number of agents on the street
     /// @return std::size_t, The number of agents on the street
     std::size_t nAgents() const final;
+
     /// @brief Get the name of the counter
     /// @return std::string The name of the counter
     inline auto counterName() const {

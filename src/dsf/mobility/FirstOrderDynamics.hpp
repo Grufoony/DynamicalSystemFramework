@@ -133,10 +133,6 @@ namespace dsf::mobility {
     void m_trafficlightSingleTailOptimizer(double const& beta,
                                            std::optional<std::ofstream>& logStream);
 
-    inline double m_streetEstimatedTravelTime(Street const& pStreet) const {
-      return pStreet.length() / m_speedFunction(pStreet);
-    };
-
     /// @brief Initialize the street data table.
     /// This table contains the data of each street. Columns are:
     /// - id: The entry id (auto-incremented)
@@ -573,7 +569,13 @@ namespace dsf::mobility {
               "Custom speed function requires a callable argument with signature "
               "double(Street const&)");
         } else {
-          m_speedFunction = std::get<0>(std::forward_as_tuple(args...));
+          auto const customSpeedFunction = std::function<double(Street const&)>(
+              std::get<0>(std::forward_as_tuple(args...)));
+          m_speedFunction = customSpeedFunction;
+          Street::setEstimatedTravelTimeFunction(
+              [customSpeedFunction](Street const& pStreet) {
+                return pStreet.length() / customSpeedFunction(pStreet);
+              });
           m_speedFunctionDescription = "CUSTOM";
         }
         break;
@@ -599,6 +601,10 @@ namespace dsf::mobility {
           m_speedFunction = [alpha](Street const& pStreet) {
             return pStreet.maxSpeed() * (1. - alpha * pStreet.density(true));
           };
+          Street::setEstimatedTravelTimeFunction([alpha](Street const& pStreet) {
+            return pStreet.length() /
+                   (pStreet.maxSpeed() * (1. - alpha * pStreet.density(true)));
+          });
           m_speedFunctionDescription = std::format("LINEAR(alpha={})", alpha);
         }
         break;
