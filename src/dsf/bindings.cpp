@@ -108,11 +108,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("estimatedTravelTime",
            &dsf::mobility::Street::estimatedTravelTime,
            "Get estimated travel time for this street using the active estimator.")
-      .def_static("setEstimatedTravelTimeFunction",
-                  &dsf::mobility::Street::setEstimatedTravelTimeFunction,
-                  pybind11::arg("estimatedTravelTimeFunction"),
-                  "Set global street estimated travel time function. Signature: "
-                  "double(Street const&).")
       .def("attributes",
            &dsf::mobility::Street::attributes,
            dsf::g_docstrings.at("dsf::Edge::attributes").c_str());

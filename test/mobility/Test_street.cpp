@@ -73,6 +73,30 @@ TEST_CASE("Street") {
     CHECK_EQ(street.maxSpeed(), 40.);
     CHECK_EQ(street.nLanes(), 1);
   }
+  SUBCASE("EstimatedTravelTime_Default") {
+    Street::setEstimatedTravelTimeFunction(
+        [](Street const& street) { return street.length() / street.maxSpeed(); });
+
+    Street street{1, std::make_pair(4, 5), 120., 20.};
+    CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(6.0));
+  }
+
+  SUBCASE("EstimatedTravelTime_CustomEstimator") {
+    Street::setEstimatedTravelTimeFunction(
+        [](Street const& street) { return street.length() / street.maxSpeed(); });
+
+    Street street{1, std::make_pair(4, 5), 120., 20.};
+    CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(6.0));
+
+    Street::setEstimatedTravelTimeFunction(
+        [](Street const& street) { return 2.0 * street.length() / street.maxSpeed(); });
+    CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(12.0));
+
+    Street::setEstimatedTravelTimeFunction([](Street const& resetStreet) {
+      return resetStreet.length() / resetStreet.maxSpeed();
+    });
+  }
+
   SUBCASE("Lane Mapping") {
     GIVEN("A street with three lanes") {
       Street street{0, std::make_pair(0, 1), 5., 13.8888888889, 3};
