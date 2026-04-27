@@ -2241,9 +2241,12 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
     REQUIRE(norm > 0.0);
 
-    auto const stdBc0 = standardGraph.edge(static_cast<Id>(0)).betweennessCentrality();
-    auto const stdBc1 = standardGraph.edge(static_cast<Id>(1)).betweennessCentrality();
-    auto const stdBc2 = standardGraph.edge(static_cast<Id>(2)).betweennessCentrality();
+    auto const stdBc0 = standardGraph.edge(static_cast<Id>(0))
+                            .getAttribute<double>("betweennessCentrality");
+    auto const stdBc1 = standardGraph.edge(static_cast<Id>(1))
+                            .getAttribute<double>("betweennessCentrality");
+    auto const stdBc2 = standardGraph.edge(static_cast<Id>(2))
+                            .getAttribute<double>("betweennessCentrality");
     REQUIRE(stdBc0.has_value());
     REQUIRE(stdBc1.has_value());
     REQUIRE(stdBc2.has_value());
@@ -2260,9 +2263,12 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
 
     yenGraph.computeEdgeKBetweennessCentralities(unitWeight, 1);
 
-    auto const yenBc0 = yenGraph.edge(static_cast<Id>(0)).betweennessCentrality();
-    auto const yenBc1 = yenGraph.edge(static_cast<Id>(1)).betweennessCentrality();
-    auto const yenBc2 = yenGraph.edge(static_cast<Id>(2)).betweennessCentrality();
+    auto const yenBc0 =
+        yenGraph.edge(static_cast<Id>(0)).getAttribute<double>("betweennessCentrality");
+    auto const yenBc1 =
+        yenGraph.edge(static_cast<Id>(1)).getAttribute<double>("betweennessCentrality");
+    auto const yenBc2 =
+        yenGraph.edge(static_cast<Id>(2)).getAttribute<double>("betweennessCentrality");
     REQUIRE(yenBc0.has_value());
     REQUIRE(yenBc1.has_value());
     REQUIRE(yenBc2.has_value());
@@ -2290,14 +2296,14 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     graphK2.computeEdgeKBetweennessCentralities(unitWeight, 2);
 
     bool hasStrictIncrease = false;
-    Id const edgeIds[] = {static_cast<Id>(0),
-                          static_cast<Id>(1),
-                          static_cast<Id>(2),
-                          static_cast<Id>(3)};
+    Id const edgeIds[] = {
+        static_cast<Id>(0), static_cast<Id>(1), static_cast<Id>(2), static_cast<Id>(3)};
 
     for (Id const edgeId : edgeIds) {
-      auto const k1Bc = graphK1.edge(edgeId).betweennessCentrality();
-      auto const k2Bc = graphK2.edge(edgeId).betweennessCentrality();
+      auto const k1Bc =
+          graphK1.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      auto const k2Bc =
+          graphK2.edge(edgeId).getAttribute<double>("betweennessCentrality");
       REQUIRE(k1Bc.has_value());
       REQUIRE(k2Bc.has_value());
 

@@ -372,6 +372,27 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "        - 'weight': Use the custom edge weight\n\n"
           "The results are stored in each edge's betweennessCentrality attribute.")
       .def(
+          "computeEdgeKBetweennessCentralities",
+          [](dsf::mobility::RoadNetwork& self, const std::string& weight, size_t k) {
+            auto weightFunc = [&weight](const dsf::mobility::Street& street) {
+              if (weight == "length") {
+                return street.length();
+              } else if (weight == "traveltime") {
+                return street.length() / street.maxSpeed();
+              } else {
+                throw std::invalid_argument(
+                    "Invalid weight function: '" + weight +
+                    "'. Valid options are: 'length', 'traveltime', 'weight'.");
+              }
+            };
+            self.computeEdgeKBetweennessCentralities(weightFunc, k);
+          },
+          pybind11::arg("weight") = "length",
+          pybind11::arg("k") = 1,
+          dsf::g_docstrings
+              .at("dsf::mobility::RoadNetwork::computeEdgeKBetweennessCentralities")
+              .c_str())
+      .def(
           "nodeBetweennessCentralities",
           [](const dsf::mobility::RoadNetwork& self) {
             std::unordered_map<dsf::Id, std::optional<double>> result;

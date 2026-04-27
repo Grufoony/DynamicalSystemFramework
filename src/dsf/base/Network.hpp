@@ -405,17 +405,19 @@ namespace dsf {
     requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
   void Network<node_t, edge_t>::computeEdgeKBetweennessCentralities(
       WeightFunc getEdgeWeight, size_t K) {
-
     // ── 0. Trivial cases ──────────────────────────────────────────────────
-    for (auto& [eId, pEdge] : m_edges) pEdge->setBetweennessCentrality(0.0);
+    for (auto& [eId, pEdge] : m_edges)
+      pEdge->setAttribute("betweennessCentrality", 0.0);
 
     size_t const N = m_nodes.size();
-    if (N < 2 || K == 0) return;
+    if (N < 2 || K == 0)
+      return;
 
     // Snapshot all node IDs so parallel threads can index them safely.
     std::vector<Id> nodeIds;
     nodeIds.reserve(N);
-    for (auto const& [id, _] : m_nodes) nodeIds.push_back(id);
+    for (auto const& [id, _] : m_nodes)
+      nodeIds.push_back(id);
 
     // ── 1. Dijkstra helper ────────────────────────────────────────────────
     //
@@ -425,11 +427,10 @@ namespace dsf {
     //
     // forbidden_nodes excludes a node from relaxation but never blocks src
     // or tgt themselves (caller is responsible for not passing those in).
-    auto dijkstra =
-        [&](Id src,
-            Id tgt,
-            std::unordered_set<Id> const& forbiddenEdges,
-            std::unordered_set<Id> const& forbiddenNodes)
+    auto dijkstra = [&](Id src,
+                        Id tgt,
+                        std::unordered_set<Id> const& forbiddenEdges,
+                        std::unordered_set<Id> const& forbiddenNodes)
         -> std::optional<std::pair<std::vector<Id>, double>>  // (edgePath, cost)
     {
       using PQEntry = std::pair<double, Id>;
@@ -451,19 +452,24 @@ namespace dsf {
         auto [d, v] = pq.top();
         pq.pop();
 
-        if (visited.contains(v)) continue;
+        if (visited.contains(v))
+          continue;
         // A forbidden node can be the start of relaxation only if it is src.
         // It must never be settled as an intermediate or final step (unless tgt).
-        if (v != src && v != tgt && forbiddenNodes.contains(v)) continue;
+        if (v != src && v != tgt && forbiddenNodes.contains(v))
+          continue;
         visited.insert(v);
-        if (v == tgt) break;
+        if (v == tgt)
+          break;
 
         for (auto const& eId : m_nodes.at(v)->outgoingEdges()) {
-          if (forbiddenEdges.contains(eId)) continue;
+          if (forbiddenEdges.contains(eId))
+            continue;
           auto const& edgeObj = *m_edges.at(eId);
           Id w = edgeObj.target();
           // Respect forbidden nodes for non-target neighbours.
-          if (w != tgt && forbiddenNodes.contains(w)) continue;
+          if (w != tgt && forbiddenNodes.contains(w))
+            continue;
           double nd = d + getEdgeWeight(edgeObj);
           if (nd < dist[w]) {
             dist[w] = nd;
@@ -473,7 +479,8 @@ namespace dsf {
         }
       }
 
-      if (!std::isfinite(dist[tgt])) return std::nullopt;
+      if (!std::isfinite(dist[tgt]))
+        return std::nullopt;
 
       // Reconstruct edge sequence from tgt back to src.
       std::vector<Id> edgePath;
@@ -491,7 +498,8 @@ namespace dsf {
     // Returns up to K loopless shortest paths between src and tgt as
     // sequences of edge IDs.  Paths are ordered by non-decreasing cost.
     auto yenKShortest = [&](Id src, Id tgt) -> std::vector<std::vector<Id>> {
-      if (src == tgt) return {};
+      if (src == tgt)
+        return {};
 
       // A[k] = (edgePath, cost) of the k-th shortest path confirmed so far.
       std::vector<std::pair<std::vector<Id>, double>> A;
@@ -505,7 +513,8 @@ namespace dsf {
 
       // ── Find the first (shortest) path ─────────────────────────────────
       auto first = dijkstra(src, tgt, {}, {});
-      if (!first) return {};
+      if (!first)
+        return {};
       A.push_back(std::move(*first));
 
       // ── Iterate to find paths 2 … K ────────────────────────────────────
@@ -526,8 +535,9 @@ namespace dsf {
           Id const spurNode = nodeSeq[spurIdx];
 
           // root edges = prefix of prevEdges up to (but not including) spurIdx.
-          std::vector<Id> rootEdges(prevEdges.begin(),
-                                    prevEdges.begin() + static_cast<std::ptrdiff_t>(spurIdx));
+          std::vector<Id> rootEdges(
+              prevEdges.begin(),
+              prevEdges.begin() + static_cast<std::ptrdiff_t>(spurIdx));
           double rootCost = 0.0;
           for (auto const& eId : rootEdges)
             rootCost += getEdgeWeight(*m_edges.at(eId));
@@ -537,13 +547,18 @@ namespace dsf {
           // its spurIdx-th edge removed so the new spur diverges from it.
           std::unordered_set<Id> forbiddenEdges;
           for (auto const& [aEdges, _] : A) {
-            if (aEdges.size() <= spurIdx) continue;
+            if (aEdges.size() <= spurIdx)
+              continue;
             // Check whether aEdges[0..spurIdx-1] == rootEdges[0..spurIdx-1].
             bool rootMatch = true;
             for (size_t r = 0; r < spurIdx; ++r) {
-              if (aEdges[r] != rootEdges[r]) { rootMatch = false; break; }
+              if (aEdges[r] != rootEdges[r]) {
+                rootMatch = false;
+                break;
+              }
             }
-            if (rootMatch) forbiddenEdges.insert(aEdges[spurIdx]);
+            if (rootMatch)
+              forbiddenEdges.insert(aEdges[spurIdx]);
           }
 
           // Root-path nodes (indices 0 … spurIdx-1) are suppressed to prevent
@@ -554,7 +569,8 @@ namespace dsf {
 
           // Run Dijkstra for the spur portion: spurNode → tgt.
           auto spurResult = dijkstra(spurNode, tgt, forbiddenEdges, forbiddenNodes);
-          if (!spurResult) continue;
+          if (!spurResult)
+            continue;
 
           auto& [spurEdges, spurCost] = *spurResult;
 
@@ -570,19 +586,21 @@ namespace dsf {
           }
         }
 
-        if (B.empty()) break;
+        if (B.empty())
+          break;
 
         // Accept the cheapest candidate as the k-th shortest path.
         auto [bestCost, bestEdges] = std::move(const_cast<Candidate&>(B.top()));
         B.pop();
-        seen.erase(bestEdges);   // no longer needed in the dedup set
+        seen.erase(bestEdges);  // no longer needed in the dedup set
         A.push_back({std::move(bestEdges), bestCost});
       }
 
       // Return edge-path sequences only (costs not needed by the caller).
       std::vector<std::vector<Id>> result;
       result.reserve(A.size());
-      for (auto& [ep, _] : A) result.push_back(std::move(ep));
+      for (auto& [ep, _] : A)
+        result.push_back(std::move(ep));
       return result;
     };
 
@@ -592,31 +610,33 @@ namespace dsf {
     // on hot paths.  Maps are combined serially after the parallel region.
     tbb::combinable<std::unordered_map<Id, double>> localAccum;
 
-    tbb::parallel_for(
-        tbb::blocked_range<size_t>(0, N),
-        [&](tbb::blocked_range<size_t> const& range) {
-          auto& localMap = localAccum.local();
-          for (size_t i = range.begin(); i != range.end(); ++i) {
-            Id const srcId = nodeIds[i];
-            for (size_t j = 0; j < N; ++j) {
-              if (i == j) continue;
-              Id const tgtId = nodeIds[j];
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, N),
+                      [&](tbb::blocked_range<size_t> const& range) {
+                        auto& localMap = localAccum.local();
+                        for (size_t i = range.begin(); i != range.end(); ++i) {
+                          Id const srcId = nodeIds[i];
+                          for (size_t j = 0; j < N; ++j) {
+                            if (i == j)
+                              continue;
+                            Id const tgtId = nodeIds[j];
 
-              auto paths = yenKShortest(srcId, tgtId);
-              for (auto const& edgePath : paths) {
-                for (Id const eId : edgePath) {
-                  localMap[eId] += 1.0;
-                }
-              }
-            }
-          }
-        });
+                            auto paths = yenKShortest(srcId, tgtId);
+                            for (auto const& edgePath : paths) {
+                              for (Id const eId : edgePath) {
+                                localMap[eId] += 1.0;
+                              }
+                            }
+                          }
+                        }
+                      });
 
     // Merge thread-local maps into the edge objects (sequential, safe).
     localAccum.combine_each([&](std::unordered_map<Id, double> const& localMap) {
       for (auto const& [eId, val] : localMap) {
-        auto current = m_edges.at(eId)->betweennessCentrality();
-        m_edges.at(eId)->setBetweennessCentrality(*current + val);
+        auto bccurrent = m_edges.at(eId)
+                             ->template getAttribute<double>("betweennessCentrality")
+                             .value_or(0.0);
+        m_edges.at(eId)->setAttribute("betweennessCentrality", bccurrent + val);
       }
     });
 
@@ -629,8 +649,9 @@ namespace dsf {
     double const norm = static_cast<double>((N - 1) * (N - 2));
     if (norm > 0.0) {
       for (auto& [eId, pEdge] : m_edges) {
-        auto bc = pEdge->betweennessCentrality();
-        pEdge->setBetweennessCentrality(*bc / norm);
+        auto bc =
+            pEdge->template getAttribute<double>("betweennessCentrality").value_or(0.0);
+        pEdge->setAttribute("betweennessCentrality", bc / norm);
       }
     }
   }
