@@ -389,8 +389,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
           },
           pybind11::arg("weight") = "length",
           pybind11::arg("k") = 1,
-          dsf::g_docstrings
-              .at("dsf::mobility::RoadNetwork::computeEdgeKBetweennessCentralities")
+          dsf::g_docstrings.at("dsf::Network::computeEdgeKBetweennessCentralities")
               .c_str())
       .def(
           "nodeBetweennessCentralities",
