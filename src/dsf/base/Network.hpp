@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -15,6 +17,8 @@
 #include <tbb/blocked_range.h>
 #include <tbb/combinable.h>
 #include <tbb/parallel_for.h>
+
+#include <spdlog/spdlog.h>
 
 #include "Edge.hpp"
 #include "Node.hpp"
@@ -419,6 +423,13 @@ namespace dsf {
     for (auto const& [id, _] : m_nodes)
       nodeIds.push_back(id);
 
+    auto const progressStart = std::chrono::steady_clock::now();
+    constexpr auto progressLogInterval = std::chrono::seconds(5);
+    constexpr auto progressLogIntervalMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(progressLogInterval).count();
+    std::atomic<size_t> processedSources{0};
+    std::atomic<long long> nextProgressLogMs{progressLogIntervalMs};
+
     // ── 1. Dijkstra helper ────────────────────────────────────────────────
     //
     // Returns the sequence of edge IDs that form the shortest path from
@@ -610,25 +621,63 @@ namespace dsf {
     // on hot paths.  Maps are combined serially after the parallel region.
     tbb::combinable<std::unordered_map<Id, double>> localAccum;
 
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, N),
-                      [&](tbb::blocked_range<size_t> const& range) {
-                        auto& localMap = localAccum.local();
-                        for (size_t i = range.begin(); i != range.end(); ++i) {
-                          Id const srcId = nodeIds[i];
-                          for (size_t j = 0; j < N; ++j) {
-                            if (i == j)
-                              continue;
-                            Id const tgtId = nodeIds[j];
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, N), [&](tbb::blocked_range<size_t> const& range) {
+          auto& localMap = localAccum.local();
+          for (size_t i = range.begin(); i != range.end(); ++i) {
+            Id const srcId = nodeIds[i];
+            for (size_t j = 0; j < N; ++j) {
+              if (i == j)
+                continue;
+              Id const tgtId = nodeIds[j];
 
-                            auto paths = yenKShortest(srcId, tgtId);
-                            for (auto const& edgePath : paths) {
-                              for (Id const eId : edgePath) {
-                                localMap[eId] += 1.0;
-                              }
-                            }
-                          }
-                        }
-                      });
+              auto paths = yenKShortest(srcId, tgtId);
+              for (auto const& edgePath : paths) {
+                for (Id const eId : edgePath) {
+                  localMap[eId] += 1.0;
+                }
+              }
+            }
+
+            auto const doneSources =
+                processedSources.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (spdlog::should_log(spdlog::level::info)) {
+              auto const elapsedMs =
+                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - progressStart)
+                      .count();
+              auto dueMs = nextProgressLogMs.load(std::memory_order_relaxed);
+              while (elapsedMs >= dueMs) {
+                if (nextProgressLogMs.compare_exchange_weak(dueMs,
+                                                            dueMs + progressLogIntervalMs,
+                                                            std::memory_order_relaxed,
+                                                            std::memory_order_relaxed)) {
+                  auto const pct =
+                      100.0 * static_cast<double>(doneSources) / static_cast<double>(N);
+                  spdlog::info(
+                      "computeEdgeKBetweennessCentralities progress: "
+                      "{:.1f}% ({}/{})",
+                      pct,
+                      doneSources,
+                      N);
+                  break;
+                }
+              }
+            }
+          }
+        });
+
+    if (spdlog::should_log(spdlog::level::info)) {
+      auto const elapsedSeconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - progressStart)
+              .count();
+      spdlog::info(
+          "computeEdgeKBetweennessCentralities progress: 100.0% ({}/{}) in "
+          "{:.2f}s",
+          N,
+          N,
+          elapsedSeconds);
+    }
 
     // Merge thread-local maps into the edge objects (sequential, safe).
     localAccum.combine_each([&](std::unordered_map<Id, double> const& localMap) {
