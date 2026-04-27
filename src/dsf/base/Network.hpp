@@ -538,7 +538,6 @@ namespace dsf {
     requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
   void Network<node_t, edge_t>::computeEdgeKBetweennessCentralities(
       WeightFunc getEdgeWeight, size_t K) {
-    // ── 0. Trivial cases ──────────────────────────────────────────────────
     for (auto& [eId, pEdge] : m_edges)
       pEdge->setAttribute("betweennessCentrality", 0.0);
 
@@ -550,331 +549,145 @@ namespace dsf {
       return;
     }
 
-    // Snapshot all node IDs so parallel threads can index them safely.
+    // ---- Node indexing ----
     std::vector<Id> nodeIds;
     nodeIds.reserve(N);
     for (auto const& [id, _] : m_nodes)
       nodeIds.push_back(id);
 
-    std::unordered_map<Id, size_t> nodeIndexById;
-    nodeIndexById.reserve(N);
-    for (size_t i = 0; i < nodeIds.size(); ++i)
-      nodeIndexById.emplace(nodeIds[i], i);
+    std::unordered_map<Id, size_t> idx;
+    for (size_t i = 0; i < N; ++i)
+      idx[nodeIds[i]] = i;
 
-    auto const nodeIndexOf = [&](Id nodeId) -> size_t {
-      return nodeIndexById.at(nodeId);
-    };
-
-    constexpr auto progressLogInterval = std::chrono::seconds(5);
-    std::atomic<size_t> processedSources{0};
-
-    std::jthread progressThread;
-    if (spdlog::should_log(spdlog::level::info)) {
-      progressThread = std::jthread([&](std::stop_token stopToken) {
-        while (!stopToken.stop_requested()) {
-          std::this_thread::sleep_for(progressLogInterval);
-          if (stopToken.stop_requested())
-            break;
-          auto const done = processedSources.load(std::memory_order_relaxed);
-          spdlog::info("computeEdgeKBetweennessCentralities progress: {:.1f}% ({}/{})",
-                       100.0 * static_cast<double>(done) / static_cast<double>(N),
-                       done,
-                       N);
-        }
-      });
-    }
-
-    // ── 1. Dijkstra helper ────────────────────────────────────────────────
-    //
-    // Returns the sequence of edge IDs that form the shortest path from
-    // `src` to `tgt` in the graph with the supplied forbidden edges and
-    // nodes removed.  Returns std::nullopt when no path exists.
-    //
-    // forbidden_nodes excludes a node from relaxation but never blocks src
-    // or tgt themselves (caller is responsible for not passing those in).
-    auto dijkstra = [&](Id src,
-                        Id tgt,
-                        std::unordered_set<Id> const& forbiddenEdges,
-                        std::unordered_set<Id> const& forbiddenNodes)
-        -> std::optional<std::pair<std::vector<Id>, double>>  // (edgePath, cost)
-    {
-      using PQEntry = std::pair<double, size_t>;
-
-      thread_local std::vector<double> dist;
-      thread_local std::vector<std::pair<size_t, Id>> prev;
-      thread_local std::vector<size_t> nodeGen;
-      thread_local size_t currentGeneration = 0;
-
-      if (dist.size() != N) {
-        dist.resize(N);
-        prev.resize(N);
-        nodeGen.assign(N, 0);
-        currentGeneration = 0;
-      }
-      if (currentGeneration == std::numeric_limits<size_t>::max()) {
-        std::fill(nodeGen.begin(), nodeGen.end(), 0);
-        currentGeneration = 1;
-      } else {
-        ++currentGeneration;
-      }
-
-      auto const srcIdx = nodeIndexOf(src);
-      auto const tgtIdx = nodeIndexOf(tgt);
-      dist[srcIdx] = 0.0;
-      nodeGen[srcIdx] = currentGeneration;
-
-      std::priority_queue<PQEntry, std::vector<PQEntry>, std::greater<PQEntry>> pq;
-      pq.push({0.0, srcIdx});
-
-      while (!pq.empty()) {
-        auto [d, vIdx] = pq.top();
-        pq.pop();
-
-        if (nodeGen[vIdx] != currentGeneration)
-          continue;
-        if (d > dist[vIdx])
-          continue;
-
-        Id const v = nodeIds[vIdx];
-
-        // A forbidden node can be the start of relaxation only if it is src.
-        // It must never be settled as an intermediate or final step (unless tgt).
-        if (v != src && v != tgt && forbiddenNodes.contains(v))
-          continue;
-        if (vIdx == tgtIdx)
-          break;
-
-        for (auto const& eId : m_nodes.at(v)->outgoingEdges()) {
-          if (forbiddenEdges.contains(eId))
-            continue;
-          auto const& edgeObj = *m_edges.at(eId);
-          Id const w = edgeObj.target();
-          // Respect forbidden nodes for non-target neighbours.
-          if (w != tgt && forbiddenNodes.contains(w))
-            continue;
-
-          auto const wIdx = nodeIndexOf(w);
-          double const currentDist = (nodeGen[wIdx] == currentGeneration)
-                                         ? dist[wIdx]
-                                         : std::numeric_limits<double>::infinity();
-          double const nd = d + getEdgeWeight(edgeObj);
-
-          if (nd < currentDist) {
-            nodeGen[wIdx] = currentGeneration;
-            dist[wIdx] = nd;
-            prev[wIdx] = {vIdx, eId};
-            pq.push({nd, wIdx});
-          }
-        }
-      }
-
-      if (nodeGen[tgtIdx] != currentGeneration || !std::isfinite(dist[tgtIdx]))
-        return std::nullopt;
-
-      // Reconstruct edge sequence from tgt back to src.
-      std::vector<Id> edgePath;
-      for (size_t vIdx = tgtIdx; vIdx != srcIdx;) {
-        auto const& [uIdx, eId] = prev[vIdx];
-        edgePath.push_back(eId);
-        vIdx = uIdx;
-      }
-      std::reverse(edgePath.begin(), edgePath.end());
-      return std::make_pair(std::move(edgePath), dist[tgtIdx]);
-    };
-
-    struct VecHash {
-      size_t operator()(std::vector<Id> const& v) const {
-        size_t h = v.size();
-        for (auto x : v) {
-          h ^= std::hash<Id>{}(x) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        }
-        return h;
-      }
-    };
-
-    // ── 2. Yen's K-shortest paths ─────────────────────────────────────────
-    //
-    // Returns up to K loopless shortest paths between src and tgt as
-    // sequences of edge IDs.  Paths are ordered by non-decreasing cost.
-    auto yenKShortest = [&](Id src, Id tgt) -> std::vector<std::vector<Id>> {
-      if (src == tgt)
-        return {};
-
-      // A[k] = (edgePath, cost) of the k-th shortest path confirmed so far.
-      std::vector<std::pair<std::vector<Id>, double>> A;
-
-      // Candidate heap: (cost, edgePath).  std::greater makes it a min-heap.
-      using Candidate = std::pair<double, std::vector<Id>>;
-      std::priority_queue<Candidate, std::vector<Candidate>, std::greater<Candidate>> B;
-
-      // Deduplication set so the same path isn't enqueued twice.
-      std::unordered_set<std::vector<Id>, VecHash> seen;
-
-      // ── Find the first (shortest) path ─────────────────────────────────
-      auto first = dijkstra(src, tgt, {}, {});
-      if (!first)
-        return {};
-      A.push_back(std::move(*first));
-
-      // ── Iterate to find paths 2 … K ────────────────────────────────────
-      for (size_t k = 1; k < K; ++k) {
-        auto const& [prevEdges, prevCost] = A[k - 1];
-        (void)prevCost;
-
-        // Reconstruct the node sequence of the (k-1)-th path.
-        // nodeSeq[0] = src, nodeSeq[i+1] = target of prevEdges[i].
-        std::vector<Id> nodeSeq;
-        nodeSeq.reserve(prevEdges.size() + 1);
-        nodeSeq.push_back(src);
-        for (auto const& eId : prevEdges)
-          nodeSeq.push_back(m_edges.at(eId)->target());
-
-        std::vector<bool> prefixMatches(A.size(), true);
-        std::unordered_set<Id> forbiddenNodes;
-        double rootCost = 0.0;
-
-        // ── Spur-node loop ────────────────────────────────────────────────
-        // spurIdx runs over every node in the path except the last (target).
-        for (size_t spurIdx = 0; spurIdx + 1 < nodeSeq.size(); ++spurIdx) {
-          Id const spurNode = nodeSeq[spurIdx];
-
-          if (spurIdx > 0) {
-            for (size_t pathIdx = 0; pathIdx < A.size(); ++pathIdx) {
-              if (!prefixMatches[pathIdx])
-                continue;
-
-              auto const& aEdges = A[pathIdx].first;
-              if (aEdges.size() < spurIdx ||
-                  aEdges[spurIdx - 1] != prevEdges[spurIdx - 1]) {
-                prefixMatches[pathIdx] = false;
-              }
-            }
-          }
-
-          std::span<Id const> rootEdges(prevEdges.data(), spurIdx);
-
-          // Build the set of edges to suppress at position spurIdx:
-          // Any path already in A that shares the same root prefix must have
-          // its spurIdx-th edge removed so the new spur diverges from it.
-          std::unordered_set<Id> forbiddenEdges;
-          for (size_t pathIdx = 0; pathIdx < A.size(); ++pathIdx) {
-            if (!prefixMatches[pathIdx])
-              continue;
-
-            auto const& aEdges = A[pathIdx].first;
-            if (aEdges.size() <= spurIdx)
-              continue;
-            forbiddenEdges.insert(aEdges[spurIdx]);
-          }
-
-          // Run Dijkstra for the spur portion: spurNode → tgt.
-          auto spurResult = dijkstra(spurNode, tgt, forbiddenEdges, forbiddenNodes);
-          if (!spurResult) {
-            rootCost += getEdgeWeight(*m_edges.at(prevEdges[spurIdx]));
-            forbiddenNodes.insert(nodeSeq[spurIdx]);
-            continue;
-          }
-
-          auto& [spurEdges, spurCost] = *spurResult;
-
-          // Total path = rootEdges ++ spurEdges.
-          std::vector<Id> totalEdges;
-          totalEdges.reserve(rootEdges.size() + spurEdges.size());
-          totalEdges.insert(totalEdges.end(), rootEdges.begin(), rootEdges.end());
-          totalEdges.insert(totalEdges.end(), spurEdges.begin(), spurEdges.end());
-          double totalCost = rootCost + spurCost;
-
-          // Enqueue only if not already seen.
-          if (!seen.contains(totalEdges)) {
-            seen.insert(totalEdges);
-            B.push({totalCost, std::move(totalEdges)});
-          }
-
-          rootCost += getEdgeWeight(*m_edges.at(prevEdges[spurIdx]));
-          forbiddenNodes.insert(nodeSeq[spurIdx]);
-        }
-
-        if (B.empty())
-          break;
-
-        // Accept the cheapest candidate as the k-th shortest path.
-        auto [bestCost, bestEdges] = std::move(const_cast<Candidate&>(B.top()));
-        B.pop();
-        seen.erase(bestEdges);  // no longer needed in the dedup set
-        A.push_back({std::move(bestEdges), bestCost});
-      }
-
-      // Return edge-path sequences only (costs not needed by the caller).
-      std::vector<std::vector<Id>> result;
-      result.reserve(A.size());
-      for (auto& [ep, _] : A)
-        result.push_back(std::move(ep));
-      return result;
-    };
-
-    // ── 3. Parallel accumulation (TBB) ───────────────────────────────────
-    //
-    // Each thread keeps its own edgeId → count map to avoid synchronisation
-    // on hot paths.  Maps are combined serially after the parallel region.
+    // ---- Parallel accumulation ----
     tbb::combinable<std::unordered_map<Id, double>> localAccum;
 
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, N),
-                      [&](tbb::blocked_range<size_t> const& range) {
-                        auto& localMap = localAccum.local();
-                        for (size_t i = range.begin(); i != range.end(); ++i) {
-                          Id const srcId = nodeIds[i];
-                          for (size_t j = 0; j < N; ++j) {
-                            if (i == j)
-                              continue;
-                            Id const tgtId = nodeIds[j];
+    tbb::parallel_for(size_t(0), N, [&](size_t si) {
+      auto& local = localAccum.local();
 
-                            auto paths = yenKShortest(srcId, tgtId);
-                            for (auto const& edgePath : paths) {
-                              for (Id const eId : edgePath) {
-                                localMap[eId] += 1.0;
-                              }
-                            }
-                          }
+      // ---- Single-source shortest path tree ----
+      std::vector<double> dist(N, std::numeric_limits<double>::infinity());
+      std::vector<Id> parentEdge(N, Id{});
+      std::vector<bool> inTree(N, false);
 
-                          processedSources.fetch_add(1, std::memory_order_relaxed);
-                        }
-                      });
+      using PQ = std::pair<double, size_t>;
+      std::priority_queue<PQ, std::vector<PQ>, std::greater<>> pq;
 
-    if (progressThread.joinable()) {
-      progressThread.request_stop();
-      progressThread.join();
-    }
+      dist[si] = 0.0;
+      pq.push({0.0, si});
 
-    if (spdlog::should_log(spdlog::level::info)) {
-      auto const done = processedSources.load(std::memory_order_relaxed);
-      spdlog::info("computeEdgeKBetweennessCentralities progress: {:.1f}% ({}/{})",
-                   100.0 * static_cast<double>(done) / static_cast<double>(N),
-                   done,
-                   N);
-    }
+      while (!pq.empty()) {
+        auto [d, u] = pq.top();
+        pq.pop();
+        if (d > dist[u])
+          continue;
 
-    // Merge thread-local maps into the edge objects (sequential, safe).
-    localAccum.combine_each([&](std::unordered_map<Id, double> const& localMap) {
-      for (auto const& [eId, val] : localMap) {
-        auto bccurrent = m_edges.at(eId)
-                             ->template getAttribute<double>("betweennessCentrality")
-                             .value_or(0.0);
-        m_edges.at(eId)->setAttribute("betweennessCentrality", bccurrent + val);
+        Id uid = nodeIds[u];
+
+        for (auto eId : m_nodes.at(uid)->outgoingEdges()) {
+          auto const& e = *m_edges.at(eId);
+          size_t v = idx[e.target()];
+          double nd = d + getEdgeWeight(e);
+
+          if (nd < dist[v]) {
+            dist[v] = nd;
+            parentEdge[v] = eId;
+            pq.push({nd, v});
+          }
+        }
+      }
+
+      // ---- Build shortest path tree flags ----
+      for (size_t i = 0; i < N; ++i)
+        if (i != si && std::isfinite(dist[i]))
+          inTree[i] = true;
+
+      // ---- Process each target ----
+      for (size_t ti = 0; ti < N; ++ti) {
+        if (ti == si || !inTree[ti])
+          continue;
+
+        // ---- Reconstruct shortest path ----
+        std::vector<Id> shortestPath;
+        for (size_t v = ti; v != si;) {
+          Id eId = parentEdge[v];
+          shortestPath.push_back(eId);
+          v = idx[m_edges.at(eId)->source()];
+        }
+        std::reverse(shortestPath.begin(), shortestPath.end());
+
+        // ---- Collect sidetrack edges ----
+        struct Sidetrack {
+          Id edge;
+          double delta;
+        };
+
+        std::vector<Sidetrack> sidetracks;
+
+        for (auto const& [eId, ePtr] : m_edges) {
+          Id u = ePtr->source();
+          Id v = ePtr->target();
+
+          size_t ui = idx[u];
+          size_t vi = idx[v];
+
+          if (!std::isfinite(dist[ui]) || !std::isfinite(dist[vi]))
+            continue;
+
+          double w = getEdgeWeight(*ePtr);
+
+          double delta = w + dist[ui] - dist[vi];
+          if (delta > 1e-12) {
+            sidetracks.push_back({eId, delta});
+          }
+        }
+
+        // ---- Candidate paths heap ----
+        using Path = std::pair<double, std::vector<Id>>;
+        std::priority_queue<Path, std::vector<Path>, std::greater<>> heap;
+
+        heap.push({0.0, shortestPath});
+
+        size_t produced = 0;
+
+        while (!heap.empty() && produced < K) {
+          auto [cost, path] = heap.top();
+          heap.pop();
+
+          // ---- Accumulate ----
+          for (auto eId : path)
+            local[eId] += 1.0;
+
+          ++produced;
+
+          // ---- Expand using sidetracks ----
+          for (auto const& st : sidetracks) {
+            std::vector<Id> newPath = path;
+            newPath.push_back(st.edge);
+
+            heap.push({cost + st.delta, std::move(newPath)});
+          }
+        }
       }
     });
 
-    // ── 4. Normalisation ──────────────────────────────────────────────────
-    //
-    // Divide by (N-1)(N-2) — the same denominator used by the standard
-    // directed-graph edge-betweenness formulation (Brandes 2001).
-    // This ensures the value lies in [0, 1] when K = 1 (single shortest
-    // path), and scales proportionally for K > 1.
-    double const norm = static_cast<double>((N - 1) * (N - 2));
-    if (norm > 0.0) {
-      for (auto& [eId, pEdge] : m_edges) {
-        auto bc =
-            pEdge->template getAttribute<double>("betweennessCentrality").value_or(0.0);
-        pEdge->setAttribute("betweennessCentrality", bc / norm);
+    // ---- Merge ----
+    localAccum.combine_each([&](auto const& map) {
+      for (auto const& [e, v] : map) {
+        auto cur = m_edges.at(e)
+                       ->template getAttribute<double>("betweennessCentrality")
+                       .value_or(0.0);
+        m_edges.at(e)->setAttribute("betweennessCentrality", cur + v);
+      }
+    });
+
+    // ---- Normalisation ----
+    double norm = double((N - 1) * (N - 2));
+    if (norm > 0) {
+      for (auto& [_, e] : m_edges) {
+        double bc =
+            e->template getAttribute<double>("betweennessCentrality").value_or(0.0);
+        e->setAttribute("betweennessCentrality", bc / norm);
       }
     }
   }
