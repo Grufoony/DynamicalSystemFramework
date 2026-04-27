@@ -883,7 +883,7 @@ namespace dsf::mobility {
                                   std::optional<double> const threshold) {
     if (strv_weight == "traveltime") {
       m_weightFunction = [](Street const& street) {
-        return street.length() / street.maxSpeed();
+        return street.estimatedTravelTime();
       };
     } else if (strv_weight == "length") {
       m_weightFunction = [](Street const& street) { return street.length(); };

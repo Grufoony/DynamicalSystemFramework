@@ -1444,6 +1444,67 @@ TEST_CASE("ShortestPath") {
     CHECK_EQ(path.size(), 1);
     CHECK_EQ(path[0], 0);
   }
+
+  SUBCASE("DefaultWeight_UsesStreetEstimatedTravelTime") {
+    Street::setEstimatedTravelTimeFunction(
+        [](Street const& street) { return street.length() / street.maxSpeed(); });
+
+    RoadNetwork graph{};
+    Street s01(0, std::make_pair(0, 1), 1.0, 1.0);
+    Street s12(1, std::make_pair(1, 2), 1.0, 1.0);
+    Street s02(2, std::make_pair(0, 2), 1.5, 1.0);
+    graph.addStreets(s01, s12, s02);
+
+    auto defaultPath = graph.shortestPath(0, 2);
+    REQUIRE(defaultPath.contains(0));
+    REQUIRE_EQ(defaultPath.at(0).size(), 1);
+    CHECK_EQ(defaultPath.at(0).at(0), 2);
+
+    Street::setEstimatedTravelTimeFunction([](Street const& street) {
+      auto const t = street.length() / street.maxSpeed();
+      return t * t;
+    });
+
+    auto customPath = graph.shortestPath(0, 2);
+    REQUIRE(customPath.contains(0));
+    REQUIRE_EQ(customPath.at(0).size(), 1);
+    CHECK_EQ(customPath.at(0).at(0), 1);
+
+    Street::setEstimatedTravelTimeFunction([](Street const& resetStreet) {
+      return resetStreet.length() / resetStreet.maxSpeed();
+    });
+  }
+
+  SUBCASE("TravelTimeWeight_UsesStreetEstimatedTravelTime") {
+    Street::setEstimatedTravelTimeFunction(
+        [](Street const& street) { return street.length() / street.maxSpeed(); });
+
+    RoadNetwork graph{};
+    graph.setEdgeWeight("traveltime");
+    Street s01(0, std::make_pair(0, 1), 1.0, 1.0);
+    Street s12(1, std::make_pair(1, 2), 1.0, 1.0);
+    Street s02(2, std::make_pair(0, 2), 1.5, 1.0);
+    graph.addStreets(s01, s12, s02);
+
+    auto defaultPath = graph.shortestPath(0, 2);
+    REQUIRE(defaultPath.contains(0));
+    REQUIRE_EQ(defaultPath.at(0).size(), 1);
+    CHECK_EQ(defaultPath.at(0).at(0), 2);
+
+    Street::setEstimatedTravelTimeFunction([](Street const& street) {
+      auto const t = street.length() / street.maxSpeed();
+      return t * t;
+    });
+
+    auto customPath = graph.shortestPath(0, 2);
+    REQUIRE(customPath.contains(0));
+    REQUIRE_EQ(customPath.at(0).size(), 1);
+    CHECK_EQ(customPath.at(0).at(0), 1);
+
+    Street::setEstimatedTravelTimeFunction([](Street const& resetStreet) {
+      return resetStreet.length() / resetStreet.maxSpeed();
+    });
+  }
 }
 
 TEST_CASE("RoadStatus") {

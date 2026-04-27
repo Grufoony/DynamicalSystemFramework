@@ -5,10 +5,27 @@
 #include <spdlog/spdlog.h>
 
 namespace dsf::mobility {
+  std::function<double(Street const&)> Street::m_estimatedTravelTimeFunction =
+      [](Street const& street) { return street.length() / street.maxSpeed(); };
+
   std::optional<
       tbb::concurrent_unordered_map<Id,
                                     std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
       Street::m_agentData = std::nullopt;
+
+  void Street::setEstimatedTravelTimeFunction(
+      std::function<double(Street const&)> estimatedTravelTimeFunction) {
+    if (!estimatedTravelTimeFunction) {
+      throw std::invalid_argument(
+          "Street::setEstimatedTravelTimeFunction: empty callable");
+    }
+    m_estimatedTravelTimeFunction = std::move(estimatedTravelTimeFunction);
+  }
+
+  std::function<double(Street const&)> const&
+  Street::estimatedTravelTimeFunction() noexcept {
+    return m_estimatedTravelTimeFunction;
+  }
 
   void Street::m_updateLaneMapping(int const nLanes) {
     m_laneMapping.clear();

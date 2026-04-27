@@ -105,6 +105,9 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("roadStatus",
            &dsf::mobility::Street::roadStatus,
            dsf::g_docstrings.at("dsf::mobility::Road::roadStatus").c_str())
+      .def("estimatedTravelTime",
+           &dsf::mobility::Street::estimatedTravelTime,
+           "Get estimated travel time for this street using the active estimator.")
       .def("attributes",
            &dsf::mobility::Street::attributes,
            dsf::g_docstrings.at("dsf::Edge::attributes").c_str());
