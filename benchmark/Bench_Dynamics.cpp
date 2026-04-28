@@ -11,7 +11,7 @@ static void BM_FirstOrderDynamics_Empty_Evolve(benchmark::State& state) {
   dsf::mobility::RoadNetwork network;
   network.importEdges((DATA_FOLDER / "forlì_edges.csv").string());
   network.importNodeProperties((DATA_FOLDER / "forlì_nodes.csv").string());
-  dsf::mobility::FirstOrderDynamics dynamics(network);
+  dsf::mobility::FirstOrderDynamics dynamics(std::move(network));
   for (auto _ : state) {
     dynamics.evolve();
   }

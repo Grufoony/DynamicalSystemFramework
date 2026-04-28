@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
 
   std::cout << "Creating dynamics...\n";
 
-  Dynamics dynamics{graph, false, SEED};
+  Dynamics dynamics{std::move(graph), false, SEED};
   {
     std::vector<dsf::Id> destinationNodes;
     for (auto const& [nodeId, pNode] : dynamics.graph().nodes()) {

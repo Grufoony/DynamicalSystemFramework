@@ -477,14 +477,17 @@ PYBIND11_MODULE(dsf_cpp, m) {
   pybind11::class_<dsf::mobility::FirstOrderDynamics>(mobility, "Dynamics")
       //     // Constructors are not directly exposed due to the template nature and complexity.
       //     // Users should use derived classes like FirstOrderDynamics.
-      .def(
-          pybind11::init<dsf::mobility::RoadNetwork&, bool, std::optional<unsigned int>>(),
-          pybind11::arg("graph"),
-          pybind11::arg("useCache") = false,
-          pybind11::arg("seed") = std::nullopt,
-          pybind11::keep_alive<1, 2>(),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::FirstOrderDynamics")
-              .c_str())
+      .def(pybind11::init([](dsf::mobility::RoadNetwork& graph,
+                             bool useCache,
+                             std::optional<unsigned int> seed) {
+             return std::unique_ptr<dsf::mobility::FirstOrderDynamics>(
+                 new dsf::mobility::FirstOrderDynamics(std::move(graph), useCache, seed));
+           }),
+           pybind11::arg("graph"),
+           pybind11::arg("useCache") = false,
+           pybind11::arg("seed") = std::nullopt,
+           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::FirstOrderDynamics")
+               .c_str())
       .def(
           "setSpeedFunction",
           [](dsf::mobility::FirstOrderDynamics& self,
