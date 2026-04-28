@@ -559,114 +559,205 @@ namespace dsf {
     for (size_t i = 0; i < N; ++i)
       idx[nodeIds[i]] = i;
 
-    // ---- Parallel accumulation ----
+    // ---- Parallel accumulation using Yen's K-shortest simple paths ----
     tbb::combinable<std::unordered_map<Id, double>> localAccum;
 
     tbb::parallel_for(size_t(0), N, [&](size_t si) {
       auto& local = localAccum.local();
 
-      // ---- Single-source shortest path tree ----
-      std::vector<double> dist(N, std::numeric_limits<double>::infinity());
-      std::vector<Id> parentEdge(N, Id{});
-      std::vector<bool> inTree(N, false);
+      // Helper: Dijkstra from source index s to target index t, respecting banned nodes/edges.
+      auto dijkstra_path = [&](size_t s,
+                               size_t t,
+                               std::unordered_set<Id> const& bannedNodes,
+                               std::unordered_set<Id> const& bannedEdges,
+                               std::vector<Id>& out_path,
+                               double& out_cost) -> bool {
+        out_path.clear();
+        out_cost = 0.0;
 
-      using PQ = std::pair<double, size_t>;
-      std::priority_queue<PQ, std::vector<PQ>, std::greater<>> pq;
+        std::vector<double> dist(N, std::numeric_limits<double>::infinity());
+        std::vector<Id> parentEdge(N, Id{});
+        using PQ = std::pair<double, size_t>;
+        std::priority_queue<PQ, std::vector<PQ>, std::greater<>> pq;
 
-      dist[si] = 0.0;
-      pq.push({0.0, si});
+        // If source node is banned, no path
+        if (bannedNodes.find(nodeIds[s]) != bannedNodes.end())
+          return false;
 
-      while (!pq.empty()) {
-        auto [d, u] = pq.top();
-        pq.pop();
-        if (d > dist[u])
-          continue;
+        dist[s] = 0.0;
+        pq.push({0.0, s});
 
-        Id uid = nodeIds[u];
-
-        for (auto eId : m_nodes.at(uid)->outgoingEdges()) {
-          auto const& e = *m_edges.at(eId);
-          size_t v = idx[e.target()];
-          double nd = d + getEdgeWeight(e);
-
-          if (nd < dist[v]) {
-            dist[v] = nd;
-            parentEdge[v] = eId;
-            pq.push({nd, v});
-          }
-        }
-      }
-
-      // ---- Build shortest path tree flags ----
-      for (size_t i = 0; i < N; ++i)
-        if (i != si && std::isfinite(dist[i]))
-          inTree[i] = true;
-
-      // ---- Process each target ----
-      for (size_t ti = 0; ti < N; ++ti) {
-        if (ti == si || !inTree[ti])
-          continue;
-
-        // ---- Reconstruct shortest path ----
-        std::vector<Id> shortestPath;
-        for (size_t v = ti; v != si;) {
-          Id eId = parentEdge[v];
-          shortestPath.push_back(eId);
-          v = idx[m_edges.at(eId)->source()];
-        }
-        std::reverse(shortestPath.begin(), shortestPath.end());
-
-        // ---- Collect sidetrack edges ----
-        struct Sidetrack {
-          Id edge;
-          double delta;
-        };
-
-        std::vector<Sidetrack> sidetracks;
-
-        for (auto const& [eId, ePtr] : m_edges) {
-          Id u = ePtr->source();
-          Id v = ePtr->target();
-
-          size_t ui = idx[u];
-          size_t vi = idx[v];
-
-          if (!std::isfinite(dist[ui]) || !std::isfinite(dist[vi]))
+        while (!pq.empty()) {
+          auto [d, u] = pq.top();
+          pq.pop();
+          if (d > dist[u])
             continue;
 
-          double w = getEdgeWeight(*ePtr);
+          Id uid = nodeIds[u];
+          if (uid == nodeIds[t])
+            break;
 
-          double delta = w + dist[ui] - dist[vi];
-          if (delta > 1e-12) {
-            sidetracks.push_back({eId, delta});
+          for (auto eId : m_nodes.at(uid)->outgoingEdges()) {
+            if (bannedEdges.find(eId) != bannedEdges.end())
+              continue;
+            auto const& e = *m_edges.at(eId);
+            Id vt = e.target();
+            if (bannedNodes.find(vt) != bannedNodes.end())
+              continue;
+
+            size_t v = idx[vt];
+            double nd = d + getEdgeWeight(e);
+            if (nd < dist[v]) {
+              dist[v] = nd;
+              parentEdge[v] = eId;
+              pq.push({nd, v});
+            }
           }
         }
 
-        // ---- Candidate paths heap ----
-        using Path = std::pair<double, std::vector<Id>>;
-        std::priority_queue<Path, std::vector<Path>, std::greater<>> heap;
+        if (!std::isfinite(dist[t]))
+          return false;
 
-        heap.push({0.0, shortestPath});
+        // Reconstruct path of edges
+        for (size_t v = t; v != s;) {
+          Id eId = parentEdge[v];
+          out_path.push_back(eId);
+          v = idx[m_edges.at(eId)->source()];
+        }
+        std::reverse(out_path.begin(), out_path.end());
+        out_cost = dist[t];
+        return true;
+      };
 
-        size_t produced = 0;
+      // Process each target using Yen's algorithm
+      for (size_t ti = 0; ti < N; ++ti) {
+        if (ti == si)
+          continue;
 
-        while (!heap.empty() && produced < K) {
-          auto [cost, path] = heap.top();
-          heap.pop();
+        // First shortest path p0
+        std::vector<Id> p0;
+        double p0cost = 0.0;
+        std::unordered_set<Id> emptyBans;
+        if (!dijkstra_path(si, ti, emptyBans, emptyBans, p0, p0cost))
+          continue;
 
-          // ---- Accumulate ----
-          for (auto eId : path)
-            local[eId] += 1.0;
+        // A: accepted shortest paths (increasing cost)
+        std::vector<std::vector<Id>> A;
+        A.push_back(p0);
 
-          ++produced;
+        // B: candidate paths (min-heap)
+        using Cand = std::pair<double, std::vector<Id>>;
+        auto cmp = [](Cand const& a, Cand const& b) { return a.first > b.first; };
+        std::priority_queue<Cand, std::vector<Cand>, decltype(cmp)> B(cmp);
 
-          // ---- Expand using sidetracks ----
-          for (auto const& st : sidetracks) {
-            std::vector<Id> newPath = path;
-            newPath.push_back(st.edge);
+        // Helper to compare root prefix
+        auto prefix_equal = [&](std::vector<Id> const& path,
+                                std::vector<Id> const& root) {
+          if (path.size() < root.size())
+            return false;
+          for (size_t i = 0; i < root.size(); ++i)
+            if (path[i] != root[i])
+              return false;
+          return true;
+        };
 
-            heap.push({cost + st.delta, std::move(newPath)});
+        // Produce up to K paths
+        for (size_t k = 1; k < K; ++k) {
+          // iterate over edges in the last accepted path
+          auto const& lastPath = A.back();
+
+          for (size_t i = 0; i < lastPath.size(); ++i) {
+            // rootPath: first i edges
+            std::vector<Id> rootPath(lastPath.begin(), lastPath.begin() + i);
+
+            // derive rootNode index
+            Id rootNodeId = nodeIds[si];
+            size_t rootNodeIdx = si;
+            for (auto e : rootPath) {
+              rootNodeId = m_edges.at(e)->target();
+              rootNodeIdx = idx[rootNodeId];
+            }
+
+            // banned edges/nodes
+            std::unordered_set<Id> bannedEdges;
+            std::unordered_set<Id> bannedNodes;
+
+            // remove nodes in rootPath (except spur node)
+            Id uId = nodeIds[si];
+            for (auto e : rootPath) {
+              Id src = uId;
+              uId = m_edges.at(e)->target();
+              if (src != rootNodeId)
+                bannedNodes.insert(src);
+            }
+
+            // For each path in A that shares the same root, ban the next edge
+            for (auto const& p : A) {
+              if (prefix_equal(p, rootPath) && p.size() > rootPath.size()) {
+                bannedEdges.insert(p[rootPath.size()]);
+              }
+            }
+
+            // compute spur path from rootNodeIdx to ti
+            std::vector<Id> spurPath;
+            double spurCost = 0.0;
+            if (!dijkstra_path(
+                    rootNodeIdx, ti, bannedNodes, bannedEdges, spurPath, spurCost))
+              continue;
+
+            // total path = rootPath + spurPath
+            std::vector<Id> totalPath = rootPath;
+            totalPath.insert(totalPath.end(), spurPath.begin(), spurPath.end());
+
+            // compute total cost (cost of edges)
+            double rootCost = 0.0;
+            for (auto e : rootPath)
+              rootCost += getEdgeWeight(*m_edges.at(e));
+
+            double totalCost = rootCost + spurCost;
+
+            // avoid duplicates: simple check against A and B contents
+            bool dup = false;
+            for (auto const& a : A)
+              if (a == totalPath) {
+                dup = true;
+                break;
+              }
+            if (dup)
+              continue;
+
+            // push to candidates
+            B.push({totalCost, std::move(totalPath)});
           }
+
+          if (B.empty())
+            break;
+
+          // pick lowest-cost candidate that's not already in A
+          bool found = false;
+          while (!B.empty() && !found) {
+            auto [cost, candPath] = B.top();
+            B.pop();
+            bool inA = false;
+            for (auto const& a : A)
+              if (a == candPath) {
+                inA = true;
+                break;
+              }
+            if (!inA) {
+              A.push_back(std::move(candPath));
+              found = true;
+            }
+          }
+
+          if (!found)
+            break;
+        }
+
+        // accumulate counts for all found paths
+        for (auto const& path : A) {
+          for (auto e : path)
+            local[e] += 1.0;
         }
       }
     });
