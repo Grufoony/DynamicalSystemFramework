@@ -6,10 +6,10 @@
 static constexpr char CSV_SEPARATOR = ';';
 
 namespace dsf::mobility {
-  FirstOrderDynamics::FirstOrderDynamics(RoadNetwork& graph,
+  FirstOrderDynamics::FirstOrderDynamics(RoadNetwork&& graph,
                                          bool useCache,
                                          std::optional<unsigned int> seed)
-      : Dynamics<RoadNetwork>(graph, seed), m_bCacheEnabled{useCache} {
+      : Dynamics<RoadNetwork>(std::move(graph), seed), m_bCacheEnabled{useCache} {
     // Set defaults for speed function
     this->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
     if (m_bCacheEnabled) {

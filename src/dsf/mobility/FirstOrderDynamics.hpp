@@ -306,7 +306,7 @@ namespace dsf::mobility {
     /// @param graph The graph representing the network
     /// @param useCache If true, the cache is used (default is false)
     /// @param seed The seed for the random number generator (default is std::nullopt)
-    FirstOrderDynamics(RoadNetwork& graph,
+    FirstOrderDynamics(RoadNetwork&& graph,
                        bool useCache = false,
                        std::optional<unsigned int> seed = std::nullopt);
 

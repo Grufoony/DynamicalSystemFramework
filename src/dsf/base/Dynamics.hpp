@@ -45,7 +45,7 @@ namespace dsf {
   template <typename network_t>
   class Dynamics {
   private:
-    network_t m_graph;
+    std::unique_ptr<network_t> m_graph;
     Id m_id;
     std::string m_name = "unnamed simulation";
     std::time_t m_timeInit = 0;
@@ -87,7 +87,7 @@ namespace dsf {
     /// @brief Construct a new Dynamics object
     /// @param graph The graph representing the network
     /// @param seed The seed for the random number generator (default is std::nullopt)
-    Dynamics(network_t& graph, std::optional<unsigned int> seed = std::nullopt);
+    Dynamics(network_t&& graph, std::optional<unsigned int> seed = std::nullopt);
 
     /// @brief Set the name of the simulation
     /// @param name The name of the simulation
@@ -118,10 +118,10 @@ namespace dsf {
 
     /// @brief Get the graph
     /// @return const network_t&, The graph
-    inline auto const& graph() const { return m_graph; };
+    inline auto const& graph() const { return *m_graph; };
     /// @brief Get the graph (mutable)
     /// @return network_t&, The graph
-    inline auto& graph() { return m_graph; };
+    inline auto& graph() { return *m_graph; };
     /// @brief Get the id of the simulation
     /// @return const Id&, The id of the simulation
     inline auto const& id() const { return m_id; };
@@ -158,8 +158,9 @@ namespace dsf {
   };
 
   template <typename network_t>
-  Dynamics<network_t>::Dynamics(network_t& graph, std::optional<unsigned int> seed)
-      : m_graph{std::move(graph)}, m_generator{std::random_device{}()} {
+  Dynamics<network_t>::Dynamics(network_t&& graph, std::optional<unsigned int> seed)
+      : m_graph{std::make_unique<network_t>(std::move(graph))},
+        m_generator{std::random_device{}()} {
     if (seed.has_value()) {
       m_generator.seed(*seed);
     }
