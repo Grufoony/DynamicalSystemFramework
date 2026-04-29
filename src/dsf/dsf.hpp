@@ -8,7 +8,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 
 static constexpr uint8_t DSF_VERSION_MAJOR = 5;
-static constexpr uint8_t DSF_VERSION_MINOR = 5;
+static constexpr uint8_t DSF_VERSION_MINOR = 6;
 static constexpr uint8_t DSF_VERSION_PATCH = 0;
 
 static auto const DSF_VERSION =
