@@ -176,17 +176,19 @@ PYBIND11_MODULE(dsf_cpp, m) {
       // node should return a RoadJunction and edge should return a Street
       .def(
           "node",
-          static_cast<dsf::mobility::RoadJunction& (
-              dsf::mobility::RoadNetwork::*)(dsf::Id)>(&dsf::mobility::RoadNetwork::node),
+          [](dsf::mobility::RoadNetwork& self, dsf::Id nodeId)
+              -> dsf::mobility::RoadJunction& { return self.node(nodeId); },
           pybind11::arg("nodeId"),
           pybind11::return_value_policy::reference_internal,
           dsf::g_docstrings.at("dsf::Network::node").c_str())
-      .def("edge",
-           static_cast<dsf::mobility::Street& (dsf::mobility::RoadNetwork::*)(dsf::Id)>(
-               &dsf::mobility::RoadNetwork::edge),
-           pybind11::arg("edgeId"),
-           pybind11::return_value_policy::reference_internal,
-           dsf::g_docstrings.at("dsf::Network::edge").c_str())
+      .def(
+          "edge",
+          [](dsf::mobility::RoadNetwork& self, dsf::Id edgeId) -> dsf::mobility::Street& {
+            return self.edge(edgeId);
+          },
+          pybind11::arg("edgeId"),
+          pybind11::return_value_policy::reference_internal,
+          dsf::g_docstrings.at("dsf::Network::edge").c_str())
       .def("capacity",
            &dsf::mobility::RoadNetwork::capacity,
            dsf::g_docstrings.at("dsf::mobility::RoadNetwork::capacity").c_str())
