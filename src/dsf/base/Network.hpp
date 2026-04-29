@@ -202,22 +202,6 @@ namespace dsf {
     return *it->second;
   }
 
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  template <typename TNode>
-    requires(std::is_base_of_v<node_t, TNode>)
-  TNode& Network<node_t, edge_t>::node(Id nodeId) {
-    return dynamic_cast<TNode&>(node(nodeId));
-  }
-
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  template <typename TEdge>
-    requires(std::is_base_of_v<edge_t, TEdge>)
-  TEdge& Network<node_t, edge_t>::edge(Id edgeId) {
-    return dynamic_cast<TEdge&>(edge(edgeId));
-  }
-
   // ──────────────────────────────────────────────────────────────────────────
   // Brandes node betweenness
   // ──────────────────────────────────────────────────────────────────────────
