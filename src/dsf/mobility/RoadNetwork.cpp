@@ -1049,7 +1049,7 @@ namespace dsf::mobility {
     std::atomic<std::size_t> nAffectedRoads{0};
     std::for_each(DSF_EXECUTION m_edges.cbegin(),
                   m_edges.cend(),
-                  [this, &streetName, &status, &nAffectedRoads](auto const& pair) {
+                  [&streetName, &status, &nAffectedRoads](auto const& pair) {
                     auto const& pStreet = pair.second;
                     if (pStreet->name().find(streetName) != std::string::npos) {
                       pStreet->setStatus(status);
@@ -1077,7 +1077,7 @@ namespace dsf::mobility {
     std::for_each(
         DSF_EXECUTION m_edges.cbegin(),
         m_edges.cend(),
-        [this, &streetName, &nLanes, &speedFactor, &nAffectedRoads](auto const& pair) {
+        [&streetName, &nLanes, &speedFactor, &nAffectedRoads](auto const& pair) {
           auto const& pStreet = pair.second;
           if (pStreet->name().find(streetName) != std::string::npos) {
             pStreet->changeNLanes(nLanes, speedFactor);
@@ -1105,7 +1105,7 @@ namespace dsf::mobility {
     std::atomic<std::size_t> nAffectedRoads{0};
     std::for_each(DSF_EXECUTION m_edges.cbegin(),
                   m_edges.cend(),
-                  [this, &streetName, &factor, &nAffectedRoads](auto const& pair) {
+                  [&streetName, &factor, &nAffectedRoads](auto const& pair) {
                     auto const& pStreet = pair.second;
                     if (pStreet->name().find(streetName) != std::string::npos) {
                       auto const& currentCapacity = pStreet->capacity();

@@ -119,7 +119,7 @@ TEST_CASE("Street") {
   SUBCASE("changeNLanes") {
     GIVEN("A street with 2 lanes") {
       Street street{1, std::make_pair(0, 1), 100.0, 20.0, 2};
-      int const initialCapacity = street.capacity();
+      auto const initialCapacity = street.capacity();
       double const initialTransportCapacity = street.transportCapacity();
       double const initialMaxSpeed = street.maxSpeed();
 
