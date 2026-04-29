@@ -176,17 +176,19 @@ PYBIND11_MODULE(dsf_cpp, m) {
       // node should return a RoadJunction and edge should return a Street
       .def(
           "node",
-          static_cast<dsf::mobility::RoadJunction& (
-              dsf::mobility::RoadNetwork::*)(dsf::Id)>(&dsf::mobility::RoadNetwork::node),
+          [](dsf::mobility::RoadNetwork& self, dsf::Id nodeId)
+              -> dsf::mobility::RoadJunction& { return self.node(nodeId); },
           pybind11::arg("nodeId"),
           pybind11::return_value_policy::reference_internal,
           dsf::g_docstrings.at("dsf::Network::node").c_str())
-      .def("edge",
-           static_cast<dsf::mobility::Street& (dsf::mobility::RoadNetwork::*)(dsf::Id)>(
-               &dsf::mobility::RoadNetwork::edge),
-           pybind11::arg("edgeId"),
-           pybind11::return_value_policy::reference_internal,
-           dsf::g_docstrings.at("dsf::Network::edge").c_str())
+      .def(
+          "edge",
+          [](dsf::mobility::RoadNetwork& self, dsf::Id edgeId) -> dsf::mobility::Street& {
+            return self.edge(edgeId);
+          },
+          pybind11::arg("edgeId"),
+          pybind11::return_value_policy::reference_internal,
+          dsf::g_docstrings.at("dsf::Network::edge").c_str())
       .def("capacity",
            &dsf::mobility::RoadNetwork::capacity,
            dsf::g_docstrings.at("dsf::mobility::RoadNetwork::capacity").c_str())
@@ -396,7 +398,14 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "Get the betweenness centrality values for all edges.\n\n"
           "Returns:\n"
           "    dict[int, float | None]: A dictionary mapping edge id to its "
-          "betweenness centrality value (None if not computed).");
+          "betweenness centrality value (None if not computed).")
+      .def(
+          "exportCSV",
+          [](const dsf::mobility::RoadNetwork& self, const std::string& outputDir) {
+            self.exportCSV(outputDir);
+          },
+          pybind11::arg("outputDir"),
+          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::exportCSV").c_str());
 
   pybind11::class_<dsf::mobility::PathCollection>(mobility, "PathCollection")
       .def(pybind11::init<>(), "Create an empty PathCollection")

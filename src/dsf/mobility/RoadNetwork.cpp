@@ -3,6 +3,7 @@
 #include "../geometry/PolyLine.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <ranges>
 
 #include <csv.hpp>
@@ -840,8 +841,8 @@ namespace dsf::mobility {
       for (auto const& edgeId : inNeighbours) {
         auto* pStreet{&this->edge(edgeId)};
         auto const roadType = pStreet->roadType();
-        if (roadType.has_value()) {
-          types.emplace(roadType.value(), pStreet->id());
+        if (roadType != RoadType::UNKNOWN) {
+          types.emplace(roadType, pStreet->id());
         }
       }
       if (types.size() < 2) {
@@ -1048,7 +1049,7 @@ namespace dsf::mobility {
     std::atomic<std::size_t> nAffectedRoads{0};
     std::for_each(DSF_EXECUTION m_edges.cbegin(),
                   m_edges.cend(),
-                  [this, &streetName, &status, &nAffectedRoads](auto const& pair) {
+                  [&streetName, &status, &nAffectedRoads](auto const& pair) {
                     auto const& pStreet = pair.second;
                     if (pStreet->name().find(streetName) != std::string::npos) {
                       pStreet->setStatus(status);
@@ -1076,7 +1077,7 @@ namespace dsf::mobility {
     std::for_each(
         DSF_EXECUTION m_edges.cbegin(),
         m_edges.cend(),
-        [this, &streetName, &nLanes, &speedFactor, &nAffectedRoads](auto const& pair) {
+        [&streetName, &nLanes, &speedFactor, &nAffectedRoads](auto const& pair) {
           auto const& pStreet = pair.second;
           if (pStreet->name().find(streetName) != std::string::npos) {
             pStreet->changeNLanes(nLanes, speedFactor);
@@ -1104,7 +1105,7 @@ namespace dsf::mobility {
     std::atomic<std::size_t> nAffectedRoads{0};
     std::for_each(DSF_EXECUTION m_edges.cbegin(),
                   m_edges.cend(),
-                  [this, &streetName, &factor, &nAffectedRoads](auto const& pair) {
+                  [&streetName, &factor, &nAffectedRoads](auto const& pair) {
                     auto const& pStreet = pair.second;
                     if (pStreet->name().find(streetName) != std::string::npos) {
                       auto const& currentCapacity = pStreet->capacity();
@@ -1128,5 +1129,135 @@ namespace dsf::mobility {
       return nullptr;
     }
     return it->second.get();
+  }
+  void RoadNetwork::exportCSV(std::string_view const folder) const {
+    auto const nodeTypeToString = [](RoadJunction const& junction) {
+      if (junction.isTrafficLight()) {
+        return std::string{"traffic_signals"};
+      }
+      if (junction.isRoundabout()) {
+        return std::string{"roundabout"};
+      }
+      return std::string{"intersection"};
+    };
+
+    auto const attributeValueToString =
+        [](std::variant<std::monostate, bool, std::int64_t, double, std::string> const&
+               value) {
+          return std::visit(
+              [](auto const& typedValue) -> std::string {
+                using T = std::decay_t<decltype(typedValue)>;
+                if constexpr (std::is_same_v<T, std::monostate>) {
+                  return std::string{};
+                } else {
+                  return std::format("{}", typedValue);
+                }
+              },
+              value);
+        };
+
+    std::vector<std::string> extraEdgeColumns;
+    for (auto const& [_, pStreet] : m_edges) {
+      for (auto const& [attrName, _] : pStreet->attributes()) {
+        if (std::find(EDGE_DEFAULT_ATTRIBUTES.begin(),
+                      EDGE_DEFAULT_ATTRIBUTES.end(),
+                      attrName) != EDGE_DEFAULT_ATTRIBUTES.end()) {
+          continue;
+        }
+        if (std::find(extraEdgeColumns.begin(), extraEdgeColumns.end(), attrName) ==
+            extraEdgeColumns.end()) {
+          extraEdgeColumns.push_back(attrName);
+        }
+      }
+    }
+    std::ranges::sort(extraEdgeColumns);
+
+    // Check if path is a directory
+    if (!std::filesystem::is_directory(folder)) {
+      throw std::runtime_error(std::format("Path {} is not a directory", folder));
+    }
+    auto const edgesPath = std::filesystem::path(folder) / "edges.csv";
+    auto const nodesPath = std::filesystem::path(folder) / "nodes.csv";
+
+    // Save edges
+    {
+      std::ofstream edgesFile{edgesPath};
+      if (!edgesFile.is_open()) {
+        throw std::runtime_error(
+            std::format("Error opening file {} for writing", edgesPath.string()));
+      }
+      csv::CSVWriter writer{edgesFile};
+
+      std::vector<std::string> edgesHeader{"id",
+                                           "source",
+                                           "target",
+                                           "length",
+                                           "maxspeed",
+                                           "nlanes",
+                                           "type",
+                                           "capacity",
+                                           "status",
+                                           "name",
+                                           "priority",
+                                           "coilcode",
+                                           "geometry"};
+      edgesHeader.insert(
+          edgesHeader.end(), extraEdgeColumns.begin(), extraEdgeColumns.end());
+      writer << edgesHeader;
+
+      for (auto const& [_, pStreet] : m_edges) {
+        auto const strGeometry = pStreet->geometry().empty()
+                                     ? std::string{}
+                                     : std::format("{}", pStreet->geometry());
+        std::vector<std::string> edgeRow;
+        edgeRow.reserve(edgesHeader.size());
+        edgeRow.emplace_back(std::format("{}", pStreet->id()));
+        edgeRow.emplace_back(std::format("{}", pStreet->source()));
+        edgeRow.emplace_back(std::format("{}", pStreet->target()));
+        edgeRow.emplace_back(std::format("{}", pStreet->length()));
+        edgeRow.emplace_back(std::format("{}", pStreet->maxSpeed() * 3.6));
+        edgeRow.emplace_back(std::format("{}", pStreet->nLanes()));
+        edgeRow.emplace_back(pStreet->strRoadType());
+        edgeRow.emplace_back(std::format("{}", pStreet->capacity()));
+        edgeRow.emplace_back(std::format("{}", pStreet->roadStatus()));
+        edgeRow.emplace_back(pStreet->name());
+        edgeRow.emplace_back(std::format("{}", pStreet->hasPriority()));
+        edgeRow.emplace_back(pStreet->hasCoil() ? pStreet->counterName() : std::string{});
+        edgeRow.emplace_back(strGeometry);
+        for (auto const& attrName : extraEdgeColumns) {
+          auto const it = pStreet->attributes().find(attrName);
+          if (it == pStreet->attributes().end()) {
+            edgeRow.emplace_back();
+            continue;
+          }
+          edgeRow.emplace_back(attributeValueToString(it->second));
+        }
+        writer << edgeRow;
+      }
+    }
+
+    // Save nodes
+    {
+      std::ofstream nodesFile{nodesPath};
+      if (!nodesFile.is_open()) {
+        throw std::runtime_error(
+            std::format("Error opening file {} for writing", nodesPath.string()));
+      }
+      csv::CSVWriter writer{nodesFile};
+      writer << std::array<std::string, 6>{
+          "id", "type", "geometry", "capacity", "transportCapacity", "name"};
+      for (auto const& [_, pNode] : m_nodes) {
+        auto const strGeometry = pNode->geometry().has_value()
+                                     ? std::format("{}", pNode->geometry().value())
+                                     : std::string{};
+        writer << std::array<std::string, 6>{
+            std::format("{}", pNode->id()),
+            nodeTypeToString(*pNode),
+            strGeometry,
+            std::format("{}", pNode->capacity()),
+            std::format("{}", pNode->transportCapacity()),
+            pNode->name()};
+      }
+    }
   }
 }  // namespace dsf::mobility

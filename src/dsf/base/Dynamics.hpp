@@ -201,6 +201,6 @@ namespace dsf {
     m_globalControl.reset();
     m_globalControl = std::make_unique<tbb::global_control>(
         tbb::global_control::max_allowed_parallelism, actualConcurrency);
-    m_taskArena.initialize(actualConcurrency);
+    m_taskArena.initialize(static_cast<int>(actualConcurrency));
   }
 };  // namespace dsf

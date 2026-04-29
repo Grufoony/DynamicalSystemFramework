@@ -94,7 +94,7 @@ namespace dsf::mobility {
     for (auto& [streetId, cycles] : m_cycles) {
       for (auto& [direction, cycle] : cycles) {
         // Module new phase with cycleTime
-        auto newPhase{(phase + cycle.phase()) % m_cycleTime};
+        auto const newPhase{static_cast<Delay>((phase + cycle.phase()) % m_cycleTime)};
         cycle = TrafficLightCycle(cycle.greenTime(), newPhase);
       }
     }

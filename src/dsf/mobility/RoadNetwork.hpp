@@ -267,6 +267,10 @@ namespace dsf::mobility {
     ///          PathCollection sound when exploded, i.e. it avoids combining
     ///          prefix-dependent hops into over-budget paths.
     PathCollection shortestPath(Id const sourceId, Id const targetId) const;
+
+    /// @brief Export the graph's edges and nodes to two CSV files in the specified folder
+    /// @param folder The folder to export the files to
+    void exportCSV(std::string_view const folder) const;
   };
 
   template <typename... TArgs>

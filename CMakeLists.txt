@@ -69,7 +69,7 @@ elseif(CMAKE_BUILD_TYPE MATCHES "Coverage")
   message(STATUS "Enable code coverage")
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -g -pg --coverage -fprofile-update=atomic"
+        "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Werror -g -pg --coverage -fprofile-update=atomic"
     )
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
   endif()
@@ -77,9 +77,9 @@ else() # Default to Debug settings
   set(DSF_TESTS ON)
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -g -pg -fsanitize=address")
+        "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Werror -g -pg -fsanitize=address")
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -g -pg")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Werror -g -pg")
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
   endif()
