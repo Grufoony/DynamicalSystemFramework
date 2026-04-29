@@ -396,7 +396,14 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "Get the betweenness centrality values for all edges.\n\n"
           "Returns:\n"
           "    dict[int, float | None]: A dictionary mapping edge id to its "
-          "betweenness centrality value (None if not computed).");
+          "betweenness centrality value (None if not computed).")
+      .def(
+          "exportCSV",
+          [](const dsf::mobility::RoadNetwork& self, const std::string& outputDir) {
+            self.exportCSV(outputDir);
+          },
+          pybind11::arg("outputDir"),
+          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::exportCSV").c_str());
 
   pybind11::class_<dsf::mobility::PathCollection>(mobility, "PathCollection")
       .def(pybind11::init<>(), "Create an empty PathCollection")

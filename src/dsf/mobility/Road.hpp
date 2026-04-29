@@ -15,6 +15,7 @@ namespace dsf::mobility {
     SECONDARY = 2,
     TERTIARY = 3,
     RESIDENTIAL = 4,
+    UNKNOWN = 255,
   };
   enum class RoadStatus : std::uint8_t {
     OPEN = 0,
@@ -33,7 +34,7 @@ namespace dsf::mobility {
     std::string m_name;
     bool m_hasPriority = false;
     std::set<Id> m_forbiddenTurns;  // Stores the forbidden turns (road ids)
-    std::optional<RoadType> m_roadType{std::nullopt};
+    RoadType m_roadType = RoadType::UNKNOWN;
     RoadStatus m_roadStatus = RoadStatus::OPEN;
 
   public:
@@ -125,8 +126,26 @@ namespace dsf::mobility {
     ///          when they are on the road.
     inline auto const& forbiddenTurns() const noexcept { return m_forbiddenTurns; }
     /// @brief Get the road type
-    /// @return std::optional<RoadType> The road type
+    /// @return RoadType The road type
     inline auto roadType() const noexcept { return m_roadType; }
+    /// @brief Get the string representation of the road type
+    /// @return std::string The string representation of the road type
+    constexpr std::string strRoadType() const {
+      switch (m_roadType) {
+        case RoadType::HIGHWAY:
+          return "highway";
+        case RoadType::PRIMARY:
+          return "primary";
+        case RoadType::SECONDARY:
+          return "secondary";
+        case RoadType::TERTIARY:
+          return "tertiary";
+        case RoadType::RESIDENTIAL:
+          return "residential";
+        default:
+          return "unknown";
+      }
+    };
     /// @brief Get the road status
     /// @return RoadStatus The road status
     inline auto roadStatus() const noexcept { return m_roadStatus; }

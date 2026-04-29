@@ -158,10 +158,7 @@ TEST_CASE("RoadNetwork") {
           int nHighways = 0, nPrimary = 0, nSecondary = 0, nTertiary = 0,
               nResidential = 0;
           for (auto const& [_, pEdge] : graph.edges()) {
-            if (!pEdge->roadType().has_value()) {
-              continue;
-            }
-            switch (pEdge->roadType().value()) {
+            switch (pEdge->roadType()) {
               case RoadType::HIGHWAY:
                 ++nHighways;
                 break;
@@ -833,6 +830,122 @@ TEST_CASE("RoadNetwork") {
         }
       }
     }
+  }
+  SUBCASE("exportCSV exports edges and nodes") {
+    RoadNetwork graph{};
+    graph.addNode(0, dsf::geometry::Point(8.0, 45.0));
+    graph.addNode(1, dsf::geometry::Point(8.1, 45.1));
+
+    Street s{42,
+             std::make_pair(0, 1),
+             123.0,
+             36.0 / 3.6,
+             2,
+             "Exported Street",
+             dsf::geometry::PolyLine{
+                 {dsf::geometry::Point(8.0, 45.0), dsf::geometry::Point(8.1, 45.1)}}};
+    s.setRoadType(RoadType::PRIMARY);
+    s.setPriority();
+    graph.addStreet(std::move(s));
+    graph.addCoil(42, "coil_42");
+
+    auto const outputDir =
+        std::filesystem::temp_directory_path() / "dsf_to_csv_roadnetwork_test";
+    std::filesystem::create_directories(outputDir);
+
+    CHECK_NOTHROW(graph.exportCSV(outputDir.string()));
+
+    auto const edgesPath = outputDir / "edges.csv";
+    auto const nodesPath = outputDir / "nodes.csv";
+    REQUIRE(std::filesystem::exists(edgesPath));
+    REQUIRE(std::filesystem::exists(nodesPath));
+
+    std::ifstream edgesFile{edgesPath};
+    REQUIRE(edgesFile.is_open());
+    std::string edgesCsv((std::istreambuf_iterator<char>(edgesFile)),
+                         std::istreambuf_iterator<char>());
+    CHECK(edgesCsv.find("id,source,target,length,maxspeed,nlanes,type,capacity,status,"
+                        "name,priority,coilcode,geometry") != std::string::npos);
+    CHECK(edgesCsv.find("Exported Street") != std::string::npos);
+    CHECK(edgesCsv.find("primary") != std::string::npos);
+    CHECK(edgesCsv.find("OPEN") != std::string::npos);
+    CHECK(edgesCsv.find("coil_42") != std::string::npos);
+    CHECK(edgesCsv.find("LINESTRING (") != std::string::npos);
+
+    std::ifstream nodesFile{nodesPath};
+    REQUIRE(nodesFile.is_open());
+    std::string nodesCsv((std::istreambuf_iterator<char>(nodesFile)),
+                         std::istreambuf_iterator<char>());
+    CHECK(nodesCsv.find("id,type,geometry,capacity,transportCapacity,name") !=
+          std::string::npos);
+    CHECK(nodesCsv.find("intersection") != std::string::npos);
+    CHECK(nodesCsv.find("POINT (") != std::string::npos);
+
+    std::filesystem::remove(edgesPath);
+    std::filesystem::remove(nodesPath);
+    std::filesystem::remove(outputDir);
+  }
+
+  SUBCASE("to_csv throws for non-directory path") {
+    RoadNetwork graph{};
+    graph.addEdge<Street>(1, std::make_pair(0, 1));
+
+    auto const invalidPath =
+        std::filesystem::temp_directory_path() / "dsf_to_csv_not_a_directory.csv";
+    {
+      std::ofstream out{invalidPath};
+      REQUIRE(out.is_open());
+      out << "placeholder";
+    }
+
+    CHECK_THROWS_AS(graph.exportCSV(invalidPath.string()), std::runtime_error);
+
+    std::filesystem::remove(invalidPath);
+  }
+
+  SUBCASE("exportCSV re-exports imported custom attributes") {
+    auto const inputCsvPath =
+        std::filesystem::temp_directory_path() / "dsf_exportCSV_attributes_input.csv";
+    {
+      std::ofstream inputCsv{inputCsvPath};
+      REQUIRE(inputCsv.is_open());
+      inputCsv << "id;source;target;oneway;length;geometry;travel_time;maxspeed;nlanes;"
+                  "type;name;is_toll;zone;weight\n";
+      inputCsv << "300;100;101;false;80.0;LINESTRING (8.0 45.0, 8.1 45.1);9.6;"
+                  "30.0;1;residential;attr_street_1;true;A1;3.14\n";
+      inputCsv << "301;101;102;false;90.0;LINESTRING (8.1 45.1, 8.2 45.2);10.8;"
+                  "30.0;1;residential;attr_street_2;false;B2;2\n";
+    }
+
+    RoadNetwork graph;
+    graph.importEdges(inputCsvPath.string());
+
+    auto const outputDir =
+        std::filesystem::temp_directory_path() / "dsf_exportCSV_attributes_export";
+    std::filesystem::create_directories(outputDir);
+    CHECK_NOTHROW(graph.exportCSV(outputDir.string()));
+
+    auto const edgesPath = outputDir / "edges.csv";
+    REQUIRE(std::filesystem::exists(edgesPath));
+
+    std::ifstream edgesFile{edgesPath};
+    REQUIRE(edgesFile.is_open());
+    std::string edgesCsv((std::istreambuf_iterator<char>(edgesFile)),
+                         std::istreambuf_iterator<char>());
+
+    CHECK(edgesCsv.find("is_toll") != std::string::npos);
+    CHECK(edgesCsv.find("zone") != std::string::npos);
+    CHECK(edgesCsv.find("weight") != std::string::npos);
+    CHECK(edgesCsv.find("attr_street_1") != std::string::npos);
+    CHECK(edgesCsv.find("attr_street_2") != std::string::npos);
+    CHECK(edgesCsv.find("A1") != std::string::npos);
+    CHECK(edgesCsv.find("B2") != std::string::npos);
+    CHECK(edgesCsv.find(",2") != std::string::npos);
+
+    std::filesystem::remove(inputCsvPath);
+    std::filesystem::remove(edgesPath);
+    std::filesystem::remove(outputDir / "nodes.csv");
+    std::filesystem::remove(outputDir);
   }
 }
 
