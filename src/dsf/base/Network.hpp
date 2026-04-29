@@ -64,11 +64,15 @@ namespace dsf {
 
     template <typename TNode>
       requires(std::is_base_of_v<node_t, TNode>)
-    TNode& node(Id nodeId);
+    inline auto& node(Id nodeId) {
+      return dynamic_cast<TNode&>(node(nodeId));
+    }
 
     template <typename TEdge>
       requires(std::is_base_of_v<edge_t, TEdge>)
-    TEdge& edge(Id edgeId);
+    inline auto& edge(Id edgeId) {
+      return dynamic_cast<TEdge&>(edge(edgeId));
+    }
 
     /// @brief Compute node betweenness centralities using Brandes' algorithm
     template <typename WeightFunc>
@@ -164,22 +168,6 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  template <typename TNode>
-    requires(std::is_base_of_v<node_t, TNode>)
-  TNode& Network<node_t, edge_t>::node(Id nodeId) {
-    return dynamic_cast<TNode&>(node(nodeId));
-  }
-
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  template <typename TEdge>
-    requires(std::is_base_of_v<edge_t, TEdge>)
-  TEdge& Network<node_t, edge_t>::edge(Id edgeId) {
-    return dynamic_cast<TEdge&>(edge(edgeId));
-  }
-
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   template <typename WeightFunc>
     requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
   void Network<node_t, edge_t>::computeBetweennessCentralities(WeightFunc getEdgeWeight) {
@@ -187,19 +175,26 @@ namespace dsf {
       pNode->setAttribute("betweennessCentrality", 0.0);
     }
 
+    struct PathDataHelper {
+      std::vector<Id> P;
+      double sigma{0.0};
+      double dist{std::numeric_limits<double>::infinity()};
+      double delta{0.0};
+    };
+
     for (auto const& [sourceId, sourceNode] : m_nodes) {
       std::stack<Id> S;
-      std::unordered_map<Id, std::vector<Id>> P;
-      std::unordered_map<Id, double> sigma;
-      std::unordered_map<Id, double> dist;
+      std::unordered_map<Id, PathDataHelper> pathData;
+      pathData.reserve(this->nNodes());
 
       for (auto const& [nId, _] : m_nodes) {
-        P[nId] = {};
-        sigma[nId] = 0.0;
-        dist[nId] = std::numeric_limits<double>::infinity();
+        pathData.emplace(nId, PathDataHelper());
       }
-      sigma[sourceId] = 1.0;
-      dist[sourceId] = 0.0;
+      {
+        auto& sourceData = pathData[sourceId];
+        sourceData.sigma = 1.0;
+        sourceData.dist = 0.0;
+      }
 
       std::priority_queue<std::pair<double, Id>,
                           std::vector<std::pair<double, Id>>,
@@ -217,42 +212,43 @@ namespace dsf {
           continue;
         visited.insert(v);
         S.push(v);
+        auto& vData = pathData[v];
 
         for (auto const& edgeId : m_nodes.at(v)->outgoingEdges()) {
           auto const& edgeObj = *m_edges.at(edgeId);
           Id w = edgeObj.target();
+          auto& wData = pathData[w];
           if (visited.contains(w))
             continue;
           double edgeWeight = getEdgeWeight(edgeObj);
-          double newDist = dist[v] + edgeWeight;
+          double newDist = vData.dist + edgeWeight;
 
-          if (newDist < dist[w]) {
-            dist[w] = newDist;
-            sigma[w] = sigma[v];
-            P[w] = {v};
+          if (newDist < wData.dist) {
+            wData.dist = newDist;
+            wData.sigma = vData.sigma;
+            wData.P = {v};
             pq.push({newDist, w});
-          } else if (std::abs(newDist - dist[w]) < 1e-12 * std::max(1.0, dist[w])) {
-            sigma[w] += sigma[v];
-            P[w].push_back(v);
+          } else if (std::abs(newDist - wData.dist) < 1e-12 * std::max(1.0, wData.dist)) {
+            wData.sigma += vData.sigma;
+            wData.P.push_back(v);
           }
         }
       }
 
-      std::unordered_map<Id, double> delta;
-      for (auto const& [nId, _] : m_nodes)
-        delta[nId] = 0.0;
-
       while (!S.empty()) {
         Id w = S.top();
+        auto const& wData = pathData[w];
         S.pop();
-        for (Id v : P[w]) {
-          delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w]);
+        for (auto const v : wData.P) {
+          auto& vData = pathData[v];
+          vData.delta += (vData.sigma / wData.sigma) * (1.0 + wData.delta);
         }
         if (w != sourceId) {
-          auto currentBC = m_nodes.at(w)
-                               ->template getAttribute<double>("betweennessCentrality")
-                               .value_or(0.0);
-          m_nodes.at(w)->setAttribute("betweennessCentrality", currentBC + delta[w]);
+          auto& currentNode = this->node(w);
+          auto const optBC =
+              currentNode.template getAttribute<double>("betweennessCentrality");
+          // BC must exist since we initialized it for all nodes at the start
+          currentNode.setAttribute("betweennessCentrality", *optBC + wData.delta);
         }
       }
     }
@@ -268,19 +264,26 @@ namespace dsf {
       pEdge->setAttribute("betweennessCentrality", 0.0);
     }
 
+    struct PathDataHelper {
+      std::vector<Id> P;  // predecessor edge ids on shortest paths
+      double sigma{0.0};
+      double dist{std::numeric_limits<double>::infinity()};
+      double delta{0.0};
+    };
+
     for (auto const& [sourceId, sourceNode] : m_nodes) {
       std::stack<Id> S;
-      std::unordered_map<Id, std::vector<std::pair<Id, Id>>> P;
-      std::unordered_map<Id, double> sigma;
-      std::unordered_map<Id, double> dist;
+      std::unordered_map<Id, PathDataHelper> pathData;
+      pathData.reserve(this->nNodes());
 
       for (auto const& [nId, _] : m_nodes) {
-        P[nId] = {};
-        sigma[nId] = 0.0;
-        dist[nId] = std::numeric_limits<double>::infinity();
+        pathData.emplace(nId, PathDataHelper());
       }
-      sigma[sourceId] = 1.0;
-      dist[sourceId] = 0.0;
+      {
+        auto& sourceData = pathData.at(sourceId);
+        sourceData.sigma = 1.0;
+        sourceData.dist = 0.0;
+      }
 
       std::priority_queue<std::pair<double, Id>,
                           std::vector<std::pair<double, Id>>,
@@ -299,40 +302,41 @@ namespace dsf {
         visited.insert(v);
         S.push(v);
 
-        for (auto const& eId : m_nodes.at(v)->outgoingEdges()) {
-          auto const& edgeObj = *m_edges.at(eId);
+        auto& vData = pathData.at(v);
+        for (auto const& eId : this->node(v).outgoingEdges()) {
+          auto const& edgeObj = this->edge(eId);
           Id w = edgeObj.target();
+          auto& wData = pathData.at(w);
           if (visited.contains(w))
             continue;
           double edgeWeight = getEdgeWeight(edgeObj);
-          double newDist = dist[v] + edgeWeight;
+          double newDist = vData.dist + edgeWeight;
 
-          if (newDist < dist[w]) {
-            dist[w] = newDist;
-            sigma[w] = sigma[v];
-            P[w] = {{v, eId}};
+          if (newDist < wData.dist) {
+            wData.dist = newDist;
+            wData.sigma = vData.sigma;
+            wData.P = {eId};
             pq.push({newDist, w});
-          } else if (std::abs(newDist - dist[w]) < 1e-12 * std::max(1.0, dist[w])) {
-            sigma[w] += sigma[v];
-            P[w].push_back({v, eId});
+          } else if (std::abs(newDist - wData.dist) < 1e-12 * std::max(1.0, wData.dist)) {
+            wData.sigma += vData.sigma;
+            wData.P.push_back(eId);
           }
         }
       }
 
-      std::unordered_map<Id, double> delta;
-      for (auto const& [nId, _] : m_nodes)
-        delta[nId] = 0.0;
-
       while (!S.empty()) {
         Id w = S.top();
+        auto& wData = pathData.at(w);
         S.pop();
-        for (auto const& [v, eId] : P[w]) {
-          double c = (sigma[v] / sigma[w]) * (1.0 + delta[w]);
-          delta[v] += c;
-          auto currentBC = m_edges.at(eId)
-                               ->template getAttribute<double>("betweennessCentrality")
-                               .value_or(0.0);
-          m_edges.at(eId)->setAttribute("betweennessCentrality", currentBC + c);
+        for (auto const eId : wData.P) {
+          auto& vData = pathData.at(this->edge(eId).source());
+          double contrib = (vData.sigma / wData.sigma) * (1.0 + wData.delta);
+          vData.delta += contrib;
+          auto& currentEdge = this->edge(eId);
+          auto const optBC =
+              currentEdge.template getAttribute<double>("betweennessCentrality");
+          // BC must exist since we initialized it for all edges at the start
+          currentEdge.setAttribute("betweennessCentrality", *optBC + contrib);
         }
       }
     }
