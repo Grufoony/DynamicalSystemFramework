@@ -1211,26 +1211,26 @@ namespace dsf::mobility {
                                      : std::format("{}", pStreet->geometry());
         std::vector<std::string> edgeRow;
         edgeRow.reserve(edgesHeader.size());
-        edgeRow.push_back(std::format("{}", pStreet->id()));
-        edgeRow.push_back(std::format("{}", pStreet->source()));
-        edgeRow.push_back(std::format("{}", pStreet->target()));
-        edgeRow.push_back(std::format("{}", pStreet->length()));
-        edgeRow.push_back(std::format("{}", pStreet->maxSpeed() * 3.6));
-        edgeRow.push_back(std::format("{}", pStreet->nLanes()));
-        edgeRow.push_back(pStreet->strRoadType());
-        edgeRow.push_back(std::format("{}", pStreet->capacity()));
-        edgeRow.push_back(std::format("{}", pStreet->roadStatus()));
-        edgeRow.push_back(pStreet->name());
-        edgeRow.push_back(std::format("{}", pStreet->hasPriority()));
-        edgeRow.push_back(pStreet->hasCoil() ? pStreet->counterName() : std::string{});
-        edgeRow.push_back(strGeometry);
+        edgeRow.emplace_back(std::format("{}", pStreet->id()));
+        edgeRow.emplace_back(std::format("{}", pStreet->source()));
+        edgeRow.emplace_back(std::format("{}", pStreet->target()));
+        edgeRow.emplace_back(std::format("{}", pStreet->length()));
+        edgeRow.emplace_back(std::format("{}", pStreet->maxSpeed() * 3.6));
+        edgeRow.emplace_back(std::format("{}", pStreet->nLanes()));
+        edgeRow.emplace_back(pStreet->strRoadType());
+        edgeRow.emplace_back(std::format("{}", pStreet->capacity()));
+        edgeRow.emplace_back(std::format("{}", pStreet->roadStatus()));
+        edgeRow.emplace_back(pStreet->name());
+        edgeRow.emplace_back(std::format("{}", pStreet->hasPriority()));
+        edgeRow.emplace_back(pStreet->hasCoil() ? pStreet->counterName() : std::string{});
+        edgeRow.emplace_back(strGeometry);
         for (auto const& attrName : extraEdgeColumns) {
           auto const it = pStreet->attributes().find(attrName);
           if (it == pStreet->attributes().end()) {
             edgeRow.emplace_back();
             continue;
           }
-          edgeRow.push_back(attributeValueToString(it->second));
+          edgeRow.emplace_back(attributeValueToString(it->second));
         }
         writer << edgeRow;
       }

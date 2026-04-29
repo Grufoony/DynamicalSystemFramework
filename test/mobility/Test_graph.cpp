@@ -850,7 +850,7 @@ TEST_CASE("RoadNetwork") {
     graph.addCoil(42, "coil_42");
 
     auto const outputDir =
-        std::filesystem::temp_directory_path() / "dsf_to_csv_roadnetwork_test";
+        std::filesystem::temp_directory_path() / "dsf_exportCSV_roadnetwork_test";
     std::filesystem::create_directories(outputDir);
 
     CHECK_NOTHROW(graph.exportCSV(outputDir.string()));
@@ -886,12 +886,12 @@ TEST_CASE("RoadNetwork") {
     std::filesystem::remove(outputDir);
   }
 
-  SUBCASE("to_csv throws for non-directory path") {
+  SUBCASE("exportCSV throws for non-directory path") {
     RoadNetwork graph{};
     graph.addEdge<Street>(1, std::make_pair(0, 1));
 
     auto const invalidPath =
-        std::filesystem::temp_directory_path() / "dsf_to_csv_not_a_directory.csv";
+        std::filesystem::temp_directory_path() / "dsf_exportCSV_not_a_directory.csv";
     {
       std::ofstream out{invalidPath};
       REQUIRE(out.is_open());

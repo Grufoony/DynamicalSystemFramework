@@ -130,7 +130,7 @@ namespace dsf::mobility {
     inline auto roadType() const noexcept { return m_roadType; }
     /// @brief Get the string representation of the road type
     /// @return std::string The string representation of the road type
-    constexpr std::string strRoadType() const {
+    constexpr std::string_view strRoadType() const {
       switch (m_roadType) {
         case RoadType::HIGHWAY:
           return "highway";
