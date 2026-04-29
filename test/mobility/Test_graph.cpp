@@ -2315,4 +2315,61 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
 
     CHECK(hasStrictIncrease);
   }
+
+  SUBCASE("K=1 matches Brandes on a diamond graph with tied shortest paths") {
+    RoadNetwork standardGraph{};
+    Street stdS01(0, std::make_pair(0, 1), 10.0);
+    Street stdS02(1, std::make_pair(0, 2), 10.0);
+    Street stdS13(2, std::make_pair(1, 3), 10.0);
+    Street stdS23(3, std::make_pair(2, 3), 10.0);
+    standardGraph.addStreets(stdS01, stdS02, stdS13, stdS23);
+
+    standardGraph.computeEdgeBetweennessCentralities(unitWeight);
+
+  size_t const nNodes = standardGraph.nNodes();
+  double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
+  REQUIRE(norm > 0.0);
+
+    RoadNetwork yenGraph{};
+    Street yenS01(0, std::make_pair(0, 1), 10.0);
+    Street yenS02(1, std::make_pair(0, 2), 10.0);
+    Street yenS13(2, std::make_pair(1, 3), 10.0);
+    Street yenS23(3, std::make_pair(2, 3), 10.0);
+    yenGraph.addStreets(yenS01, yenS02, yenS13, yenS23);
+
+    yenGraph.computeEdgeKBetweennessCentralities(unitWeight, 1);
+
+    Id const edgeIds[] = {
+        static_cast<Id>(0), static_cast<Id>(1), static_cast<Id>(2), static_cast<Id>(3)};
+
+    for (Id const edgeId : edgeIds) {
+      auto const standardBc =
+          standardGraph.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      auto const yenBc =
+          yenGraph.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      REQUIRE(standardBc.has_value());
+      REQUIRE(yenBc.has_value());
+      CHECK(*yenBc == doctest::Approx(*standardBc / norm));
+    }
+  }
+
+  SUBCASE("K=2 counts both equal shortest paths exactly on a diamond graph") {
+    RoadNetwork graph{};
+    Street s01(0, std::make_pair(0, 1), 10.0);
+    Street s02(1, std::make_pair(0, 2), 10.0);
+    Street s13(2, std::make_pair(1, 3), 10.0);
+    Street s23(3, std::make_pair(2, 3), 10.0);
+    graph.addStreets(s01, s02, s13, s23);
+
+    graph.computeEdgeKBetweennessCentralities(unitWeight, 2);
+
+    Id const edgeIds[] = {
+        static_cast<Id>(0), static_cast<Id>(1), static_cast<Id>(2), static_cast<Id>(3)};
+
+    for (Id const edgeId : edgeIds) {
+      auto const bc = graph.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      REQUIRE(bc.has_value());
+      CHECK(*bc == doctest::Approx(1.0 / 3.0));
+    }
+  }
 }
