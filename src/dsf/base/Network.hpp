@@ -185,9 +185,10 @@ namespace dsf {
     for (auto const& [sourceId, sourceNode] : m_nodes) {
       std::stack<Id> S;
       std::unordered_map<Id, PathDataHelper> pathData;
+      pathData.reserve(this->nNodes());
 
       for (auto const& [nId, _] : m_nodes) {
-        pathData[nId] = PathDataHelper();
+        pathData.emplace(nId, PathDataHelper());
       }
       {
         auto& sourceData = pathData[sourceId];
@@ -264,7 +265,7 @@ namespace dsf {
     }
 
     struct PathDataHelper {
-      std::vector<Id> P;  // pairs of (predecessor edge id)
+      std::vector<Id> P;  // predecessor edge ids on shortest paths
       double sigma{0.0};
       double dist{std::numeric_limits<double>::infinity()};
       double delta{0.0};
@@ -273,12 +274,13 @@ namespace dsf {
     for (auto const& [sourceId, sourceNode] : m_nodes) {
       std::stack<Id> S;
       std::unordered_map<Id, PathDataHelper> pathData;
+      pathData.reserve(this->nNodes());
 
       for (auto const& [nId, _] : m_nodes) {
-        pathData[nId] = PathDataHelper();
+        pathData.emplace(nId, PathDataHelper());
       }
       {
-        auto& sourceData = pathData[sourceId];
+        auto& sourceData = pathData.at(sourceId);
         sourceData.sigma = 1.0;
         sourceData.dist = 0.0;
       }
@@ -300,11 +302,11 @@ namespace dsf {
         visited.insert(v);
         S.push(v);
 
-        auto& vData = pathData[v];
+        auto& vData = pathData.at(v);
         for (auto const& eId : this->node(v).outgoingEdges()) {
           auto const& edgeObj = this->edge(eId);
           Id w = edgeObj.target();
-          auto& wData = pathData[w];
+          auto& wData = pathData.at(w);
           if (visited.contains(w))
             continue;
           double edgeWeight = getEdgeWeight(edgeObj);
@@ -324,10 +326,10 @@ namespace dsf {
 
       while (!S.empty()) {
         Id w = S.top();
-        auto& wData = pathData[w];
+        auto& wData = pathData.at(w);
         S.pop();
         for (auto const eId : wData.P) {
-          auto& vData = pathData[this->edge(eId).source()];
+          auto& vData = pathData.at(this->edge(eId).source());
           double contrib = (vData.sigma / wData.sigma) * (1.0 + wData.delta);
           vData.delta += contrib;
           auto& currentEdge = this->edge(eId);
