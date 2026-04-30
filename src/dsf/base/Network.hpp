@@ -54,27 +54,45 @@ namespace dsf {
       requires(std::is_base_of_v<edge_t, TEdge> &&
                std::constructible_from<TEdge, TArgs...>)
     void addEdge(TArgs&&... args);
+    
+    /// @brief Get a node by id
+    /// @param nodeId The id of the node to get
+    /// @return const node_t& A const reference to the node with the given id
+    inline const auto& node(Id const nodeId) const { return *m_nodes.at(nodeId); };
+    /// @brief Get a node by id
+    /// @param nodeId The id of the node to get
+    /// @return node_t& A reference to the node with the given id
+    inline auto& node(Id const nodeId) { return *m_nodes.at(nodeId); };
+    /// @brief Get an edge by id
+    /// @param edgeId The id of the edge to get
+    /// @return const edge_t& A const reference to the edge with the given id
+    inline const auto& edge(Id const edgeId) const { return *m_edges.at(edgeId); };
+    /// @brief Get an edge by id
+    /// @param edgeId The id of the edge to get
+    /// @return edge_t& A reference to the edge with the given id
+    inline auto& edge(Id const edgeId) { return *m_edges.at(edgeId); }
 
-    inline const auto& node(Id nodeId) const { return *m_nodes.at(nodeId); };
-    inline auto& node(Id nodeId) { return *m_nodes.at(nodeId); };
-    inline const auto& edge(Id edgeId) const { return *m_edges.at(edgeId); };
-    inline auto& edge(Id edgeId) { return *m_edges.at(edgeId); }
-
-    edge_t& edge(Id source, Id target) const;
-
+    edge_t& edge(Id const source, Id const target) const;
+    /// @brief Get a node by id and cast it to a derived type
+    /// @tparam TNode The expected type of the node
+    /// @param nodeId The id of the node to get
+    /// @return TNode& A reference to the node with the given id, cast to the expected type
     template <typename TNode>
       requires(std::is_base_of_v<node_t, TNode>)
-    inline auto& node(Id nodeId) {
+    inline auto& node(Id const nodeId) {
       return dynamic_cast<TNode&>(node(nodeId));
     }
-
+    /// @brief Get an edge by id and cast it to a derived type
+    /// @tparam TEdge The expected type of the edge
+    /// @param edgeId The id of the edge to get
+    /// @return TEdge& A reference to the edge with the given id, cast to the expected type
     template <typename TEdge>
       requires(std::is_base_of_v<edge_t, TEdge>)
-    inline auto& edge(Id edgeId) {
+    inline auto& edge(Id const edgeId) {
       return dynamic_cast<TEdge&>(edge(edgeId));
     }
 
-    /// @brief Compute node betweenness centralities using Brandes' algorithm
+    /// @brief Compute node weighted betweenness centralities using Brandes' algorithm
     template <typename WeightFunc>
       requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
     void computeBetweennessCentralities(WeightFunc getEdgeWeight);
@@ -154,7 +172,7 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  edge_t& Network<node_t, edge_t>::edge(Id source, Id target) const {
+  edge_t& Network<node_t, edge_t>::edge(Id const source, Id const target) const {
     auto const it = std::find_if(
         m_edges.cbegin(), m_edges.cend(), [source, target](auto const& pair) {
           return pair.second->source() == source && pair.second->target() == target;
@@ -183,19 +201,20 @@ namespace dsf {
     };
 
     for (auto const& [sourceId, sourceNode] : m_nodes) {
-      std::stack<Id> S;
       std::unordered_map<Id, PathDataHelper> pathData;
       pathData.reserve(this->nNodes());
 
       for (auto const& [nId, _] : m_nodes) {
         pathData.emplace(nId, PathDataHelper());
       }
+      // Initialize source node data
       {
         auto& sourceData = pathData[sourceId];
         sourceData.sigma = 1.0;
         sourceData.dist = 0.0;
       }
 
+      std::stack<Id> S;
       std::priority_queue<std::pair<double, Id>,
                           std::vector<std::pair<double, Id>>,
                           std::greater<>>
@@ -208,20 +227,22 @@ namespace dsf {
         auto [d, v] = pq.top();
         pq.pop();
 
-        if (visited.contains(v))
+        if (visited.contains(v)) {
           continue;
+        }
         visited.insert(v);
         S.push(v);
-        auto& vData = pathData[v];
+        auto const& vData = pathData[v];
 
         for (auto const& edgeId : m_nodes.at(v)->outgoingEdges()) {
           auto const& edgeObj = *m_edges.at(edgeId);
-          Id w = edgeObj.target();
-          auto& wData = pathData[w];
-          if (visited.contains(w))
+          auto const w = edgeObj.target();
+          auto& wData = pathData.at(w);
+          if (visited.contains(w)) {
             continue;
-          double edgeWeight = getEdgeWeight(edgeObj);
-          double newDist = vData.dist + edgeWeight;
+          }
+          double const edgeWeight = getEdgeWeight(edgeObj);
+          double const newDist = vData.dist + edgeWeight;
 
           if (newDist < wData.dist) {
             wData.dist = newDist;
@@ -236,11 +257,11 @@ namespace dsf {
       }
 
       while (!S.empty()) {
-        Id w = S.top();
+        auto const w = S.top();
         auto const& wData = pathData[w];
         S.pop();
         for (auto const v : wData.P) {
-          auto& vData = pathData[v];
+          auto& vData = pathData.at(v);
           vData.delta += (vData.sigma / wData.sigma) * (1.0 + wData.delta);
         }
         if (w != sourceId) {
@@ -272,19 +293,20 @@ namespace dsf {
     };
 
     for (auto const& [sourceId, sourceNode] : m_nodes) {
-      std::stack<Id> S;
       std::unordered_map<Id, PathDataHelper> pathData;
       pathData.reserve(this->nNodes());
 
       for (auto const& [nId, _] : m_nodes) {
         pathData.emplace(nId, PathDataHelper());
       }
+      // Initialize source node data
       {
         auto& sourceData = pathData.at(sourceId);
         sourceData.sigma = 1.0;
         sourceData.dist = 0.0;
       }
 
+      std::stack<Id> S;
       std::priority_queue<std::pair<double, Id>,
                           std::vector<std::pair<double, Id>>,
                           std::greater<>>
@@ -302,15 +324,15 @@ namespace dsf {
         visited.insert(v);
         S.push(v);
 
-        auto& vData = pathData.at(v);
+        auto const& vData = pathData.at(v);
         for (auto const& eId : this->node(v).outgoingEdges()) {
           auto const& edgeObj = this->edge(eId);
-          Id w = edgeObj.target();
+          auto const w = edgeObj.target();
           auto& wData = pathData.at(w);
           if (visited.contains(w))
             continue;
-          double edgeWeight = getEdgeWeight(edgeObj);
-          double newDist = vData.dist + edgeWeight;
+          double const edgeWeight = getEdgeWeight(edgeObj);
+          double const newDist = vData.dist + edgeWeight;
 
           if (newDist < wData.dist) {
             wData.dist = newDist;
@@ -325,12 +347,12 @@ namespace dsf {
       }
 
       while (!S.empty()) {
-        Id w = S.top();
+        auto const w = S.top();
         auto& wData = pathData.at(w);
         S.pop();
         for (auto const eId : wData.P) {
           auto& vData = pathData.at(this->edge(eId).source());
-          double contrib = (vData.sigma / wData.sigma) * (1.0 + wData.delta);
+          double const contrib = (vData.sigma / wData.sigma) * (1.0 + wData.delta);
           vData.delta += contrib;
           auto& currentEdge = this->edge(eId);
           auto const optBC =
