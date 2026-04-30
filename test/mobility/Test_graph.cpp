@@ -1,5 +1,4 @@
 #include "dsf/mobility/RoadNetwork.hpp"
-#include "dsf/mobility/PathCollection.hpp"
 #include "dsf/base/Node.hpp"
 #include "dsf/mobility/Road.hpp"
 #include "dsf/mobility/Street.hpp"
@@ -1534,7 +1533,7 @@ TEST_CASE("ShortestPath") {
 
   SUBCASE("PathCollection::explode - No Path") {
     // Create a PathCollection with no path to target
-    dsf::mobility::PathCollection pathMap;
+    PathCollection pathMap;
     pathMap[0] = {1, 2};
     pathMap[1] = {3};
     pathMap[2] = {4};
@@ -1546,7 +1545,7 @@ TEST_CASE("ShortestPath") {
 
   SUBCASE("PathCollection::explode - Same Source and Target") {
     // Test when source equals target
-    dsf::mobility::PathCollection pathMap;
+    PathCollection pathMap;
     pathMap[0] = {1, 2};
     pathMap[1] = {3};
 

@@ -1,7 +1,7 @@
 #include "PathCollection.hpp"
 
-std::list<std::vector<dsf::Id>> dsf::mobility::PathCollection::explode(
-    Id const sourceId, Id const targetId) const {
+std::list<std::vector<dsf::Id>> dsf::PathCollection::explode(Id const sourceId,
+                                                             Id const targetId) const {
   std::list<std::vector<Id>> paths;
 
   // Base case: if source equals target, return a path with just the source

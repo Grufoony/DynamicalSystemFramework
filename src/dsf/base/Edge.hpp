@@ -88,6 +88,8 @@ namespace dsf {
 
     virtual bool isFull() const = 0;
 
+    virtual inline bool isActive() const { return true; };
+
     double deltaAngle(double const previousEdgeAngle) const;
   };
 };  // namespace dsf
