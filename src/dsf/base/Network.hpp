@@ -26,8 +26,6 @@
 #include <tbb/combinable.h>
 #include <tbb/parallel_for.h>
 
-#include <spdlog/spdlog.h>
-
 namespace dsf {
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
