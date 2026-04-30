@@ -78,8 +78,3 @@ def test_dynamics_smoke_step_with_linear_speed(dynamics):
     previous_step = dynamics.time_step()
     dynamics.evolve(False)
     assert dynamics.time_step() == previous_step + 1
-
-
-def test_compute_betweenness_rejects_invalid_weight(loaded_road_network):
-    with pytest.raises(Exception, match="Invalid weight function"):
-        loaded_road_network.computeBetweennessCentralities("invalid")
