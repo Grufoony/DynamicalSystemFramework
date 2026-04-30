@@ -46,11 +46,7 @@ namespace dsf::mobility {
   /// @brief The RoadNetwork class represents a graph in the network.
   class RoadNetwork : public Network<RoadJunction, Street> {
   private:
-    std::size_t m_capacity;
-    std::function<double(Street const&)> m_weightFunction = [](Street const& street) {
-      return street.estimatedTravelTime();
-    };
-    std::optional<double> m_weightThreshold = std::nullopt;
+    std::size_t m_capacity = 0;
 
     /// @brief If every node has coordinates, set the street angles
     /// @details The street angles are set using the node's coordinates.
@@ -65,7 +61,7 @@ namespace dsf::mobility {
     void m_jsonEdgesImporter(std::ifstream& file);
 
   public:
-    RoadNetwork() = default;
+    RoadNetwork();
     // Disable copy constructor and copy assignment operator
     RoadNetwork(const RoadNetwork&) = delete;
     RoadNetwork& operator=(const RoadNetwork&) = delete;
@@ -105,7 +101,7 @@ namespace dsf::mobility {
     /// @param strv_weight The string identifier of the weight function. Supported values are "travelTime", "length" and any custom attribute name.
     /// @param threshold An optional threshold to apply to the weight function. The effective weight will be weight * (1 + threshold). This can be used to increase the weight of certain paths and thus make them less likely to be chosen by agents when using a weight-based path update strategy.
     void setEdgeWeight(std::string_view const strv_weight,
-                       std::optional<double> const threshold = std::nullopt);
+                       std::optional<double> const threshold = std::nullopt) final;
 
     /// @brief Describe the RoadNetwork
     /// @param os The output stream to write the description to (default is std::cout)

@@ -2,9 +2,11 @@
 
 #include <cassert>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <queue>
 #include <stack>
+#include <string>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -20,6 +22,12 @@ namespace dsf {
   protected:
     std::unordered_map<Id, std::unique_ptr<node_t>> m_nodes;
     std::unordered_map<Id, std::unique_ptr<edge_t>> m_edges;
+
+    std::function<double(edge_t const&)> m_weightFunction =
+        []([[maybe_unused]] edge_t const& edge) {
+          return 1.0;  // Default = unweighted graph
+        };
+    std::optional<double> m_weightThreshold = std::nullopt;
 
     constexpr inline auto m_cantorHash(Id u, Id v) const {
       return ((u + v) * (u + v + 1)) / 2 + v;
@@ -54,7 +62,10 @@ namespace dsf {
       requires(std::is_base_of_v<edge_t, TEdge> &&
                std::constructible_from<TEdge, TArgs...>)
     void addEdge(TArgs&&... args);
-    
+
+    virtual void setEdgeWeight(std::string_view const strv_weight,
+                               std::optional<double> const threshold = std::nullopt) = 0;
+
     /// @brief Get a node by id
     /// @param nodeId The id of the node to get
     /// @return const node_t& A const reference to the node with the given id
@@ -93,14 +104,10 @@ namespace dsf {
     }
 
     /// @brief Compute node weighted betweenness centralities using Brandes' algorithm
-    template <typename WeightFunc>
-      requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
-    void computeBetweennessCentralities(WeightFunc getEdgeWeight);
+    void computeBetweennessCentralities();
 
-    /// @brief Compute edge betweenness centralities using Brandes' algorithm
-    template <typename WeightFunc>
-      requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
-    void computeEdgeBetweennessCentralities(WeightFunc getEdgeWeight);
+    /// @brief Compute edge weighted betweenness centralities using Brandes' algorithm
+    void computeEdgeBetweennessCentralities();
   };
 
   template <typename node_t, typename edge_t>
@@ -186,9 +193,7 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  template <typename WeightFunc>
-    requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
-  void Network<node_t, edge_t>::computeBetweennessCentralities(WeightFunc getEdgeWeight) {
+  void Network<node_t, edge_t>::computeBetweennessCentralities() {
     for (auto& [nodeId, pNode] : m_nodes) {
       pNode->setAttribute("betweennessCentrality", 0.0);
     }
@@ -241,7 +246,7 @@ namespace dsf {
           if (visited.contains(w)) {
             continue;
           }
-          double const edgeWeight = getEdgeWeight(edgeObj);
+          double const edgeWeight = m_weightFunction(edgeObj);
           double const newDist = vData.dist + edgeWeight;
 
           if (newDist < wData.dist) {
@@ -277,10 +282,7 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  template <typename WeightFunc>
-    requires(std::is_invocable_r_v<double, WeightFunc, edge_t const&>)
-  void Network<node_t, edge_t>::computeEdgeBetweennessCentralities(
-      WeightFunc getEdgeWeight) {
+  void Network<node_t, edge_t>::computeEdgeBetweennessCentralities() {
     for (auto& [edgeId, pEdge] : m_edges) {
       pEdge->setAttribute("betweennessCentrality", 0.0);
     }
@@ -331,7 +333,7 @@ namespace dsf {
           auto& wData = pathData.at(w);
           if (visited.contains(w))
             continue;
-          double const edgeWeight = getEdgeWeight(edgeObj);
+          double const edgeWeight = m_weightFunction(edgeObj);
           double const newDist = vData.dist + edgeWeight;
 
           if (newDist < wData.dist) {
