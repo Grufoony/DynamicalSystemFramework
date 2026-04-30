@@ -248,8 +248,6 @@ namespace dsf {
     return *it->second;
   }
 
-  constexpr double kPathBudgetEpsilon = 1e-9;
-
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   inline std::unordered_map<Id, double>
@@ -357,7 +355,7 @@ namespace dsf {
 
       double nodeBudget = nodeDistToTarget;
       if (m_weightThreshold.has_value()) {
-        nodeBudget *= (1. + *m_weightThreshold);
+        nodeBudget *= (1.0 + *m_weightThreshold);
       }
       std::vector<Id> hops;
       hops.reserve(pNode->outgoingEdges().size());
@@ -398,20 +396,18 @@ namespace dsf {
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   inline PathCollection Network<node_t, edge_t>::shortestPath(Id const sourceId,
                                                               Id const targetId) const {
-    // If source equals target, return empty map (no intermediate hops needed)
     if (sourceId == targetId) {
       return PathCollection{};
     }
-    // Check if source node exists
     if (!this->nodes().contains(sourceId)) {
       throw std::out_of_range(
           std::format("Source node with id {} does not exist in the graph", sourceId));
     }
-    // Check if target node exists
     if (!this->nodes().contains(targetId)) {
       throw std::out_of_range(
           std::format("Target node with id {} does not exist in the graph", targetId));
     }
+
     auto const distToTarget = m_computeDistancesToTarget(targetId);
 
     auto const sourceBestDistance = distToTarget.at(sourceId);
@@ -421,7 +417,7 @@ namespace dsf {
 
     double sourceBudget = sourceBestDistance;
     if (m_weightThreshold.has_value()) {
-      sourceBudget *= (1. + *m_weightThreshold);
+      sourceBudget *= (1.0 + *m_weightThreshold);
     }
     auto const distFromSource = m_computeDistancesFromSource(sourceId);
 
@@ -458,8 +454,7 @@ namespace dsf {
         auto const projectedDistFromSource = nodeDistFromSource + edgeWeight;
 
         // Keep intermediate transitions source-distance-consistent so all
-        // prefixes to a node share the same cost label. For target hops this
-        // constraint is unnecessary because no further expansion occurs.
+        // prefixes to a node share the same cost label.
         if (nextNodeId != targetId &&
             (projectedDistFromSource > nextDistFromSource + 1e-12 ||
              projectedDistFromSource + 1e-12 < nextDistFromSource)) {
@@ -564,25 +559,39 @@ namespace dsf {
       pNode->setAttribute("betweennessCentrality", 0.0);
     }
 
-    struct PathDataHelper {
-      std::vector<Id> P;
-      double sigma{0.0};
-      double dist{std::numeric_limits<double>::infinity()};
-      double delta{0.0};
-    };
+    auto const N_NODES = m_nodes.size();
 
-    for (auto const& [sourceId, sourceNode] : m_nodes) {
+    // Build an indexed list of source node ids so TBB can address them by integer.
+    std::vector<Id> sourceIds;
+    sourceIds.reserve(N_NODES);
+    for (auto const& [id, _] : m_nodes) {
+      sourceIds.push_back(id);
+    }
+
+    // Each TBB thread accumulates its own BC increments; we merge afterwards.
+    tbb::combinable<std::unordered_map<Id, double>> localBC;
+
+    tbb::parallel_for(std::size_t(0), sourceIds.size(), [&](std::size_t idx) {
+      auto& local = localBC.local();
+      auto const sourceId = sourceIds[idx];
+
+      struct PathDataHelper {
+        std::vector<Id> P;  // predecessor node ids on shortest paths
+        double sigma{0.0};
+        double dist{std::numeric_limits<double>::infinity()};
+        double delta{0.0};
+      };
+
       std::unordered_map<Id, PathDataHelper> pathData;
-      pathData.reserve(this->nNodes());
-
+      pathData.reserve(N_NODES);
       for (auto const& [nId, _] : m_nodes) {
-        pathData.emplace(nId, PathDataHelper());
+        pathData.emplace(nId, PathDataHelper{});
       }
-      // Initialize source node data
+      // Initialise source node data.
       {
-        auto& sourceData = pathData[sourceId];
-        sourceData.sigma = 1.0;
-        sourceData.dist = 0.0;
+        auto& src = pathData.at(sourceId);
+        src.sigma = 1.0;
+        src.dist = 0.0;
       }
 
       std::stack<Id> S;
@@ -603,8 +612,8 @@ namespace dsf {
         }
         visited.insert(v);
         S.push(v);
-        auto const& vData = pathData[v];
 
+        auto const& vData = pathData.at(v);
         for (auto const& edgeId : m_nodes.at(v)->outgoingEdges()) {
           auto const& edgeObj = *m_edges.at(edgeId);
           auto const w = edgeObj.target();
@@ -627,55 +636,74 @@ namespace dsf {
         }
       }
 
+      // Back-propagate dependency scores.
       while (!S.empty()) {
         auto const w = S.top();
-        auto const& wData = pathData[w];
+        auto& wData = pathData.at(w);
         S.pop();
         for (auto const v : wData.P) {
           auto& vData = pathData.at(v);
           vData.delta += (vData.sigma / wData.sigma) * (1.0 + wData.delta);
         }
         if (w != sourceId) {
-          auto& currentNode = this->node(w);
-          auto const optBC =
-              currentNode.template getAttribute<double>("betweennessCentrality");
-          // BC must exist since we initialized it for all nodes at the start
-          currentNode.setAttribute("betweennessCentrality", *optBC + wData.delta);
+          local[w] += wData.delta;
         }
       }
-    }
+    });
+
+    // Merge thread-local accumulations into node attributes (sequential).
+    localBC.combine_each([&](auto const& localMap) {
+      for (auto const& [nodeId, value] : localMap) {
+        auto& nd = this->node(nodeId);
+        auto const bc = nd.template getAttribute<double>("betweennessCentrality");
+        nd.setAttribute("betweennessCentrality", *bc + value);
+      }
+    });
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Brandes edge betweenness
-  // ──────────────────────────────────────────────────────────────────────────
-
+  // ─────────────────────────────────────────────────────────────────────────
+  // Brandes edge betweenness  (parallelised over sources with TBB)
+  // ─────────────────────────────────────────────────────────────────────────
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   void Network<node_t, edge_t>::computeEdgeBetweennessCentralities() {
+    // Initialise all edge BC values to 0.
     for (auto& [edgeId, pEdge] : m_edges) {
       pEdge->setAttribute("betweennessCentrality", 0.0);
     }
 
-    struct PathDataHelper {
-      std::vector<Id> P;  // predecessor edge ids on shortest paths
-      double sigma{0.0};
-      double dist{std::numeric_limits<double>::infinity()};
-      double delta{0.0};
-    };
+    auto const N_NODES = m_nodes.size();
 
-    for (auto const& [sourceId, sourceNode] : m_nodes) {
+    std::vector<Id> sourceIds;
+    sourceIds.reserve(N_NODES);
+    for (auto const& [id, _] : m_nodes) {
+      sourceIds.push_back(id);
+    }
+
+    // Each TBB thread accumulates its own edge BC increments.
+    tbb::combinable<std::unordered_map<Id, double>> localBC;
+
+    tbb::parallel_for(size_t(0), sourceIds.size(), [&](size_t idx) {
+      auto& local = localBC.local();
+      auto const sourceId = sourceIds[idx];
+
+      struct PathDataHelper {
+        std::vector<Id> P;  // predecessor edge ids on shortest paths
+        double sigma{0.0};
+        double dist{std::numeric_limits<double>::infinity()};
+        double delta{0.0};
+      };
+
       std::unordered_map<Id, PathDataHelper> pathData;
-      pathData.reserve(this->nNodes());
-
+      pathData.reserve(N_NODES);
       for (auto const& [nId, _] : m_nodes) {
-        pathData.emplace(nId, PathDataHelper());
+        pathData.emplace(nId, PathDataHelper{});
       }
-      // Initialize source node data
+      // Initialise source node data.
       {
-        auto& sourceData = pathData.at(sourceId);
-        sourceData.sigma = 1.0;
-        sourceData.dist = 0.0;
+        auto& src = pathData.at(sourceId);
+        src.sigma = 1.0;
+        src.dist = 0.0;
       }
 
       std::stack<Id> S;
@@ -691,18 +719,20 @@ namespace dsf {
         auto [d, v] = pq.top();
         pq.pop();
 
-        if (visited.contains(v))
+        if (visited.contains(v)) {
           continue;
+        }
         visited.insert(v);
         S.push(v);
 
         auto const& vData = pathData.at(v);
-        for (auto const& eId : this->node(v).outgoingEdges()) {
-          auto const& edgeObj = this->edge(eId);
+        for (auto const& eId : m_nodes.at(v)->outgoingEdges()) {
+          auto const& edgeObj = *m_edges.at(eId);
           auto const w = edgeObj.target();
           auto& wData = pathData.at(w);
-          if (visited.contains(w))
+          if (visited.contains(w)) {
             continue;
+          }
           double const edgeWeight = m_weightFunction(edgeObj);
           double const newDist = vData.dist + edgeWeight;
 
@@ -718,28 +748,34 @@ namespace dsf {
         }
       }
 
+      // Back-propagate dependency scores; accumulate per-edge contributions.
       while (!S.empty()) {
         auto const w = S.top();
         auto& wData = pathData.at(w);
         S.pop();
         for (auto const eId : wData.P) {
-          auto& vData = pathData.at(this->edge(eId).source());
+          auto& vData = pathData.at(m_edges.at(eId)->source());
           double const contrib = (vData.sigma / wData.sigma) * (1.0 + wData.delta);
           vData.delta += contrib;
-          auto& currentEdge = this->edge(eId);
-          auto const optBC =
-              currentEdge.template getAttribute<double>("betweennessCentrality");
-          // BC must exist since we initialized it for all edges at the start
-          currentEdge.setAttribute("betweennessCentrality", *optBC + contrib);
+          local[eId] += contrib;
         }
       }
-    }
+    });
+
+    // Merge thread-local accumulations into edge attributes (sequential).
+    localBC.combine_each([&](auto const& localMap) {
+      for (auto const& [edgeId, value] : localMap) {
+        auto& ed = this->edge(edgeId);
+        auto const bc =
+            ed.template getAttribute<double>("betweennessCentrality").value_or(0.0);
+        ed.setAttribute("betweennessCentrality", bc + value);
+      }
+    });
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Yen K-shortest-paths edge betweenness  (parallel, TBB)
-  // ──────────────────────────────────────────────────────────────────────────
-
+  // ─────────────────────────────────────────────────────────────────────────
+  // Yen K-shortest-paths edge betweenness  (parallelised over sources, TBB)
+  // ─────────────────────────────────────────────────────────────────────────
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   void Network<node_t, edge_t>::computeEdgeKBetweennessCentralities(std::size_t const K) {
@@ -747,48 +783,66 @@ namespace dsf {
       pEdge->setAttribute("betweennessCentrality", 0.0);
     }
 
-    size_t const N = m_nodes.size();
-    if (N < 2 || K == 0) {
+    auto const N_NODES = m_nodes.size();
+    if (N_NODES < 2 || K == 0) {
       return;
     }
 
+    // K == 1 reduces exactly to standard Brandes edge betweenness.
+    // Call the dedicated (also parallelised) implementation and return; the
+    // normalisation inside that function uses the same (N-1)*(N-2) denominator.
     if (K == 1) {
-      this->computeEdgeBetweennessCentralities();
-    } else {
-      std::vector<Id> nodeIds;
-      nodeIds.reserve(N);
-      for (auto const& [id, _] : m_nodes) {
-        nodeIds.push_back(id);
+      computeEdgeBetweennessCentralities();
+      // Re-normalise: computeEdgeBetweennessCentralities leaves raw Brandes
+      // values; apply the same norm as the K>1 path below.
+      auto const norm = static_cast<double>((N_NODES - 1) * (N_NODES - 2));
+      if (norm > 0.0) {
+        for (auto& [_, pEdge] : m_edges) {
+          auto const bc =
+              pEdge->template getAttribute<double>("betweennessCentrality").value_or(0.0);
+          pEdge->setAttribute("betweennessCentrality", bc / norm);
+        }
       }
+      return;
+    }
 
-      std::unordered_map<Id, size_t> nodeIndex;
-      nodeIndex.reserve(N);
-      for (size_t i = 0; i < N; ++i) {
-        nodeIndex[nodeIds[i]] = i;
-      }
+    // K > 1: Yen's algorithm, parallelised over source nodes.
+    std::vector<Id> nodeIds;
+    nodeIds.reserve(N_NODES);
+    for (auto const& [id, _] : m_nodes) {
+      nodeIds.push_back(id);
+    }
 
-      tbb::combinable<std::unordered_map<Id, double>> localAccum;
+    std::unordered_map<Id, size_t> nodeIndex;
+    nodeIndex.reserve(N_NODES);
+    for (std::size_t i = 0; i < N_NODES; ++i) {
+      nodeIndex.emplace(nodeIds[i], i);
+    }
 
-      tbb::parallel_for(size_t(0), N, [&](size_t sourceIndex) {
-        auto& local = localAccum.local();
+    tbb::combinable<std::unordered_map<Id, double>> localAccum;
+
+    tbb::parallel_for(std::size_t(0), N_NODES, [&](std::size_t const sourceIndex) {
+      auto& local = localAccum.local();
 
       struct PathData {
         std::vector<Id> edges;
         double cost{0.0};
       };
 
-      for (size_t targetIndex = 0; targetIndex < N; ++targetIndex) {
+      for (std::size_t targetIndex = 0; targetIndex < N_NODES; ++targetIndex) {
         if (sourceIndex == targetIndex) {
           continue;
         }
 
         std::vector<PathData> acceptedPaths;
 
-        std::vector<double> dist(N, std::numeric_limits<double>::infinity());
-        std::vector<Id> parentEdge(N, Id{});
-        std::priority_queue<std::pair<double, size_t>,
-                            std::vector<std::pair<double, size_t>>,
-                            std::greater<>> pq;
+        // ── Initial shortest path (Dijkstra) ──────────────────────────────
+        std::vector<double> dist(N_NODES, std::numeric_limits<double>::infinity());
+        std::vector<Id> parentEdge(N_NODES, Id{});
+        std::priority_queue<std::pair<double, std::size_t>,
+                            std::vector<std::pair<double, std::size_t>>,
+                            std::greater<>>
+            pq;
         dist[sourceIndex] = 0.0;
         pq.push({0.0, sourceIndex});
 
@@ -804,13 +858,13 @@ namespace dsf {
 
           auto const currentNodeId = nodeIds[currentIndex];
           for (auto const edgeId : m_nodes.at(currentNodeId)->outgoingEdges()) {
-            auto const& edge = *m_edges.at(edgeId);
-            size_t const nextIndex = nodeIndex.at(edge.target());
-            double const nextDist = currentDist + m_weightFunction(edge);
-            if (nextDist < dist[nextIndex]) {
-              dist[nextIndex] = nextDist;
-              parentEdge[nextIndex] = edgeId;
-              pq.push({nextDist, nextIndex});
+            auto const& edgeObj = this->edge(edgeId);
+            auto const nextIdx = nodeIndex.at(edgeObj.target());
+            auto const nd = currentDist + m_weightFunction(edgeObj);
+            if (nd < dist[nextIdx]) {
+              dist[nextIdx] = nd;
+              parentEdge[nextIdx] = edgeId;
+              pq.push({nd, nextIdx});
             }
           }
         }
@@ -819,42 +873,51 @@ namespace dsf {
           continue;
         }
 
-        PathData shortestPath;
-        shortestPath.cost = dist[targetIndex];
+        // Reconstruct first shortest path.
+        PathData firstPath;
+        firstPath.cost = dist[targetIndex];
         for (size_t cursor = targetIndex; cursor != sourceIndex;) {
-          Id const edgeId = parentEdge[cursor];
-          shortestPath.edges.push_back(edgeId);
-          cursor = nodeIndex.at(m_edges.at(edgeId)->source());
+          Id const eId = parentEdge[cursor];
+          firstPath.edges.push_back(eId);
+          cursor = nodeIndex.at(m_edges.at(eId)->source());
         }
-        std::reverse(shortestPath.edges.begin(), shortestPath.edges.end());
-        acceptedPaths.push_back(std::move(shortestPath));
+        std::reverse(firstPath.edges.begin(), firstPath.edges.end());
+        acceptedPaths.push_back(std::move(firstPath));
 
+        // ── Yen's spur loop ───────────────────────────────────────────────
         for (size_t pathRank = 1; pathRank < K; ++pathRank) {
           std::priority_queue<std::pair<double, std::vector<Id>>,
                               std::vector<std::pair<double, std::vector<Id>>>,
-                              std::greater<>> candidates;
+                              std::greater<>>
+              candidates;
 
           auto const& lastPath = acceptedPaths.back().edges;
+
           for (size_t prefixSize = 0; prefixSize < lastPath.size(); ++prefixSize) {
-            std::vector<Id> rootPath(lastPath.begin(), lastPath.begin() + prefixSize);
+            std::vector<Id> rootPath(
+                lastPath.begin(),
+                lastPath.begin() + static_cast<std::ptrdiff_t>(prefixSize));
 
-            size_t spurIndex = sourceIndex;
+            // Determine spur node.
             Id spurNodeId = nodeIds[sourceIndex];
-            for (auto const edgeId : rootPath) {
-              spurNodeId = m_edges.at(edgeId)->target();
-              spurIndex = nodeIndex.at(spurNodeId);
+            for (auto const eId : rootPath) {
+              spurNodeId = m_edges.at(eId)->target();
             }
+            size_t const spurIndex = nodeIndex.at(spurNodeId);
 
+            // Build banned-node set: all root-path nodes except the spur node.
             std::unordered_set<Id> bannedNodes;
             Id visitedNodeId = nodeIds[sourceIndex];
-            for (auto const edgeId : rootPath) {
-              Id const sourceNodeId = visitedNodeId;
-              visitedNodeId = m_edges.at(edgeId)->target();
-              if (sourceNodeId != spurNodeId) {
-                bannedNodes.insert(sourceNodeId);
+            for (auto const eId : rootPath) {
+              Id const srcNodeId = visitedNodeId;
+              visitedNodeId = m_edges.at(eId)->target();
+              if (srcNodeId != spurNodeId) {
+                bannedNodes.insert(srcNodeId);
               }
             }
 
+            // Ban the outgoing edge at the spur position for every accepted
+            // path that shares the same root prefix.
             std::unordered_set<Id> bannedEdges;
             for (auto const& path : acceptedPaths) {
               if (path.edges.size() <= prefixSize) {
@@ -872,15 +935,18 @@ namespace dsf {
               }
             }
 
-            if (bannedNodes.contains(nodeIds[spurIndex])) {
+            if (bannedNodes.contains(spurNodeId)) {
               continue;
             }
 
-            std::vector<double> spurDist(N, std::numeric_limits<double>::infinity());
-            std::vector<Id> spurParentEdge(N, Id{});
-            std::priority_queue<std::pair<double, size_t>,
-                                std::vector<std::pair<double, size_t>>,
-                                std::greater<>> spurQueue;
+            // Dijkstra from the spur node with banned nodes/edges.
+            std::vector<double> spurDist(N_NODES,
+                                         std::numeric_limits<double>::infinity());
+            std::vector<Id> spurParentEdge(N_NODES, Id{});
+            std::priority_queue<std::pair<double, std::size_t>,
+                                std::vector<std::pair<double, std::size_t>>,
+                                std::greater<>>
+                spurQueue;
             spurDist[spurIndex] = 0.0;
             spurQueue.push({0.0, spurIndex});
 
@@ -894,28 +960,26 @@ namespace dsf {
                 break;
               }
 
-              auto const currentNodeId = nodeIds[currentIndex];
-              if (bannedNodes.contains(currentNodeId)) {
+              auto const curNodeId = nodeIds[currentIndex];
+              if (bannedNodes.contains(curNodeId)) {
                 continue;
               }
 
-              for (auto const edgeId : m_nodes.at(currentNodeId)->outgoingEdges()) {
-                if (bannedEdges.contains(edgeId)) {
+              for (auto const eId : m_nodes.at(curNodeId)->outgoingEdges()) {
+                if (bannedEdges.contains(eId)) {
                   continue;
                 }
-
-                auto const& edge = *m_edges.at(edgeId);
-                Id const nextNodeId = edge.target();
-                if (bannedNodes.contains(nextNodeId)) {
+                auto const& edgeObj = *m_edges.at(eId);
+                Id const nextNode = edgeObj.target();
+                if (bannedNodes.contains(nextNode)) {
                   continue;
                 }
-
-                size_t const nextIndex = nodeIndex.at(nextNodeId);
-                double const nextDist = currentDist + m_weightFunction(edge);
-                if (nextDist < spurDist[nextIndex]) {
-                  spurDist[nextIndex] = nextDist;
-                  spurParentEdge[nextIndex] = edgeId;
-                  spurQueue.push({nextDist, nextIndex});
+                auto const nextIdx = nodeIndex.at(nextNode);
+                auto const nd = currentDist + m_weightFunction(edgeObj);
+                if (nd < spurDist[nextIdx]) {
+                  spurDist[nextIdx] = nd;
+                  spurParentEdge[nextIdx] = eId;
+                  spurQueue.push({nd, nextIdx});
                 }
               }
             }
@@ -924,18 +988,19 @@ namespace dsf {
               continue;
             }
 
+            // Build candidate = rootPath + spurPath.
             PathData candidatePath;
             candidatePath.edges = rootPath;
             candidatePath.cost = 0.0;
-            for (auto const edgeId : rootPath) {
-              candidatePath.cost += m_weightFunction(this->edge(edgeId));
+            for (auto const eId : rootPath) {
+              candidatePath.cost += m_weightFunction(*m_edges.at(eId));
             }
 
             std::vector<Id> spurPath;
-            for (size_t cursor = targetIndex; cursor != spurIndex;) {
-              Id const edgeId = spurParentEdge[cursor];
-              spurPath.push_back(edgeId);
-              cursor = nodeIndex.at(m_edges.at(edgeId)->source());
+            for (std::size_t cursor = targetIndex; cursor != spurIndex;) {
+              Id const eId = spurParentEdge[cursor];
+              spurPath.push_back(eId);
+              cursor = nodeIndex.at(m_edges.at(eId)->source());
             }
             std::reverse(spurPath.begin(), spurPath.end());
 
@@ -953,11 +1018,11 @@ namespace dsf {
             if (!duplicate) {
               candidates.push({candidatePath.cost, std::move(candidatePath.edges)});
             }
-          }
+          }  // end prefix loop
 
           bool foundPath = false;
           while (!candidates.empty() && !foundPath) {
-            auto const [candidateCost, candidateEdges] = candidates.top();
+            auto [candidateCost, candidateEdges] = candidates.top();
             candidates.pop();
 
             bool alreadyAccepted = false;
@@ -969,7 +1034,7 @@ namespace dsf {
             }
 
             if (!alreadyAccepted) {
-              acceptedPaths.push_back(PathData{candidateEdges, candidateCost});
+              acceptedPaths.push_back(PathData{std::move(candidateEdges), candidateCost});
               foundPath = true;
             }
           }
@@ -977,32 +1042,34 @@ namespace dsf {
           if (!foundPath) {
             break;
           }
-        }
+        }  // end Yen rank loop
 
+        // Accumulate edge counts.
         for (auto const& path : acceptedPaths) {
-          for (auto const edgeId : path.edges) {
-            local[edgeId] += 1.0;
+          for (auto const eId : path.edges) {
+            local[eId] += 1.0;
           }
         }
+      }  // end target loop
+    });  // end parallel_for
+
+    // Merge thread-local accumulations into edge attributes (sequential).
+    localAccum.combine_each([&](auto const& localMap) {
+      for (auto const& [edgeId, value] : localMap) {
+        auto& ed = this->edge(edgeId);
+        auto const bc =
+            ed.template getAttribute<double>("betweennessCentrality").value_or(0.0);
+        ed.setAttribute("betweennessCentrality", bc + value);
       }
-      });
+    });
 
-      localAccum.combine_each([&](auto const& localMap) {
-        for (auto const& [edgeId, value] : localMap) {
-          auto current = m_edges.at(edgeId)
-                             ->template getAttribute<double>("betweennessCentrality")
-                             .value_or(0.0);
-          m_edges.at(edgeId)->setAttribute("betweennessCentrality", current + value);
-        }
-      });
-    }
-
-    double const norm = static_cast<double>((N - 1) * (N - 2));
+    // Normalise by (N-1)·(N-2).
+    auto const norm = static_cast<double>((N_NODES - 1) * (N_NODES - 2));
     if (norm > 0.0) {
-      for (auto& [_, edge] : m_edges) {
-        auto const bc = edge->template getAttribute<double>("betweennessCentrality")
-                            .value_or(0.0);
-        edge->setAttribute("betweennessCentrality", bc / norm);
+      for (auto& [_, pEdge] : m_edges) {
+        auto const bc =
+            pEdge->template getAttribute<double>("betweennessCentrality").value_or(0.0);
+        pEdge->setAttribute("betweennessCentrality", bc / norm);
       }
     }
   }
