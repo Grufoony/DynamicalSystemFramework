@@ -62,7 +62,7 @@ namespace dsf {
 
     template <typename TNode = node_t>
       requires(std::is_base_of_v<node_t, TNode>)
-    void addNDefaultNodes(size_t n);
+    void addNDefaultNodes(std::size_t const n);
 
     template <typename TEdge = edge_t, typename... TArgs>
       requires(std::is_base_of_v<edge_t, TEdge> &&
@@ -155,9 +155,9 @@ namespace dsf {
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   template <typename TNode>
     requires(std::is_base_of_v<node_t, TNode>)
-  void Network<node_t, edge_t>::addNDefaultNodes(size_t n) {
+  void Network<node_t, edge_t>::addNDefaultNodes(std::size_t const n) {
     auto const currentSize{m_nodes.size()};
-    for (size_t i = 0; i < n; ++i) {
+    for (std::size_t i = 0; i < n; ++i) {
       addNode<TNode>(static_cast<Id>(currentSize + i));
     }
   }

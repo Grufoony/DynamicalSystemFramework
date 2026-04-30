@@ -65,6 +65,8 @@ namespace dsf::mobility {
     RoadNetwork(RoadNetwork&&) = default;
     RoadNetwork& operator=(RoadNetwork&&) = default;
 
+    virtual ~RoadNetwork() = default;
+
     /// @brief Get the graph's number of coil streets
     /// @return std::size_t The number of coil streets
     std::size_t nCoils() const;
