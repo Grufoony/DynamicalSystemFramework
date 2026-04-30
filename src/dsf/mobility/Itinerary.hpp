@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "PathCollection.hpp"
+#include "../base/PathCollection.hpp"
 #include "../utility/Typedef.hpp"
 
 #include <concepts>

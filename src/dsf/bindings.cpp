@@ -321,76 +321,19 @@ PYBIND11_MODULE(dsf_cpp, m) {
            &dsf::mobility::RoadNetwork::shortestPath,
            pybind11::arg("sourceId"),
            pybind11::arg("targetId"),
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::shortestPath").c_str())
-      .def(
-          "computeBetweennessCentralities",
-          [](dsf::mobility::RoadNetwork& self, const std::string& weight) {
-            auto weightFunc = [&weight](const dsf::mobility::Street& street) {
-              if (weight == "length") {
-                return street.length();
-              } else if (weight == "traveltime") {
-                return street.length() / street.maxSpeed();
-              } else {
-                throw std::invalid_argument(
-                    "Invalid weight function: '" + weight +
-                    "'. Valid options are: 'length', 'traveltime', 'weight'.");
-              }
-            };
-            self.computeBetweennessCentralities(weightFunc);
-          },
-          pybind11::arg("weight") = "length",
-          "Compute betweenness centralities for all nodes using Brandes' algorithm.\n\n"
-          "Args:\n"
-          "    weight (str): The weight function to use. Options are:\n"
-          "        - 'length': Use the street length as weight\n"
-          "        - 'traveltime': Use length / max_speed as weight\n"
-          "        - 'weight': Use the custom edge weight\n\n"
-          "The results are stored in each node's betweennessCentrality attribute.")
+           dsf::g_docstrings.at("dsf::Network::shortestPath").c_str())
+      .def("computeBetweennessCentralities",
+           &dsf::mobility::RoadNetwork::computeBetweennessCentralities,
+           dsf::g_docstrings.at("dsf::Network::computeBetweennessCentralities").c_str())
       .def(
           "computeEdgeBetweennessCentralities",
-          [](dsf::mobility::RoadNetwork& self, const std::string& weight) {
-            auto weightFunc = [&weight](const dsf::mobility::Street& street) {
-              if (weight == "length") {
-                return street.length();
-              } else if (weight == "traveltime") {
-                return street.length() / street.maxSpeed();
-              } else {
-                throw std::invalid_argument(
-                    "Invalid weight function: '" + weight +
-                    "'. Valid options are: 'length', 'traveltime', 'weight'.");
-              }
-            };
-            self.computeEdgeBetweennessCentralities(weightFunc);
-          },
-          pybind11::arg("weight") = "length",
-          "Compute edge betweenness centralities for all edges using Brandes' "
-          "algorithm.\n\n"
-          "Args:\n"
-          "    weight (str): The weight function to use. Options are:\n"
-          "        - 'length': Use the street length as weight\n"
-          "        - 'traveltime': Use length / max_speed as weight\n"
-          "        - 'weight': Use the custom edge weight\n\n"
-          "The results are stored in each edge's betweennessCentrality attribute.")
-      .def(
-          "computeEdgeKBetweennessCentralities",
-          [](dsf::mobility::RoadNetwork& self, const std::string& weight, size_t k) {
-            auto weightFunc = [&weight](const dsf::mobility::Street& street) {
-              if (weight == "length") {
-                return street.length();
-              } else if (weight == "traveltime") {
-                return street.length() / street.maxSpeed();
-              } else {
-                throw std::invalid_argument(
-                    "Invalid weight function: '" + weight +
-                    "'. Valid options are: 'length', 'traveltime', 'weight'.");
-              }
-            };
-            self.computeEdgeKBetweennessCentralities(weightFunc, k);
-          },
-          pybind11::arg("weight") = "length",
-          pybind11::arg("k") = 1,
-          dsf::g_docstrings.at("dsf::Network::computeEdgeKBetweennessCentralities")
-              .c_str())
+          &dsf::mobility::RoadNetwork::computeEdgeBetweennessCentralities,
+          dsf::g_docstrings.at("dsf::Network::computeEdgeBetweennessCentralities").c_str())
+      .def("computeEdgeKBetweennessCentralities",
+           &dsf::mobility::RoadNetwork::computeEdgeKBetweennessCentralities,
+           pybind11::arg("k"),
+           dsf::g_docstrings.at("dsf::Network::computeEdgeKBetweennessCentralities")
+               .c_str())
       .def(
           "nodeBetweennessCentralities",
           [](const dsf::mobility::RoadNetwork& self) {
@@ -427,11 +370,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
           pybind11::arg("outputDir"),
           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::exportCSV").c_str());
 
-  pybind11::class_<dsf::mobility::PathCollection>(mobility, "PathCollection")
+  pybind11::class_<dsf::PathCollection>(mobility, "PathCollection")
       .def(pybind11::init<>(), "Create an empty PathCollection")
       .def(
           "__getitem__",
-          [](const dsf::mobility::PathCollection& self, dsf::Id key) {
+          [](const dsf::PathCollection& self, dsf::Id key) {
             auto it = self.find(key);
             if (it == self.end()) {
               throw pybind11::key_error("Key not found");
@@ -442,26 +385,26 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "Get the next hops for a given node id")
       .def(
           "__setitem__",
-          [](dsf::mobility::PathCollection& self,
-             dsf::Id key,
-             std::vector<dsf::Id> value) { self[key] = value; },
+          [](dsf::PathCollection& self, dsf::Id key, std::vector<dsf::Id> value) {
+            self[key] = value;
+          },
           pybind11::arg("key"),
           pybind11::arg("value"),
           "Set the next hops for a given node id")
       .def(
           "__contains__",
-          [](const dsf::mobility::PathCollection& self, dsf::Id key) {
+          [](const dsf::PathCollection& self, dsf::Id key) {
             return self.find(key) != self.end();
           },
           pybind11::arg("key"),
           "Check if a node id exists in the collection")
       .def(
           "__len__",
-          [](const dsf::mobility::PathCollection& self) { return self.size(); },
+          [](const dsf::PathCollection& self) { return self.size(); },
           "Get the number of nodes in the collection")
       .def(
           "keys",
-          [](const dsf::mobility::PathCollection& self) {
+          [](const dsf::PathCollection& self) {
             std::vector<dsf::Id> keys;
             keys.reserve(self.size());
             for (const auto& [key, _] : self) {
@@ -472,7 +415,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "Get all node ids in the collection")
       .def(
           "items",
-          [](const dsf::mobility::PathCollection& self) {
+          [](const dsf::PathCollection& self) {
             pybind11::dict items;
             for (const auto& [key, value] : self) {
               items[pybind11::int_(key)] = pybind11::cast(value);
@@ -481,10 +424,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
           },
           "Get all items (node id, next hops) in the collection")
       .def("explode",
-           &dsf::mobility::PathCollection::explode,
+           &dsf::PathCollection::explode,
            pybind11::arg("sourceId"),
            pybind11::arg("targetId"),
-           dsf::g_docstrings.at("dsf::mobility::PathCollection::explode").c_str());
+           dsf::g_docstrings.at("dsf::PathCollection::explode").c_str());
 
   pybind11::class_<dsf::mobility::Itinerary>(mobility, "Itinerary")
       .def(pybind11::init<dsf::Id, dsf::Id>(),

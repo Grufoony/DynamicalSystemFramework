@@ -111,6 +111,9 @@ namespace dsf::mobility {
     /// @brief Check if the road is full
     /// @return bool, True if the road is full, false otherwise
     inline bool isFull() const final { return this->nAgents() == this->capacity(); }
+    /// @brief Check if the road is active (i.e., open)
+    /// @return bool, True if the road is active, false otherwise
+    inline bool isActive() const final { return m_roadStatus == RoadStatus::OPEN; }
     /// @brief Get the road's transport capacity, in number of agents
     /// @return double The road's transport capacity, in number of agents
     inline auto transportCapacity() const noexcept { return m_transportCapacity; }

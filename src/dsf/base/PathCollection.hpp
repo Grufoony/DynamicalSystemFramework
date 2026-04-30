@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace dsf::mobility {
+namespace dsf {
   class PathCollection : public std::unordered_map<Id, std::vector<Id>> {
   public:
     using std::unordered_map<Id, std::vector<Id>>::unordered_map;  // Inherit constructors
@@ -17,4 +17,4 @@ namespace dsf::mobility {
     /// @return A list of vectors, each vector representing a path from sourceId to targetId
     std::list<std::vector<Id>> explode(Id const sourceId, Id const targetId) const;
   };
-}  // namespace dsf::mobility
+}  // namespace dsf

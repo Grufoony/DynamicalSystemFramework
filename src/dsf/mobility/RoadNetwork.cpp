@@ -405,6 +405,8 @@ namespace dsf::mobility {
     this->m_edges.rehash(0);
   }
 
+  RoadNetwork::RoadNetwork() { this->setEdgeWeight("traveltime"); }
+
   std::size_t RoadNetwork::nCoils() const {
     return std::count_if(m_edges.cbegin(), m_edges.cend(), [](auto const& pair) {
       return pair.second->hasCoil();
@@ -892,6 +894,8 @@ namespace dsf::mobility {
       };
     } else if (strv_weight == "length") {
       m_weightFunction = [](Street const& street) { return street.length(); };
+    } else if (strv_weight == "uniform") {
+      m_weightFunction = []([[maybe_unused]] Street const& street) { return 1.0; };
     } else {  // Custom attribute
       m_weightFunction = [strv_weight](Street const& street) {
         auto it = std::find_if(
