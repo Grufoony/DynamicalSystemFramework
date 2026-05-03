@@ -850,6 +850,7 @@ namespace dsf::mobility {
     spdlog::debug("There are {} agents left in the list.", m_agents.size());
   }
 
+  // Init Street Data methods
   void FirstOrderDynamics::m_initStreetTable() const {
     if (!this->database()) {
       throw std::runtime_error(
@@ -873,6 +874,53 @@ namespace dsf::mobility {
 
     spdlog::info("Initialized road_data table in the database.");
   }
+  void FirstOrderDynamics::m_saveStreetDataSQL(
+      const std::string& datetime,
+      const std::int64_t time_step,
+      const std::int64_t simulation_id,
+      tbb::concurrent_vector<StreetDataRecord> streetDataRecords) const {
+    if (streetDataRecords.empty()) {
+      spdlog::debug("No street data records to save for time step {}.", time_step);
+      return;
+    }
+    SQLite::Statement insertStmt(
+        *this->database(),
+        "INSERT INTO road_data (datetime, time_step, simulation_id, street_id, "
+        "coil, density_vpk, avg_speed_kph, std_speed_kph, n_observations, counts, "
+        "queue_length) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+    for (auto const& record : streetDataRecords) {
+      insertStmt.bind(1, datetime);
+      insertStmt.bind(2, time_step);
+      insertStmt.bind(3, simulation_id);
+      insertStmt.bind(4, static_cast<std::int64_t>(record.streetId));
+      if (record.coilName.has_value()) {
+        insertStmt.bind(5, record.coilName.value());
+      } else {
+        insertStmt.bind(5);
+      }
+      insertStmt.bind(6, record.density);
+      if (record.avgSpeed.has_value()) {
+        insertStmt.bind(7, record.avgSpeed.value());
+        insertStmt.bind(8, record.stdSpeed.value());
+      } else {
+        insertStmt.bind(7);
+        insertStmt.bind(8);
+      }
+      insertStmt.bind(9, static_cast<std::int64_t>(record.nObservations.value_or(0)));
+      if (record.counts.has_value()) {
+        insertStmt.bind(10, static_cast<std::int64_t>(record.counts.value()));
+      } else {
+        insertStmt.bind(10);
+      }
+      insertStmt.bind(11, static_cast<std::int64_t>(record.queueLength));
+      insertStmt.exec();
+      insertStmt.reset();
+    }
+  }
+  // End Street Data methods
+  // Init Avg Stats methods
   void FirstOrderDynamics::m_initAvgStatsTable() const {
     if (!this->database()) {
       throw std::runtime_error(
@@ -896,6 +944,45 @@ namespace dsf::mobility {
 
     spdlog::info("Initialized avg_stats table in the database.");
   }
+  void FirstOrderDynamics::m_saveAvgStatsSQL(const std::string& datetime,
+                                             const std::int64_t time_step,
+                                             const std::int64_t simulation_id,
+                                             const std::size_t n_valid_edges,
+                                             const double mean_speed,
+                                             const double std_speed,
+                                             const double mean_density,
+                                             const double std_density,
+                                             const double mean_traveltime,
+                                             const double meanQueueLength) const {
+    SQLite::Statement insertStmt(
+        *this->database(),
+        "INSERT INTO avg_stats ("
+        "simulation_id, datetime, time_step, n_ghost_agents, n_agents, "
+        "mean_speed_kph, std_speed_kph, mean_density_vpk, std_density_vpk, "
+        "mean_travel_time_s, mean_queue_length) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    insertStmt.bind(1, simulation_id);
+    insertStmt.bind(2, datetime);
+    insertStmt.bind(3, time_step);
+    insertStmt.bind(4, static_cast<std::int64_t>(m_agents.size()));
+    insertStmt.bind(5, static_cast<std::int64_t>(this->nAgents()));
+
+    if (n_valid_edges > 0) {
+      insertStmt.bind(6, mean_speed);
+      insertStmt.bind(7, std_speed);
+      insertStmt.bind(10, mean_traveltime);
+    } else {
+      insertStmt.bind(6);
+      insertStmt.bind(7);
+      insertStmt.bind(10);
+    }
+    insertStmt.bind(8, mean_density);
+    insertStmt.bind(9, std_density);
+    insertStmt.bind(11, meanQueueLength);
+    insertStmt.exec();
+  }
+  // End Avg Stats methods
+  // Init Travel Data methods
   void FirstOrderDynamics::m_initTravelDataTable() const {
     if (!this->database()) {
       throw std::runtime_error(
@@ -913,6 +1000,28 @@ namespace dsf::mobility {
 
     spdlog::info("Initialized travel_data table in the database.");
   }
+  void FirstOrderDynamics::m_saveTravelDataSQL(
+      const std::string& datetime,
+      const std::int64_t time_step,
+      const std::int64_t simulation_id,
+      tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
+    SQLite::Statement insertStmt(*this->database(),
+                                 "INSERT INTO travel_data (datetime, time_step, "
+                                 "simulation_id, distance_m, travel_time_s) "
+                                 "VALUES (?, ?, ?, ?, ?)");
+
+    for (auto const& [distance, time] : travelDTs) {
+      insertStmt.bind(1, datetime);
+      insertStmt.bind(2, time_step);
+      insertStmt.bind(3, simulation_id);
+      insertStmt.bind(4, distance);
+      insertStmt.bind(5, time);
+      insertStmt.exec();
+      insertStmt.reset();
+    }
+  }
+  // End Travel Data methods
+  // Init Agent Data methods
   void FirstOrderDynamics::m_initAgentDataTable() const {
     if (!this->database()) {
       throw std::runtime_error(
@@ -930,6 +1039,33 @@ namespace dsf::mobility {
 
     spdlog::info("Initialized agent_data table in the database.");
   }
+  void FirstOrderDynamics::m_saveAgentDataSQL(
+      const std::int64_t time_step,
+      const std::int64_t simulation_id,
+      tbb::concurrent_unordered_map<Id,
+                                    std::vector<std::tuple<Id, std::time_t, std::time_t>>>
+          agentDataRecords) const {
+    if (agentDataRecords.empty()) {
+      spdlog::debug("No agent data records to save for time step {}.", time_step);
+      return;
+    }
+    SQLite::Statement insertStmt(*this->database(),
+                                 "INSERT INTO agent_data (simulation_id, "
+                                 "agent_id, edge_id, time_step_in, time_step_out)"
+                                 "VALUES (?, ?, ?, ?, ?)");
+    for (auto const& [edge_id, data] : agentDataRecords) {
+      for (auto const& [agent_id, ts_in, ts_out] : data) {
+        insertStmt.bind(1, simulation_id);
+        insertStmt.bind(2, static_cast<std::int64_t>(agent_id));
+        insertStmt.bind(3, static_cast<std::int64_t>(edge_id));
+        insertStmt.bind(4, static_cast<std::int64_t>(ts_in));
+        insertStmt.bind(5, static_cast<std::int64_t>(ts_out));
+        insertStmt.exec();
+        insertStmt.reset();
+      }
+    }
+  }
+  // End Agent Data methods
   void FirstOrderDynamics::m_dumpSimInfo() const {
     // Dump simulation info (parameters) to the database, if connected
     if (!this->database()) {
@@ -1471,18 +1607,6 @@ namespace dsf::mobility {
                                m_savingInterval.has_value() &&
                                (m_savingInterval.value() == 0 ||
                                 this->time_step() % m_savingInterval.value() == 0);
-
-    // Struct to collect street data for batch insert after parallel section
-    struct StreetDataRecord {
-      Id streetId;
-      std::optional<std::string> coilName;
-      double density;
-      std::optional<double> avgSpeed;
-      std::optional<double> stdSpeed;
-      std::optional<std::size_t> nObservations;
-      std::optional<std::size_t> counts;
-      std::size_t queueLength;
-    };
     tbb::concurrent_vector<StreetDataRecord> streetDataRecords;
 
     spdlog::debug("Init evolve at time {}", this->time_step());
@@ -1594,120 +1718,46 @@ namespace dsf::mobility {
       }
 
       // Batch insert street data collected during parallel section
-      if (m_bSaveStreetData && !streetDataRecords.empty()) {
-        SQLite::Statement insertStmt(
-            *this->database(),
-            "INSERT INTO road_data (datetime, time_step, simulation_id, street_id, "
-            "coil, density_vpk, avg_speed_kph, std_speed_kph, n_observations, counts, "
-            "queue_length) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-
-        for (auto const& record : streetDataRecords) {
-          insertStmt.bind(1, datetime);
-          insertStmt.bind(2, step);
-          insertStmt.bind(3, simulationId);
-          insertStmt.bind(4, static_cast<std::int64_t>(record.streetId));
-          if (record.coilName.has_value()) {
-            insertStmt.bind(5, record.coilName.value());
-          } else {
-            insertStmt.bind(5);
-          }
-          insertStmt.bind(6, record.density);
-          if (record.avgSpeed.has_value()) {
-            insertStmt.bind(7, record.avgSpeed.value());
-            insertStmt.bind(8, record.stdSpeed.value());
-          } else {
-            insertStmt.bind(7);
-            insertStmt.bind(8);
-          }
-          insertStmt.bind(9, static_cast<std::int64_t>(record.nObservations.value_or(0)));
-          if (record.counts.has_value()) {
-            insertStmt.bind(10, static_cast<std::int64_t>(record.counts.value()));
-          } else {
-            insertStmt.bind(10);
-          }
-          insertStmt.bind(11, static_cast<std::int64_t>(record.queueLength));
-          insertStmt.exec();
-          insertStmt.reset();
-        }
+      if (m_bSaveStreetData) {
+        this->m_saveStreetDataSQL(
+            datetime, step, simulationId, std::move(streetDataRecords));
       }
 
       if (m_bSaveTravelData && !m_travelDTs.empty()) {
-        SQLite::Statement insertStmt(*this->database(),
-                                     "INSERT INTO travel_data (datetime, time_step, "
-                                     "simulation_id, distance_m, travel_time_s) "
-                                     "VALUES (?, ?, ?, ?, ?)");
-
-        for (auto const& [distance, time] : m_travelDTs) {
-          insertStmt.bind(1, datetime);
-          insertStmt.bind(2, step);
-          insertStmt.bind(3, simulationId);
-          insertStmt.bind(4, distance);
-          insertStmt.bind(5, time);
-          insertStmt.exec();
-          insertStmt.reset();
-        }
+        this->m_saveTravelDataSQL(datetime, step, simulationId, std::move(m_travelDTs));
         m_travelDTs.clear();
       }
 
       if (m_bSaveAgentData) {
-        auto agentData = Street::agentData();
-        SQLite::Statement insertStmt(*this->database(),
-                                     "INSERT INTO agent_data (simulation_id, "
-                                     "agent_id, edge_id, time_step_in, time_step_out)"
-                                     "VALUES (?, ?, ?, ?, ?)");
-        for (auto const& [edge_id, data] : agentData) {
-          for (auto const& [agent_id, ts_in, ts_out] : data) {
-            insertStmt.bind(1, simulationId);
-            insertStmt.bind(2, static_cast<std::int64_t>(agent_id));
-            insertStmt.bind(3, static_cast<std::int64_t>(edge_id));
-            insertStmt.bind(4, static_cast<std::int64_t>(ts_in));
-            insertStmt.bind(5, static_cast<std::int64_t>(ts_out));
-            insertStmt.exec();
-            insertStmt.reset();
-          }
-        }
+        this->m_saveAgentDataSQL(step, simulationId, Street::agentData());
       }
 
       if (m_bSaveAverageStats) {  // Average Stats Table
+        double meanSpeed{0.}, stdSpeed{0.}, meanDensity{0.}, stdDensity{0.},
+            meanTravelTime{0.}, meanQueueLength{0.};
         auto const validEdges = nValidEdges.load();
         auto const edgeCount = static_cast<double>(numEdges);
-        auto const meanDensity = mean_density.load() / edgeCount;
-        auto const meanQueueLength = mean_queue_length.load() / edgeCount;
-        auto const densityVariance =
-            std::max(0.0, std_density.load() / edgeCount - meanDensity * meanDensity);
-
-        SQLite::Statement insertStmt(
-            *this->database(),
-            "INSERT INTO avg_stats ("
-            "simulation_id, datetime, time_step, n_ghost_agents, n_agents, "
-            "mean_speed_kph, std_speed_kph, mean_density_vpk, std_density_vpk, "
-            "mean_travel_time_s, mean_queue_length) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        insertStmt.bind(1, simulationId);
-        insertStmt.bind(2, datetime);
-        insertStmt.bind(3, step);
-        insertStmt.bind(4, static_cast<std::int64_t>(m_agents.size()));
-        insertStmt.bind(5, static_cast<std::int64_t>(this->nAgents()));
-
         if (validEdges > 0) {
-          auto const validEdgeCount = static_cast<double>(validEdges);
-          auto const meanSpeed = mean_speed.load() / validEdgeCount;
-          auto const meanTravelTime = mean_traveltime.load() / validEdgeCount;
-          auto const speedVariance =
-              std::max(0.0, std_speed.load() / validEdgeCount - meanSpeed * meanSpeed);
-          insertStmt.bind(6, meanSpeed);
-          insertStmt.bind(7, std::sqrt(speedVariance));
-          insertStmt.bind(10, meanTravelTime);
-        } else {
-          insertStmt.bind(6);
-          insertStmt.bind(7);
-          insertStmt.bind(10);
+          meanSpeed = mean_speed.load() / validEdges;
+          stdSpeed = std::sqrt(
+              std::max(0.0, std_speed.load() / validEdges - meanSpeed * meanSpeed));
+          meanDensity = mean_density.load() / edgeCount;
+          stdDensity = std::sqrt(
+              std::max(0.0, std_density.load() / edgeCount - meanDensity * meanDensity));
+          meanTravelTime = mean_traveltime.load() / validEdges;
+          meanQueueLength = mean_queue_length.load() / edgeCount;
         }
-        insertStmt.bind(8, meanDensity);
-        insertStmt.bind(9, std::sqrt(densityVariance));
-        insertStmt.bind(11, meanQueueLength);
-        insertStmt.exec();
+
+        this->m_saveAvgStatsSQL(datetime,
+                                step,
+                                simulationId,
+                                validEdges,
+                                meanSpeed,
+                                stdSpeed,
+                                meanDensity,
+                                stdDensity,
+                                meanTravelTime,
+                                meanQueueLength);
       }
 
       if (transaction.has_value()) {
