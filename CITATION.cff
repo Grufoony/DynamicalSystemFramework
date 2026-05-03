@@ -9,8 +9,8 @@ authors:
   - family-names: Berselli
     given-names: Gregorio
     orcid: 'https://orcid.org/0009-0004-7797-9138'
-repository-code: 'https://github.com/physycom/DynamicalSystemFramework'
-url: 'https://physycom.github.io/DynamicalSystemFramework/'
+repository-code: 'https://github.com/Grufoony/DynamicalSystemFramework'
+url: 'https://Grufoony.github.io/DynamicalSystemFramework/'
 license: CC-BY-NC-SA-4.0
 version: 5.4.0
 date-released: '2026-04-20'

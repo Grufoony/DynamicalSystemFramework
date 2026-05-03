@@ -48,10 +48,10 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/physycom/DynamicalSystemFramework"
-Documentation = "https://physycom.github.io/DynamicalSystemFramework/"
-Repository = "https://github.com/physycom/DynamicalSystemFramework"
-Issues = "https://github.com/physycom/DynamicalSystemFramework/issues"
+Homepage = "https://github.com/Grufoony/DynamicalSystemFramework"
+Documentation = "https://Grufoony.github.io/DynamicalSystemFramework/"
+Repository = "https://github.com/Grufoony/DynamicalSystemFramework"
+Issues = "https://github.com/Grufoony/DynamicalSystemFramework/issues"
 
 [tool.setuptools]
 include-package-data = true
