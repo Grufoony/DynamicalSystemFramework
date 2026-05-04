@@ -15,7 +15,8 @@ using namespace dsf;
 using namespace dsf::mobility;
 
 namespace {
-  std::filesystem::path makeUniquePath(std::string const& prefix, std::string const& suffix) {
+  std::filesystem::path makeUniquePath(std::string const& prefix,
+                                       std::string const& suffix) {
     auto const stamp = std::chrono::duration_cast<std::chrono::microseconds>(
                            std::chrono::system_clock::now().time_since_epoch())
                            .count();

@@ -493,11 +493,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "    arg: For LINEAR, a float alpha in [0., 1.). "
           "For CUSTOM, an integer address (uintptr_t) of a C function with signature "
           "double(double max_speed, double density).")
-      
-       .def("setConcurrency",
-         &dsf::mobility::FirstOrderDynamics::setConcurrency,
-         pybind11::arg("concurrency"),
-         dsf::g_docstrings.at("dsf::Dynamics::setConcurrency").c_str())
+
+      .def("setConcurrency",
+           &dsf::mobility::FirstOrderDynamics::setConcurrency,
+           pybind11::arg("concurrency"),
+           dsf::g_docstrings.at("dsf::Dynamics::setConcurrency").c_str())
       .def("setForcePriorities",
            &dsf::mobility::FirstOrderDynamics::setForcePriorities,
            pybind11::arg("forcePriorities"),
@@ -634,11 +634,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
           pybind11::arg("nAgents"),
           pybind11::arg("insertionMethod"),
           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::addAgents").c_str())
-       .def("evolve",
-         &dsf::mobility::FirstOrderDynamics::evolve,
+      .def("evolve",
+           &dsf::mobility::FirstOrderDynamics::evolve,
            pybind11::arg("reinsert_agents") = false,
            pybind11::arg("dataRequest"),
-         dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::evolve").c_str())
+           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::evolve").c_str())
       .def(
           "optimizeTrafficLights",
           &dsf::mobility::FirstOrderDynamics::optimizeTrafficLights,
@@ -655,9 +655,9 @@ PYBIND11_MODULE(dsf_cpp, m) {
           },
           pybind11::return_value_policy::reference_internal,
           dsf::g_docstrings.at("dsf::Dynamics::graph").c_str())
-       .def("nAgents",
-         &dsf::mobility::FirstOrderDynamics::nAgents,
-         dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::nAgents").c_str())
+      .def("nAgents",
+           &dsf::mobility::FirstOrderDynamics::nAgents,
+           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::nAgents").c_str())
       .def("meanTravelTime",
            &dsf::mobility::FirstOrderDynamics::meanTravelTime,
            pybind11::arg("clearData") = false,
@@ -729,7 +729,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
           pybind11::arg("reset") = true,
           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::destinationCounts")
               .c_str())
-      
+
       .def(
           "summary",
           [](dsf::mobility::FirstOrderDynamics& self) {
@@ -737,76 +737,86 @@ PYBIND11_MODULE(dsf_cpp, m) {
           },
           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::summary").c_str());
 
-      // Bind TrafficSimulator class to mobility submodule
-      pybind11::class_<dsf::mobility::TrafficSimulator>(mobility, "TrafficSimulator")
-       .def(pybind11::init<>())
-       .def("connectDataBase",
-         &dsf::mobility::TrafficSimulator::connectDataBase,
-         pybind11::arg("dbPath"),
-         pybind11::arg("queries") =
-          "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
-          "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
-       .def("importRoadNetwork",
-         [](dsf::mobility::TrafficSimulator& self,
-            const std::string& edgesFile,
-            const std::string& nodePropertiesFile) { self.importRoadNetwork(edgesFile, nodePropertiesFile); },
-         pybind11::arg("edgesFile"),
-         pybind11::arg("nodePropertiesFile") = std::string())
-       .def("updatePaths",
-         &dsf::mobility::TrafficSimulator::updatePaths,
-         pybind11::arg("deltaT") = 0)
-       .def("saveData",
-         &dsf::mobility::TrafficSimulator::saveData,
-         pybind11::arg("savingInterval"),
-         pybind11::arg("saveAverageStats") = false,
-         pybind11::arg("saveStreetData") = false,
-         pybind11::arg("saveTravelData") = false,
-         pybind11::arg("saveAgentData") = false)
-       .def("setName",
-         &dsf::mobility::TrafficSimulator::setName,
-         pybind11::arg("name"))
-       .def("setTimeFrame",
-         [](dsf::mobility::TrafficSimulator& self, std::uint64_t initTime, pybind11::object endTime) {
-           if (endTime.is_none()) {
-          self.setTimeFrame(static_cast<std::time_t>(initTime));
-           } else {
-          auto end = static_cast<std::time_t>(pybind11::cast<std::uint64_t>(endTime));
-          self.setTimeFrame(static_cast<std::time_t>(initTime), std::optional<std::time_t>(end));
-           }
-         },
-         pybind11::arg("initTime"),
-         pybind11::arg("endTime") = pybind11::none())
-       .def("setNAgentsPerTimeStep",
-         [](dsf::mobility::TrafficSimulator& self, const std::vector<std::size_t>& nAgents, pybind11::object deltaT) {
-           if (deltaT.is_none()) {
-          self.setNAgentsPerTimeStep(nAgents, std::nullopt);
-           } else {
-          auto dt = static_cast<std::time_t>(pybind11::cast<std::uint64_t>(deltaT));
-          self.setNAgentsPerTimeStep(nAgents, std::optional<std::time_t>(dt));
-           }
-         },
-         pybind11::arg("nAgentsPerTimeStep"),
-         pybind11::arg("deltaT") = pybind11::none())
-       .def("setAgentInsertionMethod",
-         &dsf::mobility::TrafficSimulator::setAgentInsertionMethod,
-         pybind11::arg("insertionMethod"))
-       .def("run",
-         &dsf::mobility::TrafficSimulator::run,
-         pybind11::arg("reinsertAgents") = false)
-       .def("database",
-         [](dsf::mobility::TrafficSimulator& self) { return self.database(); },
-         pybind11::return_value_policy::reference)
-       .def("dynamics",
-         [](dsf::mobility::TrafficSimulator& self) { return self.dynamics(); },
-         pybind11::return_value_policy::reference)
-       .def("id", &dsf::mobility::TrafficSimulator::id)
-       .def("initTime", &dsf::mobility::TrafficSimulator::initTime)
-       .def("strInitTime", &dsf::mobility::TrafficSimulator::strInitTime)
-       .def("endTime", &dsf::mobility::TrafficSimulator::endTime)
-       .def("strEndTime", &dsf::mobility::TrafficSimulator::strEndTime)
-       .def("agentInsertionDeltaT", &dsf::mobility::TrafficSimulator::agentInsertionDeltaT)
-       .def("name", &dsf::mobility::TrafficSimulator::name)
-       .def("safeName", &dsf::mobility::TrafficSimulator::safeName);
+  // Bind TrafficSimulator class to mobility submodule
+  pybind11::class_<dsf::mobility::TrafficSimulator>(mobility, "TrafficSimulator")
+      .def(pybind11::init<>())
+      .def("connectDataBase",
+           &dsf::mobility::TrafficSimulator::connectDataBase,
+           pybind11::arg("dbPath"),
+           pybind11::arg("queries") =
+               "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
+               "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
+      .def(
+          "importRoadNetwork",
+          [](dsf::mobility::TrafficSimulator& self,
+             const std::string& edgesFile,
+             const std::string& nodePropertiesFile) {
+            self.importRoadNetwork(edgesFile, nodePropertiesFile);
+          },
+          pybind11::arg("edgesFile"),
+          pybind11::arg("nodePropertiesFile") = std::string())
+      .def("updatePaths",
+           &dsf::mobility::TrafficSimulator::updatePaths,
+           pybind11::arg("deltaT") = 0)
+      .def("saveData",
+           &dsf::mobility::TrafficSimulator::saveData,
+           pybind11::arg("savingInterval"),
+           pybind11::arg("saveAverageStats") = false,
+           pybind11::arg("saveStreetData") = false,
+           pybind11::arg("saveTravelData") = false,
+           pybind11::arg("saveAgentData") = false)
+      .def("setName", &dsf::mobility::TrafficSimulator::setName, pybind11::arg("name"))
+      .def(
+          "setTimeFrame",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::uint64_t initTime,
+             pybind11::object endTime) {
+            if (endTime.is_none()) {
+              self.setTimeFrame(static_cast<std::time_t>(initTime));
+            } else {
+              auto end = static_cast<std::time_t>(pybind11::cast<std::uint64_t>(endTime));
+              self.setTimeFrame(static_cast<std::time_t>(initTime),
+                                std::optional<std::time_t>(end));
+            }
+          },
+          pybind11::arg("initTime"),
+          pybind11::arg("endTime") = pybind11::none())
+      .def(
+          "setNAgentsPerTimeStep",
+          [](dsf::mobility::TrafficSimulator& self,
+             const std::vector<std::size_t>& nAgents,
+             pybind11::object deltaT) {
+            if (deltaT.is_none()) {
+              self.setNAgentsPerTimeStep(nAgents, std::nullopt);
+            } else {
+              auto dt = static_cast<std::time_t>(pybind11::cast<std::uint64_t>(deltaT));
+              self.setNAgentsPerTimeStep(nAgents, std::optional<std::time_t>(dt));
+            }
+          },
+          pybind11::arg("nAgentsPerTimeStep"),
+          pybind11::arg("deltaT") = pybind11::none())
+      .def("setAgentInsertionMethod",
+           &dsf::mobility::TrafficSimulator::setAgentInsertionMethod,
+           pybind11::arg("insertionMethod"))
+      .def("run",
+           &dsf::mobility::TrafficSimulator::run,
+           pybind11::arg("reinsertAgents") = false)
+      .def(
+          "database",
+          [](dsf::mobility::TrafficSimulator& self) { return self.database(); },
+          pybind11::return_value_policy::reference)
+      .def(
+          "dynamics",
+          [](dsf::mobility::TrafficSimulator& self) { return self.dynamics(); },
+          pybind11::return_value_policy::reference)
+      .def("id", &dsf::mobility::TrafficSimulator::id)
+      .def("initTime", &dsf::mobility::TrafficSimulator::initTime)
+      .def("strInitTime", &dsf::mobility::TrafficSimulator::strInitTime)
+      .def("endTime", &dsf::mobility::TrafficSimulator::endTime)
+      .def("strEndTime", &dsf::mobility::TrafficSimulator::strEndTime)
+      .def("agentInsertionDeltaT", &dsf::mobility::TrafficSimulator::agentInsertionDeltaT)
+      .def("name", &dsf::mobility::TrafficSimulator::name)
+      .def("safeName", &dsf::mobility::TrafficSimulator::safeName);
 
   // Bind TrajectoryCollection class to mdt submodule
   pybind11::class_<dsf::mdt::TrajectoryCollection>(mdt, "TrajectoryCollection")
