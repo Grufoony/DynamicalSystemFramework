@@ -59,6 +59,30 @@ namespace dsf::mobility {
     std::optional<std::size_t> counts;
     std::size_t queueLength;
   };
+  struct AverageStatsRecord {
+    std::size_t nValidEdges{0};
+    double meanSpeed{0.};
+    double stdSpeed{0.};
+    double meanDensity{0.};
+    double stdDensity{0.};
+    double meanTravelTime{0.};
+    double meanQueueLength{0.};
+  };
+  struct StepDataRequest {
+    bool saveAverageStats{false};
+    bool saveStreetData{false};
+    bool saveTravelData{false};
+    bool saveAgentData{false};
+  };
+  struct StepDataResult {
+    std::time_t timeStep{0};
+    std::optional<tbb::concurrent_map<Id, StreetDataRecord>> streetData;
+    std::optional<tbb::concurrent_vector<std::pair<double, double>>> travelData;
+    std::optional<AverageStatsRecord> averageStats;
+    std::optional<tbb::concurrent_unordered_map<Id,
+                                              std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
+        agentData;
+  };
   /// @brief The FirstOrderDynamics class represents the dynamics of the network.
   class FirstOrderDynamics : public Dynamics<RoadNetwork> {
     std::vector<Id> m_nodeIndices;
@@ -91,12 +115,6 @@ namespace dsf::mobility {
     bool m_bCacheEnabled;
     std::optional<double> m_timeToleranceFactor{std::nullopt};
     bool m_forcePriorities{false};
-    // Saving variables
-    std::optional<std::time_t> m_savingInterval{std::nullopt};
-    bool m_bSaveStreetData{false};
-    bool m_bSaveTravelData{false};
-    bool m_bSaveAverageStats{false};
-    bool m_bSaveAgentData{false};
 
   private:
     /// @brief Kill an agent
@@ -131,175 +149,7 @@ namespace dsf::mobility {
     void m_evolveAgents();
 
     void m_trafficlightSingleTailOptimizer(double const& beta,
-                                           std::optional<std::ofstream>& logStream);
-
-    /// @brief Initialize the street data table.
-    /// This table contains the data of each street. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - datetime: The datetime of the data entry
-    /// - time_step: The time step of the data entry
-    /// - street_id: The id of the street
-    /// - coil: The name of the coil on the street (can be null)
-    /// - density_vpk: The density in vehicles per kilometer
-    /// - avg_speed_kph: The average speed in kilometers per hour
-    /// - std_speed_kph: The standard deviation of the speed in kilometers per hour
-    /// - n_observations: The number of speed observations used to compute avg/std (0 if none)
-    /// - counts: The counts of the coil sensor (can be null)
-    /// - queue_length: The length of the queue on the street
-    void m_initStreetTable() const;
-    /// @brief Save street data to the database using a batch insert.
-    /// @param datetime The datetime of the data entry
-    /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
-    /// @param streetDataRecords A map of StreetDataRecord containing the data to be saved
-    void m_saveStreetDataSQL(
-        const std::string& datetime,
-        const std::int64_t time_step,
-        const std::int64_t simulation_id,
-        tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
-    void m_saveStreetDataCSV(
-        const std::string& datetime,
-        const std::int64_t time_step,
-        const std::int64_t simulation_id,
-        tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
-    /// @brief Initialize the average stats table.
-    /// This table contains the average stats of the simulation at each time step. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - datetime: The datetime of the data entry
-    /// - time_step: The time step of the data entry
-    /// - n_ghost_agents: The number of ghost agents
-    /// - n_agents: The number of agents
-    /// - mean_speed_kph: The mean speed of the agents in kilometers per hour
-    /// - std_speed_kph: The standard deviation of the speed of the agents in kilometers per hour
-    /// - mean_density_vpk: The mean density of the streets in vehicles per kilometer
-    /// - std_density_vpk: The standard deviation of the density of the streets in vehicles per kilometer
-    void m_initAvgStatsTable() const;
-    /// @brief Save average stats to the database.
-    /// @param datetime The datetime of the data entry
-    /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
-    /// @param n_valid_edges The number of valid edges (i.e. edges with speed observations)
-    /// @param mean_speed The mean speed of the agents in kilometers per hour
-    /// @param std_speed The standard deviation of the speed of the agents in kilometers per hour
-    /// @param mean_density The mean density of the streets in vehicles per kilometer
-    /// @param std_density The standard deviation of the density of the streets in vehicles per kilometer
-    /// @param mean_traveltime The mean travel time of the agents in seconds
-    /// @param meanQueueLength The mean queue length of the streets
-    void m_saveAvgStatsSQL(const std::string& datetime,
-                           const std::int64_t time_step,
-                           const std::int64_t simulation_id,
-                           const std::size_t n_valid_edges,
-                           const double mean_speed,
-                           const double std_speed,
-                           const double mean_density,
-                           const double std_density,
-                           const double mean_traveltime,
-                           const double meanQueueLength) const;
-    /// @brief Save average stats to a CSV file.
-    /// @param datetime The datetime of the data entry
-    /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
-    /// @param n_valid_edges The number of valid edges (i.e. edges with speed observations)
-    /// @param mean_speed The mean speed of the agents in kilometers per hour
-    /// @param std_speed The standard deviation of the speed of the agents in kilometers per hour
-    /// @param mean_density The mean density of the streets in vehicles per kilometer
-    /// @param std_density The standard deviation of the density of the streets in vehicles per kilometer
-    /// @param mean_traveltime The mean travel time of the agents in seconds
-    /// @param meanQueueLength The mean queue length of the streets
-    void m_saveAvgStatsCSV(const std::string& datetime,
-                           const std::int64_t time_step,
-                           const std::int64_t simulation_id,
-                           const std::size_t n_valid_edges,
-                           const double mean_speed,
-                           const double std_speed,
-                           const double mean_density,
-                           const double std_density,
-                           const double mean_traveltime,
-                           const double meanQueueLength) const;
-    /// @brief Initialize the travel data table.
-    /// This table contains the travel data of the agents. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - datetime: The datetime of the data entry
-    /// - time_step: The time step of the data entry
-    /// - distance_m: The distance travelled by the agent in meters
-    /// - travel_time_s: The travel time of the agent in seconds
-    void m_initTravelDataTable() const;
-    /// @brief Save travel data to the database using a batch insert.
-    /// @param datetime The datetime of the data entry
-    /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
-    /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
-    void m_saveTravelDataSQL(
-        const std::string& datetime,
-        const std::int64_t time_step,
-        const std::int64_t simulation_id,
-        tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
-    /// @brief Save travel data to a CSV file.
-    /// @param datetime The datetime of the data entry
-    /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
-    /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
-    void m_saveTravelDataCSV(
-        const std::string& datetime,
-        const std::int64_t time_step,
-        const std::int64_t simulation_id,
-        tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
-    /// @brief Initialize the agent data table.
-    /// This table contains the agent data of the agents. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - agent_id: The id of the agent
-    /// - edge_id: The id of the edge
-    /// - time_step_in: The time step of the data entry
-    /// - time_step_out: The time step of the data entry
-    void m_initAgentDataTable() const;
-    /// @brief Save agent data to the database using a batch insert.
-    /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
-    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the time step in and the time step out
-    void m_saveAgentDataSQL(
-        const std::int64_t time_step,
-        const std::int64_t simulation_id,
-        tbb::concurrent_unordered_map<
-            Id,
-            std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
-    /// @brief Save agent data to a CSV file.
-    /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
-    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the time step in and the time step out
-    void m_saveAgentDataCSV(
-        const std::int64_t time_step,
-        const std::int64_t simulation_id,
-        tbb::concurrent_unordered_map<
-            Id,
-            std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
-
-    /// @brief Dump simulation metadata into the database.
-    /// @details Ensures the `simulations` table exists and inserts one row with the
-    /// current simulation configuration. If no database is connected, this function
-    /// returns immediately.
-    ///
-    /// Stored fields are:
-    /// - id
-    /// - name
-    /// - speed_function (identified by a string description, e.g. "LINEAR(alpha=0.5)" or "CUSTOM")
-    /// - weight_function
-    /// - weight_threshold
-    /// - error_probability
-    /// - passage_probability
-    /// - mean_travel_distance_m
-    /// - mean_travel_time_s
-    /// - stagnant_tolerance_factor
-    /// - force_priorities
-    /// - save_avg_stats
-    /// - save_road_data
-    /// - save_travel_data
-    void m_dumpSimInfo() const;
-
-    void m_dumpNetwork() const;
+               std::optional<std::ofstream>& logStream);
 
   public:
     /// @brief Construct a new FirstOrderDynamics object
@@ -324,6 +174,14 @@ namespace dsf::mobility {
     /// @param timeToleranceFactor The time tolerance factor
     /// @throw std::invalid_argument If the time tolerance factor is not positive
     void killStagnantAgents(double timeToleranceFactor = 3.);
+    /// @brief Enable data saving (compatibility wrapper; persistence is handled by TrafficSimulator).
+    void saveData(std::time_t const savingInterval,
+            bool const saveAverageStats = false,
+            bool const saveStreetData = false,
+            bool const saveTravelData = false,
+            bool const saveAgentData = false);
+    /// @brief Connect to a SQLite database (compatibility wrapper; handled by TrafficSimulator).
+    inline void connectDataBase(std::string_view const, std::string_view const = std::string_view()) {}
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
@@ -381,18 +239,6 @@ namespace dsf::mobility {
     /// @brief Reset the turn counts map values to zero
     /// @throws std::runtime_error if the turn counts map is not initialized
     void resetTurnCounts();
-    /// @brief Enable data saving to the database
-    /// @param savingInterval The interval at which save the data (in time steps). If zero, saves data at the next time step and then disables saving (working like a manual trigger).
-    /// @param saveAverageStats If true, saves the average stats of the simulation (default is false)
-    /// @param saveStreetData If true, saves the street data (default is false)
-    /// @param saveTravelData If true, saves the travel data of the agents (default is false)
-    /// @param saveAgentData If true, saves the individual data of the agents (default is false)
-    void saveData(std::time_t const savingInterval,
-                  bool const saveAverageStats = false,
-                  bool const saveStreetData = false,
-                  bool const saveTravelData = false,
-                  bool const saveAgentData = false);
-
     /// @brief Update the paths of the itineraries based on the given weight function
     /// @param throw_on_empty If true, throws an exception if an itinerary has an empty path (default is true)
     /// If false, removes the itinerary with empty paths and the associated node from the origin/destination nodes
@@ -445,7 +291,10 @@ namespace dsf::mobility {
     /// If the agent is in the destination node, it is removed from the simulation (and then reinserted if reinsert_agents is true)
     /// - Cycle over agents and update their times
     /// @param reinsert_agents If true, the agents are reinserted in the simulation after they reach their destination
-    void evolve(bool const reinsert_agents = false);
+    /// @param dataRequest The save/collection request for the current step
+    /// @return StepDataResult The collected data for the current step
+    StepDataResult evolve(bool const reinsert_agents = false,
+                StepDataRequest const& dataRequest = {});
     /// @brief Optimize the traffic lights by changing the green and red times
     /// @param optimizationType TrafficLightOptimization, The type of optimization. Default is DOUBLE_TAIL
     /// @param logFile The file into which write the logs (default is empty, meaning no logging)
@@ -490,6 +339,9 @@ namespace dsf::mobility {
     /// @brief Get the number of agents currently in the simulation
     /// @return std::size_t The number of agents
     inline auto nAgents() const { return m_nAgents.load(); };
+    /// @brief Get the number of ghost agents waiting to be inserted
+    /// @return std::size_t The number of ghost agents
+    inline auto ghostAgents() const { return m_agents.size(); }
 
     /// @brief Get the mean travel time of the agents in \f$s\f$
     /// @param clearData If true, the travel times are cleared after the computation

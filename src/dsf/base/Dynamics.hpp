@@ -48,9 +48,7 @@ namespace dsf {
     std::unique_ptr<network_t> m_graph;
     Id m_id;
     std::string m_name = "unnamed simulation";
-    std::time_t m_timeInit = 0;
     std::time_t m_timeStep = 0;
-    std::unique_ptr<SQLite::Database> m_database;
     std::unique_ptr<tbb::global_control> m_globalControl;
 
   protected:
@@ -59,22 +57,6 @@ namespace dsf {
 
   protected:
     inline void m_evolve() { ++m_timeStep; };
-
-    /// @brief Get a safe date-time string for filenames (YYYYMMDD_HHMMSS)
-    /// @return std::string, The safe date-time string
-    inline auto m_safeDateTime() const {
-#ifdef __APPLE__
-      std::time_t const t = time();
-      std::ostringstream oss;
-      oss << std::put_time(std::localtime(&t), "%Y%m%d_%H%M%S");
-      return oss.str();
-#else
-      return std::format(
-          "{:%Y%m%d_%H%M%S}",
-          std::chrono::floor<std::chrono::seconds>(std::chrono::current_zone()->to_local(
-              std::chrono::system_clock::from_time_t(time()))));
-#endif
-    }
     /// @brief Get a safe name string for filenames (spaces replaced by underscores)
     /// @return std::string, The safe name string
     inline auto m_safeName() const {
@@ -92,9 +74,6 @@ namespace dsf {
     /// @brief Set the name of the simulation
     /// @param name The name of the simulation
     inline void setName(const std::string& name) { m_name = name; };
-    /// @brief Set the initial time as epoch time
-    /// @param timeEpoch The initial time as epoch time
-    inline void setInitTime(std::time_t timeEpoch) { m_timeInit = timeEpoch; };
     /// @brief Set the maximum number of threads to use for parallel execution
     /// @param concurrency The maximum number of threads to use for parallel execution
     void setConcurrency(std::size_t const concurrency);
@@ -103,18 +82,7 @@ namespace dsf {
     inline auto concurrency() const {
       return static_cast<std::size_t>(m_taskArena.max_concurrency());
     }
-    /// @brief Connect to a SQLite database, creating it if it doesn't exist, and executing optional initialization queries
-    /// @param dbPath The path to the SQLite database file
-    /// @param queries Optional SQL queries to execute upon connecting to the database (default is a set of pragmas for performance optimization : "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
-    inline void connectDataBase(
-        std::string const& dbPath,
-        std::string const& queries =
-            "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
-            "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;") {
-      m_database = std::make_unique<SQLite::Database>(
-          dbPath, SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
-      m_database->exec(queries);
-    }
+    
 
     /// @brief Get the graph
     /// @return const network_t&, The graph
@@ -128,33 +96,9 @@ namespace dsf {
     /// @brief Get the name of the simulation
     /// @return const std::string&, The name of the simulation
     inline auto const& name() const { return m_name; };
-    /// @brief Get the database connection (const version)
-    /// @return const std::unique_ptr<SQLite::Database>&, The database connection
-    inline auto const& database() const { return m_database; }
-    /// @brief Get the database connection (mutable version for writing)
-    /// @return std::unique_ptr<SQLite::Database>&, The database connection
-    inline auto& database() { return m_database; }
-    /// @brief Get the current simulation time as epoch time
-    /// @return std::time_t, The current simulation time as epoch time
-    inline auto time() const { return m_timeInit + m_timeStep; }
     /// @brief Get the current simulation time-step
     /// @return std::time_t, The current simulation time-step
     inline auto time_step() const { return m_timeStep; }
-    /// @brief Get the current simulation time as formatted string (YYYY-MM-DD HH:MM:SS)
-    /// @return std::string, The current simulation time as formatted string
-    inline auto strDateTime() const {
-#ifdef __APPLE__
-      std::time_t const t = time();
-      std::ostringstream oss;
-      oss << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S");
-      return oss.str();
-#else
-      return std::format(
-          "{:%Y-%m-%d %H:%M:%S}",
-          std::chrono::floor<std::chrono::seconds>(std::chrono::current_zone()->to_local(
-              std::chrono::system_clock::from_time_t(time()))));
-#endif
-    }
   };
 
   template <typename network_t>
