@@ -165,6 +165,11 @@ namespace dsf::mobility {
         const std::int64_t time_step,
         const std::int64_t simulation_id,
         tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
+    void m_saveStreetDataCSV(
+        const std::string& datetime,
+        const std::int64_t time_step,
+        const std::int64_t simulation_id,
+        tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
     /// @brief Initialize the average stats table.
     /// This table contains the average stats of the simulation at each time step. Columns are:
     /// - id: The entry id (auto-incremented)

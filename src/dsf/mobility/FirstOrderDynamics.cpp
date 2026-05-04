@@ -3,6 +3,8 @@
 #include <SQLiteCpp/SQLiteCpp.h>
 #include <spdlog/spdlog.h>
 
+static constexpr char CSV_SEPARATOR = ';';
+
 namespace dsf::mobility {
   FirstOrderDynamics::FirstOrderDynamics(RoadNetwork& graph,
                                          bool useCache,
@@ -919,6 +921,55 @@ namespace dsf::mobility {
       insertStmt.reset();
     }
   }
+  void FirstOrderDynamics::m_saveStreetDataCSV(
+      const std::string& datetime,
+      const std::int64_t time_step,
+      const std::int64_t simulation_id,
+      tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const {
+    if (streetDataRecords.empty()) {
+      spdlog::debug("No street data records to save for time step {}.", time_step);
+      return;
+    }
+    auto const filename{std::format("{}_{}_road_data.csv", simulation_id, this->name())};
+    // Check if the file exists to write the header
+    bool fileExists = std::filesystem::exists(filename);
+    std::ofstream outFile(filename, std::ios::app);
+    if (!outFile.is_open()) {
+      spdlog::error("Failed to open file {} for writing street data.", filename);
+      return;
+    }
+    // Header
+    if (!fileExists) {
+      outFile << "datetime" << CSV_SEPARATOR << "time_step" << CSV_SEPARATOR
+              << "street_id" << CSV_SEPARATOR << "coil" << CSV_SEPARATOR << "density_vpk"
+              << CSV_SEPARATOR << "avg_speed_kph" << CSV_SEPARATOR << "std_speed_kph"
+              << CSV_SEPARATOR << "n_observations" << CSV_SEPARATOR << "counts"
+              << CSV_SEPARATOR << "queue_length" << "\n";
+    }
+    // Data rows
+    for (auto const& [streetId, record] : streetDataRecords) {
+      outFile << datetime << CSV_SEPARATOR << time_step << CSV_SEPARATOR << streetId
+              << CSV_SEPARATOR;
+      if (record.coilName.has_value()) {
+        outFile << record.coilName.value();
+      }
+      outFile << CSV_SEPARATOR << record.density << CSV_SEPARATOR;
+      if (record.avgSpeed.has_value()) {
+        outFile << record.avgSpeed.value() << CSV_SEPARATOR << record.stdSpeed.value();
+      } else {
+        outFile << CSV_SEPARATOR << CSV_SEPARATOR;
+      }
+      outFile << CSV_SEPARATOR << record.nObservations.value_or(0) << CSV_SEPARATOR;
+      if (record.counts.has_value()) {
+        outFile << record.counts.value();
+      }
+      outFile << CSV_SEPARATOR << record.queueLength << "\n";
+    }
+    // Flush and close the file
+    outFile.flush();
+    outFile.close();
+    spdlog::debug("Saved street data for time step {} to file {}.", time_step, filename);
+  }
   // End Street Data methods
   // Init Avg Stats methods
   void FirstOrderDynamics::m_initAvgStatsTable() const {
@@ -1603,8 +1654,7 @@ namespace dsf::mobility {
         mean_queue_length{0.};
     std::atomic<double> std_speed{0.}, std_density{0.};
     std::atomic<std::size_t> nValidEdges{0};
-    bool const bComputeStats = this->database() != nullptr &&
-                               m_savingInterval.has_value() &&
+    bool const bComputeStats = m_savingInterval.has_value() &&
                                (m_savingInterval.value() == 0 ||
                                 this->time_step() % m_savingInterval.value() == 0);
     tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords;
@@ -1710,57 +1760,64 @@ namespace dsf::mobility {
       bool const hasWritePayload = (m_bSaveStreetData && !streetDataRecords.empty()) ||
                                    (m_bSaveTravelData && !m_travelDTs.empty()) ||
                                    m_bSaveAverageStats;
-
-      std::optional<SQLite::Transaction> transaction;
-      if (hasWritePayload) {
-        transaction.emplace(*this->database());
-      }
-
-      // Batch insert street data collected during parallel section
-      if (m_bSaveStreetData) {
-        this->m_saveStreetDataSQL(
-            datetime, step, simulationId, std::move(streetDataRecords));
-      }
-
-      if (m_bSaveTravelData && !m_travelDTs.empty()) {
-        this->m_saveTravelDataSQL(datetime, step, simulationId, std::move(m_travelDTs));
-        m_travelDTs.clear();
-      }
-
-      if (m_bSaveAgentData) {
-        this->m_saveAgentDataSQL(step, simulationId, Street::agentData());
-      }
-
-      if (m_bSaveAverageStats) {  // Average Stats Table
-        double meanSpeed{0.}, stdSpeed{0.}, meanDensity{0.}, stdDensity{0.},
-            meanTravelTime{0.}, meanQueueLength{0.};
-        auto const validEdges = nValidEdges.load();
-        auto const edgeCount = static_cast<double>(numEdges);
-        if (validEdges > 0) {
-          meanSpeed = mean_speed.load() / validEdges;
-          stdSpeed = std::sqrt(
-              std::max(0.0, std_speed.load() / validEdges - meanSpeed * meanSpeed));
-          meanDensity = mean_density.load() / edgeCount;
-          stdDensity = std::sqrt(
-              std::max(0.0, std_density.load() / edgeCount - meanDensity * meanDensity));
-          meanTravelTime = mean_traveltime.load() / validEdges;
-          meanQueueLength = mean_queue_length.load() / edgeCount;
+      if (this->database() != nullptr) {
+        spdlog::debug("Saving data for time step {} to the database...",
+                      this->time_step());
+        std::optional<SQLite::Transaction> transaction;
+        if (hasWritePayload) {
+          transaction.emplace(*this->database());
+        }
+        // Batch insert street data collected during parallel section
+        if (m_bSaveStreetData) {
+          this->m_saveStreetDataSQL(
+              datetime, step, simulationId, std::move(streetDataRecords));
+        }
+        if (m_bSaveTravelData && !m_travelDTs.empty()) {
+          this->m_saveTravelDataSQL(datetime, step, simulationId, std::move(m_travelDTs));
+          m_travelDTs.clear();
+        }
+        if (m_bSaveAgentData) {
+          this->m_saveAgentDataSQL(step, simulationId, Street::agentData());
         }
 
-        this->m_saveAvgStatsSQL(datetime,
-                                step,
-                                simulationId,
-                                validEdges,
-                                meanSpeed,
-                                stdSpeed,
-                                meanDensity,
-                                stdDensity,
-                                meanTravelTime,
-                                meanQueueLength);
-      }
+        if (m_bSaveAverageStats) {  // Average Stats Table
+          double meanSpeed{0.}, stdSpeed{0.}, meanDensity{0.}, stdDensity{0.},
+              meanTravelTime{0.}, meanQueueLength{0.};
+          auto const validEdges = nValidEdges.load();
+          auto const edgeCount = static_cast<double>(numEdges);
+          if (validEdges > 0) {
+            meanSpeed = mean_speed.load() / validEdges;
+            stdSpeed = std::sqrt(
+                std::max(0.0, std_speed.load() / validEdges - meanSpeed * meanSpeed));
+            meanDensity = mean_density.load() / edgeCount;
+            stdDensity = std::sqrt(std::max(
+                0.0, std_density.load() / edgeCount - meanDensity * meanDensity));
+            meanTravelTime = mean_traveltime.load() / validEdges;
+            meanQueueLength = mean_queue_length.load() / edgeCount;
+          }
 
-      if (transaction.has_value()) {
-        transaction->commit();
+          this->m_saveAvgStatsSQL(datetime,
+                                  step,
+                                  simulationId,
+                                  validEdges,
+                                  meanSpeed,
+                                  stdSpeed,
+                                  meanDensity,
+                                  stdDensity,
+                                  meanTravelTime,
+                                  meanQueueLength);
+        }
+
+        if (transaction.has_value()) {
+          transaction->commit();
+        }
+      } else {
+        spdlog::debug("No database connected. Saving csv files for time step {}...",
+                      this->time_step());
+        if (m_bSaveStreetData) {
+          this->m_saveStreetDataCSV(
+              datetime, step, simulationId, std::move(streetDataRecords));
+        }
       }
 
       // Special case: if m_savingInterval == 0, it was a triggered saveData() call, so we need to reset all flags
