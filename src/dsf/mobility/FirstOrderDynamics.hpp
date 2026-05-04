@@ -51,7 +51,6 @@ namespace dsf::mobility {
   };
   // Struct to collect street data for batch insert after parallel section
   struct StreetDataRecord {
-    Id streetId;
     std::optional<std::string> coilName;
     double density;
     std::optional<double> avgSpeed;
@@ -160,12 +159,12 @@ namespace dsf::mobility {
     /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
-    /// @param streetDataRecords A vector of StreetDataRecord containing the data to be saved
+    /// @param streetDataRecords A map of StreetDataRecord containing the data to be saved
     void m_saveStreetDataSQL(
         const std::string& datetime,
         const std::int64_t time_step,
         const std::int64_t simulation_id,
-        tbb::concurrent_vector<StreetDataRecord> streetDataRecords) const;
+        tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
     /// @brief Initialize the average stats table.
     /// This table contains the average stats of the simulation at each time step. Columns are:
     /// - id: The entry id (auto-incremented)

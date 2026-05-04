@@ -878,7 +878,7 @@ namespace dsf::mobility {
       const std::string& datetime,
       const std::int64_t time_step,
       const std::int64_t simulation_id,
-      tbb::concurrent_vector<StreetDataRecord> streetDataRecords) const {
+      tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const {
     if (streetDataRecords.empty()) {
       spdlog::debug("No street data records to save for time step {}.", time_step);
       return;
@@ -890,11 +890,11 @@ namespace dsf::mobility {
         "queue_length) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-    for (auto const& record : streetDataRecords) {
+    for (auto const& [streetId, record] : streetDataRecords) {
       insertStmt.bind(1, datetime);
       insertStmt.bind(2, time_step);
       insertStmt.bind(3, simulation_id);
-      insertStmt.bind(4, static_cast<std::int64_t>(record.streetId));
+      insertStmt.bind(4, static_cast<std::int64_t>(streetId));
       if (record.coilName.has_value()) {
         insertStmt.bind(5, record.coilName.value());
       } else {
@@ -1607,7 +1607,7 @@ namespace dsf::mobility {
                                m_savingInterval.has_value() &&
                                (m_savingInterval.value() == 0 ||
                                 this->time_step() % m_savingInterval.value() == 0);
-    tbb::concurrent_vector<StreetDataRecord> streetDataRecords;
+    tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords;
 
     spdlog::debug("Init evolve at time {}", this->time_step());
     // move the first agent of each street queue, if possible, putting it in the next node
@@ -1666,7 +1666,6 @@ namespace dsf::mobility {
                   if (m_bSaveStreetData) {
                     // Collect data for batch insert after parallel section
                     StreetDataRecord record;
-                    record.streetId = pStreet->id();
                     record.density = density;
                     if (pStreet->hasCoil()) {
                       record.coilName = pStreet->counterName();
@@ -1679,7 +1678,7 @@ namespace dsf::mobility {
                       record.nObservations = speedMeasure.n;
                     }
                     record.queueLength = queueLength;
-                    streetDataRecords.push_back(record);
+                    streetDataRecords[pStreet->id()] = std::move(record);
                   }
                 }
               }
