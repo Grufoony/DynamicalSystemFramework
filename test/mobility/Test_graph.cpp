@@ -2322,9 +2322,9 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     standardGraph.setEdgeWeight("uniform");
     standardGraph.computeEdgeBetweennessCentralities();
 
-  size_t const nNodes = standardGraph.nNodes();
-  double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
-  REQUIRE(norm > 0.0);
+    std::size_t const nNodes = standardGraph.nNodes();
+    double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
+    REQUIRE(norm > 0.0);
 
     RoadNetwork yenGraph{};
     Street yenS01(0, std::make_pair(0, 1), 10.0);
