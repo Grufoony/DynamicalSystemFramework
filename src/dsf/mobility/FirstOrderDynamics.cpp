@@ -959,7 +959,8 @@ namespace dsf::mobility {
                                     bool const saveTravelData,
                                     bool const saveAgentData) {
     spdlog::debug(
-        "FirstOrderDynamics::saveData is now a compatibility hook. interval={}s, avg_stats={}, street_data={}, travel_data={}, agent_data={}",
+        "FirstOrderDynamics::saveData is now a compatibility hook. interval={}s, "
+        "avg_stats={}, street_data={}, travel_data={}, agent_data={}",
         savingInterval,
         saveAverageStats,
         saveStreetData,
@@ -1211,13 +1212,13 @@ namespace dsf::mobility {
                       ++nValidEdges;
                     }
                   }
-                    if (dataRequest.saveAverageStats) {
+                  if (dataRequest.saveAverageStats) {
                     mean_density.fetch_add(density, std::memory_order_relaxed);
                     std_density.fetch_add(density * density, std::memory_order_relaxed);
                     mean_queue_length.fetch_add(queueLength, std::memory_order_relaxed);
                   }
 
-                    if (dataRequest.saveStreetData) {
+                  if (dataRequest.saveStreetData) {
                     // Collect data for batch insert after parallel section
                     StreetDataRecord record;
                     record.density = density;
@@ -1276,13 +1277,15 @@ namespace dsf::mobility {
         auto const edgeCount = static_cast<double>(numEdges);
         if (averageStats.nValidEdges > 0) {
           averageStats.meanSpeed = mean_speed.load() / averageStats.nValidEdges;
-          averageStats.stdSpeed = std::sqrt(std::max(
-              0.0, std_speed.load() / averageStats.nValidEdges -
-                       averageStats.meanSpeed * averageStats.meanSpeed));
+          averageStats.stdSpeed =
+              std::sqrt(std::max(0.0,
+                                 std_speed.load() / averageStats.nValidEdges -
+                                     averageStats.meanSpeed * averageStats.meanSpeed));
           averageStats.meanDensity = mean_density.load() / edgeCount;
-          averageStats.stdDensity = std::sqrt(std::max(
-              0.0,
-              std_density.load() / edgeCount - averageStats.meanDensity * averageStats.meanDensity));
+          averageStats.stdDensity = std::sqrt(
+              std::max(0.0,
+                       std_density.load() / edgeCount -
+                           averageStats.meanDensity * averageStats.meanDensity));
           averageStats.meanTravelTime = mean_traveltime.load() / averageStats.nValidEdges;
           averageStats.meanQueueLength = mean_queue_length.load() / edgeCount;
         }

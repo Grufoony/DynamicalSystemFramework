@@ -79,8 +79,9 @@ namespace dsf::mobility {
     std::optional<tbb::concurrent_map<Id, StreetDataRecord>> streetData;
     std::optional<tbb::concurrent_vector<std::pair<double, double>>> travelData;
     std::optional<AverageStatsRecord> averageStats;
-    std::optional<tbb::concurrent_unordered_map<Id,
-                                              std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
+    std::optional<tbb::concurrent_unordered_map<
+        Id,
+        std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
         agentData;
   };
   /// @brief The FirstOrderDynamics class represents the dynamics of the network.
@@ -149,7 +150,7 @@ namespace dsf::mobility {
     void m_evolveAgents();
 
     void m_trafficlightSingleTailOptimizer(double const& beta,
-               std::optional<std::ofstream>& logStream);
+                                           std::optional<std::ofstream>& logStream);
 
   public:
     /// @brief Construct a new FirstOrderDynamics object
@@ -176,12 +177,10 @@ namespace dsf::mobility {
     void killStagnantAgents(double timeToleranceFactor = 3.);
     /// @brief Enable data saving (compatibility wrapper; persistence is handled by TrafficSimulator).
     void saveData(std::time_t const savingInterval,
-            bool const saveAverageStats = false,
-            bool const saveStreetData = false,
-            bool const saveTravelData = false,
-            bool const saveAgentData = false);
-    /// @brief Connect to a SQLite database (compatibility wrapper; handled by TrafficSimulator).
-    inline void connectDataBase(std::string_view const, std::string_view const = std::string_view()) {}
+                  bool const saveAverageStats = false,
+                  bool const saveStreetData = false,
+                  bool const saveTravelData = false,
+                  bool const saveAgentData = false);
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
@@ -294,7 +293,7 @@ namespace dsf::mobility {
     /// @param dataRequest The save/collection request for the current step
     /// @return StepDataResult The collected data for the current step
     StepDataResult evolve(bool const reinsert_agents = false,
-                StepDataRequest const& dataRequest = {});
+                          StepDataRequest const& dataRequest = {});
     /// @brief Optimize the traffic lights by changing the green and red times
     /// @param optimizationType TrafficLightOptimization, The type of optimization. Default is DOUBLE_TAIL
     /// @param logFile The file into which write the logs (default is empty, meaning no logging)
