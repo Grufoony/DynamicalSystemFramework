@@ -332,7 +332,7 @@ namespace dsf::mobility {
     /// @brief Set the force priorities flag
     /// @param forcePriorities The flag
     /// @details If true, if an agent cannot move to the next street, the whole node is skipped
-    inline void setForcePriorities(bool forcePriorities) noexcept {
+    inline void setForcePriorities(bool const forcePriorities) noexcept {
       m_forcePriorities = forcePriorities;
     }
     /// @brief Set the data update period.

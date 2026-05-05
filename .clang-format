@@ -1,10 +1,11 @@
 ---
-Language:        Cpp
-BasedOnStyle:  Google
-ColumnLimit:     90
+Language: Cpp
+Standard: c++20
+BasedOnStyle: Google
+ColumnLimit: 90
 NamespaceIndentation: All
-SortIncludes:    false
-IndentWidth:     2
+SortIncludes: false
+IndentWidth: 2
 AccessModifierOffset: -2
 PenaltyBreakComment: 30
 PenaltyExcessCharacter: 100
