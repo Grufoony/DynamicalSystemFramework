@@ -716,7 +716,7 @@ namespace dsf::mobility {
         m_agentInsertionDeltaT);
     for (auto currentTime = m_initTime; currentTime < m_endTime; ++currentTime) {
       auto currentStep = m_dynamics->time_step();
-      if (currentStep % m_updatePathDeltaT == 0) {
+      if (m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) {
         m_dynamics->updatePaths();
       }
       if (currentStep % m_agentInsertionDeltaT == 0) {
