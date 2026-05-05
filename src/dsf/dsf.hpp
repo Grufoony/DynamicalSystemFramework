@@ -33,7 +33,6 @@ namespace dsf {
 }  // namespace dsf
 
 #include "base/Edge.hpp"
-#include "base/SparseMatrix.hpp"
 #include "mobility/Agent.hpp"
 #include "mobility/FirstOrderDynamics.hpp"
 #include "mobility/Intersection.hpp"
