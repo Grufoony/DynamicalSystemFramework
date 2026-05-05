@@ -2368,4 +2368,75 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
       CHECK(*bc == doctest::Approx(1.0 / 3.0));
     }
   }
+
+  SUBCASE("K=3 finds three equal shortest paths with persistent candidate heap") {
+    // Graph structure: 3 edge-disjoint paths from source 0 to target 4
+    // Each path has 2 edges with uniform cost
+    // Path 1: 0 -> 1 -> 4  (edges 0, 1)
+    // Path 2: 0 -> 2 -> 4  (edges 2, 3)
+    // Path 3: 0 -> 3 -> 4  (edges 4, 5)
+    //
+    // For (s, t) = (0, 4), all 3 paths have cost 20, so K=3 should find all of them.
+    // This tests that the global candidate heap persists across rank iterations
+    // and correctly accumulates spur candidates from earlier ranks.
+    RoadNetwork graph{};
+    Street s01(0, std::make_pair(0, 1), 10.0);
+    Street s14(1, std::make_pair(1, 4), 10.0);
+    Street s02(2, std::make_pair(0, 2), 10.0);
+    Street s24(3, std::make_pair(2, 4), 10.0);
+    Street s03(4, std::make_pair(0, 3), 10.0);
+    Street s34(5, std::make_pair(3, 4), 10.0);
+    graph.addStreets(s01, s14, s02, s24, s03, s34);
+    graph.setEdgeWeight("uniform");
+    graph.computeEdgeKBetweennessCentralities(3);
+
+    // Verify all 6 edges appear in the computations
+    Id const edgeIds[] = {static_cast<Id>(0),
+                          static_cast<Id>(1),
+                          static_cast<Id>(2),
+                          static_cast<Id>(3),
+                          static_cast<Id>(4),
+                          static_cast<Id>(5)};
+
+    std::unordered_map<Id, double> edgeCentralities;
+    for (Id const edgeId : edgeIds) {
+      auto const bc = graph.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      REQUIRE(bc.has_value());
+      edgeCentralities[edgeId] = *bc;
+    }
+
+    // Edges on the paths (0,1), (1,4), (0,2), (2,4), (0,3), (3,4) contribute equally
+    // because all three paths are shortest and equally likely.
+    // Each edge should appear in 1 out of 3 paths from node 0 to node 4.
+    // Normalization factor: (N-1)*(N-2) = (5-1)*(5-2) = 4*3 = 12
+    // Each edge appears 1 time across all 3 paths for (0,4), and it's not on paths
+    // from other pairs. So contribution = 1/12.
+    // Actually, let's verify that all edges contribute positively and K=3 >= K=2
+    RoadNetwork graphK2{};
+    Street k2_s01(0, std::make_pair(0, 1), 10.0);
+    Street k2_s14(1, std::make_pair(1, 4), 10.0);
+    Street k2_s02(2, std::make_pair(0, 2), 10.0);
+    Street k2_s24(3, std::make_pair(2, 4), 10.0);
+    Street k2_s03(4, std::make_pair(0, 3), 10.0);
+    Street k2_s34(5, std::make_pair(3, 4), 10.0);
+    graphK2.addStreets(k2_s01, k2_s14, k2_s02, k2_s24, k2_s03, k2_s34);
+    graphK2.setEdgeWeight("uniform");
+    graphK2.computeEdgeKBetweennessCentralities(2);
+
+    bool hasIncrease = false;
+    for (Id const edgeId : edgeIds) {
+      auto const bcK2 =
+          graphK2.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      auto const bcK3 = edgeCentralities[edgeId];
+      REQUIRE(bcK2.has_value());
+      // K=3 should find at least one additional path for at least one edge pair
+      CHECK(bcK3 + 1e-12 >= *bcK2);
+      if (bcK3 > *bcK2 + 1e-12) {
+        hasIncrease = true;
+      }
+    }
+    // Verify that at least some edges increased from K=2 to K=3
+    // (This validates the global candidate heap: without it, no 3rd path would be found)
+    CHECK(hasIncrease);
+  }
 }

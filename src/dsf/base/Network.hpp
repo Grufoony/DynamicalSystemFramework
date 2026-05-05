@@ -787,8 +787,12 @@ namespace dsf {
     }
 
     // K == 1 reduces exactly to standard Brandes edge betweenness.
-    // Call the dedicated (also parallelised) implementation and return; the
-    // normalisation inside that function uses the same (N-1)*(N-2) denominator.
+    // K=1 delegates to the Brandes algorithm (computeEdgeBetweennessCentralities),
+    // which accounts for tied shortest paths via σ fractions. Both K=1 and K>1
+    // paths use the same (N-1)*(N-2) normalization, making K=1 equivalent to
+    // single-source Brandes betweenness. Results are normalized by (N-1)*(N-2).
+    // K>1 uses Yen's algorithm to find K shortest edge-disjoint paths and counts
+    // edge contributions across all K paths.
     if (K == 1) {
       computeEdgeBetweennessCentralities();
       // Re-normalise: computeEdgeBetweennessCentralities leaves raw Brandes
@@ -833,6 +837,15 @@ namespace dsf {
         }
 
         std::vector<PathData> acceptedPaths;
+
+        // ── Global candidate set for Yen's algorithm across all ranks ─────
+        // Standard Yen's algorithm maintains a single priority queue of candidate
+        // paths across all K rank iterations. Candidates generated but not selected
+        // in earlier ranks remain available for later ranks (B-heap approach).
+        std::priority_queue<std::pair<double, std::vector<Id>>,
+                            std::vector<std::pair<double, std::vector<Id>>>,
+                            std::greater<>>
+            globalCandidates;
 
         // ── Initial shortest path (Dijkstra) ──────────────────────────────
         std::vector<double> dist(N_NODES, std::numeric_limits<double>::infinity());
@@ -884,11 +897,6 @@ namespace dsf {
 
         // ── Yen's spur loop ───────────────────────────────────────────────
         for (size_t pathRank = 1; pathRank < K; ++pathRank) {
-          std::priority_queue<std::pair<double, std::vector<Id>>,
-                              std::vector<std::pair<double, std::vector<Id>>>,
-                              std::greater<>>
-              candidates;
-
           auto const& lastPath = acceptedPaths.back().edges;
 
           for (size_t prefixSize = 0; prefixSize < lastPath.size(); ++prefixSize) {
@@ -1014,14 +1022,14 @@ namespace dsf {
               }
             }
             if (!duplicate) {
-              candidates.push({candidatePath.cost, std::move(candidatePath.edges)});
+              globalCandidates.push({candidatePath.cost, std::move(candidatePath.edges)});
             }
           }  // end prefix loop
 
           bool foundPath = false;
-          while (!candidates.empty() && !foundPath) {
-            auto [candidateCost, candidateEdges] = candidates.top();
-            candidates.pop();
+          while (!globalCandidates.empty() && !foundPath) {
+            auto [candidateCost, candidateEdges] = globalCandidates.top();
+            globalCandidates.pop();
 
             bool alreadyAccepted = false;
             for (auto const& path : acceptedPaths) {
@@ -1037,8 +1045,8 @@ namespace dsf {
             }
           }
 
-          if (!foundPath) {
-            break;
+          if (!foundPath && globalCandidates.empty()) {
+            break;  // No more candidates; K-path generation complete
           }
         }  // end Yen rank loop
 

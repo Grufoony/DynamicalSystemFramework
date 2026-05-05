@@ -154,6 +154,43 @@ namespace dsf::mobility {
           addCoil(streetId, strCoilCode);
         }
       }
+
+      // Parse capacity field if present
+      if (std::find(colNames.begin(), colNames.end(), "capacity") != colNames.end()) {
+        try {
+          int capacityValue = row["capacity"].get<int>();
+          edge(streetId).setCapacity(capacityValue);
+        } catch (...) {
+          spdlog::warn("Invalid capacity for edge {}. Using default.", streetId);
+        }
+      }
+
+      // Parse status field if present
+      if (std::find(colNames.begin(), colNames.end(), "status") != colNames.end()) {
+        try {
+          auto statusStr = row["status"].get<std::string>();
+          std::transform(
+              statusStr.begin(), statusStr.end(), statusStr.begin(), [](unsigned char c) {
+                return std::tolower(c);
+              });
+          if (statusStr == "closed") {
+            edge(streetId).setStatus(RoadStatus::CLOSED);
+          } else if (statusStr == "open" || statusStr.empty()) {
+            edge(streetId).setStatus(RoadStatus::OPEN);
+          } else {
+            spdlog::warn(
+                "Unknown status '{}' for edge {}. Valid values: 'open', 'closed'. Using "
+                "'open'.",
+                statusStr,
+                streetId);
+            edge(streetId).setStatus(RoadStatus::OPEN);
+          }
+        } catch (...) {
+          spdlog::warn("Invalid status for edge {}. Using default (OPEN).", streetId);
+          edge(streetId).setStatus(RoadStatus::OPEN);
+        }
+      }
+
       // Handle additional attributes
       for (auto const attrName : additionalAttributes) {
         auto const strAttrName{std::string(attrName)};
