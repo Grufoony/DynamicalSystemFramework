@@ -1,6 +1,6 @@
 # DynamicalSystemFramework
 [![Latest Release](https://img.shields.io/github/v/release/Grufoony/DynamicalSystemFramework)](https://github.com/Grufoony/DynamicalSystemFramework/releases/latest)
-[![PyPI version](https://img.shields.io/pypi/v/dsf-mobility)](https://pypi.org/project/dsf-mobility/)
+[![PyPI version](https://img.shields.io/pypi/v/dsf-suite)](https://pypi.org/project/dsf-suite/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18745492.svg)](https://doi.org/10.5281/zenodo.18745492)
 
 [![Standard](https://img.shields.io/badge/C%2B%2B-20/23-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B#Standardization)
@@ -25,7 +25,7 @@ This rework consists of a full code rewriting, in order to implement more featur
 ## Installation
 The library is available on `PyPI`:
 ```shell
-pip install dsf-mobility
+pip install dsf-suite
 ```
 
 To check the installation you can simply run

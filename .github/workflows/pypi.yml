@@ -63,10 +63,10 @@ jobs:
           exit 0
         fi
 
-        PYPI_URL="https://pypi.org/pypi/dsf-mobility/${VERSION}/json"
+        PYPI_URL="https://pypi.org/pypi/dsf-suite/${VERSION}/json"
         PYPI_NAME="PyPI"
         
-        echo "Checking if dsf-mobility version ${VERSION} exists on ${PYPI_NAME}..."
+        echo "Checking if dsf-suite version ${VERSION} exists on ${PYPI_NAME}..."
         
         # Check PyPI/TestPyPI API for the specific version
         HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PYPI_URL}")
