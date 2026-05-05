@@ -228,8 +228,8 @@ namespace dsf::mobility {
     inline auto const* dynamics() const { return m_dynamics.get(); }
     inline auto* dynamics() { return m_dynamics.get(); }
     /// @brief Get the id of the simulation
-    /// @return const Id&, The id of the simulation
-    inline auto const id() const { return m_id; };
+    /// @return Id, The id of the simulation
+    inline auto id() const { return m_id; };
     inline auto initTime() const { return m_initTime; }
     inline auto strInitTime() const { return m_timeToStr(m_initTime); }
     inline auto endTime() const { return m_endTime; }
