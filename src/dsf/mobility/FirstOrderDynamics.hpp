@@ -39,11 +39,10 @@
 #include "../utility/Typedef.hpp"
 
 static constexpr auto CACHE_FOLDER = "./.dsfcache/";
-static constexpr auto U_TURN_PENALTY_FACTOR = 0.1;
 
 namespace dsf::mobility {
   /// @brief The method for inserting agents into the network
-  enum class AgentInsertionMethod : uint8_t {
+  enum class AgentInsertionMethod : std::uint8_t {
     RANDOM = 0,  // Agents spawn randomly in the network and travel with no destination
     ODS = 1,     // Agents are generated according to the provided OD pairs
     RANDOM_ODS =
@@ -98,6 +97,7 @@ namespace dsf::mobility {
         m_nKilledAgents{0}, m_nArrivedAgents{0};
     std::function<double(Street const&)> m_speedFunction;
     std::string m_speedFunctionDescription;
+    double m_uturnPenaltyFactor = 0.1;
 
   protected:
     std::unordered_map<Id, std::unordered_map<Id, size_t>> m_turnCounts;
@@ -212,6 +212,13 @@ namespace dsf::mobility {
     inline void setMeanTravelTime(std::time_t const meanTravelTime) noexcept {
       m_meanTravelTime = meanTravelTime;
     };
+    inline void setUTurnPenaltyFactor(double uturnPenaltyFactor) {
+      if (uturnPenaltyFactor <= 0.) {
+        throw std::invalid_argument(std::format(
+            "The U-turn penalty factor ({}) must be positive", uturnPenaltyFactor));
+      }
+      m_uturnPenaltyFactor = uturnPenaltyFactor;
+    }
     /// @brief Set the origin nodes. If the provided map is empty, the origin nodes are set using the streets' stationary weights.
     /// NOTE: the default stationary weights are 1.0 so, if not set, this is equivalent to setting uniform weights.
     /// @param originNodes The origin nodes

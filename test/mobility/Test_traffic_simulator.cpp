@@ -60,10 +60,10 @@ TEST_CASE("TrafficSimulator SQL persistence") {
   std::filesystem::remove(dbPath);
 
   TrafficSimulator simulator;
+  simulator.setName("traffic_simulator_sql_test");
   simulator.connectDataBase(dbPath.string());
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
-  simulator.dynamics()->setName("traffic_simulator_sql_test");
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
   simulator.dynamics()->updatePaths();
@@ -89,9 +89,9 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   writeTinyEdgesCsv(edgesPath);
 
   TrafficSimulator simulator;
+  simulator.setName("traffic_simulator_csv_test");
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
-  simulator.dynamics()->setName("traffic_simulator_csv_test");
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
   simulator.dynamics()->updatePaths();
@@ -102,7 +102,7 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
   simulator.run(false);
 
-  auto const baseName = std::to_string(static_cast<std::uint64_t>(simulator.dynamics()->id())) +
+  auto const baseName = std::to_string(static_cast<std::uint64_t>(simulator.id())) +
                         "_traffic_simulator_csv_test";
   auto const roadCsv = std::filesystem::current_path() / (baseName + "_road_data.csv");
   auto const avgCsv = std::filesystem::current_path() / (baseName + "_avg_stats.csv");

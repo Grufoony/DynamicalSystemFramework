@@ -344,9 +344,9 @@ namespace dsf::mobility {
       // Handle U-turns
       if (previousNodeId.has_value() && pStreetOut->target() == previousNodeId.value()) {
         if (pNode->isRoundabout()) {
-          probability *= U_TURN_PENALTY_FACTOR;
+          probability *= m_uturnPenaltyFactor;  // Penalize U-turns in roundabouts
         } else if (!bIsPathTarget) {
-          continue;  // No U-turns allowed
+          continue;  // No U-turns allowed in non-roundabout nodes
         }
       }
 
