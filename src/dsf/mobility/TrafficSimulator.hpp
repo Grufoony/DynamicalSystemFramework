@@ -1,5 +1,11 @@
 #pragma once
 
+#ifdef __APPLE__
+#include <algorithm>
+#include <iomanip>
+#include <sstream>
+#endif
+
 #include <SQLiteCpp/SQLiteCpp.h>
 
 #include "FirstOrderDynamics.hpp"

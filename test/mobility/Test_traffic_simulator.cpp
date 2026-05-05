@@ -82,6 +82,9 @@ TEST_CASE("TrafficSimulator SQL persistence") {
 
   std::filesystem::remove(edgesPath);
   std::filesystem::remove(dbPath);
+  // Remove eventually generated .db-wal and .db-shm files
+  std::filesystem::remove(dbPath.string() + "-wal");
+  std::filesystem::remove(dbPath.string() + "-shm");
 }
 
 TEST_CASE("TrafficSimulator CSV persistence") {

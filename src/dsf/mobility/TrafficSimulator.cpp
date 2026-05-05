@@ -156,8 +156,8 @@ namespace dsf::mobility {
     if (deltaT.has_value()) {
       if (m_endTime == 0) {
         spdlog::warn(
-            "Delta time for agent insertion is set to {} seconds, but an end time is "
-            "already set. The end time will be ignored for agent insertion timing.",
+            "Delta time for agent insertion is set to {} seconds, but no end time is "
+            "currently set. The end time will be ignored for agent insertion timing.",
             deltaT.value());
       }
       m_agentInsertionDeltaT = deltaT.value();
@@ -601,6 +601,9 @@ namespace dsf::mobility {
     if (m_dynamics == nullptr) {
       return;
     }
+    if (m_saveAgentData) {
+      Street::acquireAgentData();
+    }
     if (m_database == nullptr) {
       return;
     }
@@ -615,7 +618,6 @@ namespace dsf::mobility {
     }
     if (m_saveAgentData) {
       m_initAgentDataTable();
-      Street::acquireAgentData();
     }
     m_dumpNetwork();
   }
@@ -677,10 +679,22 @@ namespace dsf::mobility {
           "Cannot run the simulation without an agent insertion schedule.");
     }
 
+    auto const totalTimeSteps = m_endTime - m_initTime;
+
     if (m_agentInsertionDeltaT == 0) {
       if (m_endTime > m_initTime) {
-        m_agentInsertionDeltaT = (m_endTime - m_initTime) /
-                                 static_cast<std::time_t>(m_nAgentsPerTimeStep.size());
+        m_agentInsertionDeltaT =
+            totalTimeSteps / static_cast<std::time_t>(m_nAgentsPerTimeStep.size());
+        if (totalTimeSteps % m_nAgentsPerTimeStep.size() != 0) {
+          spdlog::warn(
+              "Total simulation time ({} seconds) is not perfectly divisible by the "
+              "number of agent insertion steps ({}). The last agent insertion step "
+              "will occur at time {}.",
+              totalTimeSteps,
+              m_nAgentsPerTimeStep.size(),
+              m_timeToStr(m_initTime +
+                          m_agentInsertionDeltaT * m_nAgentsPerTimeStep.size()));
+        }
       }
       if (m_agentInsertionDeltaT == 0) {
         m_agentInsertionDeltaT = 1;
@@ -693,7 +707,6 @@ namespace dsf::mobility {
 
     m_preparePersistence();
 
-    auto const totalTimeSteps = m_endTime - m_initTime;
     spdlog::info(
         "Starting simulation run from {} to {} ({} time steps) with agent insertion "
         "every {} seconds.",
@@ -702,13 +715,23 @@ namespace dsf::mobility {
         totalTimeSteps,
         m_agentInsertionDeltaT);
     for (auto currentTime = m_initTime; currentTime < m_endTime; ++currentTime) {
-      auto const currentStep = currentTime - m_initTime;
-
+      auto currentStep = m_dynamics->time_step();
+      if (currentStep % m_updatePathDeltaT == 0) {
+        m_dynamics->updatePaths();
+      }
       if (currentStep % m_agentInsertionDeltaT == 0) {
-        auto const nAgents = m_nAgentsPerTimeStep.at(
-            static_cast<std::size_t>(currentStep / m_agentInsertionDeltaT));
-        if (nAgents > 0) {
-          m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
+        auto const insertionIndex =
+            static_cast<std::size_t>(currentStep / m_agentInsertionDeltaT);
+        if (insertionIndex < m_nAgentsPerTimeStep.size()) {
+          auto const nAgents = m_nAgentsPerTimeStep.at(insertionIndex);
+          if (nAgents > 0) {
+            m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
+          }
+        } else {
+          spdlog::warn(
+              "Current time step {} exceeds the agent insertion schedule. No more "
+              "agents will be inserted.",
+              currentStep);
         }
       }
 

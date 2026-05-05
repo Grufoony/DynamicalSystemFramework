@@ -1161,7 +1161,9 @@ namespace dsf::mobility {
         mean_queue_length{0.};
     std::atomic<double> std_speed{0.}, std_density{0.};
     std::atomic<std::size_t> nValidEdges{0};
-    bool const bComputeStats = dataRequest.saveAverageStats || dataRequest.saveStreetData;
+    bool const bComputeStats = dataRequest.saveAverageStats ||
+                               dataRequest.saveStreetData || dataRequest.saveTravelData ||
+                               dataRequest.saveAgentData;
     tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords;
 
     spdlog::debug("Init evolve at time {}", this->time_step());
