@@ -3,8 +3,6 @@
 #include <SQLiteCpp/SQLiteCpp.h>
 #include <spdlog/spdlog.h>
 
-static constexpr char CSV_SEPARATOR = ';';
-
 namespace dsf::mobility {
   FirstOrderDynamics::FirstOrderDynamics(RoadNetwork&& graph,
                                          bool useCache,
