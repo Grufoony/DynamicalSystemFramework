@@ -8,36 +8,20 @@
 
 #pragma once
 
+#include <algorithm>
+#include <chrono>
+#include <exception>
+#include <format>
+#include <memory>
+#include <random>
+#include <string>
+
 #include "Network.hpp"
 #include "../utility/Measurement.hpp"
 #include "../utility/Typedef.hpp"
 
-#include <algorithm>
-#include <cassert>
-#include <chrono>
-#include <concepts>
-#include <vector>
-#include <memory>
-#include <random>
-#include <span>
-#include <numeric>
-#include <unordered_map>
-#include <cmath>
-#include <cassert>
-#include <format>
-#include <thread>
-#include <exception>
-#include <fstream>
-#include <filesystem>
-#include <functional>
-#include <iomanip>
-#ifdef __APPLE__
-#include <sstream>
-#endif
-
 #include <spdlog/spdlog.h>
 #include <tbb/tbb.h>
-#include <SQLiteCpp/SQLiteCpp.h>
 
 namespace dsf {
   /// @brief The Dynamics class represents the dynamics of the network.
@@ -47,7 +31,8 @@ namespace dsf {
   private:
     std::unique_ptr<network_t> m_graph;
     Id m_id;
-    std::string m_name = "unnamed simulation";
+    std::string m_name = "simulation";
+    std::string m_safeName = "simulation";
     std::time_t m_timeStep = 0;
     std::unique_ptr<tbb::global_control> m_globalControl;
 
@@ -57,13 +42,6 @@ namespace dsf {
 
   protected:
     inline void m_evolve() { ++m_timeStep; };
-    /// @brief Get a safe name string for filenames (spaces replaced by underscores)
-    /// @return std::string, The safe name string
-    inline auto m_safeName() const {
-      std::string safeName = m_name;
-      std::replace(safeName.begin(), safeName.end(), ' ', '_');
-      return safeName;
-    }
 
   public:
     /// @brief Construct a new Dynamics object
@@ -73,7 +51,7 @@ namespace dsf {
 
     /// @brief Set the name of the simulation
     /// @param name The name of the simulation
-    inline void setName(const std::string& name) { m_name = name; };
+    void setName(const std::string& name);
     /// @brief Set the maximum number of threads to use for parallel execution
     /// @param concurrency The maximum number of threads to use for parallel execution
     void setConcurrency(std::size_t const concurrency);
@@ -82,7 +60,6 @@ namespace dsf {
     inline auto concurrency() const {
       return static_cast<std::size_t>(m_taskArena.max_concurrency());
     }
-    
 
     /// @brief Get the graph
     /// @return const network_t&, The graph
@@ -96,6 +73,9 @@ namespace dsf {
     /// @brief Get the name of the simulation
     /// @return const std::string&, The name of the simulation
     inline auto const& name() const { return m_name; };
+    /// @brief Get a safe name string for filenames (spaces replaced by underscores)
+    /// @return std::string, The safe name string
+    inline auto const& safeName() const { return m_safeName; };
     /// @brief Get the current simulation time-step
     /// @return std::time_t, The current simulation time-step
     inline auto time_step() const { return m_timeStep; }
@@ -123,6 +103,14 @@ namespace dsf {
             std::chrono::current_zone()->to_local(std::chrono::system_clock::from_time_t(
                 std::chrono::system_clock::to_time_t(now))))));
 #endif
+  }
+
+  template <typename network_t>
+  inline void Dynamics<network_t>::setName(const std::string& name) {
+    m_name = name;
+    auto safeName = name;
+    std::replace(safeName.begin(), safeName.end(), ' ', '_');
+    m_safeName = std::move(safeName);
   }
 
   template <typename network_t>
