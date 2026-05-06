@@ -3,7 +3,9 @@
 #include "../geometry/PolyLine.hpp"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
+#include <fstream>
 #include <ranges>
 
 #include <csv.hpp>
@@ -22,6 +24,8 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "nlanes",
                                      "name",
                                      "type",
+                                     "capacity",
+                                     "status",
                                      "coilcode",
                                      "priority",
                                      "geometry"});
@@ -63,6 +67,10 @@ namespace dsf::mobility {
         (std::find(colNames.begin(), colNames.end(), "coilcode") != colNames.end());
     bool const bHasPriority =
         (std::find(colNames.begin(), colNames.end(), "priority") != colNames.end());
+    bool const bHasCapacity =
+        (std::find(colNames.begin(), colNames.end(), "capacity") != colNames.end());
+    bool const bHasStatus =
+        (std::find(colNames.begin(), colNames.end(), "status") != colNames.end());
 
     for (auto& row : reader) {
       auto const sourceId = row["source"].get<Id>();
@@ -150,6 +158,43 @@ namespace dsf::mobility {
           addCoil(streetId, strCoilCode);
         }
       }
+
+      // Parse capacity field if present
+      if (bHasCapacity) {
+        try {
+          int capacityValue = row["capacity"].get<int>();
+          edge(streetId).setCapacity(capacityValue);
+        } catch (...) {
+          spdlog::warn("Invalid capacity for edge {}. Using default.", streetId);
+        }
+      }
+
+      // Parse status field if present
+      if (bHasStatus) {
+        try {
+          auto statusStr = row["status"].get<std::string>();
+          std::transform(
+              statusStr.begin(), statusStr.end(), statusStr.begin(), [](unsigned char c) {
+                return std::tolower(c);
+              });
+          if (statusStr == "closed") {
+            edge(streetId).setStatus(RoadStatus::CLOSED);
+          } else if (statusStr == "open" || statusStr.empty()) {
+            edge(streetId).setStatus(RoadStatus::OPEN);
+          } else {
+            spdlog::warn(
+                "Unknown status '{}' for edge {}. Valid values: 'open', 'closed'. Using "
+                "'open'.",
+                statusStr,
+                streetId);
+            edge(streetId).setStatus(RoadStatus::OPEN);
+          }
+        } catch (...) {
+          spdlog::warn("Invalid status for edge {}. Using default (OPEN).", streetId);
+          edge(streetId).setStatus(RoadStatus::OPEN);
+        }
+      }
+
       // Handle additional attributes
       for (auto const attrName : additionalAttributes) {
         auto const strAttrName{std::string(attrName)};

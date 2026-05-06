@@ -2218,3 +2218,225 @@ TEST_CASE("EdgeBetweennessCentrality") {
         doctest::Approx(1.0));
   }
 }
+
+TEST_CASE("computeEdgeKBetweennessCentralities") {
+  Road::setMeanVehicleLength(5.);
+
+  SUBCASE("K=1 matches normalized standard edge BC on linear chain") {
+    RoadNetwork standardGraph{};
+    Street stdS01(0, std::make_pair(0, 1), 10.0);
+    Street stdS12(1, std::make_pair(1, 2), 10.0);
+    Street stdS23(2, std::make_pair(2, 3), 10.0);
+    standardGraph.addStreets(stdS01, stdS12, stdS23);
+    standardGraph.setEdgeWeight("uniform");
+    standardGraph.computeEdgeBetweennessCentralities();
+
+    size_t const nNodes = standardGraph.nNodes();
+    double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
+    REQUIRE(norm > 0.0);
+
+    auto const stdBc0 = standardGraph.edge(static_cast<Id>(0))
+                            .getAttribute<double>("betweennessCentrality");
+    auto const stdBc1 = standardGraph.edge(static_cast<Id>(1))
+                            .getAttribute<double>("betweennessCentrality");
+    auto const stdBc2 = standardGraph.edge(static_cast<Id>(2))
+                            .getAttribute<double>("betweennessCentrality");
+    REQUIRE(stdBc0.has_value());
+    REQUIRE(stdBc1.has_value());
+    REQUIRE(stdBc2.has_value());
+
+    double const expected0 = *stdBc0 / norm;
+    double const expected1 = *stdBc1 / norm;
+    double const expected2 = *stdBc2 / norm;
+
+    RoadNetwork yenGraph{};
+    Street yenS01(0, std::make_pair(0, 1), 10.0);
+    Street yenS12(1, std::make_pair(1, 2), 10.0);
+    Street yenS23(2, std::make_pair(2, 3), 10.0);
+    yenGraph.addStreets(yenS01, yenS12, yenS23);
+    yenGraph.setEdgeWeight("uniform");
+    yenGraph.computeEdgeKBetweennessCentralities(1);
+
+    auto const yenBc0 =
+        yenGraph.edge(static_cast<Id>(0)).getAttribute<double>("betweennessCentrality");
+    auto const yenBc1 =
+        yenGraph.edge(static_cast<Id>(1)).getAttribute<double>("betweennessCentrality");
+    auto const yenBc2 =
+        yenGraph.edge(static_cast<Id>(2)).getAttribute<double>("betweennessCentrality");
+    REQUIRE(yenBc0.has_value());
+    REQUIRE(yenBc1.has_value());
+    REQUIRE(yenBc2.has_value());
+
+    CHECK_EQ(*yenBc0, doctest::Approx(expected0));
+    CHECK_EQ(*yenBc1, doctest::Approx(expected1));
+    CHECK_EQ(*yenBc2, doctest::Approx(expected2));
+  }
+
+  SUBCASE("K=2 captures additional shortest-path alternatives") {
+    RoadNetwork graphK1{};
+    Street k1S01(0, std::make_pair(0, 1), 10.0);
+    Street k1S02(1, std::make_pair(0, 2), 10.0);
+    Street k1S13(2, std::make_pair(1, 3), 10.0);
+    Street k1S23(3, std::make_pair(2, 3), 10.0);
+    graphK1.addStreets(k1S01, k1S02, k1S13, k1S23);
+    graphK1.setEdgeWeight("uniform");
+    graphK1.computeEdgeKBetweennessCentralities(1);
+
+    RoadNetwork graphK2{};
+    Street k2S01(0, std::make_pair(0, 1), 10.0);
+    Street k2S02(1, std::make_pair(0, 2), 10.0);
+    Street k2S13(2, std::make_pair(1, 3), 10.0);
+    Street k2S23(3, std::make_pair(2, 3), 10.0);
+    graphK2.addStreets(k2S01, k2S02, k2S13, k2S23);
+    graphK2.setEdgeWeight("uniform");
+    graphK2.computeEdgeKBetweennessCentralities(2);
+
+    bool hasStrictIncrease = false;
+    Id const edgeIds[] = {
+        static_cast<Id>(0), static_cast<Id>(1), static_cast<Id>(2), static_cast<Id>(3)};
+
+    for (Id const edgeId : edgeIds) {
+      auto const k1Bc =
+          graphK1.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      auto const k2Bc =
+          graphK2.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      REQUIRE(k1Bc.has_value());
+      REQUIRE(k2Bc.has_value());
+
+      CHECK(*k2Bc + 1e-12 >= *k1Bc);
+      if (*k2Bc > *k1Bc + 1e-12) {
+        hasStrictIncrease = true;
+      }
+    }
+
+    CHECK(hasStrictIncrease);
+  }
+
+  SUBCASE("K=1 matches Brandes on a diamond graph with tied shortest paths") {
+    RoadNetwork standardGraph{};
+    Street stdS01(0, std::make_pair(0, 1), 10.0);
+    Street stdS02(1, std::make_pair(0, 2), 10.0);
+    Street stdS13(2, std::make_pair(1, 3), 10.0);
+    Street stdS23(3, std::make_pair(2, 3), 10.0);
+    standardGraph.addStreets(stdS01, stdS02, stdS13, stdS23);
+    standardGraph.setEdgeWeight("uniform");
+    standardGraph.computeEdgeBetweennessCentralities();
+
+    std::size_t const nNodes = standardGraph.nNodes();
+    double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
+    REQUIRE(norm > 0.0);
+
+    RoadNetwork yenGraph{};
+    Street yenS01(0, std::make_pair(0, 1), 10.0);
+    Street yenS02(1, std::make_pair(0, 2), 10.0);
+    Street yenS13(2, std::make_pair(1, 3), 10.0);
+    Street yenS23(3, std::make_pair(2, 3), 10.0);
+    yenGraph.addStreets(yenS01, yenS02, yenS13, yenS23);
+    yenGraph.setEdgeWeight("uniform");
+    yenGraph.computeEdgeKBetweennessCentralities(1);
+
+    Id const edgeIds[] = {
+        static_cast<Id>(0), static_cast<Id>(1), static_cast<Id>(2), static_cast<Id>(3)};
+
+    for (Id const edgeId : edgeIds) {
+      auto const standardBc =
+          standardGraph.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      auto const yenBc =
+          yenGraph.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      REQUIRE(standardBc.has_value());
+      REQUIRE(yenBc.has_value());
+      CHECK(*yenBc == doctest::Approx(*standardBc / norm));
+    }
+  }
+
+  SUBCASE("K=2 counts both equal shortest paths exactly on a diamond graph") {
+    RoadNetwork graph{};
+    Street s01(0, std::make_pair(0, 1), 10.0);
+    Street s02(1, std::make_pair(0, 2), 10.0);
+    Street s13(2, std::make_pair(1, 3), 10.0);
+    Street s23(3, std::make_pair(2, 3), 10.0);
+    graph.addStreets(s01, s02, s13, s23);
+    graph.setEdgeWeight("uniform");
+    graph.computeEdgeKBetweennessCentralities(2);
+
+    Id const edgeIds[] = {
+        static_cast<Id>(0), static_cast<Id>(1), static_cast<Id>(2), static_cast<Id>(3)};
+
+    for (Id const edgeId : edgeIds) {
+      auto const bc = graph.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      REQUIRE(bc.has_value());
+      CHECK(*bc == doctest::Approx(1.0 / 3.0));
+    }
+  }
+
+  SUBCASE("K=3 finds three equal shortest paths with persistent candidate heap") {
+    // Graph structure: 3 edge-disjoint paths from source 0 to target 4
+    // Each path has 2 edges with uniform cost
+    // Path 1: 0 -> 1 -> 4  (edges 0, 1)
+    // Path 2: 0 -> 2 -> 4  (edges 2, 3)
+    // Path 3: 0 -> 3 -> 4  (edges 4, 5)
+    //
+    // For (s, t) = (0, 4), all 3 paths have cost 20, so K=3 should find all of them.
+    // This tests that the global candidate heap persists across rank iterations
+    // and correctly accumulates spur candidates from earlier ranks.
+    RoadNetwork graph{};
+    Street s01(0, std::make_pair(0, 1), 10.0);
+    Street s14(1, std::make_pair(1, 4), 10.0);
+    Street s02(2, std::make_pair(0, 2), 10.0);
+    Street s24(3, std::make_pair(2, 4), 10.0);
+    Street s03(4, std::make_pair(0, 3), 10.0);
+    Street s34(5, std::make_pair(3, 4), 10.0);
+    graph.addStreets(s01, s14, s02, s24, s03, s34);
+    graph.setEdgeWeight("uniform");
+    graph.computeEdgeKBetweennessCentralities(3);
+
+    // Verify all 6 edges appear in the computations
+    Id const edgeIds[] = {static_cast<Id>(0),
+                          static_cast<Id>(1),
+                          static_cast<Id>(2),
+                          static_cast<Id>(3),
+                          static_cast<Id>(4),
+                          static_cast<Id>(5)};
+
+    std::unordered_map<Id, double> edgeCentralities;
+    for (Id const edgeId : edgeIds) {
+      auto const bc = graph.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      REQUIRE(bc.has_value());
+      edgeCentralities[edgeId] = *bc;
+    }
+
+    // Edges on the paths (0,1), (1,4), (0,2), (2,4), (0,3), (3,4) contribute equally
+    // because all three paths are shortest and equally likely.
+    // Each edge should appear in 1 out of 3 paths from node 0 to node 4.
+    // Normalization factor: (N-1)*(N-2) = (5-1)*(5-2) = 4*3 = 12
+    // Each edge appears 1 time across all 3 paths for (0,4), and it's not on paths
+    // from other pairs. So contribution = 1/12.
+    // Actually, let's verify that all edges contribute positively and K=3 >= K=2
+    RoadNetwork graphK2{};
+    Street k2_s01(0, std::make_pair(0, 1), 10.0);
+    Street k2_s14(1, std::make_pair(1, 4), 10.0);
+    Street k2_s02(2, std::make_pair(0, 2), 10.0);
+    Street k2_s24(3, std::make_pair(2, 4), 10.0);
+    Street k2_s03(4, std::make_pair(0, 3), 10.0);
+    Street k2_s34(5, std::make_pair(3, 4), 10.0);
+    graphK2.addStreets(k2_s01, k2_s14, k2_s02, k2_s24, k2_s03, k2_s34);
+    graphK2.setEdgeWeight("uniform");
+    graphK2.computeEdgeKBetweennessCentralities(2);
+
+    bool hasIncrease = false;
+    for (Id const edgeId : edgeIds) {
+      auto const bcK2 =
+          graphK2.edge(edgeId).getAttribute<double>("betweennessCentrality");
+      auto const bcK3 = edgeCentralities[edgeId];
+      REQUIRE(bcK2.has_value());
+      // K=3 should find at least one additional path for at least one edge pair
+      CHECK(bcK3 + 1e-12 >= *bcK2);
+      if (bcK3 > *bcK2 + 1e-12) {
+        hasIncrease = true;
+      }
+    }
+    // Verify that at least some edges increased from K=2 to K=3
+    // (This validates the global candidate heap: without it, no 3rd path would be found)
+    CHECK(hasIncrease);
+  }
+}

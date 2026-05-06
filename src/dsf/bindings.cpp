@@ -329,6 +329,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "computeEdgeBetweennessCentralities",
           &dsf::mobility::RoadNetwork::computeEdgeBetweennessCentralities,
           dsf::g_docstrings.at("dsf::Network::computeEdgeBetweennessCentralities").c_str())
+      .def("computeEdgeKBetweennessCentralities",
+           &dsf::mobility::RoadNetwork::computeEdgeKBetweennessCentralities,
+           pybind11::arg("k"),
+           dsf::g_docstrings.at("dsf::Network::computeEdgeKBetweennessCentralities")
+               .c_str())
       .def(
           "nodeBetweennessCentralities",
           [](const dsf::mobility::RoadNetwork& self) {

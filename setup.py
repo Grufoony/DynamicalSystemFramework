@@ -358,7 +358,8 @@ class CMakeBuild(build_ext):
                             docs[f"{name}::{member_name}"] = format_documentation_entry(
                                 f"{name}::{member_name}", member_brief, member_detailed
                             )
-        with open("./src/dsf/.docstrings.hpp", "w") as f:
+
+        with open("./src/dsf/.docstrings.hpp", "w", encoding="UTF-8") as f:
             f.write("#pragma once\n\n#include <unordered_map>\n#include <string>\n\n")
             f.write("namespace dsf {\n")
             f.write(
