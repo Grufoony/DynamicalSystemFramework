@@ -67,6 +67,10 @@ namespace dsf::mobility {
         (std::find(colNames.begin(), colNames.end(), "coilcode") != colNames.end());
     bool const bHasPriority =
         (std::find(colNames.begin(), colNames.end(), "priority") != colNames.end());
+    bool const bHasCapacity =
+        (std::find(colNames.begin(), colNames.end(), "capacity") != colNames.end());
+    bool const bHasStatus =
+        (std::find(colNames.begin(), colNames.end(), "status") != colNames.end());
 
     for (auto& row : reader) {
       auto const sourceId = row["source"].get<Id>();
@@ -156,7 +160,7 @@ namespace dsf::mobility {
       }
 
       // Parse capacity field if present
-      if (std::find(colNames.begin(), colNames.end(), "capacity") != colNames.end()) {
+      if (bHasCapacity) {
         try {
           int capacityValue = row["capacity"].get<int>();
           edge(streetId).setCapacity(capacityValue);
@@ -166,7 +170,7 @@ namespace dsf::mobility {
       }
 
       // Parse status field if present
-      if (std::find(colNames.begin(), colNames.end(), "status") != colNames.end()) {
+      if (bHasStatus) {
         try {
           auto statusStr = row["status"].get<std::string>();
           std::transform(

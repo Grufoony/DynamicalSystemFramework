@@ -10,6 +10,7 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <queue>
 #include <span>
@@ -614,6 +615,9 @@ namespace dsf {
         auto const& vData = pathData.at(v);
         for (auto const& edgeId : m_nodes.at(v)->outgoingEdges()) {
           auto const& edgeObj = *m_edges.at(edgeId);
+          if (!edgeObj.isActive()) {
+            continue;
+          }
           auto const w = edgeObj.target();
           auto& wData = pathData.at(w);
           if (visited.contains(w)) {
@@ -726,6 +730,9 @@ namespace dsf {
         auto const& vData = pathData.at(v);
         for (auto const& eId : m_nodes.at(v)->outgoingEdges()) {
           auto const& edgeObj = *m_edges.at(eId);
+          if (!edgeObj.isActive()) {
+            continue;
+          }
           auto const w = edgeObj.target();
           auto& wData = pathData.at(w);
           if (visited.contains(w)) {
@@ -791,7 +798,7 @@ namespace dsf {
     // which accounts for tied shortest paths via σ fractions. Both K=1 and K>1
     // paths use the same (N-1)*(N-2) normalization, making K=1 equivalent to
     // single-source Brandes betweenness. Results are normalized by (N-1)*(N-2).
-    // K>1 uses Yen's algorithm to find K shortest edge-disjoint paths and counts
+    // K>1 uses Yen's algorithm to find K shortest loopless paths and counts
     // edge contributions across all K paths.
     if (K == 1) {
       computeEdgeBetweennessCentralities();
@@ -870,6 +877,9 @@ namespace dsf {
           auto const currentNodeId = nodeIds[currentIndex];
           for (auto const edgeId : m_nodes.at(currentNodeId)->outgoingEdges()) {
             auto const& edgeObj = this->edge(edgeId);
+            if (!edgeObj.isActive()) {
+              continue;
+            }
             auto const nextIdx = nodeIndex.at(edgeObj.target());
             auto const nd = currentDist + m_weightFunction(edgeObj);
             if (nd < dist[nextIdx]) {
@@ -976,6 +986,9 @@ namespace dsf {
                   continue;
                 }
                 auto const& edgeObj = *m_edges.at(eId);
+                if (!edgeObj.isActive()) {
+                  continue;
+                }
                 Id const nextNode = edgeObj.target();
                 if (bannedNodes.contains(nextNode)) {
                   continue;
