@@ -375,6 +375,8 @@ namespace dsf::mobility {
       requires(std::is_convertible_v<typename TContainer::value_type, Id>)
     void setDestinationNodes(TContainer const& destinationNodes);
 
+    void importODsFromCSV(std::string_view const fileName, char const separator = ';');
+
     /// @brief Initialize the turn counts map
     /// @throws std::runtime_error if the turn counts map is already initialized
     void initTurnCounts();

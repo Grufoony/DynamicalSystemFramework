@@ -618,6 +618,21 @@ PYBIND11_MODULE(dsf_cpp, m) {
            &dsf::mobility::FirstOrderDynamics::setODs,
            pybind11::arg("ods"),
            dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setODs").c_str())
+      .def(
+          "importODsFromCSV",
+          [](dsf::mobility::FirstOrderDynamics& self,
+             const std::string& fileName,
+             char separator = ';') { self.importODsFromCSV(fileName, separator); },
+          pybind11::arg("fileName"),
+          pybind11::arg("separator") = ';',
+          "Import origin-destination pairs from a CSV file.\n\n"
+          "Supports two CSV formats:\n"
+          "1. RANDOM_ODS: columns (node_id, type, weight) where type is 'O' (origin) or "
+          "'D' (destination)\n"
+          "2. ODS: columns (origin_id, destination_id, weight) for explicit OD pairs\n\n"
+          "Args:\n"
+          "    fileName (str): Path to the CSV file\n"
+          "    separator (str): CSV delimiter character (default is ';')")
       .def("initTurnCounts",
            &dsf::mobility::FirstOrderDynamics::initTurnCounts,
            dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::initTurnCounts")
