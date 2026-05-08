@@ -29,6 +29,11 @@ The library is available on `PyPI`:
 pip install dsf-mobility
 ```
 
+If you are installing a pre-release from TestPyPI, include the real PyPI index as a fallback so build dependencies can still be resolved:
+```shell
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ dsf-mobility
+```
+
 To check the installation you can simply run
 ```python
 import dsf
