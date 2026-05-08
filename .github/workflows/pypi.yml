@@ -222,13 +222,13 @@ jobs:
 
           CIBW_TEST_COMMAND: >
             python -c "import dsf; print(dsf.__version__)"
+          
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
 
           CIBW_ENVIRONMENT_LINUX: >-
             CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
             DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
             DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
-            CMAKE_PREFIX_PATH="/opt/tbb"
-            TBB_DIR="/opt/tbb"
 
           CIBW_ENVIRONMENT_MACOS: >-
             CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
@@ -238,68 +238,29 @@ jobs:
             DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
 
           CIBW_ENVIRONMENT_WINDOWS: >-
-            CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
+            CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+            -DVCPKG_TARGET_TRIPLET=x64-windows"
             DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
             DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
 
           CIBW_BEFORE_ALL_LINUX: |
             set -eux
 
-            if command -v apt-get >/dev/null 2>&1; then
-              apt-get update
+            dnf install -y \
+              cmake \
+              gcc \
+              gcc-c++ \
+              make \
+              ninja-build \
+              doxygen \
+              pkgconf-pkg-config \
+              tbb \
+              tbb-devel
 
-              apt-get install -y \
-                cmake \
-                build-essential \
-                doxygen \
-                pkg-config \
-                libtbb-dev
+            echo "Locating TBBConfig.cmake"
 
-            elif command -v dnf >/dev/null 2>&1; then
-              dnf install -y \
-                cmake \
-                gcc \
-                gcc-c++ \
-                make \
-                doxygen \
-                pkgconfig \
-                tbb-devel
-
-            elif command -v yum >/dev/null 2>&1; then
-              yum install -y \
-                cmake3 \
-                gcc \
-                gcc-c++ \
-                make \
-                doxygen \
-                tbb-devel
-
-              ln -sf /usr/bin/cmake3 /usr/local/bin/cmake
-
-            else
-              echo "Unsupported Linux package manager"
-              exit 1
-            fi
-
-            echo "Searching for TBBConfig.cmake..."
-
-            TBB_CONFIG=$(find /usr /usr/local /opt -name TBBConfig.cmake -o -name tbb-config.cmake | head -n 1)
-
-            if [ -z "$TBB_CONFIG" ]; then
-              echo "ERROR: Could not locate TBBConfig.cmake"
-              exit 1
-            fi
-
-            echo "Found TBB config at:"
-            echo "$TBB_CONFIG"
-
-            TBB_PARENT=$(dirname "$TBB_CONFIG")
-
-            mkdir -p /opt/tbb
-
-            cp -r "$TBB_PARENT"/* /opt/tbb/ || true
-
-            echo "TBB_DIR=$TBB_PARENT"
+            find /usr -name TBBConfig.cmake
 
           CIBW_BEFORE_ALL_MACOS: |
             brew update
@@ -307,15 +268,16 @@ jobs:
 
           CIBW_BEFORE_ALL_WINDOWS: |
             choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+
             choco install doxygen.install -y
 
-            if not exist vcpkg (
-              git clone https://github.com/microsoft/vcpkg.git vcpkg
-            )
+            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg || exit 0
 
-            call vcpkg\bootstrap-vcpkg.bat
+            call C:\vcpkg\bootstrap-vcpkg.bat
 
-            vcpkg\vcpkg install tbb:x64-windows
+            C:\vcpkg\vcpkg install tbb:x64-windows
+
+            dir C:\vcpkg\installed\x64-windows\share\tbb
 
         with:
           output-dir: wheelhouse
