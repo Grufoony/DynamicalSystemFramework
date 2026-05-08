@@ -159,6 +159,28 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v6
 
+    - name: Install TBB dependency on Linux matrix target
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt update
+        sudo apt install -y libtbb-dev
+
+    - name: Install TBB dependency on macOS matrix target
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew update
+        brew install tbb
+
+    - name: Install TBB dependency on Windows matrix target
+      if: matrix.os == 'windows-latest'
+      shell: bash
+      run: |
+        if [[ ! -d vcpkg ]]; then
+          git clone https://github.com/microsoft/vcpkg.git vcpkg
+        fi
+        cmd.exe /c vcpkg\\bootstrap-vcpkg.bat
+        cmd.exe /c vcpkg\\vcpkg install tbb:x64-windows
+
     - name: Switch package name for HPC distribution
       if: matrix.build_variant == 'hpc'
       run: |
