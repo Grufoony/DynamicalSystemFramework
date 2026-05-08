@@ -374,7 +374,9 @@ namespace dsf::mobility {
     template <typename TContainer>
       requires(std::is_convertible_v<typename TContainer::value_type, Id>)
     void setDestinationNodes(TContainer const& destinationNodes);
-
+    /// @brief Import origin-destination pairs from a CSV file. Possibilities are:
+    /// - origin_id;destination_id;weight (for AgentInsertionMethod::ODS)
+    /// - node_id;type;weight (for AgentInsertionMethod::RANDOM_ODS, where type is either "O" or "D")
     void importODsFromCSV(std::string_view const fileName, char const separator = ';');
 
     /// @brief Initialize the turn counts map
