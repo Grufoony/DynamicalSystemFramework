@@ -207,10 +207,11 @@ jobs:
           CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
           DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
           DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
+          TBB_DIR="/usr/local/lib/cmake/TBB"
         CIBW_ENVIRONMENT_MACOS: >-
           CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
-          CMAKE_OSX_DEPLOYMENT_TARGET="13.3"
-          MACOSX_DEPLOYMENT_TARGET="13.3"
+          CMAKE_OSX_DEPLOYMENT_TARGET="15.0"
+          MACOSX_DEPLOYMENT_TARGET="15.0"
           DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
           DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
         CIBW_ENVIRONMENT_WINDOWS: >-
@@ -230,6 +231,14 @@ jobs:
           else
             echo 'Unsupported Linux package manager for cibuildwheel container' && exit 1;
           fi"
+          bash -c "
+          TBB_CONFIG_DIR=\$(dirname \$(find /usr -name TBBConfig.cmake -o -name tbb-config.cmake | head -n 1))
+          if [ -z \"\$TBB_CONFIG_DIR\" ]; then
+            echo 'Unable to locate installed TBB config directory' && exit 1;
+          fi
+          mkdir -p /usr/local/lib/cmake
+          ln -sfn \"\$TBB_CONFIG_DIR\" /usr/local/lib/cmake/TBB
+          "
         CIBW_BEFORE_ALL_MACOS: >-
           brew update && brew install cmake doxygen tbb fmt spdlog
         CIBW_BEFORE_ALL_WINDOWS: >-
