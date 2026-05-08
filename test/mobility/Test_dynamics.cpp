@@ -306,6 +306,69 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
+  SUBCASE("importODsFromCSV") {
+    GIVEN("A dynamics object and CSV files in different formats") {
+      WHEN("We import from a RANDOM_ODS format CSV file") {
+        auto randomNetwork = RoadNetwork{};
+        randomNetwork.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
+        randomNetwork.importNodeProperties(
+            (DATA_FOLDER / "manhattan_nodes.csv").string());
+        randomNetwork.setEdgeWeight("length");
+        FirstOrderDynamics dynamics{std::move(randomNetwork), false, 69};
+        dynamics.importODsFromCSV((DATA_FOLDER / "ods_random_ods.csv").string(), ';');
+        dynamics.updatePaths();
+        dynamics.addAgents(3, AgentInsertionMethod::RANDOM_ODS);
+
+        THEN("The origin and destination nodes are correctly set") {
+          CHECK_EQ(dynamics.nAgents(), 3);
+
+          // Verify all agents have valid origins and destinations
+          for (const auto& agent : dynamics.agents()) {
+            auto origin = agent->srcNodeId().value();
+            auto destination = agent->itinerary()->destination();
+
+            // Origins should be from {0, 1, 27}
+            CHECK((origin == 0 || origin == 1 || origin == 27));
+            // Destinations should be from {2, 14, 102}
+            CHECK((destination == 2 || destination == 14 || destination == 102));
+          }
+        }
+      }
+
+      WHEN("We import from an ODS format CSV file") {
+        auto odNetwork = RoadNetwork{};
+        odNetwork.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
+        odNetwork.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
+        odNetwork.setEdgeWeight("length");
+        FirstOrderDynamics dynamics2{std::move(odNetwork), false, 69};
+        CHECK_NOTHROW(
+            dynamics2.importODsFromCSV((DATA_FOLDER / "ods_od_pairs.csv").string(), ';'));
+
+        THEN("The OD pairs are correctly set") {
+          const auto& itineraries = dynamics2.itineraries();
+          CHECK_EQ(itineraries.size(), 1);
+          CHECK(itineraries.contains(2));
+        }
+      }
+
+      WHEN("We import with custom separator") {
+        auto randomNetwork = RoadNetwork{};
+        randomNetwork.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
+        randomNetwork.importNodeProperties(
+            (DATA_FOLDER / "manhattan_nodes.csv").string());
+        randomNetwork.setEdgeWeight("length");
+        FirstOrderDynamics dynamics{std::move(randomNetwork), false, 69};
+        // Note: The test files use semicolon, so we test the default works
+        dynamics.importODsFromCSV((DATA_FOLDER / "ods_random_ods.csv").string());
+
+        THEN("Import succeeds with default separator") {
+          dynamics.updatePaths();
+          dynamics.addAgents(1, AgentInsertionMethod::RANDOM_ODS);
+          CHECK_EQ(dynamics.nAgents(), 1);
+        }
+      }
+    }
+  }
   SUBCASE("addRandomAgents and time") {
     GIVEN("A dynamics object") {
       auto const p{0.1};

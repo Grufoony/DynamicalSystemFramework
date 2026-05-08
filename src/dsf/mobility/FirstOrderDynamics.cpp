@@ -1,5 +1,6 @@
 #include "FirstOrderDynamics.hpp"
 
+#include <csv.hpp>
 #include <SQLiteCpp/SQLiteCpp.h>
 #include <spdlog/spdlog.h>
 
@@ -1449,6 +1450,66 @@ namespace dsf::mobility {
                    [sumWeights](auto const& pair) -> std::pair<Id, double> {
                      return {pair.first, pair.second / sumWeights};
                    });
+  }
+  void FirstOrderDynamics::importODsFromCSV(std::string_view const fileName,
+                                            char const separator) {
+    csv::CSVFormat format;
+    format.delimiter(separator);
+    csv::CSVReader reader(fileName, format);
+
+    auto const& colNames = reader.get_col_names();
+
+    AgentInsertionMethod csvtype{AgentInsertionMethod::RANDOM};
+    for (auto const& colName : colNames) {
+      if (colName == "node_id") {
+        csvtype = AgentInsertionMethod::RANDOM_ODS;
+        break;
+      } else if (colName == "origin_id") {
+        csvtype = AgentInsertionMethod::ODS;
+        break;
+      }
+    }
+
+    switch (csvtype) {
+      case AgentInsertionMethod::RANDOM_ODS: {
+        spdlog::info("Importing ODs from CSV with RANDOM_ODS method.");
+        std::unordered_map<Id, double> originNodes;
+        std::unordered_map<Id, double> destinationNodes;
+        for (auto const& row : reader) {
+          auto const nodeId = row["node_id"].get<Id>();
+          auto const type = row["type"].get<std::string>();
+          auto const weight = row["weight"].get<double>();
+          if (type == "O") {
+            originNodes[nodeId] = weight;
+          } else if (type == "D") {
+            destinationNodes[nodeId] = weight;
+          } else {
+            spdlog::warn(
+                "Unknown type '{}' for node {} in CSV. Skipping this row.", type, nodeId);
+          }
+        }
+        this->setOriginNodes(std::move(originNodes));
+        this->setDestinationNodes(std::move(destinationNodes));
+        break;
+      }
+      case AgentInsertionMethod::ODS: {
+        spdlog::info("Importing ODs from CSV with RANDOM_OD_PAIRS method.");
+        std::vector<std::tuple<Id, Id, double>> ODs;
+        for (auto const& row : reader) {
+          auto const originId = row["origin_id"].get<Id>();
+          auto const destinationId = row["destination_id"].get<Id>();
+          auto const weight = row["weight"].get<double>();
+          ODs.emplace_back(originId, destinationId, weight);
+        }
+        this->setODs(std::move(ODs));
+        break;
+      }
+      default:
+        throw std::runtime_error(
+            "Could not determine the CSV type based on column names. Expected columns: "
+            "'node_id' for RANDOM_ODS or 'origin_id' and 'destination_id' for "
+            "RANDOM_OD_PAIRS.");
+    }
   }
   void FirstOrderDynamics::initTurnCounts() {
     if (!m_turnCounts.empty()) {
