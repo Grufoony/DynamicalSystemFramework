@@ -17,319 +17,387 @@ jobs:
     name: Check if version exists on PyPI/TestPyPI
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.draft == false
+
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       version: ${{ steps.extract.outputs.version }}
       publish_version: ${{ steps.plan.outputs.publish_version }}
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Extract version from dsf.hpp
-      id: extract
-      run: |
-        VERSION_MAJOR=$(grep -oP 'DSF_VERSION_MAJOR = \K\d+' src/dsf/dsf.hpp)
-        VERSION_MINOR=$(grep -oP 'DSF_VERSION_MINOR = \K\d+' src/dsf/dsf.hpp)
-        VERSION_PATCH=$(grep -oP 'DSF_VERSION_PATCH = \K\d+' src/dsf/dsf.hpp)
-        VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
-        echo "version=${VERSION}" >> $GITHUB_OUTPUT
-        echo "Extracted version: ${VERSION}"
+      - name: Extract version from dsf.hpp
+        id: extract
+        run: |
+          VERSION_MAJOR=$(grep -oP 'DSF_VERSION_MAJOR = \K\d+' src/dsf/dsf.hpp)
+          VERSION_MINOR=$(grep -oP 'DSF_VERSION_MINOR = \K\d+' src/dsf/dsf.hpp)
+          VERSION_PATCH=$(grep -oP 'DSF_VERSION_PATCH = \K\d+' src/dsf/dsf.hpp)
 
-    - name: Plan publish version
-      id: plan
-      run: |
-        BASE_VERSION="${{ steps.extract.outputs.version }}"
+          VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
 
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          # TestPyPI only: bump patch by one, then append a numeric dev suffix
-          # so the version is PEP 440 compliant and unique across PRs/re-runs.
-          IFS='.' read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "${BASE_VERSION}"
-          VERSION_PATCH=$((VERSION_PATCH + 1))
-          PR_BASE_VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
-          PUBLISH_VERSION="${PR_BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
-        else
-          # PyPI: publish the exact release version with no run-id suffix.
-          PUBLISH_VERSION="${BASE_VERSION}"
-        fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Extracted version: ${VERSION}"
 
-        echo "publish_version=${PUBLISH_VERSION}" >> "$GITHUB_OUTPUT"
-        echo "Planned publish version: ${PUBLISH_VERSION}"
+      - name: Plan publish version
+        id: plan
+        run: |
+          BASE_VERSION="${{ steps.extract.outputs.version }}"
 
-    - name: Check publish policy for PyPI
-      id: check
-      run: |
-        VERSION="${{ steps.plan.outputs.publish_version }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            IFS='.' read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "${BASE_VERSION}"
 
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          echo "PR build uses unique TestPyPI version ${VERSION}; skipping existence check."
-          echo "should_build=true" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
+            VERSION_PATCH=$((VERSION_PATCH + 1))
 
-        PYPI_NAME="PyPI"
-        PACKAGES=("dsf-mobility" "dsf-mobility-hpc")
+            PR_BASE_VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+            PUBLISH_VERSION="${PR_BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
+          else
+            PUBLISH_VERSION="${BASE_VERSION}"
+          fi
 
-        for PACKAGE in "${PACKAGES[@]}"; do
-          PYPI_URL="https://pypi.org/pypi/${PACKAGE}/${VERSION}/json"
-          echo "Checking if ${PACKAGE} version ${VERSION} exists on ${PYPI_NAME}..."
+          echo "publish_version=${PUBLISH_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Planned publish version: ${PUBLISH_VERSION}"
 
-          # Check PyPI API for the specific version
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PYPI_URL}")
+      - name: Check publish policy for PyPI
+        id: check
+        run: |
+          VERSION="${{ steps.plan.outputs.publish_version }}"
 
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "Version ${VERSION} already exists for ${PACKAGE} on ${PYPI_NAME}."
-            echo "Version already published for at least one package; skipping build and publish jobs."
-            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "PR build uses unique TestPyPI version ${VERSION}; skipping existence check."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "Version ${VERSION} does not exist for ${PACKAGE} on ${PYPI_NAME} (HTTP ${HTTP_STATUS})"
-        done
+          PYPI_NAME="PyPI"
+          PACKAGES=("dsf-mobility" "dsf-mobility-hpc")
 
-        echo "should_build=true" >> "$GITHUB_OUTPUT"
+          for PACKAGE in "${PACKAGES[@]}"; do
+            PYPI_URL="https://pypi.org/pypi/${PACKAGE}/${VERSION}/json"
+
+            echo "Checking if ${PACKAGE} version ${VERSION} exists on ${PYPI_NAME}..."
+
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PYPI_URL}")
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Version ${VERSION} already exists for ${PACKAGE} on ${PYPI_NAME}."
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "Version ${VERSION} does not exist for ${PACKAGE} on ${PYPI_NAME} (HTTP ${HTTP_STATUS})"
+          done
+
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
 
   uv-validate:
     name: Validate uv workflows
     needs: [check-version]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
+
+    if: needs.check-version.outputs.should_build == 'true' &&
+        (github.event_name == 'push' || github.event.pull_request.draft == false)
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
-    - name: Set up uv
-      uses: astral-sh/setup-uv@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
 
-    - name: Install system dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y cmake build-essential doxygen libtbb-dev
 
-    - name: Validate uv build
-      env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
-        DSF_OPTIMIZE_ARCH: "OFF"
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: uv build
+      - name: Validate uv build
+        env:
+          CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
+          DSF_OPTIMIZE_ARCH: "OFF"
+          DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        run: uv build
 
-    - name: Validate uv source install
-      env:
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: |
-        uv venv .venv-uv-install
-        source .venv-uv-install/bin/activate
-        uv pip install .
-        python -c "import dsf; print(dsf.__version__)"
+      - name: Validate uv source install
+        env:
+          DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        run: |
+          uv venv .venv-uv-install
+          source .venv-uv-install/bin/activate
 
-    - name: Validate uv editable install
-      env:
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: |
-        uv venv .venv-uv-editable
-        source .venv-uv-editable/bin/activate
-        uv pip install -e .
-        python -c "import dsf; print(dsf.__version__)"
+          uv pip install .
+
+          python -c "import dsf; print(dsf.__version__)"
+
+      - name: Validate uv editable install
+        env:
+          DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        run: |
+          uv venv .venv-uv-editable
+          source .venv-uv-editable/bin/activate
+
+          uv pip install -e .
+
+          python -c "import dsf; print(dsf.__version__)"
 
   build-wheels:
     name: Build wheels with cibuildwheel (${{ matrix.os }} - ${{ matrix.build_variant }})
     needs: [check-version, uv-validate]
     runs-on: ${{ matrix.os }}
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
+
+    if: needs.check-version.outputs.should_build == 'true' &&
+        (github.event_name == 'push' || github.event.pull_request.draft == false)
+
     strategy:
       fail-fast: false
+
       matrix:
         include:
           - os: ubuntu-latest
             build_variant: standard
+
           - os: ubuntu-latest
             build_variant: hpc
+
           - os: macos-latest
             build_variant: standard
+
           - os: windows-latest
             build_variant: standard
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Install TBB dependency on Linux matrix target
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt update
-        sudo apt install -y libtbb-dev
+      - name: Install TBB dependency on macOS matrix target
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          brew install tbb
 
-    - name: Install TBB dependency on macOS matrix target
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew update
-        brew install tbb
+      - name: Install TBB dependency on Windows matrix target
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git vcpkg || true
 
-    - name: Install TBB dependency on Windows matrix target
-      if: matrix.os == 'windows-latest'
-      shell: bash
-      run: |
-        if [[ ! -d vcpkg ]]; then
-          git clone https://github.com/microsoft/vcpkg.git vcpkg
-        fi
-        cmd.exe /c vcpkg\\bootstrap-vcpkg.bat
-        cmd.exe /c vcpkg\\vcpkg install tbb:x64-windows
+          cmd.exe /c vcpkg\\bootstrap-vcpkg.bat
 
-    - name: Switch package name for HPC distribution
-      if: matrix.build_variant == 'hpc'
-      run: |
-        python - <<'PY'
-        from pathlib import Path
+          cmd.exe /c vcpkg\\vcpkg install tbb:x64-windows
 
-        pyproject_path = Path("pyproject.toml")
-        content = pyproject_path.read_text(encoding="utf-8")
-        old = 'name = "dsf-mobility"'
-        new = 'name = "dsf-mobility-hpc"'
-        if old not in content:
-            raise RuntimeError("Unable to locate project name in pyproject.toml")
-        pyproject_path.write_text(content.replace(old, new, 1), encoding="utf-8")
-        print("Switched project name to dsf-mobility-hpc for HPC build")
-        PY
+      - name: Switch package name for HPC distribution
+        if: matrix.build_variant == 'hpc'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
 
-    - name: Build wheels
-      uses: pypa/cibuildwheel@v2.23.3
-      env:
-        CIBW_BUILD: "cp310-* cp312-*"
-        CIBW_OUTPUT_DIR: wheelhouse
-        CIBW_TEST_COMMAND: python -c "import dsf; print(dsf.__version__)"
-        CIBW_ENVIRONMENT_LINUX: >-
-          CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
-          DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
-          DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
-          TBB_DIR="/usr/local/lib/cmake/TBB"
-        CIBW_ENVIRONMENT_MACOS: >-
-          CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
-          CMAKE_OSX_DEPLOYMENT_TARGET="15.0"
-          MACOSX_DEPLOYMENT_TARGET="15.0"
-          DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
-          DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
-        CIBW_ENVIRONMENT_WINDOWS: >-
-          CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
-          DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
-          DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
-          CMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake"
-          VCPKG_TARGET_TRIPLET="x64-windows"
-        CIBW_BEFORE_BUILD_LINUX: >-
-          bash -c "
-          if command -v apt-get >/dev/null 2>&1; then
-            apt-get update && apt-get install -y cmake build-essential doxygen libtbb-dev;
-          elif command -v dnf >/dev/null 2>&1; then
-            dnf install -y cmake gcc gcc-c++ make doxygen tbb-devel;
-          elif command -v yum >/dev/null 2>&1; then
-            yum install -y cmake3 gcc gcc-c++ make doxygen tbb-devel && ln -sf /usr/bin/cmake3 /usr/local/bin/cmake;
-          else
-            echo 'Unsupported Linux package manager for cibuildwheel container' && exit 1;
-          fi"
-          bash -c "
-          TBB_CONFIG_DIR=\$(dirname \$(find /usr -name TBBConfig.cmake -o -name tbb-config.cmake | head -n 1))
-          if [ -z \"\$TBB_CONFIG_DIR\" ]; then
-            echo 'Unable to locate installed TBB config directory' && exit 1;
-          fi
-          mkdir -p /usr/local/lib/cmake
-          ln -sfn \"\$TBB_CONFIG_DIR\" /usr/local/lib/cmake/TBB
-          "
-        CIBW_BEFORE_ALL_MACOS: >-
-          brew update && brew install cmake doxygen tbb fmt spdlog
-        CIBW_BEFORE_ALL_WINDOWS: >-
-          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y &&
-          choco install doxygen.install -y &&
-          if not exist vcpkg git clone https://github.com/microsoft/vcpkg.git vcpkg &&
-          call vcpkg\\bootstrap-vcpkg.bat &&
-          vcpkg\\vcpkg install tbb:x64-windows
+          pyproject_path = Path("pyproject.toml")
 
-    - name: Upload wheels as artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: wheel-${{ matrix.os }}-${{ matrix.build_variant }}
-        path: wheelhouse/*.whl
+          content = pyproject_path.read_text(encoding="utf-8")
+
+          old = 'name = "dsf-mobility"'
+          new = 'name = "dsf-mobility-hpc"'
+
+          if old not in content:
+              raise RuntimeError("Unable to locate project name in pyproject.toml")
+
+          pyproject_path.write_text(
+              content.replace(old, new, 1),
+              encoding="utf-8"
+          )
+
+          print("Switched project name to dsf-mobility-hpc for HPC build")
+          PY
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.23.3
+
+        env:
+          CIBW_BUILD: "cp310-* cp312-*"
+          CIBW_OUTPUT_DIR: wheelhouse
+
+          CIBW_TEST_COMMAND: >
+            python -c "import dsf; print(dsf.__version__)"
+
+          CIBW_ENVIRONMENT_LINUX: >-
+            CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
+            DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
+            DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
+
+          CIBW_ENVIRONMENT_MACOS: >-
+            CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
+            CMAKE_OSX_DEPLOYMENT_TARGET="15.0"
+            MACOSX_DEPLOYMENT_TARGET="15.0"
+            DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
+            DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
+
+          CIBW_ENVIRONMENT_WINDOWS: >-
+            CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
+            DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
+            DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
+
+          CIBW_BEFORE_ALL_LINUX: |
+            set -eux
+
+            if command -v apt-get >/dev/null 2>&1; then
+              apt-get update
+              apt-get install -y \
+                cmake \
+                build-essential \
+                doxygen \
+                libtbb-dev
+
+            elif command -v dnf >/dev/null 2>&1; then
+              dnf install -y \
+                cmake \
+                gcc \
+                gcc-c++ \
+                make \
+                doxygen \
+                tbb-devel
+
+            elif command -v yum >/dev/null 2>&1; then
+              yum install -y \
+                cmake3 \
+                gcc \
+                gcc-c++ \
+                make \
+                doxygen \
+                tbb-devel
+
+              ln -sf /usr/bin/cmake3 /usr/local/bin/cmake
+
+            else
+              echo "Unsupported Linux package manager"
+              exit 1
+            fi
+
+          CIBW_BEFORE_ALL_MACOS: |
+            brew update
+            brew install cmake doxygen tbb fmt spdlog
+
+          CIBW_BEFORE_ALL_WINDOWS: |
+            choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+            choco install doxygen.install -y
+
+            if not exist vcpkg (
+              git clone https://github.com/microsoft/vcpkg.git vcpkg
+            )
+
+            call vcpkg\bootstrap-vcpkg.bat
+
+            vcpkg\vcpkg install tbb:x64-windows
+
+        with:
+          output-dir: wheelhouse
+
+      - name: Upload wheels as artifacts
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.build_variant }}
+          path: wheelhouse/*.whl
 
   build-sdist:
     name: Build source distribution
     needs: [check-version, uv-validate]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
-    
+
+    if: needs.check-version.outputs.should_build == 'true' &&
+        (github.event_name == 'push' || github.event.pull_request.draft == false)
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
-    - name: Install system dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y cmake build-essential doxygen libtbb-dev
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install build
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
 
-    - name: Build source distribution
-      env:
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: python -m build --sdist
+      - name: Build source distribution
+        env:
+          DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        run: |
+          python -m build --sdist
 
-    - name: Upload sdist as artifact
-      uses: actions/upload-artifact@v6
-      with:
-        name: sdist
-        path: dist/*.tar.gz
+      - name: Upload sdist as artifact
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: sdist
+          path: dist/*.tar.gz
 
   publish:
     name: Publish to PyPI
     needs: [check-version, uv-validate, build-wheels, build-sdist]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
-    
+
+    if: needs.check-version.outputs.should_build == 'true' &&
+        (github.event_name == 'push' || github.event.pull_request.draft == false)
+
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: dist-artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
 
-    - name: Collect all distributions
-      run: |
-        mkdir -p dist
-        find dist-artifacts -name '*.whl' -exec cp {} dist/ \;
-        find dist-artifacts -name '*.tar.gz' -exec cp {} dist/ \;
-        echo "Contents of dist/:"
-        ls -la dist/
+        with:
+          path: dist-artifacts
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+      - name: Collect all distributions
+        run: |
+          mkdir -p dist
 
-    - name: Install twine
-      run: python -m pip install twine
+          find dist-artifacts -name '*.whl' -exec cp {} dist/ \;
+          find dist-artifacts -name '*.tar.gz' -exec cp {} dist/ \;
 
-    - name: Publish to TestPyPI (on PR)
-      if: github.event_name == 'pull_request'
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.TEST_PYPI }}
-      run: |
-        python -m twine upload --repository testpypi dist/* --verbose
+          echo "Contents of dist/:"
+          ls -la dist/
 
-    - name: Publish to PyPI (on push to main)
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI }}
-      run: |
-        python -m twine upload dist/* --verbose
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install twine
+        run: |
+          python -m pip install twine
+
+      - name: Publish to TestPyPI (on PR)
+        if: github.event_name == 'pull_request'
+
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI }}
+
+        run: |
+          python -m twine upload \
+            --repository testpypi \
+            dist/* \
+            --verbose
+
+      - name: Publish to PyPI (on push to main)
+        if: github.event_name == 'push' &&
+            github.ref == 'refs/heads/main'
+
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI }}
+
+        run: |
+          python -m twine upload \
+            dist/* \
+            --verbose
