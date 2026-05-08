@@ -44,6 +44,11 @@ if(BUILD_PYTHON_BINDINGS)
   # This prevents non-PIC static dependencies from failing at shared-module link time.
   set(DSF_BUILD_PIC ON)
 endif()
+if(DSF_BUILD_PIC)
+  # Apply PIC globally so fetched static dependencies are also compatible
+  # with shared-module linking (e.g., Python extension builds).
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 
 # Set the C++ standard
 set(CMAKE_CXX_STANDARD 20)
