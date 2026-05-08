@@ -225,9 +225,9 @@ TEST_CASE("RoadNetwork") {
           tmpCsv << "id;source;target;oneway;length;geometry;travel_time;maxspeed;nlanes;"
                     "type;name;priority\n";
           tmpCsv << "100;1;2;False;100.0;LINESTRING (8.0 45.0, 8.1 45.1);12.0;30.0;1;"
-                    "residential;priority_street_true;True\n";
+                    "residential;priority_street_true;1\n";
           tmpCsv << "101;2;3;False;120.0;LINESTRING (8.1 45.1, 8.2 45.2);14.4;30.0;1;"
-                    "residential;priority_street_false;False\n";
+                    "residential;priority_street_false;0\n";
         }
 
         RoadNetwork graphWithPriority;
