@@ -227,6 +227,8 @@ jobs:
             CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
             DSF_PACKAGE_VERSION="${{ needs.check-version.outputs.publish_version }}"
             DSF_HPC_BUILD="${{ matrix.build_variant == 'hpc' && '1' || '0' }}"
+            CMAKE_PREFIX_PATH="/opt/tbb"
+            TBB_DIR="/opt/tbb"
 
           CIBW_ENVIRONMENT_MACOS: >-
             CMAKE_ARGS="-DDSF_OPTIMIZE_ARCH=OFF"
@@ -245,10 +247,12 @@ jobs:
 
             if command -v apt-get >/dev/null 2>&1; then
               apt-get update
+
               apt-get install -y \
                 cmake \
                 build-essential \
                 doxygen \
+                pkg-config \
                 libtbb-dev
 
             elif command -v dnf >/dev/null 2>&1; then
@@ -258,6 +262,7 @@ jobs:
                 gcc-c++ \
                 make \
                 doxygen \
+                pkgconfig \
                 tbb-devel
 
             elif command -v yum >/dev/null 2>&1; then
@@ -275,6 +280,26 @@ jobs:
               echo "Unsupported Linux package manager"
               exit 1
             fi
+
+            echo "Searching for TBBConfig.cmake..."
+
+            TBB_CONFIG=$(find /usr /usr/local /opt -name TBBConfig.cmake -o -name tbb-config.cmake | head -n 1)
+
+            if [ -z "$TBB_CONFIG" ]; then
+              echo "ERROR: Could not locate TBBConfig.cmake"
+              exit 1
+            fi
+
+            echo "Found TBB config at:"
+            echo "$TBB_CONFIG"
+
+            TBB_PARENT=$(dirname "$TBB_CONFIG")
+
+            mkdir -p /opt/tbb
+
+            cp -r "$TBB_PARENT"/* /opt/tbb/ || true
+
+            echo "TBB_DIR=$TBB_PARENT"
 
           CIBW_BEFORE_ALL_MACOS: |
             brew update
