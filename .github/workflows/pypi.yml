@@ -10,6 +10,7 @@ on:
 env:
   BUILD_TYPE: Release
   DSF_OPTIMIZE_ARCH: "OFF"
+  PIP_EXTRA_INDEX_URL: https://pypi.org/simple/
 
 jobs:
   check-version:
