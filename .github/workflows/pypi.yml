@@ -184,7 +184,7 @@ jobs:
   build-wheels-macos:
     name: Build wheels on macOS (Python ${{ matrix.python-version }})
     needs: [check-version, uv-validate]
-    runs-on: macos-latest
+    runs-on: macos-26
     if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     strategy:
       matrix:

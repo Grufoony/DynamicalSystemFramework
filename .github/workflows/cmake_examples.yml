@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-26]
 
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || github.event.pull_request.draft == false
@@ -26,7 +26,7 @@ jobs:
         if [ ${{ matrix.os }} == 'ubuntu-latest' ]; then
           sudo apt update
           sudo apt install binutils libtbb-dev
-        elif [ ${{ matrix.os }} == 'macos-latest' ]; then
+        elif [ ${{ matrix.os }} == 'macos-26' ]; then
           brew install tbb
         fi
 

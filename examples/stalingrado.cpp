@@ -12,11 +12,6 @@
 #include <string>
 
 #include <thread>
-#ifdef __APPLE__
-#define thread_t std::thread
-#else
-#define thread_t std::jthread
-#endif
 #include <atomic>
 
 std::atomic<unsigned int> progress{0};
@@ -84,7 +79,7 @@ int main() {
   auto pItinerary = dynamics.itineraries().at(4);
 
   // lauch progress bar
-  thread_t t([MAX_TIME]() {
+  std::jthread t([MAX_TIME]() {
     while (progress < MAX_TIME) {
       printLoadingBar(progress, MAX_TIME);
       std::this_thread::sleep_for(std::chrono::milliseconds(1500));
@@ -109,10 +104,6 @@ int main() {
     dynamics.evolve(false);
     ++progress;
   }
-
-#ifdef __APPLE__
-  t.join();
-#endif
 
   return 0;
 }

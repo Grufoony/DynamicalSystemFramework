@@ -16,11 +16,6 @@
 namespace fs = std::filesystem;
 
 #include <thread>
-#ifdef __APPLE__
-#define thread_t std::thread
-#else
-#define thread_t std::jthread
-#endif
 #include <atomic>
 
 std::atomic<unsigned int> progress{0};
@@ -200,7 +195,7 @@ int main(int argc, char** argv) {
   // std::vector<int> deltas;
 
   // lauch progress bar
-  thread_t t([]() {
+  std::jthread t([]() {
     while (progress < MAX_TIME && !bExitFlag) {
       printLoadingBar(progress, MAX_TIME);
       std::this_thread::sleep_for(std::chrono::milliseconds(1500));
@@ -296,9 +291,6 @@ int main(int argc, char** argv) {
   std::cout << '\n';
   std::cout << "Done." << std::endl;
 
-#ifdef __APPLE__
-  t.join();
-#endif
   std::cout << "Total elapsed time: "
             << std::chrono::duration_cast<std::chrono::milliseconds>(
                    std::chrono::high_resolution_clock::now() - start)
