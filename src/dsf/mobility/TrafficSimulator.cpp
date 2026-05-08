@@ -34,7 +34,7 @@ namespace dsf::mobility {
   //   auto error = parser.load(jsonConfigPath).get(root);
   //   if (error) {
   //     throw std::runtime_error(std::format(
-  //         "Failed to load JSON configuration file '{}': {}", jsonConfigPath, error));
+  //         "Failed to load JSON configuration file '{}': {}", jsonConfigPath, simdjson::error_message(error)));
   //   }
   //   if (!root.is_object()) {
   //     throw std::runtime_error(std::format(
@@ -54,6 +54,9 @@ namespace dsf::mobility {
   //   if (dynamicsConfig.error()) {
   //     throw std::runtime_error(std::format(
   //         "Missing 'dynamics' configuration in JSON file '{}'", jsonConfigPath));
+  //   }
+  //   if (dynamicsConfig["seed"].error()) {
+  //     m_dynamics->setSeed(dynamicsConfig["seed"].get_uint64().value());
   //   }
   //   if (dynamicsConfig["agent_insertion_method"].get_string().value() == "random") {
   //     m_agentInsertionMethod = AgentInsertionMethod::RANDOM;

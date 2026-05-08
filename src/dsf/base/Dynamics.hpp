@@ -44,6 +44,9 @@ namespace dsf {
     /// @param seed The seed for the random number generator (default is std::nullopt)
     Dynamics(network_t&& graph, std::optional<unsigned int> seed = std::nullopt);
 
+    /// @brief Set the seed for the random number generator
+    /// @param seed The seed to set
+    inline void setSeed(unsigned int const seed) noexcept { m_generator.seed(seed); }
     /// @brief Set the maximum number of threads to use for parallel execution
     /// @param concurrency The maximum number of threads to use for parallel execution
     void setConcurrency(std::size_t const concurrency);
