@@ -214,7 +214,7 @@ jobs:
           PY
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.23.3
+        uses: pypa/cibuildwheel@v3.4.1
 
         env:
           CIBW_BUILD: "cp310-* cp312-*"
