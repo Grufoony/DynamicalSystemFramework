@@ -2,356 +2,287 @@ name: "CD: PyPI package"
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     types: [opened, synchronize, reopened, ready_for_review]
 
-env:
-  BUILD_TYPE: Release
-  DSF_OPTIMIZE_ARCH: "OFF"
-
 jobs:
+
+  # ---------------------------------------------------------------------------
+  # 1. Version gating – determines whether the rest of the pipeline should run
+  # ---------------------------------------------------------------------------
   check-version:
-    name: Check if version exists on PyPI/TestPyPI
+    name: Check if version exists on PyPI
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     outputs:
-      should_build: ${{ steps.check.outputs.should_build }}
-      version: ${{ steps.extract.outputs.version }}
+      should_build:    ${{ steps.check.outputs.should_build }}
+      version:         ${{ steps.extract.outputs.version }}
       publish_version: ${{ steps.plan.outputs.publish_version }}
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Extract version from dsf.hpp
-      id: extract
-      run: |
-        VERSION_MAJOR=$(grep -oP 'DSF_VERSION_MAJOR = \K\d+' src/dsf/dsf.hpp)
-        VERSION_MINOR=$(grep -oP 'DSF_VERSION_MINOR = \K\d+' src/dsf/dsf.hpp)
-        VERSION_PATCH=$(grep -oP 'DSF_VERSION_PATCH = \K\d+' src/dsf/dsf.hpp)
-        VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
-        echo "version=${VERSION}" >> $GITHUB_OUTPUT
-        echo "Extracted version: ${VERSION}"
+      - name: Extract version from dsf.hpp
+        id: extract
+        run: |
+          VERSION_MAJOR=$(grep -oP 'DSF_VERSION_MAJOR = \K\d+' src/dsf/dsf.hpp)
+          VERSION_MINOR=$(grep -oP 'DSF_VERSION_MINOR = \K\d+' src/dsf/dsf.hpp)
+          VERSION_PATCH=$(grep -oP 'DSF_VERSION_PATCH = \K\d+' src/dsf/dsf.hpp)
+          VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Extracted version: ${VERSION}"
 
-    - name: Plan publish version
-      id: plan
-      run: |
-        BASE_VERSION="${{ steps.extract.outputs.version }}"
+      - name: Plan publish version
+        id: plan
+        run: |
+          BASE_VERSION="${{ steps.extract.outputs.version }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Unique PEP 440 dev version for TestPyPI
+            PUBLISH_VERSION="${BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
+          else
+            PUBLISH_VERSION="${BASE_VERSION}"
+          fi
+          echo "publish_version=${PUBLISH_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Planned publish version: ${PUBLISH_VERSION}"
 
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          # TestPyPI only: use a numeric dev suffix so the version is PEP 440 compliant.
-          # Concatenating run id and attempt keeps it unique across PRs and re-runs.
-          PUBLISH_VERSION="${BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
-        else
-          # PyPI: publish the exact release version with no run-id suffix.
-          PUBLISH_VERSION="${BASE_VERSION}"
-        fi
+      - name: Check publish policy for PyPI
+        id: check
+        run: |
+          VERSION="${{ steps.plan.outputs.publish_version }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "PR build – unique TestPyPI version ${VERSION}; skipping existence check."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PYPI_URL="https://pypi.org/pypi/dsf-mobility/${VERSION}/json"
+          echo "Checking whether dsf-mobility ${VERSION} already exists on PyPI..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PYPI_URL}")
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "Version ${VERSION} already published – skipping build."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version ${VERSION} not found (HTTP ${HTTP_STATUS}) – will build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
 
-        echo "publish_version=${PUBLISH_VERSION}" >> "$GITHUB_OUTPUT"
-        echo "Planned publish version: ${PUBLISH_VERSION}"
-
-    - name: Check publish policy for PyPI
-      id: check
-      run: |
-        VERSION="${{ steps.plan.outputs.publish_version }}"
-
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          echo "PR build uses unique TestPyPI version ${VERSION}; skipping existence check."
-          echo "should_build=true" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
-        PYPI_URL="https://pypi.org/pypi/dsf-mobility/${VERSION}/json"
-        PYPI_NAME="PyPI"
-        
-        echo "Checking if dsf-mobility version ${VERSION} exists on ${PYPI_NAME}..."
-        
-        # Check PyPI/TestPyPI API for the specific version
-        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PYPI_URL}")
-        
-        if [ "$HTTP_STATUS" = "200" ]; then
-          echo "Version ${VERSION} already exists on ${PYPI_NAME}"
-          echo "Version already published; skipping build and publish jobs."
-          echo "should_build=false" >> "$GITHUB_OUTPUT"
-          exit 0
-        else
-          echo "Version ${VERSION} does not exist on ${PYPI_NAME} (HTTP ${HTTP_STATUS})"
-          echo "should_build=true" >> "$GITHUB_OUTPUT"
-        fi
-
+  # ---------------------------------------------------------------------------
+  # 2. Smoke-test that a uv source build + wheel import still works
+  # ---------------------------------------------------------------------------
   uv-validate:
-    name: Validate uv workflows
+    name: Validate uv source build
     needs: [check-version]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
+    if: >
+      needs.check-version.outputs.should_build == 'true' &&
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
-    - name: Set up uv
-      uses: astral-sh/setup-uv@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
 
-    - name: Install system dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential doxygen libtbb-dev
 
-    - name: Validate uv build
-      env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
-        DSF_OPTIMIZE_ARCH: "OFF"
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: uv build
+      - name: Build (wheel + sdist)
+        env:
+          CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
+          DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        run: uv build
 
-    - name: Validate uv source install
-      env:
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: |
-        uv venv .venv-uv-install
-        source .venv-uv-install/bin/activate
-        uv pip install .
-        python -c "import dsf; print(dsf.__version__)"
+      - name: Smoke-test wheel import
+        run: |
+          uv venv .venv
+          source .venv/bin/activate
+          uv pip install dist/*.whl
+          python -c "import dsf; print(dsf.__version__)"
 
-    - name: Validate uv editable install
-      env:
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: |
-        uv venv .venv-uv-editable
-        source .venv-uv-editable/bin/activate
-        uv pip install -e .
-        python -c "import dsf; print(dsf.__version__)"
-
+  # ---------------------------------------------------------------------------
+  # 3a. Linux wheels – x86_64 + aarch64 (via QEMU), manylinux_2_28
+  # ---------------------------------------------------------------------------
   build-wheels-linux:
-    name: Build wheels on Linux (Python ${{ matrix.python-version }})
+    name: Build wheels (Linux)
     needs: [check-version, uv-validate]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
-    strategy:
-      matrix:
-        python-version: ['3.10', '3.12']
+    if: >
+      needs.check-version.outputs.should_build == 'true' &&
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+    # DSF_PACKAGE_VERSION is forwarded into the build containers via
+    # environment-pass in pyproject.toml
+    env:
+      DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up QEMU (for aarch64 emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: aarch64
 
-    - name: Install system dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.4.1
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install build wheel setuptools pybind11-stubgen auditwheel
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheel-linux
+          path: wheelhouse/*.whl
 
-    - name: Build wheel
-      env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: |
-        rm -rf dist wheelhouse
-        python -m build --wheel
-
-    - name: Repair wheel (auditwheel)
-      run: |
-        mkdir -p wheelhouse
-        auditwheel repair dist/*.whl -w wheelhouse
-
-    - name: Test wheel installation
-      run: |
-        python -m pip install wheelhouse/*.whl
-        python -c "import dsf; print('DSF wheel installation successful')"
-
-    - name: Upload wheels as artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: wheel-linux-${{ matrix.python-version }}
-        path: wheelhouse/*.whl
-
+  # ---------------------------------------------------------------------------
+  # 3b. macOS wheels – x86_64 + arm64, built from a single Apple Silicon runner
+  # ---------------------------------------------------------------------------
   build-wheels-macos:
-    name: Build wheels on macOS (Python ${{ matrix.python-version }})
+    name: Build wheels (macOS)
     needs: [check-version, uv-validate]
-    runs-on: macos-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
-    strategy:
-      matrix:
-        python-version: ['3.10', '3.12']
-    
+    runs-on: macos-26
+    if: >
+      needs.check-version.outputs.should_build == 'true' &&
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+    env:
+      DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.4.1
 
-    - name: Install system dependencies
-      run: |
-        brew install cmake doxygen tbb
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheel-macos
+          path: wheelhouse/*.whl
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install build wheel setuptools pybind11-stubgen delocate
-
-    - name: Set macOS environment variables
-      run: |
-        echo "ARCHFLAGS=-arch $(uname -m)" >> $GITHUB_ENV
-        echo "_PYTHON_HOST_PLATFORM=macosx-$(sw_vers -productVersion | cut -d. -f1)-$(uname -m)" >> $GITHUB_ENV
-
-    - name: Build wheel
-      env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: python -m build --wheel
-
-    - name: Repair wheel (bundle libraries)
-      run: |
-        mkdir -p wheelhouse
-        delocate-wheel -w wheelhouse -v --require-archs $(uname -m) dist/*.whl
-
-    - name: Upload wheels as artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: wheel-macos-${{ matrix.python-version }}
-        path: wheelhouse/*.whl
-
+  # ---------------------------------------------------------------------------
+  # 3c. Windows wheels – AMD64 only; TBB bundled by delvewheel
+  # ---------------------------------------------------------------------------
   build-wheels-windows:
-    name: Build wheels on Windows (Python ${{ matrix.python-version }})
+    name: Build wheels (Windows)
     needs: [check-version, uv-validate]
     runs-on: windows-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
-    strategy:
-      matrix:
-        python-version: ['3.10', '3.12']
-    
+    if: >
+      needs.check-version.outputs.should_build == 'true' &&
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+    env:
+      DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.4.1
 
-    - name: Install system dependencies
-      run: |
-        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-        choco install doxygen.install
-        git clone https://github.com/microsoft/vcpkg.git vcpkg
-        cd vcpkg
-        .\bootstrap-vcpkg.bat
-        .\vcpkg install tbb:x64-windows
-        echo "CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
-        echo "VCPKG_TARGET_TRIPLET=x64-windows" >> $env:GITHUB_ENV
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheel-windows
+          path: wheelhouse/*.whl
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install build wheel setuptools pybind11-stubgen
-
-    - name: Build wheel
-      env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: python -m build --wheel
-
-    - name: Upload wheels as artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: wheel-windows-${{ matrix.python-version }}
-        path: dist/*.whl
-
+  # ---------------------------------------------------------------------------
+  # 4. Source distribution – users who install from sdist still need the
+  #    system deps (cmake, doxygen, libtbb-dev), but binary-wheel users need none
+  # ---------------------------------------------------------------------------
   build-sdist:
     name: Build source distribution
     needs: [check-version, uv-validate]
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
-    
+    if: >
+      needs.check-version.outputs.should_build == 'true' &&
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
-    - name: Install system dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential doxygen libtbb-dev
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install build
+      - name: Install build frontend
+        run: pip install build
 
-    - name: Build source distribution
-      env:
-        DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
-      run: python -m build --sdist
+      - name: Build sdist
+        env:
+          DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
+        run: python -m build --sdist
 
-    - name: Upload sdist as artifact
-      uses: actions/upload-artifact@v6
-      with:
-        name: sdist
-        path: dist/*.tar.gz
+      - name: Upload sdist
+        uses: actions/upload-artifact@v6
+        with:
+          name: sdist
+          path: dist/*.tar.gz
 
+  # ---------------------------------------------------------------------------
+  # 5. Publish – TestPyPI on PRs, PyPI on main
+  # ---------------------------------------------------------------------------
   publish:
     name: Publish to PyPI
-    needs: [check-version, uv-validate, build-wheels-linux, build-wheels-macos, build-wheels-windows, build-sdist]
+    needs:
+      - check-version
+      - uv-validate
+      - build-wheels-linux
+      - build-wheels-macos
+      - build-wheels-windows
+      - build-sdist
     runs-on: ubuntu-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
-    
+    if: >
+      needs.check-version.outputs.should_build == 'true' &&
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: dist-artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
 
-    - name: Collect all distributions
-      run: |
-        mkdir -p dist
-        find dist-artifacts -name '*.whl' -exec cp {} dist/ \;
-        find dist-artifacts -name '*.tar.gz' -exec cp {} dist/ \;
-        echo "Contents of dist/:"
-        ls -la dist/
+      - name: Collect all distributions
+        run: |
+          mkdir -p dist
+          find dist-artifacts -name '*.whl'   -exec cp {} dist/ \;
+          find dist-artifacts -name '*.tar.gz' -exec cp {} dist/ \;
+          echo "Contents of dist/:"
+          ls -la dist/
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
-    - name: Install twine
-      run: python -m pip install twine
+      - name: Install twine
+        run: pip install twine
 
-    - name: Publish to TestPyPI (on PR)
-      if: github.event_name == 'pull_request'
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.TEST_PYPI }}
-      run: |
-        python -m twine upload --repository testpypi dist/* --verbose
+      - name: Publish to TestPyPI (PR)
+        if: github.event_name == 'pull_request'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI }}
+        run: python -m twine upload --repository testpypi dist/* --verbose
 
-    - name: Publish to PyPI (on push to main)
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI }}
-      run: |
-        python -m twine upload dist/* --verbose
+      - name: Publish to PyPI (push to main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI }}
+        run: python -m twine upload dist/* --verbose

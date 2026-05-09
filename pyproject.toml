@@ -63,3 +63,59 @@ namespaces = true
 
 [tool.setuptools.package-data]
 dsf = ["*.pyi", "py.typed", "**/*.pyi"]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# cibuildwheel configuration
+# DSF_PACKAGE_VERSION is injected dynamically from the workflow job env;
+# all other build settings are declared statically here.
+# ──────────────────────────────────────────────────────────────────────────────
+
+[tool.cibuildwheel]
+# CPython 3.10, 3.12, and 3.14 across all platforms
+build = "cp310-* cp312-* cp314-*"
+# Drop 32-bit Windows and musl/Alpine Linux (adjust if you need them)
+skip  = "*-win32 *-musllinux*"
+# Forward the dynamic version string from the runner into each build environment
+environment-pass = ["DSF_PACKAGE_VERSION"]
+
+# ── Linux ─────────────────────────────────────────────────────────────────────
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+manylinux-x86_64-image  = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+before-all = """
+dnf install -y dnf-plugins-core
+dnf config-manager --set-enabled crb
+dnf install -y doxygen tbb-devel
+"""
+
+[tool.cibuildwheel.linux.environment]
+CMAKE_ARGS = "-DDSF_OPTIMIZE_ARCH=OFF"
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+# delocate (run automatically by cibuildwheel) bundles libtbb into the wheel
+before-all = "brew install doxygen tbb"
+
+[tool.cibuildwheel.macos.environment]
+CMAKE_ARGS = "-DDSF_OPTIMIZE_ARCH=OFF"
+
+# ── Windows ───────────────────────────────────────────────────────────────────
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+# before-all runs once in Git Bash (provided by the Actions runner)
+# delvewheel (installed in before-build) bundles tbb.dll into the wheel,
+# mirroring auditwheel/delocate behaviour on the other platforms
+before-all = """
+choco install doxygen.install -y
+git clone https://github.com/microsoft/vcpkg.git C:/vcpkg
+C:/vcpkg/bootstrap-vcpkg.bat
+C:/vcpkg/vcpkg.exe install tbb:x64-windows
+"""
+before-build = "pip install delvewheel"
+repair-wheel-command = "delvewheel repair --add-path C:/vcpkg/installed/x64-windows/bin -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.windows.environment]
+CMAKE_ARGS          = "-DDSF_OPTIMIZE_ARCH=OFF -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+VCPKG_TARGET_TRIPLET = "x64-windows"
