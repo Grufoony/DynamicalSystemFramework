@@ -115,8 +115,6 @@ jobs:
 
     - name: Validate uv build
       env:
-        CMAKE_ARGS: "-DDSF_COMPATIBILITY_BUILD=ON"
-        DSF_COMPATIBILITY_BUILD: "ON"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: uv build
 

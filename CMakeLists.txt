@@ -61,7 +61,7 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
 elseif(CMAKE_BUILD_TYPE MATCHES "Profile")
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     if(DSF_COMPATIBILITY_BUILD)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -pg")
     else()
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast -flto=auto -march=native -pg")
     endif()
@@ -103,6 +103,9 @@ file(
 
 include(FetchContent)
 # Get csv-parser
+set(CSV_BUILD_PROGRAMS
+    OFF
+    CACHE BOOL "Build csv-parser executable" FORCE)
 FetchContent_Declare(
   csv-parser
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser
