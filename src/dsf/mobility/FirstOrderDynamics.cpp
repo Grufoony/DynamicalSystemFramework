@@ -840,7 +840,12 @@ namespace dsf::mobility {
     spdlog::debug("There are {} agents left in the list.", m_agents.size());
   }
 
-  // Legacy persistence helpers moved to TrafficSimulator.
+  void FirstOrderDynamics::prepareNetwork() {
+    m_graph->adjustNodeCapacities();
+    m_graph->autoMapStreetLanes();
+    m_graph->autoAssignRoadPriorities();
+    m_graph->autoInitTrafficLights();
+  }
 
   void FirstOrderDynamics::setErrorProbability(double errorProbability) {
     if (errorProbability < 0. || errorProbability > 1.) {

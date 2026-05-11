@@ -26,8 +26,10 @@ namespace dsf {
   /// @tparam network_t The type of the network
   template <typename network_t>
   class Dynamics {
-  private:
+  protected:
     std::unique_ptr<network_t> m_graph;
+
+  private:
     std::time_t m_timeStep = 0;
     std::unique_ptr<tbb::global_control> m_globalControl;
 

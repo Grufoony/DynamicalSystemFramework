@@ -162,6 +162,12 @@ namespace dsf::mobility {
                        bool useCache = false,
                        std::optional<unsigned int> seed = std::nullopt);
 
+    /// @brief Automatically prepare the network for the simulation. This method calls the following methods in order:
+    /// - RoadNetwork::adjustNodeCapacities()
+    /// - RoadNetwork::autoMapStreetLanes()
+    /// - RoadNetwork::autoAssignRoadPriorities()
+    /// - RoadNetwork::autoInitTrafficLights()
+    void prepareNetwork();
     /// @brief Set the error probability
     /// @param errorProbability The error probability
     /// @throw std::invalid_argument If the error probability is not between 0 and 1

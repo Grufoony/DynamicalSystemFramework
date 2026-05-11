@@ -733,6 +733,8 @@ namespace dsf::mobility {
           "Cannot run the simulation without an agent insertion schedule.");
     }
 
+    m_dynamics->prepareNetwork();
+
     auto const totalTimeSteps = static_cast<std::size_t>(m_endTime - m_initTime);
 
     if (m_agentInsertionDeltaT == 0) {
