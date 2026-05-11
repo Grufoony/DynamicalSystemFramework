@@ -118,13 +118,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
            R"doc(Get the maximum permitted speed on this street.
 
     Returns:
-        float: Maximum speed (units depend on network configuration).)doc")
+        float: Maximum speed in m/s.)doc")
       .def("capacity",
            &dsf::mobility::Street::capacity,
            R"doc(Get the capacity of this street.
 
     Returns:
-        float: Capacity value (units: vehicles).)doc")
+        int: Capacity as the number of vehicles.)doc")
       .def("transportCapacity",
            &dsf::mobility::Street::transportCapacity,
            R"doc(Get the transport capacity of this street.
@@ -166,7 +166,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
            R"doc(Get the capacity of the junction.
 
     Returns:
-        float: Capacity value.)doc")
+        int: Capacity value.)doc")
       .def("transportCapacity",
            &dsf::mobility::RoadJunction::transportCapacity,
            R"doc(Get the transport capacity of the junction.
@@ -297,7 +297,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
            R"doc(Get the capacity value for the network or a specific resource.
 
       Returns:
-        float: Capacity.)doc")
+        int: Capacity.)doc")
       .def("adjustNodeCapacities",
            &dsf::mobility::RoadNetwork::adjustNodeCapacities,
            R"doc(Adjust capacities of nodes according to provided factors.
@@ -322,7 +322,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
            R"doc(Set edge weights for routing and analysis.
 
       Args:
-        weight (float): Weight value.
+        weight (string): Weight type (e.g., 'length', 'traveltime').
         threshold (float | None): Optional threshold to apply.)doc")
       .def(
           "describe",
@@ -664,7 +664,7 @@ Returns:
            R"doc(Create a dynamics model over a road network.
 
 Args:
-    graph (RoadNetwork): Road network used by the simulation.
+    graph (RoadNetwork): Road network used by the simulation (ownership is transferred).
     useCache (bool, optional): Enable internal caching. Defaults to False.
     seed (int | None, optional): Random seed for reproducibility.
 
