@@ -18,6 +18,7 @@ namespace dsf::mobility {
     Id m_id;
     std::string m_name = "simulation";
     std::string m_safeName = "simulation";
+    std::string m_outputPrefix = std::string();
     std::vector<std::size_t> m_nAgentsPerTimeStep;
     AgentInsertionMethod m_agentInsertionMethod{AgentInsertionMethod::RANDOM};
     std::time_t m_initTime = 0;
@@ -46,6 +47,8 @@ namespace dsf::mobility {
               std::chrono::system_clock::from_time_t(time))));
 #endif
     };
+
+    std::string m_generateCSVfilename(std::string_view const tableName) const;
 
     /// @brief Initialize the street data table.
     /// This table contains the data of each street. Columns are:
@@ -197,7 +200,7 @@ namespace dsf::mobility {
     void importRoadNetwork(std::string_view const edgesFile,
                            std::string_view const nodePropertiesFile = std::string_view());
 
-    void updatePaths(std::time_t const deltaT = 0);
+    void updatePaths(std::time_t const deltaT = 0, bool const throw_on_empty = true);
 
     /// @brief Configure the data-saving behavior.
     void saveData(std::time_t const savingInterval,
@@ -209,6 +212,8 @@ namespace dsf::mobility {
     /// @brief Set the name of the simulation
     /// @param name The name of the simulation
     void setName(const std::string& name);
+
+    void setOutputPrefix(std::string_view const prefix);
 
     void setTimeFrame(std::time_t const initTime,
                       std::optional<std::time_t> const endTime = std::nullopt);

@@ -460,6 +460,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("seed") = std::nullopt,
            dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::FirstOrderDynamics")
                .c_str())
+      .def("setSeed",
+           &dsf::mobility::FirstOrderDynamics::setSeed,
+           pybind11::arg("seed"),
+           "Arguments:\n    seed (int): The seed value for the random number generator.")
       .def(
           "setSpeedFunction",
           [](dsf::mobility::FirstOrderDynamics& self,

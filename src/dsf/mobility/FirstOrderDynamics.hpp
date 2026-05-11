@@ -98,6 +98,7 @@ namespace dsf::mobility {
     std::function<double(Street const&)> m_speedFunction;
     std::string m_speedFunctionDescription;
     double m_uturnPenaltyFactor = 0.1;
+    bool m_updatepathsThrowOnEmpty = true;
 
   protected:
     std::unordered_map<Id, std::unordered_map<Id, size_t>> m_turnCounts;
@@ -192,6 +193,12 @@ namespace dsf::mobility {
     inline void setForcePriorities(bool const forcePriorities) noexcept {
       m_forcePriorities = forcePriorities;
     }
+    /// @brief Set the update paths throw on empty flag
+    /// @param throwOnEmpty The flag
+    /// @details If true, if an itinerary has an empty path when updating paths, an exception is thrown. If false, the itinerary is left unchanged.
+    inline void setUpdatePathsThrowOnEmpty(bool const throwOnEmpty) noexcept {
+      m_updatepathsThrowOnEmpty = throwOnEmpty;
+    }
     /// @brief Set the data update period.
     /// @param dataUpdatePeriod Delay, The period
     /// @details Some data, i.e. the street queue lengths, are stored only after a fixed amount of time which is represented by this variable.
@@ -250,10 +257,8 @@ namespace dsf::mobility {
     /// @throws std::runtime_error if the turn counts map is not initialized
     void resetTurnCounts();
     /// @brief Update the paths of the itineraries based on the given weight function
-    /// @param throw_on_empty If true, throws an exception if an itinerary has an empty path (default is true)
-    /// If false, removes the itinerary with empty paths and the associated node from the origin/destination nodes
-    /// @throws std::runtime_error if throw_on_empty is true and an itinerary has an empty path
-    void updatePaths(bool const throw_on_empty = true);
+    /// @throws std::runtime_error if m_updatepathsThrowOnEmpty is true and an itinerary has an empty path
+    void updatePaths();
     /// @brief Add agents uniformly on the road network
     /// @param nAgents The number of agents to add
     /// @param itineraryId The id of the itinerary to use (default is std::nullopt)

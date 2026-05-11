@@ -12,6 +12,14 @@
 static constexpr char CSV_SEPARATOR = ';';
 
 namespace dsf::mobility {
+  std::string TrafficSimulator::m_generateCSVfilename(
+      std::string_view const tableName) const {
+    if (m_outputPrefix.empty()) {
+      return std::format("{}_{}_{}.csv", m_id, m_safeName, tableName);
+    }
+    return std::format("{}{}_{}_{}.csv", m_outputPrefix, m_id, m_safeName, tableName);
+  }
+
   TrafficSimulator::TrafficSimulator() {
     // Take the current time and set id as YYYYMMDDHHMMSS
     auto const now = std::chrono::system_clock::now();
@@ -102,8 +110,10 @@ namespace dsf::mobility {
     m_preparePersistence();
   }
 
-  void TrafficSimulator::updatePaths(std::time_t const deltaT) {
+  void TrafficSimulator::updatePaths(std::time_t const deltaT,
+                                     bool const throw_on_empty) {
     m_updatePathDeltaT = deltaT;
+    m_dynamics->setUpdatePathsThrowOnEmpty(throw_on_empty);
   }
 
   void TrafficSimulator::saveData(std::time_t const savingInterval,
@@ -131,6 +141,9 @@ namespace dsf::mobility {
     m_name = name;
     m_safeName = name;
     std::ranges::replace(m_safeName, ' ', '_');
+  }
+  void TrafficSimulator::setOutputPrefix(std::string_view const prefix) {
+    m_outputPrefix = std::string(prefix);
   }
 
   void TrafficSimulator::setTimeFrame(std::time_t const initTime,
@@ -682,7 +695,7 @@ namespace dsf::mobility {
           "Cannot run the simulation without an agent insertion schedule.");
     }
 
-    auto const totalTimeSteps = m_endTime - m_initTime;
+    auto const totalTimeSteps = static_cast<std::size_t>(m_endTime - m_initTime);
 
     if (m_agentInsertionDeltaT == 0) {
       if (m_endTime > m_initTime) {
@@ -717,9 +730,10 @@ namespace dsf::mobility {
         m_timeToStr(m_endTime),
         totalTimeSteps,
         m_agentInsertionDeltaT);
-    for (auto currentTime = m_initTime; currentTime < m_endTime; ++currentTime) {
-      auto currentStep = m_dynamics->time_step();
-      if (m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) {
+    auto const startTime = std::chrono::steady_clock::now();
+    for (std::size_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
+      if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
+          (currentStep == 0)) {
         m_dynamics->updatePaths();
       }
       if (currentStep % m_agentInsertionDeltaT == 0) {
@@ -761,6 +775,9 @@ namespace dsf::mobility {
         }
       }
     }
-    spdlog::info("Simulation run completed.");
+    auto const endTime = std::chrono::steady_clock::now();
+    auto const duration =
+        std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count();
+    spdlog::info("Simulation run completed in {} seconds.", duration);
   }
 }  // namespace dsf::mobility

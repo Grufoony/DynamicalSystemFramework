@@ -583,14 +583,16 @@ TEST_CASE("FirstOrderDynamics") {
           "We add an impossible itinerary (to source node) and update paths with "
           "throw_on_empty=true") {
         dynamics.addItinerary(std::make_shared<Itinerary>(0, 0));
-        THEN("It throws an exception") { CHECK_THROWS(dynamics.updatePaths(true)); }
+        dynamics.setUpdatePathsThrowOnEmpty(true);
+        THEN("It throws an exception") { CHECK_THROWS(dynamics.updatePaths()); }
       }
 
       WHEN(
           "We add an impossible itinerary (to source node) and update paths with "
           "throw_on_empty=false") {
         dynamics.addItinerary(std::make_shared<Itinerary>(0, 0));
-        dynamics.updatePaths(false);
+        dynamics.setUpdatePathsThrowOnEmpty(false);
+        dynamics.updatePaths();
         THEN("The itinerary is removed") { CHECK(dynamics.itineraries().empty()); }
       }
     }

@@ -1069,17 +1069,17 @@ namespace dsf::mobility {
                    });
   }
 
-  void FirstOrderDynamics::updatePaths(bool const throw_on_empty) {
+  void FirstOrderDynamics::updatePaths() {
     spdlog::debug("Init updating paths...");
     tbb::concurrent_vector<Id> emptyItineraries;
     tbb::parallel_for_each(
         this->itineraries().cbegin(),
         this->itineraries().cend(),
-        [this, throw_on_empty, &emptyItineraries](auto const& pair) -> void {
+        [this, &emptyItineraries](auto const& pair) -> void {
           auto const& pItinerary{pair.second};
           this->m_updatePath(pItinerary);
           if (pItinerary->empty()) {
-            if (!throw_on_empty) {
+            if (!this->m_updatepathsThrowOnEmpty) {
               spdlog::warn("No path found for itinerary {} with destination node {}",
                            pItinerary->id(),
                            pItinerary->destination());
