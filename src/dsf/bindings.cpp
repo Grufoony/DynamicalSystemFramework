@@ -718,11 +718,21 @@ Returns:
            pybind11::arg("forcePriorities"),
            R"doc(Enable or disable force-based route priorities.
 
-    Args:
-      forcePriorities (bool): Whether to force priority handling.
+      Args:
+        forcePriorities (bool): Whether to force priority handling.
 
-    Returns:
-      None)doc")
+      Returns:
+        None)doc")
+      .def("setUpdatePathsThrowOnEmpty",
+           &dsf::mobility::FirstOrderDynamics::setUpdatePathsThrowOnEmpty,
+           pybind11::arg("throwOnEmpty"),
+           R"doc(Enable or disable throwing an exception when paths are empty.
+
+      Args:
+        throwOnEmpty (bool): Whether to throw an exception when paths are empty.
+
+      Returns:
+        None)doc")
       .def(
           "setDataUpdatePeriod",
           [](dsf::mobility::FirstOrderDynamics& self, int dataUpdatePeriod) {

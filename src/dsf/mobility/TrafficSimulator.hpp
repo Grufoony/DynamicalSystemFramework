@@ -50,6 +50,7 @@ namespace dsf::mobility {
 
     std::string m_generateCSVfilename(std::string_view const tableName) const;
 
+    void m_dumpSimInfoSQL() const;
     /// @brief Initialize the street data table.
     /// This table contains the data of each street. Columns are:
     /// - id: The entry id (auto-incremented)
