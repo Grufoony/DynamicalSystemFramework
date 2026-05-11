@@ -17,7 +17,7 @@ namespace dsf::mobility {
     if (m_outputPrefix.empty()) {
       return std::format("{}_{}_{}.csv", m_id, m_safeName, tableName);
     }
-    return std::format("{}{}_{}_{}.csv", m_outputPrefix, m_id, m_safeName, tableName);
+    return std::format("{}{}.csv", m_outputPrefix, tableName);
   }
 
   TrafficSimulator::TrafficSimulator() {
