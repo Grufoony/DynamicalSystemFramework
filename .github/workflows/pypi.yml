@@ -9,7 +9,7 @@ on:
 
 env:
   BUILD_TYPE: Release
-  DSF_OPTIMIZE_ARCH: "OFF"
+  DSF_COMPATIBILITY_BUILD: "ON"
 
 jobs:
   check-version:
@@ -37,17 +37,9 @@ jobs:
 
     - name: Plan publish version
       id: plan
+      shell: bash
       run: |
-        BASE_VERSION="${{ steps.extract.outputs.version }}"
-
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          # TestPyPI only: use a numeric dev suffix so the version is PEP 440 compliant.
-          # Concatenating run id and attempt keeps it unique across PRs and re-runs.
-          PUBLISH_VERSION="${BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
-        else
-          # PyPI: publish the exact release version with no run-id suffix.
-          PUBLISH_VERSION="${BASE_VERSION}"
-        fi
+        PUBLISH_VERSION="${{ steps.extract.outputs.version }}"
 
         echo "publish_version=${PUBLISH_VERSION}" >> "$GITHUB_OUTPUT"
         echo "Planned publish version: ${PUBLISH_VERSION}"
@@ -106,8 +98,6 @@ jobs:
 
     - name: Validate uv build
       env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
-        DSF_OPTIMIZE_ARCH: "OFF"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: uv build
 
@@ -159,7 +149,7 @@ jobs:
 
     - name: Build wheel
       env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
+        CMAKE_ARGS: "-DDSF_COMPATIBILITY_BUILD=ON"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: |
         rm -rf dist wheelhouse
@@ -215,7 +205,7 @@ jobs:
 
     - name: Build wheel
       env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
+        CMAKE_ARGS: "-DDSF_COMPATIBILITY_BUILD=ON"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: python -m build --wheel
 
@@ -265,7 +255,7 @@ jobs:
 
     - name: Build wheel
       env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
+        CMAKE_ARGS: "-DDSF_COMPATIBILITY_BUILD=ON"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: python -m build --wheel
 
