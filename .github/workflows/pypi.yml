@@ -37,16 +37,25 @@ jobs:
 
     - name: Plan publish version
       id: plan
+      shell: bash
       run: |
         BASE_VERSION="${{ steps.extract.outputs.version }}"
 
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+
+        BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+
+        if [ "$BRANCH_NAME" != "main" ]; then
+          PATCH=$((PATCH + 1))
+        fi
+
+        VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
         if [ "${{ github.event_name }}" = "pull_request" ]; then
-          # TestPyPI only: use a numeric dev suffix so the version is PEP 440 compliant.
-          # Concatenating run id and attempt keeps it unique across PRs and re-runs.
-          PUBLISH_VERSION="${BASE_VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
+          # PEP440-compliant dev version for TestPyPI
+          PUBLISH_VERSION="${VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
         else
-          # PyPI: publish the exact release version with no run-id suffix.
-          PUBLISH_VERSION="${BASE_VERSION}"
+          PUBLISH_VERSION="${VERSION}"
         fi
 
         echo "publish_version=${PUBLISH_VERSION}" >> "$GITHUB_OUTPUT"
