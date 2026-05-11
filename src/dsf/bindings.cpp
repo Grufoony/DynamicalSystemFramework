@@ -1,7 +1,5 @@
 #include "dsf.hpp"
 
-#include ".docstrings.hpp"
-
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>         // Changed to include all stl type casters
 #include <pybind11/functional.h>  // For std::function support
@@ -73,62 +71,114 @@ PYBIND11_MODULE(dsf_cpp, m) {
 
   // Bind Street class to mobility submodule
   pybind11::class_<dsf::mobility::Street>(mobility, "Street")
-      .def(
-          "id", &dsf::mobility::Street::id, dsf::g_docstrings.at("dsf::Edge::id").c_str())
+      .def("id",
+           &dsf::mobility::Street::id,
+           R"doc(Return the unique identifier of this street.
+
+    Returns:
+      int: The street id.)doc")
       .def("source",
            &dsf::mobility::Street::source,
-           dsf::g_docstrings.at("dsf::Edge::source").c_str())
+           R"doc(Get the source node id of this street.
+
+    Returns:
+        int: Source node id.)doc")
       .def("target",
            &dsf::mobility::Street::target,
-           dsf::g_docstrings.at("dsf::Edge::target").c_str())
+           R"doc(Get the target node id of this street.
+
+    Returns:
+        int: Target node id.)doc")
       .def("geometry",
            &dsf::mobility::Street::geometry,
-           dsf::g_docstrings.at("dsf::Edge::geometry").c_str())
+           R"doc(Get the geometry object for this street.
+
+    Returns:
+        object: Geometry representation (library-specific).)doc")
       .def("name",
            &dsf::mobility::Street::name,
-           dsf::g_docstrings.at("dsf::mobility::Road::name").c_str())
+           R"doc(Get the name of the street.
+
+    Returns:
+        str: The street's name (empty if unnamed).)doc")
       .def("length",
            &dsf::mobility::Street::length,
-           dsf::g_docstrings.at("dsf::mobility::Road::length").c_str())
+           R"doc(Get the length of the street.
+
+    Returns:
+        float: Length in metres.)doc")
       .def("nLanes",
            &dsf::mobility::Street::nLanes,
-           dsf::g_docstrings.at("dsf::mobility::Road::nLanes").c_str())
+           R"doc(Get the number of lanes on this street.
+
+    Returns:
+        int: Number of lanes.)doc")
       .def("maxSpeed",
            &dsf::mobility::Street::maxSpeed,
-           dsf::g_docstrings.at("dsf::mobility::Road::maxSpeed").c_str())
+           R"doc(Get the maximum permitted speed on this street.
+
+    Returns:
+        float: Maximum speed (units depend on network configuration).)doc")
       .def("capacity",
            &dsf::mobility::Street::capacity,
-           dsf::g_docstrings.at("dsf::mobility::Road::capacity").c_str())
+           R"doc(Get the capacity of this street.
+
+    Returns:
+        float: Capacity value (units: vehicles).)doc")
       .def("transportCapacity",
            &dsf::mobility::Street::transportCapacity,
-           dsf::g_docstrings.at("dsf::mobility::Road::transportCapacity").c_str())
+           R"doc(Get the transport capacity of this street.
+
+    Returns:
+        float: Transport capacity (units: vehicles or payload).)doc")
       .def("roadStatus",
            &dsf::mobility::Street::roadStatus,
-           dsf::g_docstrings.at("dsf::mobility::Road::roadStatus").c_str())
+           R"doc(Get the current status of the road.
+
+    Returns:
+        RoadStatus: Enum value indicating OPEN or CLOSED.)doc")
       .def("estimatedTravelTime",
            &dsf::mobility::Street::estimatedTravelTime,
            "Get estimated travel time for this street using the active estimator.")
       .def("attributes",
            &dsf::mobility::Street::attributes,
-           dsf::g_docstrings.at("dsf::Edge::attributes").c_str());
+           R"doc(Get the attribute dictionary for this street.
+
+    Returns:
+        dict: Mapping of attribute names to values.)doc");
 
   // Bind RoadJunction class to mobility submodule
   pybind11::class_<dsf::mobility::RoadJunction>(mobility, "RoadJunction")
       .def("id",
            &dsf::mobility::RoadJunction::id,
-           dsf::g_docstrings.at("dsf::Node::id").c_str())
+           R"doc(Return the unique identifier for this junction.
+
+    Returns:
+        int: Junction id.)doc")
       .def("geometry",
            &dsf::mobility::RoadJunction::geometry,
-           dsf::g_docstrings.at("dsf::Node::geometry").c_str())
+           R"doc(Get the geometry of the junction.
+
+    Returns:
+        object: Geometry representation.)doc")
       .def("capacity",
            &dsf::mobility::RoadJunction::capacity,
-           dsf::g_docstrings.at("dsf::mobility::RoadJunction::capacity").c_str())
+           R"doc(Get the capacity of the junction.
+
+    Returns:
+        float: Capacity value.)doc")
       .def("transportCapacity",
            &dsf::mobility::RoadJunction::transportCapacity,
-           dsf::g_docstrings.at("dsf::mobility::RoadJunction::transportCapacity").c_str())
+           R"doc(Get the transport capacity of the junction.
+
+    Returns:
+        float: Transport capacity.)doc")
       .def("attributes",
            &dsf::mobility::RoadJunction::attributes,
-           dsf::g_docstrings.at("dsf::Node::attributes").c_str());
+           R"doc(Get the attribute dictionary for this junction.
+
+    Returns:
+        dict: Mapping of attribute names to values.)doc");
 
   // Bind Measurement to main module (can be used across different contexts)
   pybind11::class_<dsf::Measurement<double>>(m, "Measurement")
@@ -136,42 +186,83 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("mean"),
            pybind11::arg("std"),
            pybind11::arg("n"),
-           dsf::g_docstrings.at("dsf::Measurement::Measurement").c_str())
+           R"doc(Create a Measurement object.
+
+    Args:
+      mean (float): Sample mean.
+      std (float): Sample standard deviation.
+      n (int): Number of samples.
+
+    Returns:
+      Measurement: Initialized measurement instance.)doc")
       .def_readwrite("mean",
                      &dsf::Measurement<double>::mean,
-                     dsf::g_docstrings.at("dsf::Measurement::mean").c_str())
+                     R"doc(Mean value of the measurement.
+
+                Type:
+                  float)doc")
       .def_readwrite("std",
                      &dsf::Measurement<double>::std,
-                     dsf::g_docstrings.at("dsf::Measurement::std").c_str())
+                     R"doc(Standard deviation of the measurement.
+
+          Type:
+            float)doc")
       .def_readwrite("n",
                      &dsf::Measurement<double>::n,
-                     dsf::g_docstrings.at("dsf::Measurement::n").c_str())
+                     R"doc(Number of samples used to compute the measurement.
+
+          Type:
+            int)doc")
       .def_readwrite("is_valid",
                      &dsf::Measurement<double>::is_valid,
-                     dsf::g_docstrings.at("dsf::Measurement::is_valid").c_str());
+                     R"doc(Flag indicating whether the measurement is valid.
+
+          Type:
+            bool)doc");
 
   // Bind mobility-related classes to mobility submodule
   pybind11::class_<dsf::mobility::RoadNetwork>(mobility, "RoadNetwork")
       .def(pybind11::init<>(),
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::RoadNetwork").c_str())
+           R"doc(Create an empty RoadNetwork instance.
+
+    Returns:
+        RoadNetwork: New network object.)doc")
       .def("nNodes",
            &dsf::mobility::RoadNetwork::nNodes,
-           dsf::g_docstrings.at("dsf::Network::nNodes").c_str())
+           R"doc(Get the number of nodes in the network.
+
+      Returns:
+        int: Count of nodes.)doc")
       .def("nEdges",
            &dsf::mobility::RoadNetwork::nEdges,
-           dsf::g_docstrings.at("dsf::Network::nEdges").c_str())
+           R"doc(Get the number of edges in the network.
+
+      Returns:
+        int: Count of edges.)doc")
       .def("nCoils",
            &dsf::mobility::RoadNetwork::nCoils,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::nCoils").c_str())
+           R"doc(Get the number of coils in the network.
+
+      Returns:
+        int: Count of coils.)doc")
       .def("nIntersections",
            &dsf::mobility::RoadNetwork::nIntersections,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::nIntersections").c_str())
+           R"doc(Get the number of intersections in the network.
+
+      Returns:
+        int: Count of intersections.)doc")
       .def("nRoundabouts",
            &dsf::mobility::RoadNetwork::nRoundabouts,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::nRoundabouts").c_str())
+           R"doc(Get the number of roundabouts in the network.
+
+      Returns:
+        int: Count of roundabouts.)doc")
       .def("nTrafficLights",
            &dsf::mobility::RoadNetwork::nTrafficLights,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::nTrafficLights").c_str())
+           R"doc(Get the number of traffic lights in the network.
+
+      Returns:
+        int: Count of traffic lights.)doc")
       // Bind node and edge Network accessors, which return a ref or a cost ref
       // node should return a RoadJunction and edge should return a Street
       .def(
@@ -180,7 +271,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
               -> dsf::mobility::RoadJunction& { return self.node(nodeId); },
           pybind11::arg("nodeId"),
           pybind11::return_value_policy::reference_internal,
-          dsf::g_docstrings.at("dsf::Network::node").c_str())
+          R"doc(Get a reference to the node with the given id.
+
+      Args:
+        nodeId (int): Node identifier.
+
+      Returns:
+        RoadJunction: Reference to the requested junction.)doc")
       .def(
           "edge",
           [](dsf::mobility::RoadNetwork& self, dsf::Id edgeId) -> dsf::mobility::Street& {
@@ -188,44 +285,67 @@ PYBIND11_MODULE(dsf_cpp, m) {
           },
           pybind11::arg("edgeId"),
           pybind11::return_value_policy::reference_internal,
-          dsf::g_docstrings.at("dsf::Network::edge").c_str())
+          R"doc(Get a reference to the edge with the given id.
+
+      Args:
+        edgeId (int): Edge identifier.
+
+      Returns:
+        Street: Reference to the requested street.)doc")
       .def("capacity",
            &dsf::mobility::RoadNetwork::capacity,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::capacity").c_str())
-      .def(
-          "adjustNodeCapacities",
-          &dsf::mobility::RoadNetwork::adjustNodeCapacities,
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::adjustNodeCapacities").c_str())
+           R"doc(Get the capacity value for the network or a specific resource.
+
+      Returns:
+        float: Capacity.)doc")
+      .def("adjustNodeCapacities",
+           &dsf::mobility::RoadNetwork::adjustNodeCapacities,
+           R"doc(Adjust capacities of nodes according to provided factors.
+
+      Args:
+        (See C++ API) Adjusts node capacities in-place.)doc")
       .def("autoInitTrafficLights",
            &dsf::mobility::RoadNetwork::autoInitTrafficLights,
            pybind11::arg("mainRoadPercentage") = 0.6,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::autoInitTrafficLights")
-               .c_str())
-      .def("autoMapStreetLanes",
-           &dsf::mobility::RoadNetwork::autoMapStreetLanes,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::autoMapStreetLanes").c_str())
+           R"doc(Auto-initialize traffic lights based on network heuristics.
+
+      Args:
+        mainRoadPercentage (float, optional): Fraction used to identify main roads. Default 0.6)doc")
+      .def(
+          "autoMapStreetLanes",
+          &dsf::mobility::RoadNetwork::autoMapStreetLanes,
+          R"doc(Auto-map lanes for streets using heuristics based on geometry and attributes.)doc")
       .def("setEdgeWeight",
            &dsf::mobility::RoadNetwork::setEdgeWeight,
            pybind11::arg("weight"),
            pybind11::arg("threshold") = std::nullopt,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::setEdgeWeight").c_str())
+           R"doc(Set edge weights for routing and analysis.
+
+      Args:
+        weight (float): Weight value.
+        threshold (float | None): Optional threshold to apply.)doc")
       .def(
           "describe",
           [](dsf::mobility::RoadNetwork& self) {
             self.describe();  // Uses default std::cout
           },
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::describe").c_str())
+          R"doc(Write a textual description of the network to stdout.
+
+      Returns:
+        None)doc")
       .def("autoAssignRoadPriorities",
            &dsf::mobility::RoadNetwork::autoAssignRoadPriorities,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::autoAssignRoadPriorities")
-               .c_str())
+           R"doc(Auto-assign priorities to roads based on topology and attributes.)doc")
       .def(
           "importEdges",
           [](dsf::mobility::RoadNetwork& self, const std::string& fileName) {
             self.importEdges(fileName);
           },
           pybind11::arg("fileName"),
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::importEdges").c_str())
+          R"doc(Import edges from a CSV file.
+
+      Args:
+        fileName (str): Path to the CSV file.)doc")
       .def(
           "importEdges",
           [](dsf::mobility::RoadNetwork& self,
@@ -233,7 +353,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
              char const separator) { self.importEdges(fileName, separator); },
           pybind11::arg("fileName"),
           pybind11::arg("separator"),
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::importEdges").c_str())
+          R"doc(Import edges from a CSV file with a custom separator.
+
+      Args:
+        fileName (str): Path to the CSV file.
+        separator (str): Field separator character.)doc")
       .def(
           "importEdges",
           [](dsf::mobility::RoadNetwork& self,
@@ -241,7 +365,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
              bool const bCreateInverse) { self.importEdges(fileName, bCreateInverse); },
           pybind11::arg("fileName"),
           pybind11::arg("bCreateInverse"),
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::importEdges").c_str())
+          R"doc(Import edges from a CSV file and optionally create inverse edges.
+
+      Args:
+        fileName (str): Path to the CSV file.
+        bCreateInverse (bool): Create inverse edges when true.)doc")
       .def(
           "importNodeProperties",
           [](dsf::mobility::RoadNetwork& self,
@@ -249,19 +377,28 @@ PYBIND11_MODULE(dsf_cpp, m) {
              char const separator) { self.importNodeProperties(fileName, separator); },
           pybind11::arg("fileName"),
           pybind11::arg("separator") = ';',
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::importNodeProperties").c_str())
-      .def(
-          "importTrafficLights",
-          &dsf::mobility::RoadNetwork::importTrafficLights,
-          pybind11::arg("fileName"),
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::importTrafficLights").c_str())
+          R"doc(Import node properties from a CSV file.
+
+      Args:
+        fileName (str): Path to the CSV file.
+        separator (str): Field separator character.)doc")
+      .def("importTrafficLights",
+           &dsf::mobility::RoadNetwork::importTrafficLights,
+           pybind11::arg("fileName"),
+           R"doc(Import traffic light configurations from a file.
+
+      Args:
+        fileName (str): Path to the configuration file.)doc")
       .def(
           "makeRoundabout",
           [](dsf::mobility::RoadNetwork& self, dsf::Id id) -> void {
             self.makeRoundabout(id);
           },
           pybind11::arg("id"),
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::makeRoundabout").c_str())
+          R"doc(Convert the node with the given id into a roundabout.
+
+      Args:
+        id (int): Node id to convert.)doc")
       .def(
           "makeTrafficLight",
           [](dsf::mobility::RoadNetwork& self,
@@ -273,67 +410,104 @@ PYBIND11_MODULE(dsf_cpp, m) {
           pybind11::arg("id"),
           pybind11::arg("cycleTime"),
           pybind11::arg("counter"),
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::makeTrafficLight").c_str())
-      .def(
-          "setStreetStatusById",
-          &dsf::mobility::RoadNetwork::setStreetStatusById,
-          pybind11::arg("streetId"),
-          pybind11::arg("status"),
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::setStreetStatusById").c_str())
+          R"doc(Create a traffic light at the given node id.
+
+      Args:
+        id (int): Node id.
+        cycleTime (Delay): Cycle time for the traffic light.
+        counter (Delay): Initial counter value.)doc")
+      .def("setStreetStatusById",
+           &dsf::mobility::RoadNetwork::setStreetStatusById,
+           pybind11::arg("streetId"),
+           pybind11::arg("status"),
+           R"doc(Set the status of a street by id.
+
+      Args:
+        streetId (int): Street identifier.
+        status (RoadStatus): New status to set.)doc")
       .def("setStreetStatusByName",
            &dsf::mobility::RoadNetwork::setStreetStatusByName,
            pybind11::arg("name"),
            pybind11::arg("status"),
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::setStreetStatusByName")
-               .c_str())
+           R"doc(Set the status of a street by name.
+
+      Args:
+        name (str): Street name.
+        status (RoadStatus): New status to set.)doc")
       .def("changeStreetNLanesById",
            &dsf::mobility::RoadNetwork::changeStreetNLanesById,
            pybind11::arg("streetId"),
            pybind11::arg("nLanes"),
            pybind11::arg("speedFactor") = std::nullopt,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::changeStreetNLanesById")
-               .c_str())
+           R"doc(Change the number of lanes for a street by id.
+
+      Args:
+        streetId (int): Street identifier.
+        nLanes (int): New number of lanes.
+        speedFactor (float | None): Optional speed factor.)doc")
       .def("changeStreetNLanesByName",
            &dsf::mobility::RoadNetwork::changeStreetNLanesByName,
            pybind11::arg("name"),
            pybind11::arg("nLanes"),
            pybind11::arg("speedFactor") = std::nullopt,
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::changeStreetNLanesByName")
-               .c_str())
+           R"doc(Change the number of lanes for a street by name.
+
+      Args:
+        name (str): Street name.
+        nLanes (int): New number of lanes.
+        speedFactor (float | None): Optional speed factor.)doc")
       .def("changeStreetCapacityById",
            &dsf::mobility::RoadNetwork::changeStreetCapacityById,
            pybind11::arg("streetId"),
            pybind11::arg("factor"),
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::changeStreetCapacityById")
-               .c_str())
+           R"doc(Change street capacity by id.
+
+      Args:
+        streetId (int): Street identifier.
+        factor (float): Multiplicative capacity factor.)doc")
       .def("changeStreetCapacityByName",
            &dsf::mobility::RoadNetwork::changeStreetCapacityByName,
            pybind11::arg("name"),
            pybind11::arg("factor"),
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::changeStreetCapacityByName")
-               .c_str())
+           R"doc(Change street capacity by name.
+
+      Args:
+        name (str): Street name.
+        factor (float): Multiplicative capacity factor.)doc")
       .def("addCoil",
            &dsf::mobility::RoadNetwork::addCoil,
            pybind11::arg("streetId"),
            pybind11::arg("name") = std::string(),
-           dsf::g_docstrings.at("dsf::mobility::RoadNetwork::addCoil").c_str())
+           R"doc(Add a coil sensor to a street.
+
+      Args:
+        streetId (int): Street identifier.
+        name (str): Optional name for the coil.)doc")
       .def("shortestPath",
            &dsf::mobility::RoadNetwork::shortestPath,
            pybind11::arg("sourceId"),
            pybind11::arg("targetId"),
-           dsf::g_docstrings.at("dsf::Network::shortestPath").c_str())
+           R"doc(Compute the shortest path between two node ids.
+
+      Args:
+        sourceId (int): Source node id.
+        targetId (int): Target node id.
+
+      Returns:
+        list[int]: Sequence of node ids representing the shortest path.)doc")
       .def("computeBetweennessCentralities",
            &dsf::mobility::RoadNetwork::computeBetweennessCentralities,
-           dsf::g_docstrings.at("dsf::Network::computeBetweennessCentralities").c_str())
-      .def(
-          "computeEdgeBetweennessCentralities",
-          &dsf::mobility::RoadNetwork::computeEdgeBetweennessCentralities,
-          dsf::g_docstrings.at("dsf::Network::computeEdgeBetweennessCentralities").c_str())
+           R"doc(Compute betweenness centralities for nodes in the network.)doc")
+      .def("computeEdgeBetweennessCentralities",
+           &dsf::mobility::RoadNetwork::computeEdgeBetweennessCentralities,
+           R"doc(Compute betweenness centralities for edges in the network.)doc")
       .def("computeEdgeKBetweennessCentralities",
            &dsf::mobility::RoadNetwork::computeEdgeKBetweennessCentralities,
            pybind11::arg("k"),
-           dsf::g_docstrings.at("dsf::Network::computeEdgeKBetweennessCentralities")
-               .c_str())
+           R"doc(Compute k-edge betweenness centralities.
+
+      Args:
+        k (int): Parameter controlling the computation.)doc")
       .def(
           "nodeBetweennessCentralities",
           [](const dsf::mobility::RoadNetwork& self) {
@@ -368,7 +542,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
             self.exportCSV(outputDir);
           },
           pybind11::arg("outputDir"),
-          dsf::g_docstrings.at("dsf::mobility::RoadNetwork::exportCSV").c_str());
+          R"doc(Export network data to CSV files in the given directory.
+
+      Args:
+        outputDir (str): Destination directory path.)doc");
 
   pybind11::class_<dsf::PathCollection>(mobility, "PathCollection")
       .def(pybind11::init<>(), "Create an empty PathCollection")
@@ -427,23 +604,49 @@ PYBIND11_MODULE(dsf_cpp, m) {
            &dsf::PathCollection::explode,
            pybind11::arg("sourceId"),
            pybind11::arg("targetId"),
-           dsf::g_docstrings.at("dsf::PathCollection::explode").c_str());
+           R"doc(Build a path from a source node to a target node.
+
+Args:
+    sourceId (int): Starting node id.
+    targetId (int): Ending node id.
+
+Returns:
+    PathCollection: A path collection containing the computed route.)doc");
 
   pybind11::class_<dsf::mobility::Itinerary>(mobility, "Itinerary")
       .def(pybind11::init<dsf::Id, dsf::Id>(),
            pybind11::arg("id"),
            pybind11::arg("destination"),
-           dsf::g_docstrings.at("dsf::mobility::Itinerary::Itinerary").c_str())
+           R"doc(Create an itinerary with an id and destination node.
+
+Args:
+    id (int): Itinerary identifier.
+    destination (int): Destination node id.
+
+Returns:
+    Itinerary: A new itinerary instance.)doc")
       .def("setPath",
            &dsf::mobility::Itinerary::setPath,
            pybind11::arg("path"),
-           dsf::g_docstrings.at("dsf::mobility::Itinerary::setPath").c_str())
+           R"doc(Set the path used by this itinerary.
+
+Args:
+    path (Sequence[int]): Sequence of node ids representing the route.
+
+Returns:
+    None)doc")
       .def("id",
            &dsf::mobility::Itinerary::id,
-           dsf::g_docstrings.at("dsf::mobility::Itinerary::id").c_str())
+           R"doc(Get the itinerary identifier.
+
+Returns:
+    int: The itinerary id.)doc")
       .def("destination",
            &dsf::mobility::Itinerary::destination,
-           dsf::g_docstrings.at("dsf::mobility::Itinerary::destination").c_str());
+           R"doc(Get the destination node id.
+
+Returns:
+    int: The destination node id.)doc");
   // .def("path", &dsf::mobility::Itinerary::path, pybind11::return_value_policy::reference_internal);
 
   pybind11::class_<dsf::mobility::FirstOrderDynamics>(mobility, "Dynamics")
@@ -458,8 +661,15 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("graph"),
            pybind11::arg("useCache") = false,
            pybind11::arg("seed") = std::nullopt,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::FirstOrderDynamics")
-               .c_str())
+           R"doc(Create a dynamics model over a road network.
+
+Args:
+    graph (RoadNetwork): Road network used by the simulation.
+    useCache (bool, optional): Enable internal caching. Defaults to False.
+    seed (int | None, optional): Random seed for reproducibility.
+
+Returns:
+    Dynamics: A new dynamics instance.)doc")
       .def(
           "setSpeedFunction",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -496,11 +706,23 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("setName",
            &dsf::mobility::FirstOrderDynamics::setName,
            pybind11::arg("name"),
-           dsf::g_docstrings.at("dsf::Dynamics::setName").c_str())
+           R"doc(Set the simulation name.
+
+    Args:
+      name (str): New name for the dynamics object.
+
+    Returns:
+      None)doc")
       .def("setInitTime",
            &dsf::mobility::FirstOrderDynamics::setInitTime,
            pybind11::arg("timeEpoch"),
-           dsf::g_docstrings.at("dsf::Dynamics::setInitTime").c_str())
+           R"doc(Set the simulation start time from an epoch timestamp.
+
+    Args:
+      timeEpoch (int): Epoch timestamp in seconds.
+
+    Returns:
+      None)doc")
       .def(
           "setInitTime",
           [](dsf::mobility::FirstOrderDynamics& self, pybind11::object datetime_obj) {
@@ -509,55 +731,103 @@ PYBIND11_MODULE(dsf_cpp, m) {
             self.setInitTime(static_cast<std::time_t>(epoch_seconds));
           },
           pybind11::arg("datetime"),
-          dsf::g_docstrings.at("dsf::Dynamics::setInitTime").c_str())
+          R"doc(Set the simulation start time from a Python datetime-like object.
+
+      Args:
+        datetime (datetime): Object exposing a timestamp() method.
+
+      Returns:
+        None)doc")
       .def("setConcurrency",
            &dsf::mobility::FirstOrderDynamics::setConcurrency,
            pybind11::arg("concurrency"),
-           dsf::g_docstrings.at("dsf::Dynamics::setConcurrency").c_str())
+           R"doc(Set the concurrency level used by the simulation.
+
+    Args:
+      concurrency (int): Number of concurrent workers or threads.
+
+    Returns:
+      None)doc")
       .def("connectDataBase",
            &dsf::mobility::FirstOrderDynamics::connectDataBase,
            pybind11::arg("dbPath"),
            pybind11::arg("queries") =
                "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
                "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;",
-           dsf::g_docstrings.at("dsf::Dynamics::connectDataBase").c_str())
+           R"doc(Connect the simulation to a SQLite database.
+
+Args:
+    dbPath (str): Path to the SQLite database file.
+    queries (str, optional): Initialization SQL statements.
+
+Returns:
+    None)doc")
       .def("setForcePriorities",
            &dsf::mobility::FirstOrderDynamics::setForcePriorities,
            pybind11::arg("forcePriorities"),
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setForcePriorities")
-               .c_str())
+           R"doc(Enable or disable force-based route priorities.
+
+    Args:
+      forcePriorities (bool): Whether to force priority handling.
+
+    Returns:
+      None)doc")
       .def(
           "setDataUpdatePeriod",
           [](dsf::mobility::FirstOrderDynamics& self, int dataUpdatePeriod) {
             self.setDataUpdatePeriod(static_cast<dsf::Delay>(dataUpdatePeriod));
           },
           pybind11::arg("dataUpdatePeriod"),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setDataUpdatePeriod")
-              .c_str())
-      .def(
-          "setMeanTravelDistance",
-          &dsf::mobility::FirstOrderDynamics::setMeanTravelDistance,
-          pybind11::arg("meanDistance"),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setMeanTravelDistance")
-              .c_str())
+          R"doc(Set the interval between data updates.
+
+Args:
+    dataUpdatePeriod (int): Update period in simulation time units.
+
+Returns:
+    None)doc")
+      .def("setMeanTravelDistance",
+           &dsf::mobility::FirstOrderDynamics::setMeanTravelDistance,
+           pybind11::arg("meanDistance"),
+           R"doc(Set the target mean travel distance.
+
+Args:
+    meanDistance (float): Mean travel distance.
+
+Returns:
+    None)doc")
       .def(
           "setMeanTravelTime",
           [](dsf::mobility::FirstOrderDynamics& self, uint64_t meanTravelTime) {
             self.setMeanTravelTime(static_cast<std::time_t>(meanTravelTime));
           },
           pybind11::arg("meanTravelTime"),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setMeanTravelTime")
-              .c_str())
+          R"doc(Set the target mean travel time.
+
+Args:
+    meanTravelTime (int): Mean travel time in seconds.
+
+Returns:
+    None)doc")
       .def("setErrorProbability",
            &dsf::mobility::FirstOrderDynamics::setErrorProbability,
            pybind11::arg("errorProbability"),
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setErrorProbability")
-               .c_str())
+           R"doc(Set the probability of injecting simulation errors.
+
+    Args:
+      errorProbability (float): Probability in the range [0, 1].
+
+    Returns:
+      None)doc")
       .def("killStagnantAgents",
            &dsf::mobility::FirstOrderDynamics::killStagnantAgents,
            pybind11::arg("timeToleranceFactor") = 3.,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::killStagnantAgents")
-               .c_str())
+           R"doc(Enable or configure removal of stagnant agents.
+
+    Args:
+      timeToleranceFactor (float, optional): Multiplier used to detect stagnation.
+
+    Returns:
+      None)doc")
       .def(
           "setDestinationNodes",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -565,8 +835,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
             self.setDestinationNodes(destinationNodes);
           },
           pybind11::arg("destinationNodes"),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setDestinationNodes")
-              .c_str())
+          R"doc(Set the destination nodes using a list of node ids.
+
+Args:
+    destinationNodes (Sequence[int]): Destination node ids.
+
+Returns:
+    None)doc")
       .def(
           "setOriginNodes",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -574,8 +849,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
             self.setOriginNodes(originNodes);
           },
           pybind11::arg("originNodes") = std::unordered_map<dsf::Id, double>(),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setOriginNodes")
-              .c_str())
+          R"doc(Set weighted origin nodes from a mapping of node ids to weights.
+
+Args:
+    originNodes (Mapping[int, float], optional): Origin nodes and weights.
+
+Returns:
+    None)doc")
       .def(
           "setOriginNodes",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -590,8 +870,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
             self.setOriginNodes(nodeWeights);
           },
           pybind11::arg("originNodes"),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setOriginNodes")
-              .c_str())
+          R"doc(Set origin nodes from a numpy array of node ids.
+
+Args:
+    originNodes (array[int]): Node ids to use as origins.
+
+Returns:
+    None)doc")
       .def(
           "setDestinationNodes",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -603,8 +888,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
             self.setDestinationNodes(nodes);
           },
           pybind11::arg("destinationNodes"),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setDestinationNodes")
-              .c_str())
+          R"doc(Set destination nodes from a numpy array of node ids.
+
+Args:
+    destinationNodes (array[int]): Node ids to use as destinations.
+
+Returns:
+    None)doc")
       .def(
           "setDestinationNodes",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -612,12 +902,23 @@ PYBIND11_MODULE(dsf_cpp, m) {
             self.setDestinationNodes(destinationNodes);
           },
           pybind11::arg("destinationNodes"),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setDestinationNodes")
-              .c_str())
+          R"doc(Set weighted destination nodes from a mapping of node ids to weights.
+
+      Args:
+        destinationNodes (Mapping[int, float]): Destination nodes and weights.
+
+      Returns:
+        None)doc")
       .def("setODs",
            &dsf::mobility::FirstOrderDynamics::setODs,
            pybind11::arg("ods"),
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::setODs").c_str())
+           R"doc(Set origin-destination pairs for the simulation.
+
+    Args:
+      ods (object): Origin-destination data structure expected by the C++ API.
+
+    Returns:
+      None)doc")
       .def(
           "importODsFromCSV",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -635,18 +936,32 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "    separator (str): CSV delimiter character (default is ';')")
       .def("initTurnCounts",
            &dsf::mobility::FirstOrderDynamics::initTurnCounts,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::initTurnCounts")
-               .c_str())
+           R"doc(Initialize turn count tracking data structures.
+
+    Returns:
+      None)doc")
       .def("updatePaths",
            &dsf::mobility::FirstOrderDynamics::updatePaths,
            pybind11::arg("throw_on_empty") = true,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::updatePaths").c_str())
+           R"doc(Recompute routing paths for the current network state.
+
+    Args:
+      throw_on_empty (bool, optional): Raise if no path can be found.
+
+    Returns:
+      None)doc")
       .def("addAgentsUniformly",
            &dsf::mobility::FirstOrderDynamics::addAgentsUniformly,
            pybind11::arg("nAgents"),
            pybind11::arg("itineraryId") = std::nullopt,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::addAgentsUniformly")
-               .c_str())
+           R"doc(Add agents uniformly across the configured origins.
+
+    Args:
+      nAgents (int): Number of agents to add.
+      itineraryId (int | None, optional): Itinerary to assign.
+
+    Returns:
+      None)doc")
       .def(
           "addAgents",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -656,54 +971,104 @@ PYBIND11_MODULE(dsf_cpp, m) {
           },
           pybind11::arg("nAgents"),
           pybind11::arg("insertionMethod"),
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::addAgents").c_str())
+          R"doc(Add agents using the requested insertion method.
+
+      Args:
+        nAgents (int): Number of agents to add.
+        insertionMethod (AgentInsertionMethod): Insertion policy.
+
+      Returns:
+        None)doc")
       .def("evolve",
            &dsf::mobility::FirstOrderDynamics::evolve,
            pybind11::arg("reinsert_agents") = false,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::evolve").c_str())
-      .def(
-          "optimizeTrafficLights",
-          &dsf::mobility::FirstOrderDynamics::optimizeTrafficLights,
-          pybind11::arg("optimizationType") = dsf::TrafficLightOptimization::DOUBLE_TAIL,
-          pybind11::arg("logFile") = "",
-          pybind11::arg("threshold") = 0.,
-          pybind11::arg("ratio") = 1.3,
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::optimizeTrafficLights")
-              .c_str())
+           R"doc(Advance the simulation by one time step.
+
+      Args:
+        reinsert_agents (bool, optional): Reinsert agents after movement.
+
+      Returns:
+        None)doc")
+      .def("optimizeTrafficLights",
+           &dsf::mobility::FirstOrderDynamics::optimizeTrafficLights,
+           pybind11::arg("optimizationType") = dsf::TrafficLightOptimization::DOUBLE_TAIL,
+           pybind11::arg("logFile") = "",
+           pybind11::arg("threshold") = 0.,
+           pybind11::arg("ratio") = 1.3,
+           R"doc(Optimize traffic light timing for the current network.
+
+Args:
+    optimizationType (TrafficLightOptimization, optional): Optimization mode.
+    logFile (str, optional): Optional log file path.
+    threshold (float, optional): Threshold used by the optimizer.
+    ratio (float, optional): Optimization ratio parameter.
+
+Returns:
+    None)doc")
       .def(
           "graph",
           [](dsf::mobility::FirstOrderDynamics& self) -> dsf::mobility::RoadNetwork& {
             return self.graph();
           },
           pybind11::return_value_policy::reference_internal,
-          dsf::g_docstrings.at("dsf::Dynamics::graph").c_str())
+          R"doc(Get the underlying road network.
+
+      Returns:
+        RoadNetwork: Reference to the simulation graph.)doc")
       .def("nAgents",
            &dsf::mobility::FirstOrderDynamics::nAgents,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::nAgents").c_str())
+           R"doc(Get the current number of agents in the simulation.
+
+    Returns:
+      int: Number of active agents.)doc")
       .def("time",
            &dsf::mobility::FirstOrderDynamics::time,
-           dsf::g_docstrings.at("dsf::Dynamics::time").c_str())
+           R"doc(Get the current simulation time.
+
+    Returns:
+      int: Simulation time step or timestamp.)doc")
       .def("time_step",
            &dsf::mobility::FirstOrderDynamics::time_step,
-           dsf::g_docstrings.at("dsf::Dynamics::time_step").c_str())
+           R"doc(Get the simulation time step increment.
+
+    Returns:
+      int: Time step size.)doc")
       .def("datetime",
            &dsf::mobility::FirstOrderDynamics::strDateTime,
-           dsf::g_docstrings.at("dsf::Dynamics::strDateTime").c_str())
+           R"doc(Get the current simulation time formatted as a string.
+
+    Returns:
+      str: Human-readable date/time string.)doc")
       .def("meanTravelTime",
            &dsf::mobility::FirstOrderDynamics::meanTravelTime,
            pybind11::arg("clearData") = false,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::meanTravelTime")
-               .c_str())
+           R"doc(Compute the mean travel time of agents.
+
+Args:
+    clearData (bool, optional): Clear accumulated statistics after reading.
+
+Returns:
+    float: Mean travel time.)doc")
       .def("meanTravelDistance",
            &dsf::mobility::FirstOrderDynamics::meanTravelDistance,
            pybind11::arg("clearData") = false,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::meanTravelDistance")
-               .c_str())
+           R"doc(Compute the mean travel distance of agents.
+
+Args:
+    clearData (bool, optional): Clear accumulated statistics after reading.
+
+Returns:
+    float: Mean travel distance.)doc")
       .def("meanTravelSpeed",
            &dsf::mobility::FirstOrderDynamics::meanTravelSpeed,
            pybind11::arg("clearData") = false,
-           dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::meanTravelSpeed")
-               .c_str())
+           R"doc(Compute the mean travel speed of agents.
+
+Args:
+    clearData (bool, optional): Clear accumulated statistics after reading.
+
+Returns:
+    float: Mean travel speed.)doc")
       .def(
           "turnCounts",
           [](const dsf::mobility::FirstOrderDynamics& self) {
@@ -718,7 +1083,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
             }
             return py_result;
           },
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::turnCounts").c_str())
+          R"doc(Get the turn counts grouped by origin and destination.
+
+      Returns:
+        dict[int, dict[int, int]]: Nested mapping of turn counts.)doc")
       .def(
           "normalizedTurnCounts",
           [](const dsf::mobility::FirstOrderDynamics& self) {
@@ -733,8 +1101,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
             }
             return py_result;
           },
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::normalizedTurnCounts")
-              .c_str())
+          R"doc(Get normalized turn counts grouped by origin and destination.
+
+Returns:
+    dict[int, dict[int, float]]: Nested mapping of normalized counts.)doc")
       .def(
           "originCounts",
           [](dsf::mobility::FirstOrderDynamics& self, bool reset) {
@@ -746,7 +1116,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
             return py_result;
           },
           pybind11::arg("reset") = true,
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::originCounts").c_str())
+          R"doc(Get the number of origin events per node.
+
+      Args:
+        reset (bool, optional): Reset counters after reading.
+
+      Returns:
+        dict[int, int]: Mapping of node id to origin count.)doc")
       .def(
           "destinationCounts",
           [](dsf::mobility::FirstOrderDynamics& self, bool reset) {
@@ -758,8 +1134,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
             return py_result;
           },
           pybind11::arg("reset") = true,
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::destinationCounts")
-              .c_str())
+          R"doc(Get the number of destination events per node.
+
+Args:
+    reset (bool, optional): Reset counters after reading.
+
+Returns:
+    dict[int, int]: Mapping of node id to destination count.)doc")
       .def("saveData",
            &dsf::mobility::FirstOrderDynamics::saveData,
            pybind11::arg("saving_interval"),
@@ -781,7 +1162,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
           [](dsf::mobility::FirstOrderDynamics& self) {
             self.summary();  // Uses default std::cout
           },
-          dsf::g_docstrings.at("dsf::mobility::FirstOrderDynamics::summary").c_str());
+          R"doc(Print a summary of the current simulation state.
+
+      Returns:
+        None)doc");
 
   // Bind TrajectoryCollection class to mdt submodule
   pybind11::class_<dsf::mdt::TrajectoryCollection>(mdt, "TrajectoryCollection")
@@ -794,8 +1178,16 @@ PYBIND11_MODULE(dsf_cpp, m) {
                std::unordered_map<std::string, std::string>{},
            pybind11::arg("separator") = ';',
            pybind11::arg("bbox") = std::array<double, 4>{},
-           dsf::g_docstrings.at("dsf::mdt::TrajectoryCollection::TrajectoryCollection")
-               .c_str())
+           R"doc(Create a trajectory collection from a file.
+
+      Args:
+        fileName (str): Input file path.
+        column_mapping (dict[str, str], optional): Column name mapping.
+        separator (str, optional): CSV delimiter.
+        bbox (Sequence[float], optional): Bounding box coordinates.
+
+      Returns:
+        TrajectoryCollection: Loaded trajectory collection.)doc")
       .def(
           pybind11::init([](pybind11::object df) {
             pybind11::object columns = df.attr("columns");
@@ -865,7 +1257,6 @@ PYBIND11_MODULE(dsf_cpp, m) {
             return new dsf::mdt::TrajectoryCollection(std::move(dataframe));
           }),
           pybind11::arg("df"),
-          // Write this docstring manually as it is not in g_docstrings
           "Constructor that builds a TrajectoryCollection from a pandas or polars "
           "DataFrame.\n\nArgs:\n\tdf (pandas.DataFrame | polars.DataFrame): Input "
           "DataFrame. Must contain the following columns:\n\t\t'uid' (identifier), "
@@ -880,12 +1271,28 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("max_speed_kph") = 150.0,
            pybind11::arg("min_points_per_trajectory") = 2,
            pybind11::arg("min_duration_min") = pybind11::none(),
-           dsf::g_docstrings.at("dsf::mdt::TrajectoryCollection::filter").c_str())
+           R"doc(Filter trajectories using cluster, speed, and duration constraints.
+
+      Args:
+        cluster_radius_km (float): Maximum cluster radius in kilometers.
+        max_speed_kph (float, optional): Maximum allowed speed.
+        min_points_per_trajectory (int, optional): Minimum number of points.
+        min_duration_min (int | None, optional): Minimum duration in minutes.
+
+      Returns:
+        TrajectoryCollection: Filtered collection.)doc")
       .def("to_csv",
            &dsf::mdt::TrajectoryCollection::to_csv,
            pybind11::arg("fileName"),
            pybind11::arg("sep") = ';',
-           dsf::g_docstrings.at("dsf::mdt::TrajectoryCollection::to_csv").c_str())
+           R"doc(Export the trajectory collection to a CSV file.
+
+      Args:
+        fileName (str): Output file path.
+        sep (str, optional): Field separator.
+
+      Returns:
+        None)doc")
       .def(
           "to_pandas",
           [](const dsf::mdt::TrajectoryCollection& self) {

@@ -193,12 +193,6 @@ install(
 if(BUILD_PYTHON_BINDINGS)
   include(FetchContent)
 
-  # Check if Doxygen is available for documentation generation
-  find_package(Doxygen REQUIRED)
-  if(NOT DOXYGEN_FOUND)
-    message(FATAL_ERROR "Doxygen is required to build the docstrings.")
-  endif()
-
   # Get pybind11
   FetchContent_Declare(
     pybind11
