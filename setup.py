@@ -13,7 +13,6 @@ import re
 import shutil
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
