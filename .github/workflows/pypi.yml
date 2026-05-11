@@ -9,7 +9,7 @@ on:
 
 env:
   BUILD_TYPE: Release
-  DSF_OPTIMIZE_ARCH: "OFF"
+  DSF_COMPATIBILITY_BUILD: "ON"
 
 jobs:
   check-version:
@@ -106,8 +106,8 @@ jobs:
 
     - name: Validate uv build
       env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
-        DSF_OPTIMIZE_ARCH: "OFF"
+        CMAKE_ARGS: "-DDSF_COMPATIBILITY_BUILD=ON"
+        DSF_COMPATIBILITY_BUILD: "ON"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: uv build
 
@@ -159,7 +159,7 @@ jobs:
 
     - name: Build wheel
       env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
+        CMAKE_ARGS: "-DDSF_COMPATIBILITY_BUILD=ON"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: |
         rm -rf dist wheelhouse
@@ -215,7 +215,7 @@ jobs:
 
     - name: Build wheel
       env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
+        CMAKE_ARGS: "-DDSF_COMPATIBILITY_BUILD=ON"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: python -m build --wheel
 
@@ -265,7 +265,7 @@ jobs:
 
     - name: Build wheel
       env:
-        CMAKE_ARGS: "-DDSF_OPTIMIZE_ARCH=OFF"
+        CMAKE_ARGS: "-DDSF_COMPATIBILITY_BUILD=ON"
         DSF_PACKAGE_VERSION: ${{ needs.check-version.outputs.publish_version }}
       run: python -m build --wheel
 
