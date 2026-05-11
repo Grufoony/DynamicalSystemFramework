@@ -1,4 +1,5 @@
 #include "TrafficSimulator.hpp"
+#include "../utility/progress_bar.hpp"
 
 #include <simdjson.h>
 #include <spdlog/spdlog.h>
@@ -770,7 +771,7 @@ namespace dsf::mobility {
         m_timeToStr(m_endTime),
         totalTimeSteps,
         m_agentInsertionDeltaT);
-    auto const startTime = std::chrono::steady_clock::now();
+    auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
     for (std::size_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
       if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
           (currentStep == 0)) {
@@ -814,10 +815,7 @@ namespace dsf::mobility {
           m_saveAgentData = false;
         }
       }
+      pbar->update();
     }
-    auto const endTime = std::chrono::steady_clock::now();
-    auto const duration =
-        std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count();
-    spdlog::info("Simulation run completed in {} seconds.", duration);
   }
 }  // namespace dsf::mobility
