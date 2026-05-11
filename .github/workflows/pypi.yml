@@ -39,24 +39,7 @@ jobs:
       id: plan
       shell: bash
       run: |
-        BASE_VERSION="${{ steps.extract.outputs.version }}"
-
-        IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
-
-        BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
-
-        if [ "$BRANCH_NAME" != "main" ]; then
-          PATCH=$((PATCH + 1))
-        fi
-
-        VERSION="${MAJOR}.${MINOR}.${PATCH}"
-
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          # PEP440-compliant dev version for TestPyPI
-          PUBLISH_VERSION="${VERSION}.dev${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
-        else
-          PUBLISH_VERSION="${VERSION}"
-        fi
+        PUBLISH_VERSION="${{ steps.extract.outputs.version }}"
 
         echo "publish_version=${PUBLISH_VERSION}" >> "$GITHUB_OUTPUT"
         echo "Planned publish version: ${PUBLISH_VERSION}"
