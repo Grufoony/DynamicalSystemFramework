@@ -92,6 +92,9 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_BUILD_TYPE={cfg}",
             "-DBUILD_PYTHON_BINDINGS=ON",
         ]
+        
+        if "CMAKE_ARGS" in os.environ:
+            cmake_args += os.environ["CMAKE_ARGS"].split()
 
         if platform.system() == "Windows":
             cmake_args += [f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{cfg.upper()}={extdir}"]
