@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "dsf-mobility"
 description = "DSF C++ core with Python bindings via pybind11"
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 authors = [
@@ -28,8 +28,8 @@ classifiers = [
 	"Development Status :: 4 - Beta",
 	"Intended Audience :: Science/Research",
 	"Intended Audience :: Developers",
-	"Programming Language :: Python :: 3.10",
 	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.14",
 	"Programming Language :: C++",
 	"Topic :: Scientific/Engineering :: Physics",
 	"Topic :: Scientific/Engineering :: Information Analysis",
