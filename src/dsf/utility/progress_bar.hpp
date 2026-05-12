@@ -47,13 +47,10 @@ namespace dsf::utility {
     void attach(progress_bar* bar) {
       std::lock_guard lock{mutex_};
       m_bar = bar;
-      m_bar_drawn = false;
     }
 
-    void detach(bool erase = true) {
+    void detach() {
       std::lock_guard lock{mutex_};
-      if (erase)
-        m_erase_bar();
       m_bar = nullptr;
     }
 
@@ -73,20 +70,12 @@ namespace dsf::utility {
     std::FILE* m_file;
     bool m_is_tty;
     int m_width{80};
-    bool m_bar_drawn{false};
     progress_bar* m_bar{nullptr};  // non-owning; lifetime managed by progress_bar RAII
 
     void m_refresh_width() noexcept {
       winsize ws{};
       if (ioctl(fileno(m_file), TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
         m_width = static_cast<int>(ws.ws_col);
-    }
-
-    void m_erase_bar() noexcept {
-      if (m_bar_drawn && m_is_tty) {
-        std::fputs("\x1B[A\x1B[2K\r", m_file);
-        m_bar_drawn = false;
-      }
     }
 
     // Core repaint: erase bar → emit log line (if any) → redraw bar.
@@ -100,6 +89,43 @@ namespace dsf::utility {
   //   bottom of the terminal, below all log output.
   // ---------------------------------------------------------------------------
   class progress_bar {
+  private:
+    std::shared_ptr<spdlog::logger> m_logger;
+    // std::shared_ptr<spdlog::logger> m_previous_default_logger;
+    std::string m_desc;
+    std::size_t m_total;
+    bool m_ascii;
+    std::atomic<std::size_t> m_n{0};
+    std::chrono::steady_clock::time_point m_start;
+    std::atomic<long long> m_last_repaint_ns{0};
+    std::chrono::nanoseconds m_min_interval{80ms};
+    progress_sink* m_sink{nullptr};  // non-owning
+
+    [[nodiscard]] std::string m_render_bar(int width, float frac) const {
+      std::string bar;
+      bar.reserve(static_cast<std::size_t>(width) * 3);
+
+      if (m_ascii) {
+        const int filled = static_cast<int>(frac * static_cast<float>(width));
+        bar.append(static_cast<std::size_t>(filled), '#');
+        bar.append(static_cast<std::size_t>(width - filled), '-');
+      } else {
+        constexpr int steps = static_cast<int>(BLOCKS.size()) - 1;  // 8
+        const int eighths = static_cast<int>(frac * static_cast<float>(width) * steps);
+        const int full = eighths / steps;
+        const int part = eighths % steps;
+        const int empty = width - full - (part ? 1 : 0);
+
+        for (int i = 0; i < full; ++i)
+          bar += BLOCKS.back();
+        if (part)
+          bar += BLOCKS[static_cast<std::size_t>(part)];
+        for (int i = 0; i < empty; ++i)
+          bar += BLOCKS.front();
+      }
+      return bar;
+    }
+
   public:
     progress_bar(std::shared_ptr<spdlog::logger> logger,
                  std::string_view desc,
@@ -176,7 +202,7 @@ namespace dsf::utility {
 
       auto const left = std::format("{}: {:3.0f}% |", m_desc, frac * 100.f);
       auto const right =
-          std::format("| {}/{} [{:02d}:{:02d}:{:02d} / {:02d}:{:02d}:{:02d}]\n",
+          std::format("| {}/{} [{:02d}:{:02d}:{:02d} / {:02d}:{:02d}:{:02d}]\r",
                       n,
                       m_total,
                       el.hours().count(),
@@ -188,7 +214,7 @@ namespace dsf::utility {
 
       int const bar_chars = width - static_cast<int>(left.size()) -
                             static_cast<int>(right.size()) +
-                            1;  // +1: right already includes '\n'
+                            1;  // +1: right already includes '\r'
 
       std::string result;
       result.reserve(static_cast<std::size_t>(width) * 3);
@@ -197,42 +223,6 @@ namespace dsf::utility {
         result += m_render_bar(bar_chars, frac);
       result += right;
       return result;
-    }
-
-  private:
-    std::shared_ptr<spdlog::logger> m_logger;
-    std::string m_desc;
-    std::size_t m_total;
-    bool m_ascii;
-    std::atomic<std::size_t> m_n{0};
-    std::chrono::steady_clock::time_point m_start;
-    std::atomic<long long> m_last_repaint_ns{0};
-    std::chrono::nanoseconds m_min_interval{80ms};
-    progress_sink* m_sink{nullptr};  // non-owning
-
-    [[nodiscard]] std::string m_render_bar(int width, float frac) const {
-      std::string bar;
-      bar.reserve(static_cast<std::size_t>(width) * 3);
-
-      if (m_ascii) {
-        const int filled = static_cast<int>(frac * static_cast<float>(width));
-        bar.append(static_cast<std::size_t>(filled), '#');
-        bar.append(static_cast<std::size_t>(width - filled), '-');
-      } else {
-        constexpr int steps = static_cast<int>(BLOCKS.size()) - 1;  // 8
-        const int eighths = static_cast<int>(frac * static_cast<float>(width) * steps);
-        const int full = eighths / steps;
-        const int part = eighths % steps;
-        const int empty = width - full - (part ? 1 : 0);
-
-        for (int i = 0; i < full; ++i)
-          bar += BLOCKS.back();
-        if (part)
-          bar += BLOCKS[static_cast<std::size_t>(part)];
-        for (int i = 0; i < empty; ++i)
-          bar += BLOCKS.front();
-      }
-      return bar;
     }
   };
 
@@ -251,7 +241,6 @@ namespace dsf::utility {
     }
 
     m_refresh_width();
-    m_erase_bar();
 
     if (msg) {
       spdlog::memory_buf_t buf;
@@ -262,7 +251,6 @@ namespace dsf::utility {
     if (m_bar) {
       auto const line = m_bar->render(m_width);
       std::fwrite(line.data(), 1, line.size(), m_file);
-      m_bar_drawn = true;
     }
 
     std::fflush(m_file);
