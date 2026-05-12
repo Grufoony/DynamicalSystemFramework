@@ -145,7 +145,7 @@ jobs:
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install build wheel setuptools pybind11-stubgen auditwheel
+        python -m pip install build wheel setuptools auditwheel
 
     - name: Build wheel
       env:
@@ -196,7 +196,7 @@ jobs:
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install build wheel setuptools pybind11-stubgen delocate
+        python -m pip install build wheel setuptools delocate
 
     - name: Set macOS environment variables
       run: |
@@ -251,7 +251,7 @@ jobs:
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install build wheel setuptools pybind11-stubgen
+        python -m pip install build wheel setuptools 
 
     - name: Build wheel
       env:
