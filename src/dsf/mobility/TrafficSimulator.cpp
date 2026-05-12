@@ -150,6 +150,20 @@ namespace dsf::mobility {
         m_dynamics->killStagnantAgents(
             dynamicsConfig["kill_stagnant_agents"].get_double().value());
       }
+      if (!dynamicsConfig["importODsFromCSV"].error()) {
+        auto const importODsFromCSVConfig = dynamicsConfig["importODsFromCSV"];
+        auto const odsFile =
+            input_folder /
+            std::filesystem::path(
+                require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
+                    .get_string()
+                    .value());
+        auto const sep =
+            importODsFromCSVConfig["separator"].error()
+                ? CSV_SEPARATOR
+                : importODsFromCSVConfig["separator"].get_string().value()[0];
+        m_dynamics->importODsFromCSV(odsFile.string(), sep);
+      }
     }
     // Connect DB
     {

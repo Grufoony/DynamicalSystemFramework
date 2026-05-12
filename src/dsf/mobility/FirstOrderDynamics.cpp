@@ -950,22 +950,54 @@ namespace dsf::mobility {
 
     switch (csvtype) {
       case AgentInsertionMethod::RANDOM_ODS: {
-        spdlog::info("Importing ODs from CSV with RANDOM_ODS method.");
-        std::unordered_map<Id, double> originNodes;
-        std::unordered_map<Id, double> destinationNodes;
-        for (auto const& row : reader) {
-          auto const nodeId = row["node_id"].get<Id>();
-          auto const type = row["type"].get<std::string>();
-          auto const weight = row["weight"].get<double>();
-          if (type == "O") {
-            originNodes[nodeId] = weight;
-          } else if (type == "D") {
-            destinationNodes[nodeId] = weight;
-          } else {
-            spdlog::warn(
-                "Unknown type '{}' for node {} in CSV. Skipping this row.", type, nodeId);
+        bool bCompatFormat{false};
+        for (auto const& colName : colNames) {
+          if (colName == "o_prob" || colName == "d_prob") {
+            bCompatFormat = true;
+            break;
           }
         }
+        std::unordered_map<Id, double> originNodes;
+        std::unordered_map<Id, double> destinationNodes;
+        if (bCompatFormat) {
+          spdlog::info("Importing ODs from CSV with RANDOM_ODS method (compat format).");
+          for (auto const& row : reader) {
+            auto const nodeId = row["node_id"].get<Id>();
+            // try to get o_prob as double
+            try {
+              auto oProb = row["o_prob"].get<double>();
+              originNodes.emplace(nodeId, oProb);
+            } catch (...) {
+              // Do nothing, the node will be skipped as origin
+            }
+            try {
+              auto dProb = row["d_prob"].get<double>();
+              destinationNodes.emplace(nodeId, dProb);
+            } catch (...) {
+              // Do nothing, the node will be skipped as destination
+            }
+          }
+        } else {
+          spdlog::info(
+              "Importing ODs from CSV with RANDOM_ODS method (extended format).");
+          for (auto const& row : reader) {
+            auto const nodeId = row["node_id"].get<Id>();
+            auto const type = row["type"].get<std::string>();
+            auto const weight = row["weight"].get<double>();
+            if (type == "O") {
+              originNodes[nodeId] = weight;
+            } else if (type == "D") {
+              destinationNodes[nodeId] = weight;
+            } else {
+              spdlog::warn("Unknown type '{}' for node {} in CSV. Skipping this row.",
+                           type,
+                           nodeId);
+            }
+          }
+        }
+        spdlog::info("Imported {} origin nodes and {} destination nodes from CSV.",
+                     originNodes.size(),
+                     destinationNodes.size());
         this->setOriginNodes(std::move(originNodes));
         this->setDestinationNodes(std::move(destinationNodes));
         break;
