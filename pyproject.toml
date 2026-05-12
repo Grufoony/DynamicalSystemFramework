@@ -63,3 +63,23 @@ namespaces = true
 
 [tool.setuptools.package-data]
 dsf = ["*.pyi", "py.typed", "**/*.pyi"]
+
+[tool.cibuildwheel]
+build = ["cp312-*", "cp314-*"]
+skip = ["*-musllinux_*"]
+
+[tool.cibuildwheel.linux]
+before-all = "dnf install -y gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils git zip unzip curl tar && git clone https://github.com/microsoft/vcpkg /opt/vcpkg && /opt/vcpkg/bootstrap-vcpkg.sh && /opt/vcpkg/vcpkg install tbb"
+
+[tool.cibuildwheel.linux.environment]
+CC = "/opt/rh/gcc-toolset-13/root/usr/bin/gcc"
+CXX = "/opt/rh/gcc-toolset-13/root/usr/bin/g++"
+CMAKE_ARGS = "-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake -DDSF_COMPATIBILITY_BUILD=ON -DBUILD_PYTHON_BINDINGS=ON -DPython_EXECUTABLE=$(which python)"
+
+[tool.cibuildwheel.macos]
+before-all = "brew install cmake tbb"
+environment = { MACOSX_DEPLOYMENT_TARGET = "15.0", CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_PREFIX_PATH=/opt/homebrew;/usr/local" }
+
+[tool.cibuildwheel.windows]
+before-all = "vcpkg install tbb:x64-windows tbb:x86-windows"
+environment = { CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_PREFIX_PATH=C:/vcpkg/installed/x64-windows" }
