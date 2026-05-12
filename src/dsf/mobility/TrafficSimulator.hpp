@@ -188,8 +188,9 @@ namespace dsf::mobility {
 
   public:
     TrafficSimulator();
-    // explicit TrafficSimulator(std::string_view const jsonConfigFile);
+    explicit TrafficSimulator(std::string_view const jsonConfigFile);
 
+    void importConfig(std::string_view const jsonConfigFile);
     /// @brief Connect to a SQLite database, creating it if it doesn't exist, and executing optional initialization queries
     /// @param dbPath The path to the SQLite database file
     /// @param queries Optional SQL queries to execute upon connecting to the database (default is a set of pragmas for performance optimization : "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
@@ -212,7 +213,7 @@ namespace dsf::mobility {
 
     /// @brief Set the name of the simulation
     /// @param name The name of the simulation
-    void setName(const std::string& name);
+    void setName(std::string_view const name);
 
     void setOutputPrefix(std::string_view const prefix);
 

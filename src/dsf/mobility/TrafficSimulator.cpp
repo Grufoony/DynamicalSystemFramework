@@ -37,57 +37,163 @@ namespace dsf::mobility {
                 std::chrono::system_clock::to_time_t(now))))));
 #endif
   }
-  // TrafficSimulator::TrafficSimulator(std::string_view const jsonConfigPath) {
-  //   simdjson::dom::parser parser;
-  //   simdjson::dom::element root;
-  //   auto error = parser.load(jsonConfigPath).get(root);
-  //   if (error) {
-  //     throw std::runtime_error(std::format(
-  //         "Failed to load JSON configuration file '{}': {}", jsonConfigPath, simdjson::error_message(error)));
-  //   }
-  //   if (!root.is_object()) {
-  //     throw std::runtime_error(std::format(
-  //         "Invalid JSON configuration file '{}': root element is not an object",
-  //         jsonConfigPath));
-  //   }
-  //   // Road network config
-  //   auto roadNetworkConfig = root["road_network"];
-  //   if (roadNetworkConfig.error()) {
-  //     throw std::runtime_error(std::format(
-  //         "Missing 'road_network' configuration in JSON file '{}'", jsonConfigPath));
-  //   }
-  //   importRoadNetwork(roadNetworkConfig["edges_file"].get_string().value(),
-  //                     roadNetworkConfig["node_properties_file"].get_string().value());
-  //   // Dynamics config
-  //   auto dynamicsConfig = root["dynamics"];
-  //   if (dynamicsConfig.error()) {
-  //     throw std::runtime_error(std::format(
-  //         "Missing 'dynamics' configuration in JSON file '{}'", jsonConfigPath));
-  //   }
-  //   if (dynamicsConfig["seed"].error()) {
-  //     m_dynamics->setSeed(dynamicsConfig["seed"].get_uint64().value());
-  //   }
-  //   if (dynamicsConfig["agent_insertion_method"].get_string().value() == "random") {
-  //     m_agentInsertionMethod = AgentInsertionMethod::RANDOM;
-  //   } else if (dynamicsConfig["agent_insertion_method"].get_string().value() == "ods") {
-  //     m_agentInsertionMethod = AgentInsertionMethod::ODS;
-  //   } else if (dynamicsConfig["agent_insertion_method"].get_string().value() ==
-  //              "random_ods") {
-  //     m_agentInsertionMethod = AgentInsertionMethod::RANDOM_ODS;
-  //   } else {
-  //     throw std::runtime_error(
-  //         std::format("Invalid 'agent_insertion_method' value in JSON file '{}': {}",
-  //                     jsonConfigPath,
-  //                     dynamicsConfig["agent_insertion_method"].get_string().value()));
-  //   }
-  //   // Database config
-  //   auto dbConfig = root["database"];
-  //   if (dbConfig.error()) {
-  //     throw std::runtime_error(std::format(
-  //         "Missing 'database' configuration in JSON file '{}'", jsonConfigPath));
-  //   }
-  //   connectDataBase(dbConfig["path"].get_string().value());
-  // }
+  TrafficSimulator::TrafficSimulator(std::string_view const jsonConfigPath) {
+    importConfig(jsonConfigPath);
+  }
+
+  void TrafficSimulator::importConfig(std::string_view const jsonConfigFile) {
+    simdjson::dom::parser parser;
+    simdjson::dom::element root;
+    auto error = parser.load(jsonConfigFile).get(root);
+    if (error) {
+      throw std::runtime_error(
+          std::format("Failed to load JSON configuration file '{}': {}",
+                      jsonConfigFile,
+                      simdjson::error_message(error)));
+    }
+    if (!root.is_object()) {
+      throw std::runtime_error(std::format(
+          "Invalid JSON configuration file '{}': root element is not an object",
+          jsonConfigFile));
+    }
+    auto require_field = [&](auto const& object,
+                             std::string_view const section,
+                             std::string_view const field) {
+      auto fieldValue = object[field];
+      if (fieldValue.error()) {
+        throw std::runtime_error(
+            std::format("Missing JSON field '{}.{}' in configuration file '{}'",
+                        section,
+                        field,
+                        jsonConfigFile));
+      }
+      return fieldValue;
+    };
+    // General settings
+    auto generalConfig = root["general"];
+    if (generalConfig.error()) {
+      throw std::runtime_error(std::format(
+          "Missing 'general' configuration in JSON file '{}'", jsonConfigFile));
+    }
+    auto const input_folder = std::filesystem::path(
+        require_field(generalConfig, "general", "input_folder").get_string().value());
+    auto const output_folder = std::filesystem::path(
+        require_field(generalConfig, "general", "output_folder").get_string().value());
+    std::filesystem::create_directories(output_folder);
+    setOutputPrefix(output_folder.string());
+    {
+      auto const name =
+          require_field(generalConfig, "general", "name").get_string().value();
+      setName(name);
+    }
+    // Road network config
+    {
+      auto roadNetworkConfig = root["road_network"];
+      if (roadNetworkConfig.error()) {
+        throw std::runtime_error(std::format(
+            "Missing 'road_network' configuration in JSON file '{}'", jsonConfigFile));
+      }
+      auto const edgesFile =
+          input_folder /
+          std::filesystem::path(
+              require_field(roadNetworkConfig, "road_network", "edges_file")
+                  .get_string()
+                  .value());
+      auto const nodePropertiesFile =
+          input_folder /
+          std::filesystem::path(
+              require_field(roadNetworkConfig, "road_network", "node_properties_file")
+                  .get_string()
+                  .value());
+      importRoadNetwork(edgesFile.string(), nodePropertiesFile.string());
+      auto const setEdgeWeightParams =
+          require_field(roadNetworkConfig, "road_network", "set_edge_weight");
+      m_dynamics->graph().setEdgeWeight(
+          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "weight")
+              .get_string()
+              .value(),
+          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "threshold")
+              .get_double()
+              .value());
+    }
+    // Dynamics config
+    {
+      auto dynamicsConfig = root["dynamics"];
+      if (dynamicsConfig.error()) {
+        throw std::runtime_error(std::format(
+            "Missing 'dynamics' configuration in JSON file '{}'", jsonConfigFile));
+      }
+      if (!dynamicsConfig["seed"].error()) {
+        m_dynamics->setSeed(dynamicsConfig["seed"].get_uint64().value());
+      }
+      auto const agentInsertionMethod =
+          require_field(dynamicsConfig, "dynamics", "agent_insertion_method")
+              .get_string()
+              .value();
+      if (agentInsertionMethod == "RANDOM") {
+        m_agentInsertionMethod = AgentInsertionMethod::RANDOM;
+      } else if (agentInsertionMethod == "ODS") {
+        m_agentInsertionMethod = AgentInsertionMethod::ODS;
+      } else if (agentInsertionMethod == "RANDOM_ODS") {
+        m_agentInsertionMethod = AgentInsertionMethod::RANDOM_ODS;
+      } else {
+        throw std::runtime_error(
+            std::format("Invalid 'agent_insertion_method' value in JSON file '{}': {}",
+                        jsonConfigFile,
+                        agentInsertionMethod));
+      }
+      if (!dynamicsConfig["error_probability"].error()) {
+        m_dynamics->setErrorProbability(
+            dynamicsConfig["error_probability"].get_double().value());
+      }
+      if (!dynamicsConfig["kill_stagnant_agents"].error()) {
+        m_dynamics->killStagnantAgents(
+            dynamicsConfig["kill_stagnant_agents"].get_double().value());
+      }
+    }
+    // Connect DB
+    {
+      if (!generalConfig["database"].error()) {
+        spdlog::info("Database configuration found. Connecting to database...");
+        auto const databasePath =
+            output_folder /
+            std::filesystem::path(
+                require_field(generalConfig, "general", "database").get_string().value());
+        connectDataBase(databasePath.string());
+      }
+    }
+    // Update paths
+    {
+      auto const updatePathsConfig = generalConfig["update_paths"];
+      if (!updatePathsConfig.error()) {
+        updatePaths(require_field(updatePathsConfig, "general.update_paths", "interval")
+                        .get_uint64()
+                        .value(),
+                    updatePathsConfig["throw_on_empty"].get_bool().has_value()
+                        ? updatePathsConfig["throw_on_empty"].get_bool().value()
+                        : true);
+      }
+    }
+    // Save Data
+    {
+      auto const save_data = generalConfig["save_data"];
+      if (!save_data.error()) {
+        saveData(save_data["interval"].get_uint64().value(),
+                 save_data["avg"].get_bool().has_value()
+                     ? save_data["avg"].get_bool().value()
+                     : false,
+                 save_data["road"].get_bool().has_value()
+                     ? save_data["road"].get_bool().value()
+                     : false,
+                 save_data["travel"].get_bool().has_value()
+                     ? save_data["travel"].get_bool().value()
+                     : false,
+                 save_data["agent"].get_bool().has_value()
+                     ? save_data["agent"].get_bool().value()
+                     : false);
+      }
+    }
+  }
 
   void TrafficSimulator::connectDataBase(std::string_view const dbPath,
                                          std::string_view const queries) {
@@ -138,13 +244,26 @@ namespace dsf::mobility {
         saveAgentData);
   }
 
-  void TrafficSimulator::setName(const std::string& name) {
-    m_name = name;
-    m_safeName = name;
+  void TrafficSimulator::setName(std::string_view const name) {
+    m_name = std::string(name);
+    m_safeName = std::string(name);
     std::ranges::replace(m_safeName, ' ', '_');
   }
   void TrafficSimulator::setOutputPrefix(std::string_view const prefix) {
-    m_outputPrefix = std::string(prefix);
+    // Check if prefix is a path to an existing directory. If so, be sure it has a trailing separator
+    std::filesystem::path prefixPath(prefix);
+    if (std::filesystem::exists(prefixPath) &&
+        std::filesystem::is_directory(prefixPath)) {
+      std::string prefixStr = prefixPath.string();
+      if (prefixStr.empty() ||
+          prefixStr.back() != std::filesystem::path::preferred_separator) {
+        m_outputPrefix = prefixStr + std::filesystem::path::preferred_separator;
+      } else {
+        m_outputPrefix = prefixStr;
+      }
+    } else {
+      m_outputPrefix = std::string(prefix);
+    }
   }
 
   void TrafficSimulator::setTimeFrame(std::time_t const initTime,
@@ -295,7 +414,7 @@ namespace dsf::mobility {
       spdlog::debug("No street data records to save for time step {}.", time_step);
       return;
     }
-    auto const filename{std::format("{}_{}_road_data.csv", simulation_id, m_safeName)};
+    auto const filename{m_generateCSVfilename("road_data")};
     bool fileExists = std::filesystem::exists(filename);
     std::ofstream outFile(filename, std::ios::app);
     if (!outFile.is_open()) {
@@ -391,7 +510,7 @@ namespace dsf::mobility {
                                            const std::int64_t time_step,
                                            const std::int64_t simulation_id,
                                            const AverageStatsRecord& averageStats) const {
-    auto const filename{std::format("{}_{}_avg_stats.csv", simulation_id, m_safeName)};
+    auto const filename{m_generateCSVfilename("avg_stats")};
     bool fileExists = std::filesystem::exists(filename);
     std::ofstream outFile(filename, std::ios::app);
     if (!outFile.is_open()) {
@@ -475,7 +594,7 @@ namespace dsf::mobility {
       spdlog::debug("No travel data records to save for time step {}.", time_step);
       return;
     }
-    auto const filename{std::format("{}_{}_travel_data.csv", simulation_id, m_safeName)};
+    auto const filename{m_generateCSVfilename("travel_data")};
     bool fileExists = std::filesystem::exists(filename);
     std::ofstream outFile(filename, std::ios::app);
     if (!outFile.is_open()) {
@@ -548,7 +667,7 @@ namespace dsf::mobility {
       spdlog::debug("No agent data records to save for time step {}.", time_step);
       return;
     }
-    auto const filename{std::format("{}_{}_agent_data.csv", simulation_id, m_safeName)};
+    auto const filename{m_generateCSVfilename("agent_data")};
     bool fileExists = std::filesystem::exists(filename);
     std::ofstream outFile(filename, std::ios::app);
     if (!outFile.is_open()) {

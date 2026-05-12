@@ -1136,6 +1136,14 @@ Returns:
   // Bind TrafficSimulator class to mobility submodule
   pybind11::class_<dsf::mobility::TrafficSimulator>(mobility, "TrafficSimulator")
       .def(pybind11::init<>())
+      .def(pybind11::init<std::string const&>(),
+           pybind11::arg("jsonConfigFile"),
+           R"doc(Create a TrafficSimulator instance from a JSON configuration file.
+      Args:
+          jsonConfigFile (str): Path to the JSON configuration file.
+
+      Returns:
+          TrafficSimulator: A new instance of the traffic simulator initialized with the provided configuration.)doc")
       .def("connectDataBase",
            &dsf::mobility::TrafficSimulator::connectDataBase,
            pybind11::arg("dbPath"),
