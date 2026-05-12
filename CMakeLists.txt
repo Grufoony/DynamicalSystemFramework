@@ -39,7 +39,7 @@ if(NOT CMAKE_BUILD_TYPE)
   endif()
 endif()
 if(BUILD_PYTHON_BINDINGS)
-  set(DSF_BUILD_PIC ON)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 # Set the C++ standard
@@ -166,9 +166,6 @@ endif()
 
 add_library(dsf STATIC ${SOURCES})
 target_compile_definitions(dsf PRIVATE SPDLOG_USE_STD_FORMAT)
-if(DSF_BUILD_PIC)
-  set_target_properties(dsf PROPERTIES POSITION_INDEPENDENT_CODE ON)
-endif()
 target_include_directories(
   dsf PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
              $<INSTALL_INTERFACE:include>)
