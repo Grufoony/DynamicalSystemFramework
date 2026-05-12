@@ -5,17 +5,12 @@
 #include <pybind11/functional.h>  // For std::function support
 #include <pybind11/numpy.h>       // For numpy array support
 
-#include <spdlog/spdlog.h>  // For logging functionality
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
 PYBIND11_MODULE(dsf_cpp, m) {
   m.doc() = "Python bindings for the DSF library";
   m.attr("__version__") = dsf::version();
-
-  // Bind the dsf::log_to_file function
-  m.def("log_to_file",
-        &dsf::log_to_file,
-        pybind11::arg("path"),
-        "Set up logging to a specified file");
 
   // Create mobility submodule
   auto mobility = m.def_submodule("mobility",
@@ -24,6 +19,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
   auto mdt = m.def_submodule("mdt",
                              "Bindings for movement data tools (MDT) related classes and "
                              "functions, under the dsf::mdt C++ namespace.");
+
+  auto logging =
+      m.def_submodule("logging",
+                      "Bindings for logging-related classes and functions, under the "
+                      "spdlog C++ namespace.");
 
   // Bind AgentInsertionMethod enum
   pybind11::enum_<dsf::mobility::AgentInsertionMethod>(mobility, "AgentInsertionMethod")
@@ -51,7 +51,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .export_values();
 
   // Bind spdlog log level enum
-  pybind11::enum_<spdlog::level::level_enum>(m, "LogLevel")
+  pybind11::enum_<spdlog::level::level_enum>(logging, "LogLevel")
       .value("TRACE", spdlog::level::trace)
       .value("DEBUG", spdlog::level::debug)
       .value("INFO", spdlog::level::info)
@@ -61,13 +61,49 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .value("OFF", spdlog::level::off)
       .export_values();
 
-  // Bind spdlog logging functions
-  m.def("set_log_level",
-        &spdlog::set_level,
-        pybind11::arg("level"),
-        "Set the global log level for spdlog");
+  logging.def(
+      "set_level",
+      [](spdlog::level::level_enum level) { spdlog::set_level(level); },
+      pybind11::arg("level"),
+      "Set the global log level");
 
-  m.def("get_log_level", &spdlog::get_level, "Get the current global log level");
+  logging.def(
+      "to_file",
+      [](std::string const& fileName) {
+        try {
+          auto file_logger = spdlog::basic_logger_mt("dsf_file_logger", fileName);
+          spdlog::set_default_logger(file_logger);
+          spdlog::info("Logging to file: {}", fileName);
+        } catch (const spdlog::spdlog_ex& ex) {
+          spdlog::error("Log initialization failed: {}", ex.what());
+        }
+      },
+      pybind11::arg("fileName"),
+      "Configure the global logger to write to a file");
+
+  logging.def(
+      "info",
+      [](std::string const& message) { spdlog::info("{}", message); },
+      pybind11::arg("message"),
+      "Log an info message");
+
+  logging.def(
+      "warn",
+      [](std::string const& message) { spdlog::warn("{}", message); },
+      pybind11::arg("message"),
+      "Log a warning message");
+
+  logging.def(
+      "error",
+      [](std::string const& message) { spdlog::error("{}", message); },
+      pybind11::arg("message"),
+      "Log an error message");
+
+  logging.def(
+      "debug",
+      [](std::string const& message) { spdlog::debug("{}", message); },
+      pybind11::arg("message"),
+      "Log a debug message");
 
   // Bind Street class to mobility submodule
   pybind11::class_<dsf::mobility::Street>(mobility, "Street")
