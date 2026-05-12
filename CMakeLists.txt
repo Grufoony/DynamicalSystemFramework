@@ -146,8 +146,25 @@ FetchContent_GetProperties(simdjson)
 if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
 endif()
-# Check if the user has TBB installed
-find_package(TBB REQUIRED CONFIG)
+# Check if the user has TBB installed. Try to find a TBB CMake package; if not
+# available (common in minimal manylinux images), fetch oneTBB via FetchContent
+# so CMake has a TBBConfig and a `TBB::tbb` target to link against.
+find_package(TBB CONFIG)
+if(NOT TBB_FOUND)
+  message(STATUS "TBB not found via find_package; fetching oneTBB as a vendored dependency")
+  include(FetchContent)
+  FetchContent_Declare(
+    oneTBB
+    GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
+    # Pin to a recent stable tag; adjust if you prefer another version
+    GIT_TAG v2023.1.0)
+  FetchContent_GetProperties(oneTBB)
+  if(NOT oneTBB_POPULATED)
+    FetchContent_MakeAvailable(oneTBB)
+  endif()
+  # After adding oneTBB, try locating the CMake config provided by its build
+  find_package(TBB CONFIG REQUIRED)
+endif()
 # Get SQLiteCpp
 # Disable cppcheck on Windows to avoid issues with missing cppcheck installation
 if(WIN32)

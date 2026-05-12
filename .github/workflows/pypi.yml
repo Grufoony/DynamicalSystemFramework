@@ -121,7 +121,7 @@ jobs:
     name: Build Windows wheels with cibuildwheel
     needs: [check-version]
     runs-on: windows-latest
-    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event_pull_request.draft == false)
+    if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -148,7 +148,7 @@ jobs:
 
   publish:
     name: Publish to TestPyPI / PyPI
-    needs: [build-linux, build-macos, build-windows]
+    needs: [check-version, build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     if: needs.check-version.outputs.should_build == 'true' && (github.event_name == 'push' || github.event.pull_request.draft == false)
     steps:
