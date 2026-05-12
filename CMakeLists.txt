@@ -147,7 +147,25 @@ if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
 endif()
 # Check if the user has TBB installed
-find_package(TBB REQUIRED CONFIG)
+find_package(TBB QUIET)
+
+if(NOT TBB_FOUND)
+    find_path(TBB_INCLUDE_DIR NAMES tbb/tbb.h)
+    find_library(TBB_LIBRARY NAMES tbb)
+    
+    if(TBB_INCLUDE_DIR AND TBB_LIBRARY)
+        set(TBB_FOUND TRUE)
+        if(NOT TARGET TBB::tbb)
+            add_library(TBB::tbb UNKNOWN IMPORTED)
+            set_target_properties(TBB::tbb PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${TBB_INCLUDE_DIR}"
+                IMPORTED_LOCATION "${TBB_LIBRARY}"
+            )
+        endif()
+    else()
+        message(FATAL_ERROR "TBB not found. Install tbb-devel (RHEL) or libtbb-dev (Debian)")
+    endif()
+endif()
 # Get SQLiteCpp
 # Disable cppcheck on Windows to avoid issues with missing cppcheck installation
 if(WIN32)
