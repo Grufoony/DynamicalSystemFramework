@@ -1196,26 +1196,56 @@ Returns:
           },
           pybind11::arg("initTime"),
           pybind11::arg("endTime") = pybind11::none())
-      .def(
-          "setNAgentsPerTimeStep",
-          [](dsf::mobility::TrafficSimulator& self,
-             const std::vector<std::size_t>& nAgents,
-             pybind11::object deltaT) {
-            if (deltaT.is_none()) {
-              self.setNAgentsPerTimeStep(nAgents, std::nullopt);
-            } else {
-              auto dt = static_cast<std::time_t>(pybind11::cast<std::uint64_t>(deltaT));
-              self.setNAgentsPerTimeStep(nAgents, std::optional<std::time_t>(dt));
-            }
-          },
-          pybind11::arg("nAgentsPerTimeStep"),
-          pybind11::arg("deltaT") = pybind11::none())
       .def("setAgentInsertionMethod",
            &dsf::mobility::TrafficSimulator::setAgentInsertionMethod,
            pybind11::arg("insertionMethod"))
-      .def("run",
-           &dsf::mobility::TrafficSimulator::run,
-           R"doc(Run the traffic simulation.)doc")
+      .def(
+          "run",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::vector<std::size_t> nAgentsPerTimeStep,
+             std::optional<std::time_t> deltaT) {
+            self.run(nAgentsPerTimeStep, deltaT);
+          },
+          pybind11::arg("nAgentsPerTimeStep"),
+          pybind11::arg("deltaT") = std::nullopt,
+          R"doc(Run the simulation in default mode.
+
+      Args:
+          nAgentsPerTimeStep: Number of agents to insert at each scheduled insertion step.
+          deltaT: Optional interval in seconds between agent insertions. If omitted,
+                  the interval is inferred from the configured start/end times and the
+                  length of nAgentsPerTimeStep.
+      )doc")
+
+      .def(
+          "run",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::size_t nInitialAgents,
+             std::time_t agentInsertionDeltaT,
+             std::time_t checkDeltaT,
+             std::size_t agentIncrement) {
+            self.run(nInitialAgents,
+                     agentInsertionDeltaT,
+                     checkDeltaT,
+                     agentIncrement);
+          },
+          pybind11::arg("nInitialAgents"),
+          pybind11::arg("agentInsertionDeltaT"),
+          pybind11::arg("checkDeltaT"),
+          pybind11::arg("agentIncrement") = 1,
+          R"doc(Run the simulation in slow-charge mode.
+
+      Gradually ramps up the agent population: every checkDeltaT seconds the current
+      agent count is compared against the target; if it has fallen below, the target
+      is raised by agentIncrement and a fresh batch is injected every
+      agentInsertionDeltaT seconds.
+
+      Args:
+          nInitialAgents:        Starting target number of agents in the network.
+          agentInsertionDeltaT:  Interval in seconds between agent insertion attempts.
+          checkDeltaT:           Interval in seconds between occupancy checks.
+          agentIncrement:        How many agents to add to the target at each check (default 1).
+      )doc")
       .def(
           "database",
           [](dsf::mobility::TrafficSimulator& self) { return self.database(); },
@@ -1229,7 +1259,6 @@ Returns:
       .def("strInitTime", &dsf::mobility::TrafficSimulator::strInitTime)
       .def("endTime", &dsf::mobility::TrafficSimulator::endTime)
       .def("strEndTime", &dsf::mobility::TrafficSimulator::strEndTime)
-      .def("agentInsertionDeltaT", &dsf::mobility::TrafficSimulator::agentInsertionDeltaT)
       .def("name", &dsf::mobility::TrafficSimulator::name)
       .def("safeName", &dsf::mobility::TrafficSimulator::safeName);
 

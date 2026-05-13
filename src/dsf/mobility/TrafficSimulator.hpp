@@ -19,11 +19,9 @@ namespace dsf::mobility {
     std::string m_name = "simulation";
     std::string m_safeName = "simulation";
     std::string m_outputPrefix = std::string();
-    std::vector<std::size_t> m_nAgentsPerTimeStep;
     AgentInsertionMethod m_agentInsertionMethod{AgentInsertionMethod::RANDOM};
     std::time_t m_initTime = 0;
     std::time_t m_endTime = 0;
-    std::time_t m_agentInsertionDeltaT = 0;
     std::time_t m_updatePathDeltaT = 0;
     std::optional<std::time_t> m_savingInterval{std::nullopt};
     bool m_saveAverageStats{false};
@@ -179,6 +177,13 @@ namespace dsf::mobility {
     void m_preparePersistence();
     void m_flushStepData(StepDataResult&& stepData);
 
+    void m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
+                      std::optional<std::time_t> const deltaT = std::nullopt);
+    void m_runSlowCharge(std::size_t const nInitialAgents,
+                         std::time_t const agentInsertionDeltaT,
+                         std::time_t const checkDeltaT,
+                         std::size_t const agentIncrement = 1);
+
   public:
     /// @brief Construct a new TrafficSimulator with a generated simulation id.
     TrafficSimulator();
@@ -228,11 +233,6 @@ namespace dsf::mobility {
     /// @param endTime Optional simulation end time.
     void setTimeFrame(std::time_t const initTime,
                       std::optional<std::time_t> const endTime = std::nullopt);
-    /// @brief Set the agent insertion schedule for each time step.
-    /// @param nAgentsPerTimeStep Number of agents to add at each insertion step.
-    /// @param deltaT Optional insertion cadence in seconds.
-    void setNAgentsPerTimeStep(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                               std::optional<std::time_t> const deltaT = std::nullopt);
     /// @brief Set the strategy used when inserting new agents.
     /// @param insertionMethod The insertion method to use.
     void setAgentInsertionMethod(AgentInsertionMethod const insertionMethod) noexcept {
@@ -240,7 +240,27 @@ namespace dsf::mobility {
     }
 
     /// @brief Run the simulation until the configured end time.
-    void run();
+    inline void run(std::vector<std::size_t> const& nAgentsPerTimeStep,
+                    std::optional<std::time_t> const deltaT = std::nullopt) {
+      if (m_dynamics == nullptr) {
+        throw std::runtime_error(
+            "Cannot run the simulation without imported road network dynamics.");
+      }
+      m_dynamics->prepareNetwork();
+      m_runDefault(nAgentsPerTimeStep, deltaT);
+    }
+
+    inline void run(std::size_t const nInitialAgents,
+                    std::time_t const agentInsertionDeltaT,
+                    std::time_t const checkDeltaT,
+                    std::size_t const agentIncrement = 1) {
+      if (m_dynamics == nullptr) {
+        throw std::runtime_error(
+            "Cannot run the simulation without imported road network dynamics.");
+      }
+      m_dynamics->prepareNetwork();
+      m_runSlowCharge(nInitialAgents, agentInsertionDeltaT, checkDeltaT, agentIncrement);
+    }
 
     /// @brief Get the database connection (const version)
     /// @return const SQLite::Database const*, The database connection
@@ -261,8 +281,6 @@ namespace dsf::mobility {
     inline auto endTime() const { return m_endTime; }
     /// @brief Get the formatted simulation end time.
     inline auto strEndTime() const { return m_timeToStr(m_endTime); }
-    /// @brief Get the agent insertion cadence.
-    inline auto agentInsertionDeltaT() const { return m_agentInsertionDeltaT; }
     /// @brief Get the name of the simulation
     /// @return const std::string&, The name of the simulation
     inline auto const& name() const { return m_name; };

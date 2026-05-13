@@ -271,6 +271,165 @@ namespace dsf::mobility {
     }
   }
 
+  void TrafficSimulator::m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
+                                      std::optional<std::time_t> const deltaT) {
+    if (deltaT.has_value()) {
+      if (m_endTime == 0) {
+        spdlog::warn(
+            "Delta time for agent insertion is set to {} seconds, but no end time is "
+            "currently set. The end time will be ignored for agent insertion timing.",
+            deltaT.value());
+      }
+      m_endTime = m_initTime + nAgentsPerTimeStep.size() * deltaT.value();
+    }
+    std::time_t agentInsertionDeltaT = deltaT.value_or(0);
+
+    if (nAgentsPerTimeStep.empty()) {
+      throw std::runtime_error(
+          "Cannot run the simulation without an agent insertion schedule.");
+    }
+
+    auto const totalTimeSteps = static_cast<std::size_t>(m_endTime - m_initTime);
+
+    if (agentInsertionDeltaT == 0) {
+      if (m_endTime > m_initTime) {
+        agentInsertionDeltaT =
+            totalTimeSteps / static_cast<std::time_t>(nAgentsPerTimeStep.size());
+        if (totalTimeSteps % nAgentsPerTimeStep.size() != 0) {
+          spdlog::warn(
+              "Total simulation time ({} seconds) is not perfectly divisible by the "
+              "number of agent insertion steps ({}). The last agent insertion step "
+              "will occur at time {} instead of the end time {}.",
+              totalTimeSteps,
+              nAgentsPerTimeStep.size(),
+              m_timeToStr(m_initTime + agentInsertionDeltaT * nAgentsPerTimeStep.size()),
+              m_timeToStr(m_endTime));
+        }
+      }
+      if (agentInsertionDeltaT == 0) {
+        agentInsertionDeltaT = 1;
+      }
+    }
+    if (m_endTime == 0) {
+      m_endTime = m_initTime + static_cast<std::time_t>(agentInsertionDeltaT *
+                                                        nAgentsPerTimeStep.size());
+    }
+
+    m_preparePersistence();
+
+    spdlog::info(
+        "Starting simulation run from {} to {} ({} time steps) with agent insertion "
+        "every {} seconds.",
+        m_timeToStr(m_initTime),
+        m_timeToStr(m_endTime),
+        totalTimeSteps,
+        agentInsertionDeltaT);
+    auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
+    for (std::size_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
+      if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
+          (currentStep == 0)) {
+        m_dynamics->updatePaths();
+      }
+      if (currentStep % agentInsertionDeltaT == 0) {
+        auto const insertionIndex =
+            static_cast<std::size_t>(currentStep / agentInsertionDeltaT);
+        if (insertionIndex < nAgentsPerTimeStep.size()) {
+          auto const nAgents = nAgentsPerTimeStep.at(insertionIndex);
+          if (nAgents > 0) {
+            m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
+          }
+        } else {
+          spdlog::warn(
+              "Current time step {} exceeds the agent insertion schedule. No more "
+              "agents will be inserted.",
+              currentStep);
+        }
+      }
+
+      bool const shouldSave =
+          m_savingInterval.has_value() &&
+          (m_savingInterval.value() == 0 || currentStep % m_savingInterval.value() == 0);
+      auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
+                                                                      m_saveStreetData,
+                                                                      m_saveTravelData,
+                                                                      m_saveAgentData}
+                                                    : StepDataRequest{});
+
+      if (shouldSave) {
+        m_pendingStepData.push_back(std::move(stepData));
+        m_flushStepData(std::move(m_pendingStepData.back()));
+        m_pendingStepData.clear();
+        if (m_savingInterval.value() == 0) {
+          m_savingInterval.reset();
+          m_saveAverageStats = false;
+          m_saveStreetData = false;
+          m_saveTravelData = false;
+          m_saveAgentData = false;
+        }
+      }
+      pbar->update();
+    }
+  }
+  void TrafficSimulator::m_runSlowCharge(std::size_t const nInitialAgents,
+                                         std::time_t const agentInsertionDeltaT,
+                                         std::time_t const checkDeltaT,
+                                         std::size_t const agentIncrement) {
+    if (m_endTime < m_initTime) {
+      throw std::runtime_error(
+          "End time must be greater than or equal to initial time for the simulation.");
+    }
+    auto const totalTimeSteps = static_cast<std::size_t>(m_endTime - m_initTime);
+
+    m_preparePersistence();
+
+    spdlog::info(
+        "Starting slow charge run from {} to {} ({} time steps) with agent insertion "
+        " check every {} seconds.",
+        m_timeToStr(m_initTime),
+        m_timeToStr(m_endTime),
+        totalTimeSteps,
+        checkDeltaT);
+    auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
+    std::size_t currentAgents{nInitialAgents};
+    std::size_t previousAgents{0};
+    for (std::size_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
+      if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
+          (currentStep == 0)) {
+        m_dynamics->updatePaths();
+      }
+      if (currentStep % checkDeltaT == 0 && m_dynamics->nAgents() < previousAgents) {
+        previousAgents = m_dynamics->nAgents();
+        currentAgents += agentIncrement;
+      }
+      if (currentStep % agentInsertionDeltaT == 0) {
+        m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);
+      }
+
+      bool const shouldSave =
+          m_savingInterval.has_value() &&
+          (m_savingInterval.value() == 0 || currentStep % m_savingInterval.value() == 0);
+      auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
+                                                                      m_saveStreetData,
+                                                                      m_saveTravelData,
+                                                                      m_saveAgentData}
+                                                    : StepDataRequest{});
+
+      if (shouldSave) {
+        m_pendingStepData.push_back(std::move(stepData));
+        m_flushStepData(std::move(m_pendingStepData.back()));
+        m_pendingStepData.clear();
+        if (m_savingInterval.value() == 0) {
+          m_savingInterval.reset();
+          m_saveAverageStats = false;
+          m_saveStreetData = false;
+          m_saveTravelData = false;
+          m_saveAgentData = false;
+        }
+      }
+      pbar->update();
+    }
+  }
+
   void TrafficSimulator::connectDataBase(std::string_view const dbPath,
                                          std::string_view const queries) {
     m_database = std::make_unique<SQLite::Database>(
@@ -356,26 +515,8 @@ namespace dsf::mobility {
         m_endTime = *endTime;
       }
     }
-    if (m_endTime != 0 && !m_nAgentsPerTimeStep.empty()) {
-      m_agentInsertionDeltaT = (m_endTime - m_initTime) / m_nAgentsPerTimeStep.size();
-    }
   }
 
-  void TrafficSimulator::setNAgentsPerTimeStep(
-      std::vector<std::size_t> const& nAgentsPerTimeStep,
-      std::optional<std::time_t> const deltaT) {
-    m_nAgentsPerTimeStep = nAgentsPerTimeStep;
-    if (deltaT.has_value()) {
-      if (m_endTime == 0) {
-        spdlog::warn(
-            "Delta time for agent insertion is set to {} seconds, but no end time is "
-            "currently set. The end time will be ignored for agent insertion timing.",
-            deltaT.value());
-      }
-      m_agentInsertionDeltaT = deltaT.value();
-      m_endTime = m_initTime + m_nAgentsPerTimeStep.size() * m_agentInsertionDeltaT;
-    }
-  }
   void TrafficSimulator::m_dumpSimInfoSQL() const {
     if (!this->database()) {
       throw std::runtime_error(
@@ -914,100 +1055,6 @@ namespace dsf::mobility {
     }
     if (stepData.averageStats.has_value()) {
       m_saveAvgStatsCSV(datetime, timeStep, *stepData.averageStats);
-    }
-  }
-
-  void TrafficSimulator::run() {
-    if (m_dynamics == nullptr) {
-      throw std::runtime_error(
-          "Cannot run the simulation without imported road network dynamics.");
-    }
-    if (m_nAgentsPerTimeStep.empty()) {
-      throw std::runtime_error(
-          "Cannot run the simulation without an agent insertion schedule.");
-    }
-
-    m_dynamics->prepareNetwork();
-
-    auto const totalTimeSteps = static_cast<std::size_t>(m_endTime - m_initTime);
-
-    if (m_agentInsertionDeltaT == 0) {
-      if (m_endTime > m_initTime) {
-        m_agentInsertionDeltaT =
-            totalTimeSteps / static_cast<std::time_t>(m_nAgentsPerTimeStep.size());
-        if (totalTimeSteps % m_nAgentsPerTimeStep.size() != 0) {
-          spdlog::warn(
-              "Total simulation time ({} seconds) is not perfectly divisible by the "
-              "number of agent insertion steps ({}). The last agent insertion step "
-              "will occur at time {}.",
-              totalTimeSteps,
-              m_nAgentsPerTimeStep.size(),
-              m_timeToStr(m_initTime +
-                          m_agentInsertionDeltaT * m_nAgentsPerTimeStep.size()));
-        }
-      }
-      if (m_agentInsertionDeltaT == 0) {
-        m_agentInsertionDeltaT = 1;
-      }
-    }
-    if (m_endTime == 0) {
-      m_endTime = m_initTime + static_cast<std::time_t>(m_agentInsertionDeltaT *
-                                                        m_nAgentsPerTimeStep.size());
-    }
-
-    m_preparePersistence();
-
-    spdlog::info(
-        "Starting simulation run from {} to {} ({} time steps) with agent insertion "
-        "every {} seconds.",
-        m_timeToStr(m_initTime),
-        m_timeToStr(m_endTime),
-        totalTimeSteps,
-        m_agentInsertionDeltaT);
-    auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
-    for (std::size_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
-      if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-          (currentStep == 0)) {
-        m_dynamics->updatePaths();
-      }
-      if (currentStep % m_agentInsertionDeltaT == 0) {
-        auto const insertionIndex =
-            static_cast<std::size_t>(currentStep / m_agentInsertionDeltaT);
-        if (insertionIndex < m_nAgentsPerTimeStep.size()) {
-          auto const nAgents = m_nAgentsPerTimeStep.at(insertionIndex);
-          if (nAgents > 0) {
-            m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
-          }
-        } else {
-          spdlog::warn(
-              "Current time step {} exceeds the agent insertion schedule. No more "
-              "agents will be inserted.",
-              currentStep);
-        }
-      }
-
-      bool const shouldSave =
-          m_savingInterval.has_value() &&
-          (m_savingInterval.value() == 0 || currentStep % m_savingInterval.value() == 0);
-      auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
-                                                                      m_saveStreetData,
-                                                                      m_saveTravelData,
-                                                                      m_saveAgentData}
-                                                    : StepDataRequest{});
-
-      if (shouldSave) {
-        m_pendingStepData.push_back(std::move(stepData));
-        m_flushStepData(std::move(m_pendingStepData.back()));
-        m_pendingStepData.clear();
-        if (m_savingInterval.value() == 0) {
-          m_savingInterval.reset();
-          m_saveAverageStats = false;
-          m_saveStreetData = false;
-          m_saveTravelData = false;
-          m_saveAgentData = false;
-        }
-      }
-      pbar->update();
     }
   }
 }  // namespace dsf::mobility

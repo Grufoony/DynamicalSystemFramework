@@ -13,9 +13,7 @@ import pickle
 import dsf
 from dsf.cartography import get_cartography
 from dsf import logging
-from dsf.mobility import (
-    TrafficSimulator,
-)
+from dsf.mobility import TrafficSimulator
 
 import numpy as np
 import networkx as nx
@@ -93,9 +91,4 @@ if __name__ == "__main__":
     simulator.dynamics().setDestinationNodes(destinations)
     simulator.dynamics().killStagnantAgents(40.0)
 
-    # Generate a random vector of integer values for vehicle input
-    # We want values to have a 10s entry for a whole day
-    vehicle_input = np.random.randint(0, 50, size=8640)
-
-    simulator.setNAgentsPerTimeStep(vehicle_input, 10)
-    simulator.run()
+    simulator.run(np.random.randint(0, 50, size=8640), 10)
