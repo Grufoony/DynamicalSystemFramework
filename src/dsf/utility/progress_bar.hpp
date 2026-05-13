@@ -9,8 +9,20 @@
 #include <format>
 #include <string>
 #include <string_view>
-#include <sys/ioctl.h>
-#include <unistd.h>
+
+#ifdef _WIN32
+  #include <io.h>
+  #include <windows.h>
+  #define isatty _isatty
+  #define fileno _fileno
+  struct winsize {
+    unsigned short ws_row;
+    unsigned short ws_col;
+  };
+#else
+  #include <sys/ioctl.h>
+  #include <unistd.h>
+#endif
 
 namespace dsf::utility {
 
@@ -71,9 +83,23 @@ namespace dsf::utility {
     progress_bar* m_bar{nullptr};  // non-owning; lifetime managed by progress_bar RAII
 
     void m_refresh_width() noexcept {
+#ifdef _WIN32
+      // Windows: Try to get console width via Windows API
+      HANDLE hStdout = reinterpret_cast<HANDLE>(_get_osfhandle(fileno(m_file)));
+      if (hStdout != INVALID_HANDLE_VALUE) {
+        CONSOLE_SCREEN_BUFFER_INFO csbi;
+        if (GetConsoleScreenBufferInfo(hStdout, &csbi)) {
+          m_width = static_cast<int>(csbi.srWindow.Right - csbi.srWindow.Left + 1);
+          return;
+        }
+      }
+      m_width = 80;  // fallback to default width
+#else
+      // POSIX: Use ioctl to query terminal width
       winsize ws{};
       if (ioctl(fileno(m_file), TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
         m_width = static_cast<int>(ws.ws_col);
+#endif
     }
 
     // Core repaint: erase bar → emit log line (if any) → redraw bar.
