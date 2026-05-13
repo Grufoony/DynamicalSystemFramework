@@ -15,23 +15,9 @@
 #include <filesystem>
 namespace fs = std::filesystem;
 
-#include <thread>
-#ifdef __APPLE__
-#define thread_t std::thread
-#else
-#define thread_t std::jthread
-#endif
-#include <atomic>
-
-std::atomic<unsigned int> progress{0};
-std::atomic<bool> bExitFlag{false};
-
 // uncomment these lines to print densities, flows and speeds
 #define PRINT_DENSITIES
-// #define PRINT_TP
 
-using RoadNetwork = dsf::mobility::RoadNetwork;
-using Dynamics = dsf::mobility::FirstOrderDynamics;
 using Street = dsf::mobility::Street;
 using TrafficLight = dsf::mobility::TrafficLight;
 
@@ -81,11 +67,12 @@ int main(int argc, char** argv) {
   }
   // Starting
   std::cout << "Using dsf version: " << dsf::version() << '\n';
-  RoadNetwork graph{};
+  dsf::mobility::TrafficSimulator simulator{};
   std::cout << "Importing Manhattan-like network...\n";
-  graph.importEdges("../test/data/manhattan_edges.csv");
-  graph.importNodeProperties("../test/data/manhattan_nodes.csv");
+  simulator.importRoadNetwork("../test/data/manhattan_edges.csv",
+                              "../test/data/manhattan_nodes.csv");
   std::cout << "Setting street parameters..." << '\n';
+  auto& graph = simulator.dynamics()->graph();
 
   // graph.addStreet(Street(100002, std::make_pair(0, 108)));
   // graph.addStreet(Street(100003, std::make_pair(108, 0)));
@@ -152,153 +139,41 @@ int main(int argc, char** argv) {
 
   std::cout << "Creating dynamics...\n";
 
-  Dynamics dynamics{std::move(graph), false, SEED};
+  auto* dynamics = simulator.dynamics();
+  dynamics->setSeed(SEED);
   {
     std::vector<dsf::Id> destinationNodes;
-    for (auto const& [nodeId, pNode] : dynamics.graph().nodes()) {
+    for (auto const& [nodeId, pNode] : graph.nodes()) {
       if (pNode->outgoingEdges().size() < 4) {
         destinationNodes.push_back(nodeId);
       }
     }
-    dynamics.setDestinationNodes(destinationNodes);
+    dynamics->setDestinationNodes(destinationNodes);
     std::cout << "Number of exits: " << destinationNodes.size() << '\n';
   }
-  dynamics.updatePaths();
+  dynamics->updatePaths();
 
-  dynamics.setErrorProbability(ERROR_PROBABILITY);
-  // dynamics.setMaxFlowPercentage(0.69);
-  // dynamics.setForcePriorities(false);
+  dynamics->setErrorProbability(ERROR_PROBABILITY);
+  // dynamics->setMaxFlowPercentage(0.69);
+  // dynamics->setForcePriorities(false);
   if (OPTIMIZE)
-    dynamics.setDataUpdatePeriod(30);  // Store data every 30 time steps
+    dynamics->setDataUpdatePeriod(30);  // Store data every 30 time steps
 
   // Connect database for saving data
-  dynamics.connectDataBase(OUT_FOLDER + "simulation_data.db");
+  simulator.connectDataBase(OUT_FOLDER + "simulation_data.db");
 
   // Configure data saving: interval=10, saveAverageStats=true, saveStreetData=true
 #ifdef PRINT_DENSITIES
-  dynamics.saveData(300, true, true, false);
+  simulator.saveData(300, true, true, false);
 #else
-  dynamics.saveData(300, true, false, false);
+  simulator.saveData(300, true, false, false);
 #endif
-
-  const auto TM = dynamics.turnMapping();
 
   std::cout << "Done." << std::endl;
   std::cout << "Running simulation...\n";
-#ifdef PRINT_TP
-  std::ofstream outTP(OUT_FOLDER + "turn_probabilities.csv");
-  outTP << "time";
-  for (const auto& [id, street] : dynamics.graph().edges()) {
-    outTP << ';' << id;
-  }
-  outTP << '\n';
-#endif
 
-  int deltaAgents{std::numeric_limits<int>::max()};
-  int previousAgents{0};
-
-  // std::vector<int> deltas;
-
-  // lauch progress bar
-  thread_t t([]() {
-    while (progress < MAX_TIME && !bExitFlag) {
-      printLoadingBar(progress, MAX_TIME);
-      std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-    }
-  });
-  // dynamics.addAgentsUniformly(20000);
-  while (dynamics.time_step() < MAX_TIME) {
-    if (dynamics.time_step() < MAX_TIME && nAgents > 0 &&
-        dynamics.time_step() % 60 == 0) {
-      try {
-        dynamics.addAgentsUniformly(nAgents);
-      } catch (const std::overflow_error& e) {
-        std::cout << e.what() << std::endl;
-        std::cout << "Overflow reached. Exiting the simulation..." << std::endl;
-        bExitFlag = true;
-        break;
-      }
-    }
-    dynamics.evolve();
-    if (OPTIMIZE && (dynamics.time_step() % 420 == 0)) {
-      dynamics.optimizeTrafficLights(
-          dsf::TrafficLightOptimization::DOUBLE_TAIL, std::string(), 0.3);
-    }
-    if (dynamics.time_step() % 2400 == 0 && nAgents > 0) {
-      // auto meanDelta = std::accumulate(deltas.begin(), deltas.end(), 0) /
-      // deltas.size();
-      auto const totalDynamicsAgents{dynamics.nAgents()};
-      deltaAgents = totalDynamicsAgents - previousAgents;
-      if (deltaAgents < 0) {
-        ++nAgents;
-        std::cout << "- Now I'm adding " << nAgents << " agents.\n";
-        std::cout << "Delta agents: " << deltaAgents << '\n';
-        std::cout << "At time: " << dynamics.time_step() << '\n';
-      }
-      previousAgents = totalDynamicsAgents;
-      // deltas.clear();
-    }
-
-    // if (meanDensity.mean > 0.7) {
-    //   nAgents = 0;
-    // }
-
-    if (dynamics.time_step() % 300 == 0) {
-      // printLoadingBar(dynamics.time_step(), MAX_TIME);
-      // deltaAgents = std::labs(dynamics.agents().size() - previousAgents);
-      // Data is now saved automatically by saveData() configuration
-      // deltas.push_back(deltaAgents);
-      // previousAgents = dynamics.agents().size();
-#ifdef PRINT_TP
-      const auto& tc{dynamics.turnCounts()};
-      outTP << dynamics.time_step();
-      for (const auto& [id, street] : dynamics.graph().edges()) {
-        const auto& probs{tc.at(id)};
-        outTP << ";[";
-        const auto& nextStreets = TM.at(id);
-        bool first = true;
-        for (auto i = 0; i < 4; ++i) {
-          if (nextStreets[i] < 0) {
-            continue;
-          }
-          if (!first) {
-            outTP << ',';
-          }
-          outTP << '(';
-          outTP << nextStreets[i] << ',';
-          outTP << probs[i];
-          outTP << ')';
-          first = false;
-        }
-        // for (const auto& prob: probs) {
-        //   outTP << prob;
-        //   if (&prob != &probs.back()) {
-        //     outTP << ',';
-        //   }
-        // }
-        outTP << ']';
-      }
-      outTP << std::endl;
-#endif
-    }
-    // Street densities are now saved automatically by saveData() configuration
-    ++progress;
-  }
-  // std::cout << std::endl;
-  // std::map<uint8_t, std::string> turnNames{
-  //     {0, "left"}, {1, "straight"}, {2, "right"}, {3, "u-turn"}};
-  // const auto prob = dynamics.turnProbabilities();
-  // uint8_t i{0};
-  // for (auto value: prob) {
-  //   std::cout << "Probability of turning " << std::quoted(turnNames[i]) << ": " << value * 100 << "%\n";
-  //   ++i;
-  // }
-  std::cout << '\n';
-  std::cout << "Done." << std::endl;
-
-#ifdef __APPLE__
-  t.join();
-#endif
+  simulator.setTimeFrame(0, MAX_TIME);
+  simulator.run(nAgents, 60, 2400, 1);
   std::cout << "Total elapsed time: "
             << std::chrono::duration_cast<std::chrono::milliseconds>(
                    std::chrono::high_resolution_clock::now() - start)
