@@ -254,19 +254,19 @@ namespace dsf::mobility {
     {
       auto const save_data = generalConfig["save_data"];
       if (!save_data.error()) {
-        saveData(save_data["interval"].get_uint64().value(),
-                 save_data["avg"].get_bool().has_value()
-                     ? save_data["avg"].get_bool().value()
-                     : false,
-                 save_data["road"].get_bool().has_value()
-                     ? save_data["road"].get_bool().value()
-                     : false,
-                 save_data["travel"].get_bool().has_value()
-                     ? save_data["travel"].get_bool().value()
-                     : false,
-                 save_data["agent"].get_bool().has_value()
-                     ? save_data["agent"].get_bool().value()
-                     : false);
+        saveData(
+            require_field(save_data, "general.save_data", "interval").get_uint64().value(),
+            save_data["avg"].get_bool().has_value() ? save_data["avg"].get_bool().value()
+                                                    : false,
+            save_data["road"].get_bool().has_value()
+                ? save_data["road"].get_bool().value()
+                : false,
+            save_data["travel"].get_bool().has_value()
+                ? save_data["travel"].get_bool().value()
+                : false,
+            save_data["agent"].get_bool().has_value()
+                ? save_data["agent"].get_bool().value()
+                : false);
       }
     }
   }
@@ -491,8 +491,10 @@ namespace dsf::mobility {
         std::filesystem::is_directory(prefixPath)) {
       std::string prefixStr = prefixPath.string();
       if (prefixStr.empty() ||
-          prefixStr.back() != static_cast<char>(std::filesystem::path::preferred_separator)) {
-        m_outputPrefix = prefixStr + static_cast<char>(std::filesystem::path::preferred_separator);
+          prefixStr.back() !=
+              static_cast<char>(std::filesystem::path::preferred_separator)) {
+        m_outputPrefix =
+            prefixStr + static_cast<char>(std::filesystem::path::preferred_separator);
       } else {
         m_outputPrefix = prefixStr;
       }

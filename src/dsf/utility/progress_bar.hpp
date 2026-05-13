@@ -6,7 +6,10 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <format>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 

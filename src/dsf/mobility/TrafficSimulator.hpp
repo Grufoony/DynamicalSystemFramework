@@ -1,15 +1,23 @@
 #pragma once
 
+#include <SQLiteCpp/SQLiteCpp.h>
+
+#include "FirstOrderDynamics.hpp"
+#include "RoadNetwork.hpp"
+
+#include <chrono>
+#include <deque>
+#include <format>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
 #ifdef __APPLE__
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
 #endif
-
-#include <SQLiteCpp/SQLiteCpp.h>
-
-#include "FirstOrderDynamics.hpp"
-#include "RoadNetwork.hpp"
 
 namespace dsf::mobility {
   class TrafficSimulator {
@@ -158,7 +166,7 @@ namespace dsf::mobility {
     /// @brief Save agent data to the database using a batch insert.
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
-    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the time step in and the time step out
+    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the edge id and the value is a vector of tuples containing the edge id, the time step in and the time step out
     void m_saveAgentDataSQL(
         const std::int64_t time_step,
         const std::int64_t simulation_id,
@@ -167,7 +175,7 @@ namespace dsf::mobility {
             std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
     /// @brief Save agent data to a CSV file.
     /// @param time_step The time step of the data entry
-    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the time step in and the time step out
+    /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the edge id and the value is a vector of tuples containing the edge id, the time step in and the time step out
     void m_saveAgentDataCSV(
         const std::int64_t time_step,
         tbb::concurrent_unordered_map<
