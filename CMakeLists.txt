@@ -22,7 +22,7 @@ option(DSF_EXAMPLES "Build DSF examples" OFF)
 option(DSF_BENCHMARKS "Build DSF benchmarks" OFF)
 option(DSF_BUILD_PIC "Build DSF with position-independent code" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings" OFF)
-option(DSF_OPTIMIZE_ARCH "Optimize for native architecture" ON)
+option(DSF_COMPATIBILITY_BUILD "Build DSF in compatibility mode" OFF)
 
 # If CMAKE_BUILD_TYPE not set, default to Debug
 if(NOT CMAKE_BUILD_TYPE)
@@ -39,7 +39,7 @@ if(NOT CMAKE_BUILD_TYPE)
   endif()
 endif()
 if(BUILD_PYTHON_BINDINGS)
-  set(DSF_BUILD_PIC ON)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 # Set the C++ standard
@@ -50,18 +50,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Ensure optimization flags are applied only in Release mode
 if(CMAKE_BUILD_TYPE MATCHES "Release")
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast -flto=auto")
-    if(DSF_OPTIMIZE_ARCH)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+    if(DSF_COMPATIBILITY_BUILD)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+    else()
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast -flto=auto -march=native")
     endif()
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2")
   endif()
 elseif(CMAKE_BUILD_TYPE MATCHES "Profile")
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast -flto=auto -pg")
-    if(DSF_OPTIMIZE_ARCH)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+    if(DSF_COMPATIBILITY_BUILD)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -pg")
+    else()
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast -flto=auto -march=native -pg")
     endif()
   endif()
 elseif(CMAKE_BUILD_TYPE MATCHES "Coverage")
@@ -101,6 +103,9 @@ file(
 
 include(FetchContent)
 # Get csv-parser
+set(CSV_BUILD_PROGRAMS
+    OFF
+    CACHE BOOL "Build csv-parser executable" FORCE)
 FetchContent_Declare(
   csv-parser
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser
@@ -142,7 +147,25 @@ if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
 endif()
 # Check if the user has TBB installed
-find_package(TBB REQUIRED CONFIG)
+find_package(TBB QUIET)
+
+if(NOT TBB_FOUND)
+    find_path(TBB_INCLUDE_DIR NAMES tbb/tbb.h)
+    find_library(TBB_LIBRARY NAMES tbb)
+    
+    if(TBB_INCLUDE_DIR AND TBB_LIBRARY)
+        set(TBB_FOUND TRUE)
+        if(NOT TARGET TBB::tbb)
+            add_library(TBB::tbb UNKNOWN IMPORTED)
+            set_target_properties(TBB::tbb PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${TBB_INCLUDE_DIR}"
+                IMPORTED_LOCATION "${TBB_LIBRARY}"
+            )
+        endif()
+    else()
+        message(FATAL_ERROR "TBB not found. Install tbb-devel (RHEL) or libtbb-dev (Debian)")
+    endif()
+endif()
 # Get SQLiteCpp
 # Disable cppcheck on Windows to avoid issues with missing cppcheck installation
 if(WIN32)
@@ -161,9 +184,6 @@ endif()
 
 add_library(dsf STATIC ${SOURCES})
 target_compile_definitions(dsf PRIVATE SPDLOG_USE_STD_FORMAT)
-if(DSF_BUILD_PIC)
-  set_target_properties(dsf PROPERTIES POSITION_INDEPENDENT_CODE ON)
-endif()
 target_include_directories(
   dsf PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
              $<INSTALL_INTERFACE:include>)
