@@ -9,7 +9,7 @@
 
 static constexpr uint8_t DSF_VERSION_MAJOR = 5;
 static constexpr uint8_t DSF_VERSION_MINOR = 8;
-static constexpr uint8_t DSF_VERSION_PATCH = 6;
+static constexpr uint8_t DSF_VERSION_PATCH = 7;
 
 static auto const DSF_VERSION =
     std::format("{}.{}.{}", DSF_VERSION_MAJOR, DSF_VERSION_MINOR, DSF_VERSION_PATCH);
