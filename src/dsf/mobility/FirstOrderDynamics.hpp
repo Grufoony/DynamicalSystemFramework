@@ -99,6 +99,7 @@ namespace dsf::mobility {
     std::string m_speedFunctionDescription;
     double m_uturnPenaltyFactor = 0.1;
     bool m_updatepathsThrowOnEmpty = true;
+    bool m_reinsertAgents = false;
 
   protected:
     std::unordered_map<Id, std::unordered_map<Id, size_t>> m_turnCounts;
@@ -138,10 +139,8 @@ namespace dsf::mobility {
                                      RoadJunction const* pNode);
     /// @brief Evolve a street
     /// @param pStreet A std::unique_ptr to the street
-    /// @param reinsert_agents If true, the agents are reinserted in the simulation after they reach their destination
     /// @details If possible, removes the first agent of the street's queue, putting it in the destination node.
-    /// If the agent is going into the destination node, it is removed from the simulation (and then reinserted if reinsert_agents is true)
-    void m_evolveStreet(Street* pStreet, bool reinsert_agents);
+    void m_evolveStreet(Street* pStreet);
     /// @brief If possible, removes one agent from the node, putting it on the next street.
     /// @param pNode A std::unique_ptr to the node
     void m_evolveNode(RoadJunction* pNode);
@@ -235,6 +234,9 @@ namespace dsf::mobility {
       }
       m_uturnPenaltyFactor = uturnPenaltyFactor;
     }
+    inline void setReinsertAgents(bool const reinsertAgents) noexcept {
+      m_reinsertAgents = reinsertAgents;
+    }
     /// @brief Set the origin nodes. If the provided map is empty, the origin nodes are set using the streets' stationary weights.
     /// NOTE: the default stationary weights are 1.0 so, if not set, this is equivalent to setting uniform weights.
     /// @param originNodes The origin nodes
@@ -314,11 +316,9 @@ namespace dsf::mobility {
     /// If the error probability is not zero, the agents can move to a random street.
     /// If the agent is in the destination node, it is removed from the simulation (and then reinserted if reinsert_agents is true)
     /// - Cycle over agents and update their times
-    /// @param reinsert_agents If true, the agents are reinserted in the simulation after they reach their destination
     /// @param dataRequest The save/collection request for the current step
     /// @return StepDataResult The collected data for the current step
-    StepDataResult evolve(bool const reinsert_agents = false,
-                          StepDataRequest const& dataRequest = {});
+    StepDataResult evolve(StepDataRequest const& dataRequest = {});
     /// @brief Optimize the traffic lights by changing the green and red times
     /// @param optimizationType TrafficLightOptimization, The type of optimization. Default is DOUBLE_TAIL
     /// @param logFile The file into which write the logs (default is empty, meaning no logging)

@@ -975,16 +975,9 @@ Returns:
 
       Returns:
         None)doc")
-      .def(
-          "evolve",
-          [](dsf::mobility::FirstOrderDynamics& self, bool reinsert_agents) {
-            self.evolve(reinsert_agents, dsf::mobility::StepDataRequest{});
-          },
-          pybind11::arg("reinsert_agents") = false,
-          R"doc(Advance the simulation by one time step.
-
-      Args:
-        reinsert_agents (bool, optional): Reinsert agents after movement.
+      .def("evolve",
+           &dsf::mobility::FirstOrderDynamics::evolve,
+           R"doc(Advance the simulation by one time step.
 
       Returns:
         None)doc")
@@ -1145,7 +1138,8 @@ Returns:
       Returns:
           TrafficSimulator: A new instance of the traffic simulator initialized with the provided configuration.)doc")
       .def("connectDataBase",
-           &dsf::mobility::TrafficSimulator::connectDataBase,
+           pybind11::overload_cast<std::string_view, std::string_view>(
+               &dsf::mobility::TrafficSimulator::connectDataBase),
            pybind11::arg("dbPath"),
            pybind11::arg("queries") =
                "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
@@ -1221,7 +1215,7 @@ Returns:
            pybind11::arg("insertionMethod"))
       .def("run",
            &dsf::mobility::TrafficSimulator::run,
-           pybind11::arg("reinsertAgents") = false)
+           R"doc(Run the traffic simulation.)doc")
       .def(
           "database",
           [](dsf::mobility::TrafficSimulator& self) { return self.database(); },

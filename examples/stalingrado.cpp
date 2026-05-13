@@ -21,7 +21,6 @@
 
 std::atomic<unsigned int> progress{0};
 
-using Unit = unsigned int;
 using Delay = uint8_t;
 
 using namespace dsf::mobility;
@@ -35,15 +34,15 @@ void printLoadingBar(int const i, int const n) {
 int main() {
   // Import input data
   std::ifstream ifs{"./data/stalingrado_input.txt"};
-  Unit timeUnit{0};
+  std::time_t timeUnit{0};
   ifs >> timeUnit;
-  std::vector<Unit> vehiclesToInsert{};
+  std::vector<std::size_t> vehiclesToInsert{};
   while (!ifs.eof()) {
-    Unit vehicleId{0};
+    std::size_t vehicleId{0};
     ifs >> vehicleId;
     vehiclesToInsert.push_back(vehicleId);
   }
-  const auto MAX_TIME{static_cast<Unit>(timeUnit * vehiclesToInsert.size())};
+  const auto MAX_TIME{static_cast<std::time_t>(timeUnit * vehiclesToInsert.size())};
 
   // Create the graph
   RoadNetwork graph;
@@ -106,7 +105,7 @@ int main() {
       }
       dynamics.addAgents(*it, pItinerary, 0);
     }
-    dynamics.evolve(false);
+    dynamics.evolve();
     ++progress;
   }
 

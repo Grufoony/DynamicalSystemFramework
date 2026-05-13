@@ -150,7 +150,7 @@ int main(int argc, char** argv) {
         break;
       }
     }
-    dynamics.evolve(false);
+    dynamics.evolve();
 
     if (dynamics.time_step() % 2400 == 0) {
       auto const totalDynamicsAgents{dynamics.nAgents()};

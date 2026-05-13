@@ -11,17 +11,17 @@
 #include <string_view>
 
 #ifdef _WIN32
-  #include <io.h>
-  #include <windows.h>
-  #define isatty _isatty
-  #define fileno _fileno
-  struct winsize {
-    unsigned short ws_row;
-    unsigned short ws_col;
-  };
+#include <io.h>
+#include <windows.h>
+#define isatty _isatty
+#define fileno _fileno
+struct winsize {
+  unsigned short ws_row;
+  unsigned short ws_col;
+};
 #else
-  #include <sys/ioctl.h>
-  #include <unistd.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 #endif
 
 namespace dsf::utility {

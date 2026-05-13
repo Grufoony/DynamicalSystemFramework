@@ -78,7 +78,7 @@ TEST_CASE("TrafficSimulator output prefix") {
   simulator.setTimeFrame(0, 6);
   simulator.setNAgentsPerTimeStep({1, 0, 0, 0, 0, 0});
   simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
-  simulator.run(false);
+  simulator.run();
 
   auto const roadCsv = outputDir / "road_data.csv";
   auto const avgCsv = outputDir / "avg_stats.csv";
@@ -111,7 +111,7 @@ TEST_CASE("TrafficSimulator SQL persistence") {
   simulator.setTimeFrame(0, 6);
   simulator.setNAgentsPerTimeStep({1, 0, 0, 0, 0, 0});
   simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
-  simulator.run(false);
+  simulator.run();
 
   SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
   CHECK(rowCount(db, "edges") == 2);
@@ -142,7 +142,7 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   simulator.setTimeFrame(0, 6);
   simulator.setNAgentsPerTimeStep({1, 0, 0, 0, 0, 0});
   simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
-  simulator.run(false);
+  simulator.run();
 
   auto const baseName = std::to_string(static_cast<std::uint64_t>(simulator.id())) +
                         "_traffic_simulator_csv_test";

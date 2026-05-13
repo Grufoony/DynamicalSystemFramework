@@ -219,7 +219,7 @@ int main(int argc, char** argv) {
         break;
       }
     }
-    dynamics.evolve(false);
+    dynamics.evolve();
     if (OPTIMIZE && (dynamics.time_step() % 420 == 0)) {
       dynamics.optimizeTrafficLights(
           dsf::TrafficLightOptimization::DOUBLE_TAIL, std::string(), 0.3);

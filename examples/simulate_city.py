@@ -124,6 +124,6 @@ if __name__ == "__main__":
             dynamics.addAgents(
                 vehicle_input[time_step // 10], AgentInsertionMethod.RANDOM_ODS
             )
-        dynamics.evolve(False)
+        dynamics.evolve()
 
     dynamics.summary()

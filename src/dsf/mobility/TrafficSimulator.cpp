@@ -917,7 +917,7 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::run(bool const reinsertAgents) {
+  void TrafficSimulator::run() {
     if (m_dynamics == nullptr) {
       throw std::runtime_error(
           "Cannot run the simulation without imported road network dynamics.");
@@ -989,8 +989,7 @@ namespace dsf::mobility {
       bool const shouldSave =
           m_savingInterval.has_value() &&
           (m_savingInterval.value() == 0 || currentStep % m_savingInterval.value() == 0);
-      auto stepData = m_dynamics->evolve(reinsertAgents,
-                                         shouldSave ? StepDataRequest{m_saveAverageStats,
+      auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
                                                                       m_saveStreetData,
                                                                       m_saveTravelData,
                                                                       m_saveAgentData}

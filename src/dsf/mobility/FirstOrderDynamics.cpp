@@ -384,7 +384,7 @@ namespace dsf::mobility {
     return fallbackStreetId;
   }
 
-  void FirstOrderDynamics::m_evolveStreet(Street* pStreet, bool reinsert_agents) {
+  void FirstOrderDynamics::m_evolveStreet(Street* pStreet) {
     auto const nLanes = pStreet->nLanes();
     // Enqueue moving agents if their free time is up
     while (!pStreet->movingAgents().empty()) {
@@ -665,7 +665,7 @@ namespace dsf::mobility {
           auto pAgent =
               this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
           ++m_nArrivedAgents;
-          if (reinsert_agents) {
+          if (m_reinsertAgents) {
             // reset Agent's values
             pAgent->reset(this->time_step());
             this->addAgent(std::move(pAgent));
@@ -1248,8 +1248,7 @@ namespace dsf::mobility {
     m_itineraries.emplace(itinerary->id(), std::move(itinerary));
   }
 
-  StepDataResult FirstOrderDynamics::evolve(bool const reinsert_agents,
-                                            StepDataRequest const& dataRequest) {
+  StepDataResult FirstOrderDynamics::evolve(StepDataRequest const& dataRequest) {
     StepDataResult stepData;
     stepData.timeStep = this->time_step();
     auto const n_threads{std::max<std::size_t>(1, this->concurrency())};
@@ -1292,7 +1291,7 @@ namespace dsf::mobility {
                     value += pStreet->nExitingAgents(direction, true);
                   }
                 }
-                m_evolveStreet(pStreet, reinsert_agents);
+                m_evolveStreet(pStreet);
                 if (bComputeStats) {
                   auto const& density{pStreet->density() * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};

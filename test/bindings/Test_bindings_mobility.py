@@ -76,5 +76,5 @@ def test_dynamics_smoke_step_with_linear_speed(dynamics):
     assert dynamics.nAgents() == 1
 
     previous_step = dynamics.time_step()
-    dynamics.evolve(False)
+    dynamics.evolve()
     assert dynamics.time_step() == previous_step + 1

@@ -240,7 +240,7 @@ namespace dsf::mobility {
     }
 
     /// @brief Run the simulation until the configured end time.
-    void run(bool const reinsertAgents = false);
+    void run();
 
     /// @brief Get the database connection (const version)
     /// @return const SQLite::Database const*, The database connection
