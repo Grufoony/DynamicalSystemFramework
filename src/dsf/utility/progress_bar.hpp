@@ -55,10 +55,8 @@ namespace dsf::utility {
     }
 
     // Called by progress_bar::update() to trigger a redraw.
-    void repaint() {
-      std::lock_guard lock{mutex_};
-      m_repaint(nullptr);
-    }
+    void repaint(bool const final = false);
+    // (implementation deferred to after progress_bar is defined)
 
     [[nodiscard]] int width() const noexcept { return m_width; }
 
@@ -153,6 +151,7 @@ namespace dsf::utility {
       if (!m_sink) {
         return;
       }
+      m_sink->repaint(true);
       m_sink->detach();
     }
 
@@ -224,6 +223,23 @@ namespace dsf::utility {
       return result;
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // progress_sink::repaint — defined after progress_bar is complete.
+  // ---------------------------------------------------------------------------
+  inline void progress_sink::repaint(bool const final) {
+    std::lock_guard lock{mutex_};
+    if (final) {
+      if (m_is_tty && m_bar) {
+        auto const line = m_bar->render(m_width);
+        std::fwrite(line.data(), 1, line.size(), m_file);
+        std::fputc('\n', m_file);  // <-- advance past the bar
+        std::fflush(m_file);
+      }
+      return;
+    }
+    m_repaint(nullptr);
+  }
 
   // ---------------------------------------------------------------------------
   // progress_sink::m_repaint — defined after progress_bar is complete.
