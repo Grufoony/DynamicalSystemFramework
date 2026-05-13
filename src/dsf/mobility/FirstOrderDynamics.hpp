@@ -67,6 +67,7 @@ namespace dsf::mobility {
     std::vector<std::tuple<Id, double>> m_originNodes;
     std::vector<std::tuple<Id, double>> m_destinationNodes;
     std::vector<std::tuple<Id, Id, double>> m_ODs;
+    std::vector<double> m_ODCumulativeWeights;
     tbb::concurrent_unordered_map<Id, std::size_t> m_originCounts;
     tbb::concurrent_unordered_map<Id, std::size_t> m_destinationCounts;
     std::atomic<std::size_t> m_nAgents{0}, m_nAddedAgents{0}, m_nInsertedAgents{0},

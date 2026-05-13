@@ -141,6 +141,15 @@ namespace dsf::mobility {
           "FirstOrderDynamics::m_addAgentsODs: No origin-destination pairs provided");
     }
     m_nAddedAgents += nAgents;
+    if (m_timeToleranceFactor.has_value() && !m_agents.empty()) {
+      auto const nStagnantAgents{m_agents.size()};
+      spdlog::debug(
+          "Removing {} stagnant agents that were not inserted since the previous call to "
+          "addAgents(ODS).",
+          nStagnantAgents);
+      m_agents.clear();
+      m_nAgents -= nStagnantAgents;
+    }
     if (m_ODs.size() == 1) {
       auto [originId, destinationId, weight] = m_ODs.at(0);
       auto const itineraryIt = this->itineraries().find(destinationId);
@@ -151,22 +160,24 @@ namespace dsf::mobility {
       this->addAgents(nAgents, itineraryIt->second, originId);
       return;
     }
+    if (m_ODCumulativeWeights.size() != m_ODs.size()) {
+      throw std::logic_error("ODS cumulative weights are not initialized");
+    }
     std::uniform_real_distribution<double> uniformDist{
-        0., 1.};  // Weight distribution should be normalized to 1
+        0., m_ODCumulativeWeights.back()};
     while (nAgents--) {
       auto randValue = uniformDist(this->m_generator);
-      auto selectedOdIt = m_ODs.cend();
-      for (std::size_t idx = 0; idx < m_ODs.size(); ++idx) {
-        auto const& weight = std::get<2>(m_ODs[idx]);
-        if (randValue < weight || idx + 1 == m_ODs.size()) {
-          selectedOdIt = m_ODs.cbegin() + idx;
-          break;
-        }
-        randValue -= weight;
+      auto selectedOdIdx = static_cast<std::size_t>(
+          std::lower_bound(m_ODCumulativeWeights.cbegin(),
+                           m_ODCumulativeWeights.cend(),
+                           randValue) -
+          m_ODCumulativeWeights.cbegin());
+      if (selectedOdIdx >= m_ODs.size()) {
+        selectedOdIdx = m_ODs.size() - 1;
       }
 
-      auto const& originId = std::get<0>(*selectedOdIt);
-      auto const& destinationId = std::get<1>(*selectedOdIt);
+      auto const& originId = std::get<0>(m_ODs[selectedOdIdx]);
+      auto const& destinationId = std::get<1>(m_ODs[selectedOdIdx]);
       auto const itineraryIt = this->itineraries().find(destinationId);
       if (itineraryIt == this->itineraries().cend()) {
         spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
@@ -1596,6 +1607,9 @@ namespace dsf::mobility {
   }
   void FirstOrderDynamics::setODs(std::vector<std::tuple<Id, Id, double>> const& ODs) {
     m_ODs.clear();
+    m_ODCumulativeWeights.clear();
+    m_ODs.reserve(ODs.size());
+    m_ODCumulativeWeights.reserve(ODs.size());
     auto const sumWeights = std::accumulate(
         ODs.begin(), ODs.end(), 0., [this](double sum, auto const& tuple) {
           // Add itineraries while summing weights
@@ -1610,17 +1624,25 @@ namespace dsf::mobility {
     }
     if (sumWeights == 1.) {
       std::copy(ODs.begin(), ODs.end(), std::back_inserter(m_ODs));
-      return;
+    } else {
+      // Copy but divide by weights sum
+      std::transform(ODs.begin(),
+                     ODs.end(),
+                     std::back_inserter(m_ODs),
+                     [sumWeights](auto const& tuple) {
+                       return std::make_tuple(std::get<0>(tuple),
+                                              std::get<1>(tuple),
+                                              std::get<2>(tuple) / sumWeights);
+                     });
     }
-    // Copy but divide by weights sum
-    std::transform(ODs.begin(),
-                   ODs.end(),
-                   std::back_inserter(m_ODs),
-                   [sumWeights](auto const& tuple) {
-                     return std::make_tuple(std::get<0>(tuple),
-                                            std::get<1>(tuple),
-                                            std::get<2>(tuple) / sumWeights);
-                   });
+    double cumulativeWeight{0.};
+    for (auto const& od : m_ODs) {
+      cumulativeWeight += std::get<2>(od);
+      m_ODCumulativeWeights.push_back(cumulativeWeight);
+    }
+    if (!m_ODCumulativeWeights.empty()) {
+      m_ODCumulativeWeights.back() = 1.;
+    }
   }
 
   void FirstOrderDynamics::updatePaths(bool const throw_on_empty) {
@@ -1783,7 +1805,7 @@ namespace dsf::mobility {
     auto const numNodes{this->graph().nNodes()};
     auto const numEdges{this->graph().nEdges()};
 
-    const auto grainSize = std::max<std::size_t>(1, numNodes / n_threads);
+    const auto grainSize = std::max<std::size_t>(1, numNodes / (n_threads * 8));
     this->m_taskArena.execute([&] {
       tbb::parallel_for(
           tbb::blocked_range<std::size_t>(0, numNodes, grainSize),
@@ -1850,7 +1872,8 @@ namespace dsf::mobility {
                 }
               }
             }
-          });
+          },
+          tbb::auto_partitioner{});
     });
     spdlog::debug("Pre-nodes");
     // Move transport capacity agents from each node
@@ -1865,7 +1888,8 @@ namespace dsf::mobility {
                               ++tl;
                             }
                           }
-                        });
+                        },
+                        tbb::auto_partitioner{});
     });
     this->m_evolveAgents();
 
