@@ -79,7 +79,6 @@ namespace dsf::mobility {
     void m_saveStreetDataCSV(
         const std::string& datetime,
         const std::int64_t time_step,
-        const std::int64_t simulation_id,
         tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
     /// @brief Initialize the average stats table.
     /// This table contains the average stats of the simulation at each time step. Columns are:
@@ -112,7 +111,6 @@ namespace dsf::mobility {
     /// @brief Save average stats to a CSV file.
     /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
     /// @param n_valid_edges The number of valid edges (i.e. edges with speed observations)
     /// @param mean_speed The mean speed of the agents in kilometers per hour
     /// @param std_speed The standard deviation of the speed of the agents in kilometers per hour
@@ -122,7 +120,6 @@ namespace dsf::mobility {
     /// @param meanQueueLength The mean queue length of the streets
     void m_saveAvgStatsCSV(const std::string& datetime,
                            const std::int64_t time_step,
-                           const std::int64_t simulation_id,
                            const AverageStatsRecord& averageStats) const;
     /// @brief Initialize the travel data table.
     /// This table contains the travel data of the agents. Columns are:
@@ -146,12 +143,10 @@ namespace dsf::mobility {
     /// @brief Save travel data to a CSV file.
     /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
     /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
     void m_saveTravelDataCSV(
         const std::string& datetime,
         const std::int64_t time_step,
-        const std::int64_t simulation_id,
         tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
     /// @brief Initialize the agent data table.
     /// This table contains the agent data of the agents. Columns are:
@@ -174,11 +169,9 @@ namespace dsf::mobility {
             std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
     /// @brief Save agent data to a CSV file.
     /// @param time_step The time step of the data entry
-    /// @param simulation_id The id of the simulation
     /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the agent id and the value is a vector of tuples containing the edge id, the time step in and the time step out
     void m_saveAgentDataCSV(
         const std::int64_t time_step,
-        const std::int64_t simulation_id,
         tbb::concurrent_unordered_map<
             Id,
             std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
@@ -187,9 +180,14 @@ namespace dsf::mobility {
     void m_flushStepData(StepDataResult&& stepData);
 
   public:
+    /// @brief Construct a new TrafficSimulator with a generated simulation id.
     TrafficSimulator();
+    /// @brief Construct a new TrafficSimulator and import its configuration from JSON.
+    /// @param jsonConfigFile The path to the JSON configuration file.
     explicit TrafficSimulator(std::string_view const jsonConfigFile);
 
+    /// @brief Import a JSON configuration file and apply it to the simulator.
+    /// @param jsonConfigFile The path to the JSON configuration file.
     void importConfig(std::string_view const jsonConfigFile);
     /// @brief Connect to a SQLite database, creating it if it doesn't exist, and executing optional initialization queries
     /// @param dbPath The path to the SQLite database file
@@ -199,9 +197,15 @@ namespace dsf::mobility {
         std::string_view const queries =
             "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
             "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;");
+    /// @brief Import a road network and build the simulation dynamics.
+    /// @param edgesFile The edges CSV file.
+    /// @param nodePropertiesFile Optional node-properties CSV file.
     void importRoadNetwork(std::string_view const edgesFile,
                            std::string_view const nodePropertiesFile = std::string_view());
 
+    /// @brief Configure the path-update cadence forwarded to the dynamics engine.
+    /// @param deltaT The update cadence in time steps.
+    /// @param throw_on_empty Whether an empty itinerary path should throw.
     void updatePaths(std::time_t const deltaT = 0, bool const throw_on_empty = true);
 
     /// @brief Configure the data-saving behavior.
@@ -215,12 +219,22 @@ namespace dsf::mobility {
     /// @param name The name of the simulation
     void setName(std::string_view const name);
 
+    /// @brief Set the output prefix used for generated CSV files and database paths.
+    /// @param prefix The prefix or directory path.
     void setOutputPrefix(std::string_view const prefix);
 
+    /// @brief Set the simulation time frame.
+    /// @param initTime The simulation start time.
+    /// @param endTime Optional simulation end time.
     void setTimeFrame(std::time_t const initTime,
                       std::optional<std::time_t> const endTime = std::nullopt);
+    /// @brief Set the agent insertion schedule for each time step.
+    /// @param nAgentsPerTimeStep Number of agents to add at each insertion step.
+    /// @param deltaT Optional insertion cadence in seconds.
     void setNAgentsPerTimeStep(std::vector<std::size_t> const& nAgentsPerTimeStep,
                                std::optional<std::time_t> const deltaT = std::nullopt);
+    /// @brief Set the strategy used when inserting new agents.
+    /// @param insertionMethod The insertion method to use.
     void setAgentInsertionMethod(AgentInsertionMethod const insertionMethod) noexcept {
       m_agentInsertionMethod = insertionMethod;
     }
@@ -232,15 +246,22 @@ namespace dsf::mobility {
     /// @return const SQLite::Database const*, The database connection
     inline auto* database() const { return m_database.get(); }
 
+    /// @brief Get the dynamics engine managed by this simulator.
     inline auto const* dynamics() const { return m_dynamics.get(); }
+    /// @brief Get the mutable dynamics engine managed by this simulator.
     inline auto* dynamics() { return m_dynamics.get(); }
     /// @brief Get the id of the simulation
     /// @return Id, The id of the simulation
     inline auto id() const { return m_id; };
+    /// @brief Get the simulation start time.
     inline auto initTime() const { return m_initTime; }
+    /// @brief Get the formatted simulation start time.
     inline auto strInitTime() const { return m_timeToStr(m_initTime); }
+    /// @brief Get the simulation end time.
     inline auto endTime() const { return m_endTime; }
+    /// @brief Get the formatted simulation end time.
     inline auto strEndTime() const { return m_timeToStr(m_endTime); }
+    /// @brief Get the agent insertion cadence.
     inline auto agentInsertionDeltaT() const { return m_agentInsertionDeltaT; }
     /// @brief Get the name of the simulation
     /// @return const std::string&, The name of the simulation

@@ -389,6 +389,21 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
+
+  SUBCASE("setUTurnPenaltyFactor") {
+    GIVEN("A dynamics object") {
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      WHEN("We set a valid U-turn penalty factor") {
+        dynamics.setUTurnPenaltyFactor(0.5);
+        THEN("The call succeeds") { CHECK_NOTHROW(dynamics.setUTurnPenaltyFactor(0.5)); }
+      }
+      WHEN("We set an invalid U-turn penalty factor") {
+        THEN("The call throws") {
+          CHECK_THROWS_AS(dynamics.setUTurnPenaltyFactor(0.), std::invalid_argument);
+        }
+      }
+    }
+  }
   SUBCASE("addAgents") {
     GIVEN("A dynamics object and one itinerary") {
       FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};

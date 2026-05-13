@@ -422,7 +422,6 @@ namespace dsf::mobility {
   void TrafficSimulator::m_saveStreetDataCSV(
       const std::string& datetime,
       const std::int64_t time_step,
-      const std::int64_t simulation_id,
       tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const {
     if (streetDataRecords.empty()) {
       spdlog::debug("No street data records to save for time step {}.", time_step);
@@ -522,7 +521,6 @@ namespace dsf::mobility {
 
   void TrafficSimulator::m_saveAvgStatsCSV(const std::string& datetime,
                                            const std::int64_t time_step,
-                                           const std::int64_t simulation_id,
                                            const AverageStatsRecord& averageStats) const {
     auto const filename{m_generateCSVfilename("avg_stats")};
     bool fileExists = std::filesystem::exists(filename);
@@ -602,7 +600,6 @@ namespace dsf::mobility {
   void TrafficSimulator::m_saveTravelDataCSV(
       const std::string& datetime,
       const std::int64_t time_step,
-      const std::int64_t simulation_id,
       tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
     if (travelDTs.empty()) {
       spdlog::debug("No travel data records to save for time step {}.", time_step);
@@ -673,7 +670,6 @@ namespace dsf::mobility {
 
   void TrafficSimulator::m_saveAgentDataCSV(
       const std::int64_t time_step,
-      const std::int64_t simulation_id,
       tbb::concurrent_unordered_map<Id,
                                     std::vector<std::tuple<Id, std::time_t, std::time_t>>>
           agentDataRecords) const {
@@ -689,14 +685,13 @@ namespace dsf::mobility {
       return;
     }
     if (!fileExists) {
-      outFile << "simulation_id" << CSV_SEPARATOR << "agent_id" << CSV_SEPARATOR
-              << "edge_id" << CSV_SEPARATOR << "time_step_in" << CSV_SEPARATOR
-              << "time_step_out" << "\n";
+      outFile << "agent_id" << CSV_SEPARATOR << "edge_id" << CSV_SEPARATOR
+              << "time_step_in" << CSV_SEPARATOR << "time_step_out" << "\n";
     }
     for (auto const& [edge_id, data] : agentDataRecords) {
       for (auto const& [agent_id, ts_in, ts_out] : data) {
-        outFile << simulation_id << CSV_SEPARATOR << agent_id << CSV_SEPARATOR << edge_id
-                << CSV_SEPARATOR << ts_in << CSV_SEPARATOR << ts_out << "\n";
+        outFile << agent_id << CSV_SEPARATOR << edge_id << CSV_SEPARATOR << ts_in
+                << CSV_SEPARATOR << ts_out << "\n";
       }
     }
     outFile.flush();
@@ -842,18 +837,16 @@ namespace dsf::mobility {
     }
 
     if (stepData.streetData.has_value()) {
-      m_saveStreetDataCSV(
-          datetime, timeStep, simulationId, std::move(*stepData.streetData));
+      m_saveStreetDataCSV(datetime, timeStep, std::move(*stepData.streetData));
     }
     if (stepData.travelData.has_value()) {
-      m_saveTravelDataCSV(
-          datetime, timeStep, simulationId, std::move(*stepData.travelData));
+      m_saveTravelDataCSV(datetime, timeStep, std::move(*stepData.travelData));
     }
     if (stepData.agentData.has_value()) {
-      m_saveAgentDataCSV(timeStep, simulationId, std::move(*stepData.agentData));
+      m_saveAgentDataCSV(timeStep, std::move(*stepData.agentData));
     }
     if (stepData.averageStats.has_value()) {
-      m_saveAvgStatsCSV(datetime, timeStep, simulationId, *stepData.averageStats);
+      m_saveAvgStatsCSV(datetime, timeStep, *stepData.averageStats);
     }
   }
 

@@ -24,6 +24,12 @@ namespace {
            std::filesystem::path(prefix + std::to_string(stamp) + suffix);
   }
 
+  std::filesystem::path makeUniqueDirectory(std::string const& prefix) {
+    auto const dir = makeUniquePath(prefix, "");
+    std::filesystem::create_directories(dir);
+    return dir;
+  }
+
   void writeTinyEdgesCsv(std::filesystem::path const& filePath) {
     std::ofstream out(filePath);
     REQUIRE(out.is_open());
@@ -52,6 +58,38 @@ TEST_CASE("TrafficSimulator configuration") {
   simulator.setNAgentsPerTimeStep({1, 2, 3}, 4);
   CHECK_EQ(simulator.agentInsertionDeltaT(), 4);
   CHECK_EQ(simulator.endTime(), 22);
+}
+
+TEST_CASE("TrafficSimulator output prefix") {
+  auto const outputDir = makeUniqueDirectory("traffic_simulator_output_");
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.setName("traffic_simulator_prefix_test");
+  simulator.setOutputPrefix(outputDir.string());
+  simulator.importRoadNetwork(edgesPath.string());
+  REQUIRE(simulator.dynamics() != nullptr);
+  simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->updatePaths();
+
+  simulator.saveData(1, true, true, false, false);
+  simulator.setTimeFrame(0, 6);
+  simulator.setNAgentsPerTimeStep({1, 0, 0, 0, 0, 0});
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+  simulator.run(false);
+
+  auto const roadCsv = outputDir / "road_data.csv";
+  auto const avgCsv = outputDir / "avg_stats.csv";
+
+  REQUIRE(std::filesystem::exists(roadCsv));
+  REQUIRE(std::filesystem::exists(avgCsv));
+
+  std::filesystem::remove(edgesPath);
+  std::filesystem::remove(roadCsv);
+  std::filesystem::remove(avgCsv);
+  std::filesystem::remove(outputDir);
 }
 
 TEST_CASE("TrafficSimulator SQL persistence") {

@@ -150,11 +150,10 @@ namespace dsf::utility {
     }
 
     ~progress_bar() {
-      if (!m_sink)
+      if (!m_sink) {
         return;
-      // Keep the bar visible on completion; erase it on early exit.
-      const bool complete = m_n.load(std::memory_order_relaxed) >= m_total;
-      m_sink->detach(/*erase=*/!complete);
+      }
+      m_sink->detach();
     }
 
     progress_bar(const progress_bar&) = delete;

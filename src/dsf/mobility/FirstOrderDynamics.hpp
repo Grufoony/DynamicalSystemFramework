@@ -225,6 +225,9 @@ namespace dsf::mobility {
     inline void setMeanTravelTime(std::time_t const meanTravelTime) noexcept {
       m_meanTravelTime = meanTravelTime;
     };
+    /// @brief Set the penalty factor applied to U-turns when choosing the next street.
+    /// @param uturnPenaltyFactor The penalty factor, which must be positive.
+    /// @throw std::invalid_argument If the penalty factor is not positive.
     inline void setUTurnPenaltyFactor(double uturnPenaltyFactor) {
       if (uturnPenaltyFactor <= 0.) {
         throw std::invalid_argument(std::format(
