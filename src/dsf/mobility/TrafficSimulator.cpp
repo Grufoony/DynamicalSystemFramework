@@ -1,6 +1,7 @@
 #include "TrafficSimulator.hpp"
 #include "../utility/progress_bar.hpp"
 
+#include <csv.hpp>
 #include <simdjson.h>
 #include <spdlog/spdlog.h>
 
@@ -10,9 +11,66 @@
 #include <optional>
 #include <stdexcept>
 
-static constexpr char CSV_SEPARATOR = ';';
-
 namespace dsf::mobility {
+  /// @brief Simple CSV writer for batch data persistence
+  class CSVWriter {
+  private:
+    std::ofstream m_file;
+    char m_separator;
+    bool m_headerWritten = false;
+
+  public:
+    /// @brief Construct a CSV writer and open the file
+    /// @param filename The output file path
+    /// @param separator The field separator character
+    CSVWriter(std::string_view const filename, char separator = ';')
+        : m_separator(separator) {
+      m_file.open(std::string(filename), std::ios::app);
+      if (!m_file.is_open()) {
+        throw std::runtime_error(
+            std::format("Failed to open CSV file for writing: {}", filename));
+      }
+      m_headerWritten = std::filesystem::file_size(filename) > 0;
+    }
+
+    /// @brief Write header row
+    template <typename... Args>
+    void writeHeader(Args&&... headers) {
+      if (m_headerWritten)
+        return;
+      writeRow(std::forward<Args>(headers)...);
+      m_headerWritten = true;
+    }
+
+    /// @brief Write a data row
+    template <typename... Args>
+    void writeRow(Args&&... fields) {
+      bool first = true;
+      (..., ([this, &first](auto const& field) {
+         if (!first)
+           m_file << m_separator;
+         if constexpr (std::is_same_v<std::decay_t<decltype(field)>, std::nullopt_t>) {
+           // Write nothing for nullopt
+         } else {
+           m_file << field;
+         }
+         first = false;
+       }(fields)));
+      m_file << "\n";
+    }
+
+    /// @brief Flush and close the file
+    void close() {
+      if (m_file.is_open()) {
+        m_file.flush();
+        m_file.close();
+      }
+    }
+
+    /// @brief Destructor automatically closes the file
+    ~CSVWriter() { close(); }
+  };
+
   std::string TrafficSimulator::m_generateCSVfilename(
       std::string_view const tableName) const {
     if (m_outputPrefix.empty()) {
@@ -158,11 +216,15 @@ namespace dsf::mobility {
                 require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
                     .get_string()
                     .value());
-        auto const sep =
-            importODsFromCSVConfig["separator"].error()
-                ? CSV_SEPARATOR
-                : importODsFromCSVConfig["separator"].get_string().value()[0];
-        m_dynamics->importODsFromCSV(odsFile.string(), sep);
+        if (!importODsFromCSVConfig["separator"].error()) {
+          auto const sep =
+              require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
+                  .get_string()
+                  .value()[0];
+          m_dynamics->importODsFromCSV(odsFile.string(), sep);
+        } else {
+          m_dynamics->importODsFromCSV(odsFile.string());
+        }
       }
     }
     // Connect DB
@@ -429,40 +491,43 @@ namespace dsf::mobility {
     }
     auto const filename{m_generateCSVfilename("road_data")};
     bool fileExists = std::filesystem::exists(filename);
-    std::ofstream outFile(filename, std::ios::app);
-    if (!outFile.is_open()) {
-      spdlog::error("Failed to open file {} for writing street data.", filename);
-      return;
-    }
-    if (!fileExists) {
-      outFile << "datetime" << CSV_SEPARATOR << "time_step" << CSV_SEPARATOR
-              << "street_id" << CSV_SEPARATOR << "coil" << CSV_SEPARATOR << "density_vpk"
-              << CSV_SEPARATOR << "avg_speed_kph" << CSV_SEPARATOR << "std_speed_kph"
-              << CSV_SEPARATOR << "n_observations" << CSV_SEPARATOR << "counts"
-              << CSV_SEPARATOR << "queue_length" << "\n";
-    }
-    for (auto const& [streetId, record] : streetDataRecords) {
-      outFile << datetime << CSV_SEPARATOR << time_step << CSV_SEPARATOR << streetId
-              << CSV_SEPARATOR;
-      if (record.coilName.has_value()) {
-        outFile << record.coilName.value();
+
+    try {
+      CSVWriter writer(filename);
+      if (!fileExists) {
+        writer.writeHeader("datetime",
+                           "time_step",
+                           "street_id",
+                           "coil",
+                           "density_vpk",
+                           "avg_speed_kph",
+                           "std_speed_kph",
+                           "n_observations",
+                           "counts",
+                           "queue_length");
       }
-      outFile << CSV_SEPARATOR << record.density << CSV_SEPARATOR;
-      if (record.avgSpeed.has_value()) {
-        outFile << record.avgSpeed.value() << CSV_SEPARATOR << record.stdSpeed.value()
-                << CSV_SEPARATOR;
-      } else {
-        outFile << CSV_SEPARATOR << CSV_SEPARATOR;
+      for (auto const& [streetId, record] : streetDataRecords) {
+        auto avgSpeed =
+            record.avgSpeed.has_value() ? std::format("{}", record.avgSpeed.value()) : "";
+        auto stdSpeed =
+            record.avgSpeed.has_value() ? std::format("{}", record.stdSpeed.value()) : "";
+        writer.writeRow(
+            datetime,
+            time_step,
+            streetId,
+            record.coilName.has_value() ? record.coilName.value() : "",
+            record.density,
+            avgSpeed,
+            stdSpeed,
+            record.nObservations.value_or(0),
+            record.counts.has_value() ? std::to_string(record.counts.value()) : "",
+            record.queueLength);
       }
-      outFile << record.nObservations.value_or(0) << CSV_SEPARATOR;
-      if (record.counts.has_value()) {
-        outFile << record.counts.value();
-      }
-      outFile << CSV_SEPARATOR << record.queueLength << "\n";
+      spdlog::debug(
+          "Saved street data for time step {} to file {}.", time_step, filename);
+    } catch (const std::exception& e) {
+      spdlog::error("Failed to write street data CSV: {}", e.what());
     }
-    outFile.flush();
-    outFile.close();
-    spdlog::debug("Saved street data for time step {} to file {}.", time_step, filename);
   }
 
   void TrafficSimulator::m_initAvgStatsTable() const {
@@ -524,36 +589,43 @@ namespace dsf::mobility {
                                            const AverageStatsRecord& averageStats) const {
     auto const filename{m_generateCSVfilename("avg_stats")};
     bool fileExists = std::filesystem::exists(filename);
-    std::ofstream outFile(filename, std::ios::app);
-    if (!outFile.is_open()) {
-      spdlog::error("Failed to open file {} for writing average stats.", filename);
-      return;
+
+    try {
+      CSVWriter writer(filename);
+      if (!fileExists) {
+        writer.writeHeader("datetime",
+                           "time_step",
+                           "n_ghost_agents",
+                           "n_agents",
+                           "mean_speed_kph",
+                           "std_speed_kph",
+                           "mean_density_vpk",
+                           "std_density_vpk",
+                           "mean_travel_time_s",
+                           "mean_queue_length");
+      }
+      auto meanSpeed =
+          averageStats.nValidEdges > 0 ? std::format("{}", averageStats.meanSpeed) : "";
+      auto stdSpeed =
+          averageStats.nValidEdges > 0 ? std::format("{}", averageStats.stdSpeed) : "";
+      auto meanTravelTime = averageStats.nValidEdges > 0
+                                ? std::format("{}", averageStats.meanTravelTime)
+                                : "";
+      writer.writeRow(datetime,
+                      time_step,
+                      m_dynamics->ghostAgents(),
+                      m_dynamics->nAgents(),
+                      meanSpeed,
+                      stdSpeed,
+                      averageStats.meanDensity,
+                      averageStats.stdDensity,
+                      meanTravelTime,
+                      averageStats.meanQueueLength);
+      spdlog::debug(
+          "Saved average stats for time step {} to file {}.", time_step, filename);
+    } catch (const std::exception& e) {
+      spdlog::error("Failed to write average stats CSV: {}", e.what());
     }
-    if (!fileExists) {
-      outFile << "datetime" << CSV_SEPARATOR << "time_step" << CSV_SEPARATOR
-              << "n_ghost_agents" << CSV_SEPARATOR << "n_agents" << CSV_SEPARATOR
-              << "mean_speed_kph" << CSV_SEPARATOR << "std_speed_kph" << CSV_SEPARATOR
-              << "mean_density_vpk" << CSV_SEPARATOR << "std_density_vpk" << CSV_SEPARATOR
-              << "mean_travel_time_s" << CSV_SEPARATOR << "mean_queue_length" << "\n";
-    }
-    outFile << datetime << CSV_SEPARATOR << time_step << CSV_SEPARATOR
-            << m_dynamics->ghostAgents() << CSV_SEPARATOR << m_dynamics->nAgents()
-            << CSV_SEPARATOR;
-    if (averageStats.nValidEdges > 0) {
-      outFile << averageStats.meanSpeed << CSV_SEPARATOR << averageStats.stdSpeed
-              << CSV_SEPARATOR << averageStats.meanDensity << CSV_SEPARATOR
-              << averageStats.stdDensity << CSV_SEPARATOR << averageStats.meanTravelTime
-              << CSV_SEPARATOR;
-    } else {
-      outFile << CSV_SEPARATOR << CSV_SEPARATOR << averageStats.meanDensity
-              << CSV_SEPARATOR << averageStats.stdDensity << CSV_SEPARATOR
-              << CSV_SEPARATOR;
-    }
-    outFile << averageStats.meanQueueLength << "\n";
-    outFile.flush();
-    outFile.close();
-    spdlog::debug(
-        "Saved average stats for time step {} to file {}.", time_step, filename);
   }
 
   void TrafficSimulator::m_initTravelDataTable() const {
@@ -607,22 +679,20 @@ namespace dsf::mobility {
     }
     auto const filename{m_generateCSVfilename("travel_data")};
     bool fileExists = std::filesystem::exists(filename);
-    std::ofstream outFile(filename, std::ios::app);
-    if (!outFile.is_open()) {
-      spdlog::error("Failed to open file {} for writing travel data.", filename);
-      return;
+
+    try {
+      CSVWriter writer(filename);
+      if (!fileExists) {
+        writer.writeHeader("datetime", "time_step", "distance_m", "travel_time_s");
+      }
+      for (auto const& [distance, time] : travelDTs) {
+        writer.writeRow(datetime, time_step, distance, time);
+      }
+      spdlog::debug(
+          "Saved travel data for time step {} to file {}.", time_step, filename);
+    } catch (const std::exception& e) {
+      spdlog::error("Failed to write travel data CSV: {}", e.what());
     }
-    if (!fileExists) {
-      outFile << "datetime" << CSV_SEPARATOR << "time_step" << CSV_SEPARATOR
-              << "distance_m" << CSV_SEPARATOR << "travel_time_s" << "\n";
-    }
-    for (auto const& [distance, time] : travelDTs) {
-      outFile << datetime << CSV_SEPARATOR << time_step << CSV_SEPARATOR << distance
-              << CSV_SEPARATOR << time << "\n";
-    }
-    outFile.flush();
-    outFile.close();
-    spdlog::debug("Saved travel data for time step {} to file {}.", time_step, filename);
   }
 
   void TrafficSimulator::m_initAgentDataTable() const {
@@ -679,24 +749,21 @@ namespace dsf::mobility {
     }
     auto const filename{m_generateCSVfilename("agent_data")};
     bool fileExists = std::filesystem::exists(filename);
-    std::ofstream outFile(filename, std::ios::app);
-    if (!outFile.is_open()) {
-      spdlog::error("Failed to open file {} for writing agent data.", filename);
-      return;
-    }
-    if (!fileExists) {
-      outFile << "agent_id" << CSV_SEPARATOR << "edge_id" << CSV_SEPARATOR
-              << "time_step_in" << CSV_SEPARATOR << "time_step_out" << "\n";
-    }
-    for (auto const& [edge_id, data] : agentDataRecords) {
-      for (auto const& [agent_id, ts_in, ts_out] : data) {
-        outFile << agent_id << CSV_SEPARATOR << edge_id << CSV_SEPARATOR << ts_in
-                << CSV_SEPARATOR << ts_out << "\n";
+
+    try {
+      CSVWriter writer(filename);
+      if (!fileExists) {
+        writer.writeHeader("agent_id", "edge_id", "time_step_in", "time_step_out");
       }
+      for (auto const& [edge_id, data] : agentDataRecords) {
+        for (auto const& [agent_id, ts_in, ts_out] : data) {
+          writer.writeRow(agent_id, edge_id, ts_in, ts_out);
+        }
+      }
+      spdlog::debug("Saved agent data for time step {} to file {}.", time_step, filename);
+    } catch (const std::exception& e) {
+      spdlog::error("Failed to write agent data CSV: {}", e.what());
     }
-    outFile.flush();
-    outFile.close();
-    spdlog::debug("Saved agent data for time step {} to file {}.", time_step, filename);
   }
 
   void TrafficSimulator::m_dumpNetwork() const {
