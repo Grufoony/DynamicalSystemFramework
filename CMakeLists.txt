@@ -109,7 +109,7 @@ set(CSV_BUILD_PROGRAMS
 FetchContent_Declare(
   csv-parser
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser
-  GIT_TAG 5.1.0)
+  GIT_TAG 5.2.0)
 FetchContent_GetProperties(csv-parser)
 if(NOT csv-parser_POPULATED)
   FetchContent_MakeAvailable(csv-parser)
