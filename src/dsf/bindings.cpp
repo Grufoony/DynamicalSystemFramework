@@ -1203,9 +1203,7 @@ Returns:
           "run",
           [](dsf::mobility::TrafficSimulator& self,
              std::vector<std::size_t> nAgentsPerTimeStep,
-             std::optional<std::time_t> deltaT) {
-            self.run(nAgentsPerTimeStep, deltaT);
-          },
+             std::optional<std::time_t> deltaT) { self.run(nAgentsPerTimeStep, deltaT); },
           pybind11::arg("nAgentsPerTimeStep"),
           pybind11::arg("deltaT") = std::nullopt,
           R"doc(Run the simulation in default mode.
@@ -1224,10 +1222,7 @@ Returns:
              std::time_t agentInsertionDeltaT,
              std::time_t checkDeltaT,
              std::size_t agentIncrement) {
-            self.run(nInitialAgents,
-                     agentInsertionDeltaT,
-                     checkDeltaT,
-                     agentIncrement);
+            self.run(nInitialAgents, agentInsertionDeltaT, checkDeltaT, agentIncrement);
           },
           pybind11::arg("nInitialAgents"),
           pybind11::arg("agentInsertionDeltaT"),

@@ -491,8 +491,8 @@ namespace dsf::mobility {
         std::filesystem::is_directory(prefixPath)) {
       std::string prefixStr = prefixPath.string();
       if (prefixStr.empty() ||
-          prefixStr.back() != std::filesystem::path::preferred_separator) {
-        m_outputPrefix = prefixStr + std::filesystem::path::preferred_separator;
+          prefixStr.back() != static_cast<char>(std::filesystem::path::preferred_separator)) {
+        m_outputPrefix = prefixStr + static_cast<char>(std::filesystem::path::preferred_separator);
       } else {
         m_outputPrefix = prefixStr;
       }
