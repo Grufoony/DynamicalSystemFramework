@@ -146,7 +146,10 @@ def get_cartography(
 
         # Standardize highway -> type
         if "highway" in data:
-            edge_updates["type"] = data["highway"]
+            type_val = data["highway"]
+            if isinstance(type_val, list):
+                type_val = ",".join(type_val)
+            edge_updates["type"] = type_val
             edge_updates["_remove_highway"] = True
 
         # Standardize name
@@ -205,7 +208,10 @@ def get_cartography(
 
         # Standardize highway -> type
         if "highway" in data:
-            node_updates["type"] = data["highway"]
+            type_val = data["highway"]
+            if isinstance(type_val, list):
+                type_val = ",".join(type_val)
+            node_updates["type"] = type_val
             node_updates["_remove_highway"] = True
         else:
             # Set type to "N/A" if not present
