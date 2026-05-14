@@ -1,12 +1,12 @@
 # DynamicalSystemFramework
 [![Latest Release](https://img.shields.io/github/v/release/Grufoony/DynamicalSystemFramework)](https://github.com/Grufoony/DynamicalSystemFramework/releases/latest)
-[![PyPI version](https://img.shields.io/pypi/v/dsf-mobility)](https://pypi.org/project/dsf-mobility/)
+[![PyPI version](https://img.shields.io/pypi/v/dsf-suite)](https://pypi.org/project/dsf-suite/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18745492.svg)](https://doi.org/10.5281/zenodo.18745492)
 
 [![Standard](https://img.shields.io/badge/C%2B%2B-20/23-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B#Standardization)
 [![TBB](https://img.shields.io/badge/TBB-2022.3.0-blue.svg)](https://github.com/oneapi-src/oneTBB)
 [![SPDLOG](https://img.shields.io/badge/spdlog-1.17.0-blue.svg)](https://github.com/gabime/spdlog)
-[![CSV](https://img.shields.io/badge/csv_parser-3.2.0-blue.svg)](https://github.com/vincentlaucsb/csv-parser)
+[![CSV](https://img.shields.io/badge/csv_parser-5.2.0-blue.svg)](https://github.com/vincentlaucsb/csv-parser)
 [![JSON](https://img.shields.io/badge/simdjson-4.6.1-blue.svg)](https://github.com/simdjson/simdjson)
 [![SQLite](https://img.shields.io/badge/SQLiteCpp-3.3.3-blue.svg)](https://github.com/SRombauts/SQLiteCpp)
 [![codecov](https://codecov.io/gh/Grufoony/DynamicalSystemFramework/graph/badge.svg?token=JV53J6IUJ3)](https://codecov.io/gh/Grufoony/DynamicalSystemFramework)
@@ -25,7 +25,7 @@ This rework consists of a full code rewriting, in order to implement more featur
 ## Installation
 The library is available on `PyPI`:
 ```shell
-pip install dsf-mobility
+pip install dsf-suite
 ```
 
 To check the installation you can simply run

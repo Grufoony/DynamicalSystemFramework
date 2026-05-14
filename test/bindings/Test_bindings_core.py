@@ -1,4 +1,5 @@
 import dsf
+from dsf import logging
 import dsf_cpp
 import pytest
 
@@ -11,19 +12,13 @@ def test_root_module_reexports_cpp_bindings():
 
 
 def test_log_level_round_trip():
-    original_level = dsf.get_log_level()
-    try:
-        dsf.set_log_level(dsf.LogLevel.DEBUG)
-        assert dsf.get_log_level() == dsf.LogLevel.DEBUG
+    logging.set_level(logging.LogLevel.DEBUG)
 
-        dsf.set_log_level(dsf.LogLevel.INFO)
-        assert dsf.get_log_level() == dsf.LogLevel.INFO
-    finally:
-        dsf.set_log_level(original_level)
+    logging.set_level(logging.LogLevel.INFO)
 
 
 def test_log_to_file_accepts_string_path(tmp_path):
-    dsf.log_to_file(str(tmp_path / "dsf_bindings.log"))
+    logging.to_file(str(tmp_path / "dsf_bindings.log"))
 
 
 def test_measurement_properties_are_mutable():

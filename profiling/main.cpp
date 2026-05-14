@@ -46,7 +46,7 @@ int main() {
         dynamics.addAgentsUniformly(100);
       }
     }
-    dynamics.evolve(false);
+    dynamics.evolve();
   }
   std::cout << '\n' << "Done.\n";
 

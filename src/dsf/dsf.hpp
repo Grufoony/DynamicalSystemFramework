@@ -7,9 +7,9 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
-static constexpr uint8_t DSF_VERSION_MAJOR = 5;
-static constexpr uint8_t DSF_VERSION_MINOR = 8;
-static constexpr uint8_t DSF_VERSION_PATCH = 8;
+static constexpr uint8_t DSF_VERSION_MAJOR = 6;
+static constexpr uint8_t DSF_VERSION_MINOR = 0;
+static constexpr uint8_t DSF_VERSION_PATCH = 2;
 
 static auto const DSF_VERSION =
     std::format("{}.{}.{}", DSF_VERSION_MAJOR, DSF_VERSION_MINOR, DSF_VERSION_PATCH);
@@ -35,6 +35,7 @@ namespace dsf {
 #include "base/Edge.hpp"
 #include "mobility/Agent.hpp"
 #include "mobility/FirstOrderDynamics.hpp"
+#include "mobility/TrafficSimulator.hpp"
 #include "mobility/Intersection.hpp"
 #include "mobility/Itinerary.hpp"
 #include "mobility/RoadNetwork.hpp"

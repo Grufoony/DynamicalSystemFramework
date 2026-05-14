@@ -3,7 +3,7 @@ requires = ["setuptools>=77.0.0", "wheel", "cmake>=3.16"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dsf-mobility"
+name = "dsf-suite"
 description = "DSF C++ core with Python bindings via pybind11"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
@@ -25,7 +25,7 @@ keywords = [
 	"optimization",
 ]
 classifiers = [
-	"Development Status :: 4 - Beta",
+	"Development Status :: 5 - Production/Stable",
 	"Intended Audience :: Science/Research",
 	"Intended Audience :: Developers",
 	"Programming Language :: Python :: 3.12",
@@ -36,6 +36,7 @@ classifiers = [
 	"Topic :: Software Development :: Libraries :: Python Modules",
 	"Operating System :: POSIX :: Linux",
 	"Operating System :: MacOS",
+	"Operating System :: Microsoft :: Windows",
 ]
 dependencies = [
 	"osmnx>=2.0.6",

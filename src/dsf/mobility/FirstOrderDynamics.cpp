@@ -4,8 +4,6 @@
 #include <SQLiteCpp/SQLiteCpp.h>
 #include <spdlog/spdlog.h>
 
-static constexpr char CSV_SEPARATOR = ';';
-
 namespace dsf::mobility {
   FirstOrderDynamics::FirstOrderDynamics(RoadNetwork&& graph,
                                          bool useCache,
@@ -363,9 +361,9 @@ namespace dsf::mobility {
       // Handle U-turns
       if (previousNodeId.has_value() && pStreetOut->target() == previousNodeId.value()) {
         if (pNode->isRoundabout()) {
-          probability *= U_TURN_PENALTY_FACTOR;
+          probability *= m_uturnPenaltyFactor;  // Penalize U-turns in roundabouts
         } else if (!bIsPathTarget) {
-          continue;  // No U-turns allowed
+          continue;  // No U-turns allowed in non-roundabout nodes
         }
       }
 
@@ -404,7 +402,7 @@ namespace dsf::mobility {
     return fallbackStreetId;
   }
 
-  void FirstOrderDynamics::m_evolveStreet(Street* pStreet, bool reinsert_agents) {
+  void FirstOrderDynamics::m_evolveStreet(Street* pStreet) {
     auto const nLanes = pStreet->nLanes();
     // Enqueue moving agents if their free time is up
     while (!pStreet->movingAgents().empty()) {
@@ -685,7 +683,7 @@ namespace dsf::mobility {
           auto pAgent =
               this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
           ++m_nArrivedAgents;
-          if (reinsert_agents) {
+          if (m_reinsertAgents) {
             // reset Agent's values
             pAgent->reset(this->time_step());
             this->addAgent(std::move(pAgent));
@@ -860,531 +858,11 @@ namespace dsf::mobility {
     spdlog::debug("There are {} agents left in the list.", m_agents.size());
   }
 
-  // Init Street Data methods
-  void FirstOrderDynamics::m_initStreetTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    // Create table if it doesn't exist
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS road_data ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "datetime TEXT NOT NULL, "
-        "time_step INTEGER NOT NULL, "
-        "street_id INTEGER NOT NULL, "
-        "coil TEXT, "
-        "density_vpk REAL, "
-        "avg_speed_kph REAL, "
-        "std_speed_kph REAL, "
-        "n_observations INTEGER, "
-        "counts INTEGER, "
-        "queue_length INTEGER)");
-
-    spdlog::info("Initialized road_data table in the database.");
-  }
-  void FirstOrderDynamics::m_saveStreetDataSQL(
-      const std::string& datetime,
-      const std::int64_t time_step,
-      const std::int64_t simulation_id,
-      tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const {
-    if (streetDataRecords.empty()) {
-      spdlog::debug("No street data records to save for time step {}.", time_step);
-      return;
-    }
-    SQLite::Statement insertStmt(
-        *this->database(),
-        "INSERT INTO road_data (datetime, time_step, simulation_id, street_id, "
-        "coil, density_vpk, avg_speed_kph, std_speed_kph, n_observations, counts, "
-        "queue_length) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-
-    for (auto const& [streetId, record] : streetDataRecords) {
-      insertStmt.bind(1, datetime);
-      insertStmt.bind(2, time_step);
-      insertStmt.bind(3, simulation_id);
-      insertStmt.bind(4, static_cast<std::int64_t>(streetId));
-      if (record.coilName.has_value()) {
-        insertStmt.bind(5, record.coilName.value());
-      } else {
-        insertStmt.bind(5);
-      }
-      insertStmt.bind(6, record.density);
-      if (record.avgSpeed.has_value()) {
-        insertStmt.bind(7, record.avgSpeed.value());
-        insertStmt.bind(8, record.stdSpeed.value());
-      } else {
-        insertStmt.bind(7);
-        insertStmt.bind(8);
-      }
-      insertStmt.bind(9, static_cast<std::int64_t>(record.nObservations.value_or(0)));
-      if (record.counts.has_value()) {
-        insertStmt.bind(10, static_cast<std::int64_t>(record.counts.value()));
-      } else {
-        insertStmt.bind(10);
-      }
-      insertStmt.bind(11, static_cast<std::int64_t>(record.queueLength));
-      insertStmt.exec();
-      insertStmt.reset();
-    }
-  }
-  void FirstOrderDynamics::m_saveStreetDataCSV(
-      const std::string& datetime,
-      const std::int64_t time_step,
-      const std::int64_t simulation_id,
-      tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const {
-    if (streetDataRecords.empty()) {
-      spdlog::debug("No street data records to save for time step {}.", time_step);
-      return;
-    }
-    auto const filename{
-        std::format("{}_{}_road_data.csv", simulation_id, this->m_safeName())};
-    // Check if the file exists to write the header
-    bool fileExists = std::filesystem::exists(filename);
-    std::ofstream outFile(filename, std::ios::app);
-    if (!outFile.is_open()) {
-      spdlog::error("Failed to open file {} for writing street data.", filename);
-      return;
-    }
-    // Header
-    if (!fileExists) {
-      outFile << "datetime" << CSV_SEPARATOR << "time_step" << CSV_SEPARATOR
-              << "street_id" << CSV_SEPARATOR << "coil" << CSV_SEPARATOR << "density_vpk"
-              << CSV_SEPARATOR << "avg_speed_kph" << CSV_SEPARATOR << "std_speed_kph"
-              << CSV_SEPARATOR << "n_observations" << CSV_SEPARATOR << "counts"
-              << CSV_SEPARATOR << "queue_length" << "\n";
-    }
-    // Data rows
-    for (auto const& [streetId, record] : streetDataRecords) {
-      outFile << datetime << CSV_SEPARATOR << time_step << CSV_SEPARATOR << streetId
-              << CSV_SEPARATOR;
-      if (record.coilName.has_value()) {
-        outFile << record.coilName.value();
-      }
-      outFile << CSV_SEPARATOR << record.density << CSV_SEPARATOR;
-      if (record.avgSpeed.has_value()) {
-        outFile << record.avgSpeed.value() << CSV_SEPARATOR << record.stdSpeed.value()
-                << CSV_SEPARATOR;
-      } else {
-        outFile << CSV_SEPARATOR << CSV_SEPARATOR;
-      }
-      outFile << record.nObservations.value_or(0) << CSV_SEPARATOR;
-      if (record.counts.has_value()) {
-        outFile << record.counts.value();
-      }
-      outFile << CSV_SEPARATOR << record.queueLength << "\n";
-    }
-    // Flush and close the file
-    outFile.flush();
-    outFile.close();
-    spdlog::debug("Saved street data for time step {} to file {}.", time_step, filename);
-  }
-  // End Street Data methods
-  // Init Avg Stats methods
-  void FirstOrderDynamics::m_initAvgStatsTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    // Create table if it doesn't exist
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS avg_stats ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "datetime TEXT NOT NULL, "
-        "time_step INTEGER NOT NULL, "
-        "n_ghost_agents INTEGER NOT NULL, "
-        "n_agents INTEGER NOT NULL, "
-        "mean_speed_kph REAL, "
-        "std_speed_kph REAL, "
-        "mean_density_vpk REAL NOT NULL, "
-        "std_density_vpk REAL NOT NULL, "
-        "mean_travel_time_s REAL, "
-        "mean_queue_length REAL NOT NULL)");
-
-    spdlog::info("Initialized avg_stats table in the database.");
-  }
-  void FirstOrderDynamics::m_saveAvgStatsSQL(const std::string& datetime,
-                                             const std::int64_t time_step,
-                                             const std::int64_t simulation_id,
-                                             const std::size_t n_valid_edges,
-                                             const double mean_speed,
-                                             const double std_speed,
-                                             const double mean_density,
-                                             const double std_density,
-                                             const double mean_traveltime,
-                                             const double meanQueueLength) const {
-    SQLite::Statement insertStmt(
-        *this->database(),
-        "INSERT INTO avg_stats ("
-        "simulation_id, datetime, time_step, n_ghost_agents, n_agents, "
-        "mean_speed_kph, std_speed_kph, mean_density_vpk, std_density_vpk, "
-        "mean_travel_time_s, mean_queue_length) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    insertStmt.bind(1, simulation_id);
-    insertStmt.bind(2, datetime);
-    insertStmt.bind(3, time_step);
-    insertStmt.bind(4, static_cast<std::int64_t>(m_agents.size()));
-    insertStmt.bind(5, static_cast<std::int64_t>(this->nAgents()));
-
-    if (n_valid_edges > 0) {
-      insertStmt.bind(6, mean_speed);
-      insertStmt.bind(7, std_speed);
-      insertStmt.bind(10, mean_traveltime);
-    } else {
-      insertStmt.bind(6);
-      insertStmt.bind(7);
-      insertStmt.bind(10);
-    }
-    insertStmt.bind(8, mean_density);
-    insertStmt.bind(9, std_density);
-    insertStmt.bind(11, meanQueueLength);
-    insertStmt.exec();
-  }
-  void FirstOrderDynamics::m_saveAvgStatsCSV(const std::string& datetime,
-                                             const std::int64_t time_step,
-                                             const std::int64_t simulation_id,
-                                             const std::size_t n_valid_edges,
-                                             const double mean_speed,
-                                             const double std_speed,
-                                             const double mean_density,
-                                             const double std_density,
-                                             const double mean_traveltime,
-                                             const double meanQueueLength) const {
-    auto const filename{
-        std::format("{}_{}_avg_stats.csv", simulation_id, this->m_safeName())};
-    // Check if the file exists to write the header
-    bool fileExists = std::filesystem::exists(filename);
-    std::ofstream outFile(filename, std::ios::app);
-    if (!outFile.is_open()) {
-      spdlog::error("Failed to open file {} for writing average stats.", filename);
-      return;
-    }
-    // Header
-    if (!fileExists) {
-      outFile << "datetime" << CSV_SEPARATOR << "time_step" << CSV_SEPARATOR
-              << "n_ghost_agents" << CSV_SEPARATOR << "n_agents" << CSV_SEPARATOR
-              << "mean_speed_kph" << CSV_SEPARATOR << "std_speed_kph" << CSV_SEPARATOR
-              << "mean_density_vpk" << CSV_SEPARATOR << "std_density_vpk" << CSV_SEPARATOR
-              << "mean_travel_time_s" << CSV_SEPARATOR << "mean_queue_length" << "\n";
-    }
-    // Data row
-    outFile << datetime << CSV_SEPARATOR << time_step << CSV_SEPARATOR << m_agents.size()
-            << CSV_SEPARATOR << this->nAgents() << CSV_SEPARATOR;
-    if (n_valid_edges > 0) {
-      outFile << mean_speed << CSV_SEPARATOR << std_speed << CSV_SEPARATOR << mean_density
-              << CSV_SEPARATOR << std_density << CSV_SEPARATOR << mean_traveltime
-              << CSV_SEPARATOR;
-    } else {
-      outFile << CSV_SEPARATOR << CSV_SEPARATOR << mean_density << CSV_SEPARATOR
-              << std_density << CSV_SEPARATOR << CSV_SEPARATOR;
-    }
-    outFile << meanQueueLength << "\n";
-    // Flush and close the file
-    outFile.flush();
-    outFile.close();
-    spdlog::debug(
-        "Saved average stats for time step {} to file {}.", time_step, filename);
-  }
-  // End Avg Stats methods
-  // Init Travel Data methods
-  void FirstOrderDynamics::m_initTravelDataTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    // Create table if it doesn't exist
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS travel_data ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "datetime TEXT NOT NULL, "
-        "time_step INTEGER NOT NULL, "
-        "distance_m REAL NOT NULL, "
-        "travel_time_s REAL NOT NULL)");
-
-    spdlog::info("Initialized travel_data table in the database.");
-  }
-  void FirstOrderDynamics::m_saveTravelDataSQL(
-      const std::string& datetime,
-      const std::int64_t time_step,
-      const std::int64_t simulation_id,
-      tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
-    SQLite::Statement insertStmt(*this->database(),
-                                 "INSERT INTO travel_data (datetime, time_step, "
-                                 "simulation_id, distance_m, travel_time_s) "
-                                 "VALUES (?, ?, ?, ?, ?)");
-
-    for (auto const& [distance, time] : travelDTs) {
-      insertStmt.bind(1, datetime);
-      insertStmt.bind(2, time_step);
-      insertStmt.bind(3, simulation_id);
-      insertStmt.bind(4, distance);
-      insertStmt.bind(5, time);
-      insertStmt.exec();
-      insertStmt.reset();
-    }
-  }
-  void FirstOrderDynamics::m_saveTravelDataCSV(
-      const std::string& datetime,
-      const std::int64_t time_step,
-      const std::int64_t simulation_id,
-      tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
-    auto const filename{
-        std::format("{}_{}_travel_data.csv", simulation_id, this->m_safeName())};
-    // Check if the file exists to write the header
-    bool fileExists = std::filesystem::exists(filename);
-    std::ofstream outFile(filename, std::ios::app);
-    if (!outFile.is_open()) {
-      spdlog::error("Failed to open file {} for writing travel data.", filename);
-      return;
-    }
-    // Header
-    if (!fileExists) {
-      outFile << "datetime" << CSV_SEPARATOR << "time_step" << CSV_SEPARATOR
-              << "distance_m" << CSV_SEPARATOR << "travel_time_s" << "\n";
-    }
-    // Data rows
-    for (auto const& [distance, time] : travelDTs) {
-      outFile << datetime << CSV_SEPARATOR << time_step << CSV_SEPARATOR << distance
-              << CSV_SEPARATOR << time << "\n";
-    }
-    // Flush and close the file
-    outFile.flush();
-    outFile.close();
-    spdlog::debug("Saved travel data for time step {} to file {}.", time_step, filename);
-  }
-  // End Travel Data methods
-  // Init Agent Data methods
-  void FirstOrderDynamics::m_initAgentDataTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    // Create table if it doesn't exist
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS agent_data ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "agent_id INTEGER NOT NULL, "
-        "edge_id INTEGER NOT NULL, "
-        "time_step_in INTEGER NOT NULL, "
-        "time_step_out INTEGER NOT NULL)");
-
-    spdlog::info("Initialized agent_data table in the database.");
-  }
-  void FirstOrderDynamics::m_saveAgentDataSQL(
-      const std::int64_t time_step,
-      const std::int64_t simulation_id,
-      tbb::concurrent_unordered_map<Id,
-                                    std::vector<std::tuple<Id, std::time_t, std::time_t>>>
-          agentDataRecords) const {
-    if (agentDataRecords.empty()) {
-      spdlog::debug("No agent data records to save for time step {}.", time_step);
-      return;
-    }
-    SQLite::Statement insertStmt(*this->database(),
-                                 "INSERT INTO agent_data (simulation_id, "
-                                 "agent_id, edge_id, time_step_in, time_step_out)"
-                                 "VALUES (?, ?, ?, ?, ?)");
-    for (auto const& [edge_id, data] : agentDataRecords) {
-      for (auto const& [agent_id, ts_in, ts_out] : data) {
-        insertStmt.bind(1, simulation_id);
-        insertStmt.bind(2, static_cast<std::int64_t>(agent_id));
-        insertStmt.bind(3, static_cast<std::int64_t>(edge_id));
-        insertStmt.bind(4, static_cast<std::int64_t>(ts_in));
-        insertStmt.bind(5, static_cast<std::int64_t>(ts_out));
-        insertStmt.exec();
-        insertStmt.reset();
-      }
-    }
-  }
-  void FirstOrderDynamics::m_saveAgentDataCSV(
-      const std::int64_t time_step,
-      const std::int64_t simulation_id,
-      tbb::concurrent_unordered_map<Id,
-                                    std::vector<std::tuple<Id, std::time_t, std::time_t>>>
-          agentDataRecords) const {
-    if (agentDataRecords.empty()) {
-      spdlog::debug("No agent data records to save for time step {}.", time_step);
-      return;
-    }
-    auto const filename{
-        std::format("{}_{}_agent_data.csv", simulation_id, this->m_safeName())};
-    // Check if the file exists to write the header
-    bool fileExists = std::filesystem::exists(filename);
-    std::ofstream outFile(filename, std::ios::app);
-    if (!outFile.is_open()) {
-      spdlog::error("Failed to open file {} for writing agent data.", filename);
-      return;
-    }
-    // Header
-    if (!fileExists) {
-      outFile << "simulation_id" << CSV_SEPARATOR << "agent_id" << CSV_SEPARATOR
-              << "edge_id" << CSV_SEPARATOR << "time_step_in" << CSV_SEPARATOR
-              << "time_step_out" << "\n";
-    }
-    // Data rows
-    for (auto const& [edge_id, data] : agentDataRecords) {
-      for (auto const& [agent_id, ts_in, ts_out] : data) {
-        outFile << simulation_id << CSV_SEPARATOR << agent_id << CSV_SEPARATOR << edge_id
-                << CSV_SEPARATOR << ts_in << CSV_SEPARATOR << ts_out << "\n";
-      }
-    }
-    // Flush and close the file
-    outFile.flush();
-    outFile.close();
-    spdlog::debug("Saved agent data for time step {} to file {}.", time_step, filename);
-  }
-  // End Agent Data methods
-  void FirstOrderDynamics::m_dumpSimInfo() const {
-    // Dump simulation info (parameters) to the database, if connected
-    if (!this->database()) {
-      return;
-    }
-    // Create simulations table if it doesn't exist
-    SQLite::Statement createTableStmt(*this->database(),
-                                      "CREATE TABLE IF NOT EXISTS simulations ("
-                                      "id INTEGER PRIMARY KEY, "
-                                      "name TEXT, "
-                                      "speed_function TEXT, "
-                                      "error_probability REAL, "
-                                      "passage_probability REAL, "
-                                      "mean_travel_distance_m REAL, "
-                                      "mean_travel_time_s REAL, "
-                                      "stagnant_tolerance_factor REAL, "
-                                      "force_priorities BOOLEAN, "
-                                      "save_avg_stats BOOLEAN, "
-                                      "save_road_data BOOLEAN, "
-                                      "save_travel_data BOOLEAN, "
-                                      "save_agent_data BOOLEAN)");
-    createTableStmt.exec();
-    // Insert simulation parameters into the simulations table
-    SQLite::Statement insertSimStmt(
-        *this->database(),
-        "INSERT INTO simulations (id, name, speed_function, error_probability, "
-        "passage_probability, mean_travel_distance_m, mean_travel_time_s, "
-        "stagnant_tolerance_factor, force_priorities, save_avg_stats, save_road_data, "
-        "save_travel_data, save_agent_data) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    insertSimStmt.bind(1, static_cast<std::int64_t>(this->id()));
-    insertSimStmt.bind(2, this->name());
-    insertSimStmt.bind(3, this->m_speedFunctionDescription);
-    if (this->m_errorProbability.has_value()) {
-      insertSimStmt.bind(4, *this->m_errorProbability);
-    } else {
-      insertSimStmt.bind(4);
-    }
-    if (this->m_passageProbability.has_value()) {
-      insertSimStmt.bind(5, *this->m_passageProbability);
-    } else {
-      insertSimStmt.bind(5);
-    }
-    if (this->m_meanTravelDistance.has_value()) {
-      insertSimStmt.bind(6, *this->m_meanTravelDistance);
-    } else {
-      insertSimStmt.bind(6);
-    }
-    if (this->m_meanTravelTime.has_value()) {
-      insertSimStmt.bind(7, static_cast<int64_t>(*this->m_meanTravelTime));
-    } else {
-      insertSimStmt.bind(7);
-    }
-    if (this->m_timeToleranceFactor.has_value()) {
-      insertSimStmt.bind(8, *this->m_timeToleranceFactor);
-    } else {
-      insertSimStmt.bind(8);
-    }
-    insertSimStmt.bind(9, this->m_forcePriorities);
-    insertSimStmt.bind(10, this->m_bSaveAverageStats);
-    insertSimStmt.bind(11, this->m_bSaveStreetData);
-    insertSimStmt.bind(12, this->m_bSaveTravelData);
-    insertSimStmt.bind(13, this->m_bSaveAgentData);
-    insertSimStmt.exec();
-  }
-  void FirstOrderDynamics::m_dumpNetwork() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    // Check if edges and nodes tables already exists
-    SQLite::Statement edgesQuery(
-        *this->database(),
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='edges';");
-    SQLite::Statement nodesQuery(
-        *this->database(),
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='nodes';");
-    bool edgesTableExists = edgesQuery.executeStep();
-    bool nodesTableExists = nodesQuery.executeStep();
-    if (edgesTableExists && nodesTableExists) {
-      spdlog::info(
-          "Edges and nodes tables already exist in the database. Skipping network dump.");
-      return;
-    }
-
-    // Create edges table
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS edges ("
-        "id INTEGER PRIMARY KEY, "
-        "source INTEGER NOT NULL, "
-        "target INTEGER NOT NULL, "
-        "length REAL NOT NULL, "
-        "maxspeed REAL NOT NULL, "
-        "name TEXT, "
-        "nlanes INTEGER NOT NULL, "
-        "coilcode TEXT, "
-        "geometry TEXT NOT NULL)");
-    // Create nodes table
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS nodes ("
-        "id INTEGER PRIMARY KEY, "
-        "type TEXT, "
-        "geometry TEXT)");
-
-    // Insert edges
-    SQLite::Statement insertEdgeStmt(*this->database(),
-                                     "INSERT INTO edges (id, source, target, length, "
-                                     "maxspeed, name, nlanes, coilcode, geometry) "
-                                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
-    for (const auto& [edgeId, pEdge] : this->graph().edges()) {
-      insertEdgeStmt.bind(1, static_cast<std::int64_t>(edgeId));
-      insertEdgeStmt.bind(2, static_cast<std::int64_t>(pEdge->source()));
-      insertEdgeStmt.bind(3, static_cast<std::int64_t>(pEdge->target()));
-      insertEdgeStmt.bind(4, pEdge->length());
-      insertEdgeStmt.bind(5, pEdge->maxSpeed());
-      insertEdgeStmt.bind(6, pEdge->name());
-      insertEdgeStmt.bind(7, pEdge->nLanes());
-      auto const& counterName{pEdge->counterName()};
-      if (counterName != "N/A") {
-        insertEdgeStmt.bind(8, counterName);
-      } else {
-        insertEdgeStmt.bind(8);
-      }
-      insertEdgeStmt.bind(9, std::format("{}", pEdge->geometry()));
-      insertEdgeStmt.exec();
-      insertEdgeStmt.reset();
-    }
-    // Insert nodes
-    SQLite::Statement insertNodeStmt(
-        *this->database(), "INSERT INTO nodes (id, type, geometry) VALUES (?, ?, ?);");
-    for (const auto& [nodeId, pNode] : this->graph().nodes()) {
-      insertNodeStmt.bind(1, static_cast<std::int64_t>(nodeId));
-      if (pNode->isTrafficLight()) {
-        insertNodeStmt.bind(2, "traffic_light");
-      } else if (pNode->isRoundabout()) {
-        insertNodeStmt.bind(2, "roundabout");
-      } else {
-        insertNodeStmt.bind(2);
-      }
-      if (pNode->geometry().has_value()) {
-        insertNodeStmt.bind(3, std::format("{}", *pNode->geometry()));
-      } else {
-        insertNodeStmt.bind(3);
-      }
-      insertNodeStmt.exec();
-      insertNodeStmt.reset();
-    }
+  void FirstOrderDynamics::prepareNetwork() {
+    m_graph->adjustNodeCapacities();
+    m_graph->autoMapStreetLanes();
+    m_graph->autoAssignRoadPriorities();
+    m_graph->autoInitTrafficLights();
   }
 
   void FirstOrderDynamics::setErrorProbability(double errorProbability) {
@@ -1490,22 +968,54 @@ namespace dsf::mobility {
 
     switch (csvtype) {
       case AgentInsertionMethod::RANDOM_ODS: {
-        spdlog::info("Importing ODs from CSV with RANDOM_ODS method.");
-        std::unordered_map<Id, double> originNodes;
-        std::unordered_map<Id, double> destinationNodes;
-        for (auto const& row : reader) {
-          auto const nodeId = row["node_id"].get<Id>();
-          auto const type = row["type"].get<std::string>();
-          auto const weight = row["weight"].get<double>();
-          if (type == "O") {
-            originNodes[nodeId] = weight;
-          } else if (type == "D") {
-            destinationNodes[nodeId] = weight;
-          } else {
-            spdlog::warn(
-                "Unknown type '{}' for node {} in CSV. Skipping this row.", type, nodeId);
+        bool bCompatFormat{false};
+        for (auto const& colName : colNames) {
+          if (colName == "o_prob" || colName == "d_prob") {
+            bCompatFormat = true;
+            break;
           }
         }
+        std::unordered_map<Id, double> originNodes;
+        std::unordered_map<Id, double> destinationNodes;
+        if (bCompatFormat) {
+          spdlog::info("Importing ODs from CSV with RANDOM_ODS method (compat format).");
+          for (auto const& row : reader) {
+            auto const nodeId = row["node_id"].get<Id>();
+            // try to get o_prob as double
+            try {
+              auto oProb = row["o_prob"].get<double>();
+              originNodes.emplace(nodeId, oProb);
+            } catch (...) {
+              // Do nothing, the node will be skipped as origin
+            }
+            try {
+              auto dProb = row["d_prob"].get<double>();
+              destinationNodes.emplace(nodeId, dProb);
+            } catch (...) {
+              // Do nothing, the node will be skipped as destination
+            }
+          }
+        } else {
+          spdlog::info(
+              "Importing ODs from CSV with RANDOM_ODS method (extended format).");
+          for (auto const& row : reader) {
+            auto const nodeId = row["node_id"].get<Id>();
+            auto const type = row["type"].get<std::string>();
+            auto const weight = row["weight"].get<double>();
+            if (type == "O") {
+              originNodes[nodeId] = weight;
+            } else if (type == "D") {
+              destinationNodes[nodeId] = weight;
+            } else {
+              spdlog::warn("Unknown type '{}' for node {} in CSV. Skipping this row.",
+                           type,
+                           nodeId);
+            }
+          }
+        }
+        spdlog::info("Imported {} origin nodes and {} destination nodes from CSV.",
+                     originNodes.size(),
+                     destinationNodes.size());
         this->setOriginNodes(std::move(originNodes));
         this->setDestinationNodes(std::move(destinationNodes));
         break;
@@ -1562,36 +1072,9 @@ namespace dsf::mobility {
                                     bool const saveStreetData,
                                     bool const saveTravelData,
                                     bool const saveAgentData) {
-    m_savingInterval = savingInterval;
-    m_bSaveAverageStats = saveAverageStats;
-    m_bSaveStreetData = saveStreetData;
-    m_bSaveTravelData = saveTravelData;
-    m_bSaveAgentData = saveAgentData;
-
-    if (this->database() != nullptr) {
-      // Initialize the required tables
-      if (saveStreetData) {
-        m_initStreetTable();
-      }
-      if (saveAverageStats) {
-        m_initAvgStatsTable();
-      }
-      if (saveTravelData) {
-        m_initTravelDataTable();
-      }
-      if (saveAgentData) {
-        m_initAgentDataTable();
-      }
-      this->m_dumpSimInfo();
-      this->m_dumpNetwork();
-    }
-    if (saveAgentData) {
-      Street::acquireAgentData();
-    }
-
-    spdlog::info(
-        "Data saving configured: interval={}s, avg_stats={}, street_data={}, "
-        "travel_data={}, agent_data={}",
+    spdlog::debug(
+        "FirstOrderDynamics::saveData is now a compatibility hook. interval={}s, "
+        "avg_stats={}, street_data={}, travel_data={}, agent_data={}",
         savingInterval,
         saveAverageStats,
         saveStreetData,
@@ -1643,17 +1126,17 @@ namespace dsf::mobility {
     }
   }
 
-  void FirstOrderDynamics::updatePaths(bool const throw_on_empty) {
+  void FirstOrderDynamics::updatePaths() {
     spdlog::debug("Init updating paths...");
     tbb::concurrent_vector<Id> emptyItineraries;
     tbb::parallel_for_each(
         this->itineraries().cbegin(),
         this->itineraries().cend(),
-        [this, throw_on_empty, &emptyItineraries](auto const& pair) -> void {
+        [this, &emptyItineraries](auto const& pair) -> void {
           auto const& pItinerary{pair.second};
           this->m_updatePath(pItinerary);
           if (pItinerary->empty()) {
-            if (!throw_on_empty) {
+            if (!this->m_updatepathsThrowOnEmpty) {
               spdlog::warn("No path found for itinerary {} with destination node {}",
                            pItinerary->id(),
                            pItinerary->destination());
@@ -1770,10 +1253,13 @@ namespace dsf::mobility {
       case AgentInsertionMethod::RANDOM_ODS:
         this->m_addAgentsRandomODs(nAgents);
         break;
+      case AgentInsertionMethod::UNIFORM:
+        this->addAgentsUniformly(nAgents);
+        break;
       default:
         throw std::runtime_error(
             "Cannot add agents without a valid insertion methods. Possible values are "
-            "\"RANDOM\", \"ODS\" and \"RANDOM_ODS\"");
+            "\"RANDOM\", \"ODS\", \"RANDOM_ODS\" and \"UNIFORM\"");
     }
   }
 
@@ -1785,15 +1271,17 @@ namespace dsf::mobility {
     m_itineraries.emplace(itinerary->id(), std::move(itinerary));
   }
 
-  void FirstOrderDynamics::evolve(bool const reinsert_agents) {
+  StepDataResult FirstOrderDynamics::evolve(StepDataRequest const& dataRequest) {
+    StepDataResult stepData;
+    stepData.timeStep = this->time_step();
     auto const n_threads{std::max<std::size_t>(1, this->concurrency())};
     std::atomic<double> mean_speed{0.}, mean_density{0.}, mean_traveltime{0.},
         mean_queue_length{0.};
     std::atomic<double> std_speed{0.}, std_density{0.};
     std::atomic<std::size_t> nValidEdges{0};
-    bool const bComputeStats = m_savingInterval.has_value() &&
-                               (m_savingInterval.value() == 0 ||
-                                this->time_step() % m_savingInterval.value() == 0);
+    bool const bComputeStats = dataRequest.saveAverageStats ||
+                               dataRequest.saveStreetData || dataRequest.saveTravelData ||
+                               dataRequest.saveAgentData;
     tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords;
 
     spdlog::debug("Init evolve at time {}", this->time_step());
@@ -1826,7 +1314,7 @@ namespace dsf::mobility {
                     value += pStreet->nExitingAgents(direction, true);
                   }
                 }
-                m_evolveStreet(pStreet, reinsert_agents);
+                m_evolveStreet(pStreet);
                 if (bComputeStats) {
                   auto const& density{pStreet->density() * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};
@@ -1835,7 +1323,7 @@ namespace dsf::mobility {
                   if (speedMeasure.is_valid) {
                     auto const speed = speedMeasure.mean * 3.6;  // to kph
                     auto const speed_std = speedMeasure.std * 3.6;
-                    if (m_bSaveAverageStats) {
+                    if (dataRequest.saveAverageStats) {
                       mean_speed.fetch_add(speed, std::memory_order_relaxed);
                       std_speed.fetch_add(speed * speed + speed_std * speed_std,
                                           std::memory_order_relaxed);
@@ -1844,13 +1332,13 @@ namespace dsf::mobility {
                       ++nValidEdges;
                     }
                   }
-                  if (m_bSaveAverageStats) {
+                  if (dataRequest.saveAverageStats) {
                     mean_density.fetch_add(density, std::memory_order_relaxed);
                     std_density.fetch_add(density * density, std::memory_order_relaxed);
                     mean_queue_length.fetch_add(queueLength, std::memory_order_relaxed);
                   }
 
-                  if (m_bSaveStreetData) {
+                  if (dataRequest.saveStreetData) {
                     // Collect data for batch insert after parallel section
                     StreetDataRecord record;
                     record.density = density;
@@ -1893,117 +1381,43 @@ namespace dsf::mobility {
     this->m_evolveAgents();
 
     if (bComputeStats) {
-      auto const datetime = this->strDateTime();
-      auto const step = static_cast<std::int64_t>(this->time_step());
-      auto const simulationId = static_cast<std::int64_t>(this->id());
-
-      bool const hasWritePayload = (m_bSaveStreetData && !streetDataRecords.empty()) ||
-                                   (m_bSaveTravelData && !m_travelDTs.empty()) ||
-                                   m_bSaveAverageStats;
-      if (this->database() != nullptr) {
-        spdlog::debug("Saving data for time step {} to the database...",
-                      this->time_step());
-        std::optional<SQLite::Transaction> transaction;
-        if (hasWritePayload) {
-          transaction.emplace(*this->database());
-        }
-        // Batch insert street data collected during parallel section
-        if (m_bSaveStreetData) {
-          this->m_saveStreetDataSQL(
-              datetime, step, simulationId, std::move(streetDataRecords));
-        }
-        if (m_bSaveTravelData && !m_travelDTs.empty()) {
-          this->m_saveTravelDataSQL(datetime, step, simulationId, std::move(m_travelDTs));
-          m_travelDTs.clear();
-        }
-        if (m_bSaveAgentData) {
-          this->m_saveAgentDataSQL(step, simulationId, Street::agentData());
-        }
-
-        if (m_bSaveAverageStats) {  // Average Stats Table
-          double meanSpeed{0.}, stdSpeed{0.}, meanDensity{0.}, stdDensity{0.},
-              meanTravelTime{0.}, meanQueueLength{0.};
-          auto const validEdges = nValidEdges.load();
-          auto const edgeCount = static_cast<double>(numEdges);
-          if (validEdges > 0) {
-            meanSpeed = mean_speed.load() / validEdges;
-            stdSpeed = std::sqrt(
-                std::max(0.0, std_speed.load() / validEdges - meanSpeed * meanSpeed));
-            meanDensity = mean_density.load() / edgeCount;
-            stdDensity = std::sqrt(std::max(
-                0.0, std_density.load() / edgeCount - meanDensity * meanDensity));
-            meanTravelTime = mean_traveltime.load() / validEdges;
-            meanQueueLength = mean_queue_length.load() / edgeCount;
-          }
-
-          this->m_saveAvgStatsSQL(datetime,
-                                  step,
-                                  simulationId,
-                                  validEdges,
-                                  meanSpeed,
-                                  stdSpeed,
-                                  meanDensity,
-                                  stdDensity,
-                                  meanTravelTime,
-                                  meanQueueLength);
-        }
-
-        if (transaction.has_value()) {
-          transaction->commit();
-        }
-      } else {
-        spdlog::debug("No database connected. Saving csv files for time step {}...",
-                      this->time_step());
-        if (m_bSaveStreetData) {
-          this->m_saveStreetDataCSV(
-              datetime, step, simulationId, std::move(streetDataRecords));
-        }
-        if (m_bSaveTravelData && !m_travelDTs.empty()) {
-          this->m_saveTravelDataCSV(datetime, step, simulationId, std::move(m_travelDTs));
-          m_travelDTs.clear();
-        }
-        if (m_bSaveAgentData) {
-          this->m_saveAgentDataCSV(step, simulationId, Street::agentData());
-        }
-        if (m_bSaveAverageStats) {  // Average Stats Table
-          double meanSpeed{0.}, stdSpeed{0.}, meanDensity{0.}, stdDensity{0.},
-              meanTravelTime{0.}, meanQueueLength{0.};
-          auto const validEdges = nValidEdges.load();
-          auto const edgeCount = static_cast<double>(numEdges);
-          if (validEdges > 0) {
-            meanSpeed = mean_speed.load() / validEdges;
-            stdSpeed = std::sqrt(
-                std::max(0.0, std_speed.load() / validEdges - meanSpeed * meanSpeed));
-            meanDensity = mean_density.load() / edgeCount;
-            stdDensity = std::sqrt(std::max(
-                0.0, std_density.load() / edgeCount - meanDensity * meanDensity));
-            meanTravelTime = mean_traveltime.load() / validEdges;
-            meanQueueLength = mean_queue_length.load() / edgeCount;
-          }
-          this->m_saveAvgStatsCSV(datetime,
-                                  step,
-                                  simulationId,
-                                  validEdges,
-                                  meanSpeed,
-                                  stdSpeed,
-                                  meanDensity,
-                                  stdDensity,
-                                  meanTravelTime,
-                                  meanQueueLength);
-        }
+      if (dataRequest.saveStreetData && !streetDataRecords.empty()) {
+        stepData.streetData = std::move(streetDataRecords);
       }
 
-      // Special case: if m_savingInterval == 0, it was a triggered saveData() call, so we need to reset all flags
-      if (m_savingInterval.value() == 0) {
-        m_savingInterval.reset();
-        m_bSaveStreetData = false;
-        m_bSaveTravelData = false;
-        m_bSaveAverageStats = false;
-        m_bSaveAgentData = false;
+      if (dataRequest.saveTravelData && !m_travelDTs.empty()) {
+        stepData.travelData = std::move(m_travelDTs);
+        m_travelDTs.clear();
+      }
+
+      if (dataRequest.saveAgentData) {
+        stepData.agentData = Street::agentData();
+      }
+
+      if (dataRequest.saveAverageStats) {
+        AverageStatsRecord averageStats;
+        averageStats.nValidEdges = nValidEdges.load();
+        auto const edgeCount = static_cast<double>(numEdges);
+        if (averageStats.nValidEdges > 0) {
+          averageStats.meanSpeed = mean_speed.load() / averageStats.nValidEdges;
+          averageStats.stdSpeed =
+              std::sqrt(std::max(0.0,
+                                 std_speed.load() / averageStats.nValidEdges -
+                                     averageStats.meanSpeed * averageStats.meanSpeed));
+          averageStats.meanDensity = mean_density.load() / edgeCount;
+          averageStats.stdDensity = std::sqrt(
+              std::max(0.0,
+                       std_density.load() / edgeCount -
+                           averageStats.meanDensity * averageStats.meanDensity));
+          averageStats.meanTravelTime = mean_traveltime.load() / averageStats.nValidEdges;
+          averageStats.meanQueueLength = mean_queue_length.load() / edgeCount;
+        }
+        stepData.averageStats = averageStats;
       }
     }
 
     Dynamics<RoadNetwork>::m_evolve();
+    return stepData;
   }
 
   void FirstOrderDynamics::m_trafficlightSingleTailOptimizer(

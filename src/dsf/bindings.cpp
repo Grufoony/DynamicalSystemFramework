@@ -5,17 +5,12 @@
 #include <pybind11/functional.h>  // For std::function support
 #include <pybind11/numpy.h>       // For numpy array support
 
-#include <spdlog/spdlog.h>  // For logging functionality
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
 PYBIND11_MODULE(dsf_cpp, m) {
   m.doc() = "Python bindings for the DSF library";
   m.attr("__version__") = dsf::version();
-
-  // Bind the dsf::log_to_file function
-  m.def("log_to_file",
-        &dsf::log_to_file,
-        pybind11::arg("path"),
-        "Set up logging to a specified file");
 
   // Create mobility submodule
   auto mobility = m.def_submodule("mobility",
@@ -24,6 +19,11 @@ PYBIND11_MODULE(dsf_cpp, m) {
   auto mdt = m.def_submodule("mdt",
                              "Bindings for movement data tools (MDT) related classes and "
                              "functions, under the dsf::mdt C++ namespace.");
+
+  auto logging =
+      m.def_submodule("logging",
+                      "Bindings for logging-related classes and functions, under the "
+                      "spdlog C++ namespace.");
 
   // Bind AgentInsertionMethod enum
   pybind11::enum_<dsf::mobility::AgentInsertionMethod>(mobility, "AgentInsertionMethod")
@@ -51,7 +51,7 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .export_values();
 
   // Bind spdlog log level enum
-  pybind11::enum_<spdlog::level::level_enum>(m, "LogLevel")
+  pybind11::enum_<spdlog::level::level_enum>(logging, "LogLevel")
       .value("TRACE", spdlog::level::trace)
       .value("DEBUG", spdlog::level::debug)
       .value("INFO", spdlog::level::info)
@@ -61,13 +61,49 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .value("OFF", spdlog::level::off)
       .export_values();
 
-  // Bind spdlog logging functions
-  m.def("set_log_level",
-        &spdlog::set_level,
-        pybind11::arg("level"),
-        "Set the global log level for spdlog");
+  logging.def(
+      "set_level",
+      [](spdlog::level::level_enum level) { spdlog::set_level(level); },
+      pybind11::arg("level"),
+      "Set the global log level");
 
-  m.def("get_log_level", &spdlog::get_level, "Get the current global log level");
+  logging.def(
+      "to_file",
+      [](std::string const& fileName) {
+        try {
+          auto file_logger = spdlog::basic_logger_mt("dsf_file_logger", fileName);
+          spdlog::set_default_logger(file_logger);
+          spdlog::info("Logging to file: {}", fileName);
+        } catch (const spdlog::spdlog_ex& ex) {
+          spdlog::error("Log initialization failed: {}", ex.what());
+        }
+      },
+      pybind11::arg("fileName"),
+      "Configure the global logger to write to a file");
+
+  logging.def(
+      "info",
+      [](std::string const& message) { spdlog::info("{}", message); },
+      pybind11::arg("message"),
+      "Log an info message");
+
+  logging.def(
+      "warn",
+      [](std::string const& message) { spdlog::warn("{}", message); },
+      pybind11::arg("message"),
+      "Log a warning message");
+
+  logging.def(
+      "error",
+      [](std::string const& message) { spdlog::error("{}", message); },
+      pybind11::arg("message"),
+      "Log an error message");
+
+  logging.def(
+      "debug",
+      [](std::string const& message) { spdlog::debug("{}", message); },
+      pybind11::arg("message"),
+      "Log a debug message");
 
   // Bind Street class to mobility submodule
   pybind11::class_<dsf::mobility::Street>(mobility, "Street")
@@ -661,15 +697,17 @@ Returns:
            pybind11::arg("graph"),
            pybind11::arg("useCache") = false,
            pybind11::arg("seed") = std::nullopt,
-           R"doc(Create a dynamics model over a road network.
+           R"doc(Create a FirstOrderDynamics instance.)doc")
+      .def("setSeed",
+           &dsf::mobility::FirstOrderDynamics::setSeed,
+           pybind11::arg("seed"),
+           R"doc(Set the seed value for the random number generator.
 
-Args:
-    graph (RoadNetwork): Road network used by the simulation (ownership is transferred).
-    useCache (bool, optional): Enable internal caching. Defaults to False.
-    seed (int | None, optional): Random seed for reproducibility.
+      Args:
+          seed (int): The seed value for the random number generator.
 
-Returns:
-    Dynamics: A new dynamics instance.)doc")
+      Returns:
+          None)doc")
       .def(
           "setSpeedFunction",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -696,82 +734,41 @@ Returns:
           },
           pybind11::arg("speedFunction"),
           pybind11::arg("arg"),
-          "Set the speed function for agents.\n\n"
-          "Args:\n"
-          "    speedFunction (SpeedFunction): The speed function type (LINEAR or "
-          "CUSTOM)\n"
-          "    arg: For LINEAR, a float alpha in [0., 1.). "
-          "For CUSTOM, an integer address (uintptr_t) of a C function with signature "
-          "double(double max_speed, double density).")
-      .def("setName",
-           &dsf::mobility::FirstOrderDynamics::setName,
-           pybind11::arg("name"),
-           R"doc(Set the simulation name.
-
-    Args:
-      name (str): New name for the dynamics object.
-
-    Returns:
-      None)doc")
-      .def("setInitTime",
-           &dsf::mobility::FirstOrderDynamics::setInitTime,
-           pybind11::arg("timeEpoch"),
-           R"doc(Set the simulation start time from an epoch timestamp.
-
-    Args:
-      timeEpoch (int): Epoch timestamp in seconds.
-
-    Returns:
-      None)doc")
-      .def(
-          "setInitTime",
-          [](dsf::mobility::FirstOrderDynamics& self, pybind11::object datetime_obj) {
-            auto const epoch_seconds =
-                pybind11::cast<double>(datetime_obj.attr("timestamp")());
-            self.setInitTime(static_cast<std::time_t>(epoch_seconds));
-          },
-          pybind11::arg("datetime"),
-          R"doc(Set the simulation start time from a Python datetime-like object.
+          R"doc(Set the speed function for agents.
 
       Args:
-        datetime (datetime): Object exposing a timestamp() method.
-
-      Returns:
-        None)doc")
+          speedFunction (SpeedFunction): The speed function type (LINEAR or CUSTOM)
+          arg: For LINEAR, a float alpha in [0., 1.). For CUSTOM, an integer address (uintptr_t) of a C function with signature double(double max_speed, double density).)doc")
       .def("setConcurrency",
            &dsf::mobility::FirstOrderDynamics::setConcurrency,
            pybind11::arg("concurrency"),
            R"doc(Set the concurrency level used by the simulation.
 
-    Args:
-      concurrency (int): Number of concurrent workers or threads.
+      Args:
+        concurrency (int): Number of concurrent workers or threads.
 
-    Returns:
-      None)doc")
-      .def("connectDataBase",
-           &dsf::mobility::FirstOrderDynamics::connectDataBase,
-           pybind11::arg("dbPath"),
-           pybind11::arg("queries") =
-               "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
-               "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;",
-           R"doc(Connect the simulation to a SQLite database.
-
-Args:
-    dbPath (str): Path to the SQLite database file.
-    queries (str, optional): Initialization SQL statements.
-
-Returns:
-    None)doc")
+      Returns:
+        None)doc")
       .def("setForcePriorities",
            &dsf::mobility::FirstOrderDynamics::setForcePriorities,
            pybind11::arg("forcePriorities"),
            R"doc(Enable or disable force-based route priorities.
 
-    Args:
-      forcePriorities (bool): Whether to force priority handling.
+      Args:
+        forcePriorities (bool): Whether to force priority handling.
 
-    Returns:
-      None)doc")
+      Returns:
+        None)doc")
+      .def("setUpdatePathsThrowOnEmpty",
+           &dsf::mobility::FirstOrderDynamics::setUpdatePathsThrowOnEmpty,
+           pybind11::arg("throwOnEmpty"),
+           R"doc(Enable or disable throwing an exception when paths are empty.
+
+      Args:
+        throwOnEmpty (bool): Whether to throw an exception when paths are empty.
+
+      Returns:
+        None)doc")
       .def(
           "setDataUpdatePeriod",
           [](dsf::mobility::FirstOrderDynamics& self, int dataUpdatePeriod) {
@@ -780,21 +777,21 @@ Returns:
           pybind11::arg("dataUpdatePeriod"),
           R"doc(Set the interval between data updates.
 
-Args:
-    dataUpdatePeriod (int): Update period in simulation time units.
+      Args:
+          dataUpdatePeriod (int): Update period in simulation time units.
 
-Returns:
-    None)doc")
+      Returns:
+          None)doc")
       .def("setMeanTravelDistance",
            &dsf::mobility::FirstOrderDynamics::setMeanTravelDistance,
            pybind11::arg("meanDistance"),
            R"doc(Set the target mean travel distance.
 
-Args:
-    meanDistance (float): Mean travel distance.
+      Args:
+          meanDistance (float): Mean travel distance.
 
-Returns:
-    None)doc")
+      Returns:
+          None)doc")
       .def(
           "setMeanTravelTime",
           [](dsf::mobility::FirstOrderDynamics& self, uint64_t meanTravelTime) {
@@ -803,21 +800,21 @@ Returns:
           pybind11::arg("meanTravelTime"),
           R"doc(Set the target mean travel time.
 
-Args:
-    meanTravelTime (int): Mean travel time in seconds.
+      Args:
+          meanTravelTime (int): Mean travel time in seconds.
 
-Returns:
-    None)doc")
+      Returns:
+          None)doc")
       .def("setErrorProbability",
            &dsf::mobility::FirstOrderDynamics::setErrorProbability,
            pybind11::arg("errorProbability"),
            R"doc(Set the probability of injecting simulation errors.
 
-    Args:
-      errorProbability (float): Probability in the range [0, 1].
+      Args:
+        errorProbability (float): Probability in the range [0, 1].
 
-    Returns:
-      None)doc")
+      Returns:
+        None)doc")
       .def("killStagnantAgents",
            &dsf::mobility::FirstOrderDynamics::killStagnantAgents,
            pybind11::arg("timeToleranceFactor") = 3.,
@@ -942,7 +939,6 @@ Returns:
       None)doc")
       .def("updatePaths",
            &dsf::mobility::FirstOrderDynamics::updatePaths,
-           pybind11::arg("throw_on_empty") = true,
            R"doc(Recompute routing paths for the current network state.
 
     Args:
@@ -981,11 +977,7 @@ Returns:
         None)doc")
       .def("evolve",
            &dsf::mobility::FirstOrderDynamics::evolve,
-           pybind11::arg("reinsert_agents") = false,
            R"doc(Advance the simulation by one time step.
-
-      Args:
-        reinsert_agents (bool, optional): Reinsert agents after movement.
 
       Returns:
         None)doc")
@@ -1021,54 +1013,36 @@ Returns:
 
     Returns:
       int: Number of active agents.)doc")
-      .def("time",
-           &dsf::mobility::FirstOrderDynamics::time,
-           R"doc(Get the current simulation time.
-
-    Returns:
-      int: Simulation time step or timestamp.)doc")
-      .def("time_step",
-           &dsf::mobility::FirstOrderDynamics::time_step,
-           R"doc(Get the simulation time step increment.
-
-    Returns:
-      int: Time step size.)doc")
-      .def("datetime",
-           &dsf::mobility::FirstOrderDynamics::strDateTime,
-           R"doc(Get the current simulation time formatted as a string.
-
-    Returns:
-      str: Human-readable date/time string.)doc")
       .def("meanTravelTime",
            &dsf::mobility::FirstOrderDynamics::meanTravelTime,
            pybind11::arg("clearData") = false,
            R"doc(Compute the mean travel time of agents.
 
-Args:
-    clearData (bool, optional): Clear accumulated statistics after reading.
+        Args:
+            clearData (bool, optional): Clear accumulated statistics after reading.
 
-Returns:
-    float: Mean travel time.)doc")
+        Returns:
+            float: Mean travel time.)doc")
       .def("meanTravelDistance",
            &dsf::mobility::FirstOrderDynamics::meanTravelDistance,
            pybind11::arg("clearData") = false,
            R"doc(Compute the mean travel distance of agents.
 
-Args:
-    clearData (bool, optional): Clear accumulated statistics after reading.
+        Args:
+            clearData (bool, optional): Clear accumulated statistics after reading.
 
-Returns:
-    float: Mean travel distance.)doc")
+        Returns:
+            float: Mean travel distance.)doc")
       .def("meanTravelSpeed",
            &dsf::mobility::FirstOrderDynamics::meanTravelSpeed,
            pybind11::arg("clearData") = false,
            R"doc(Compute the mean travel speed of agents.
 
-Args:
-    clearData (bool, optional): Clear accumulated statistics after reading.
+        Args:
+            clearData (bool, optional): Clear accumulated statistics after reading.
 
-Returns:
-    float: Mean travel speed.)doc")
+        Returns:
+            float: Mean travel speed.)doc")
       .def(
           "turnCounts",
           [](const dsf::mobility::FirstOrderDynamics& self) {
@@ -1103,8 +1077,8 @@ Returns:
           },
           R"doc(Get normalized turn counts grouped by origin and destination.
 
-Returns:
-    dict[int, dict[int, float]]: Nested mapping of normalized counts.)doc")
+      Returns:
+          dict[int, dict[int, float]]: Nested mapping of normalized counts.)doc")
       .def(
           "originCounts",
           [](dsf::mobility::FirstOrderDynamics& self, bool reset) {
@@ -1136,27 +1110,12 @@ Returns:
           pybind11::arg("reset") = true,
           R"doc(Get the number of destination events per node.
 
-Args:
-    reset (bool, optional): Reset counters after reading.
+      Args:
+          reset (bool, optional): Reset counters after reading.
 
-Returns:
-    dict[int, int]: Mapping of node id to destination count.)doc")
-      .def("saveData",
-           &dsf::mobility::FirstOrderDynamics::saveData,
-           pybind11::arg("saving_interval"),
-           pybind11::arg("save_average_stats") = false,
-           pybind11::arg("save_street_data") = false,
-           pybind11::arg("save_travel_data") = false,
-           pybind11::arg("save_agent_data") = false,
-           "Configure data saving during simulation.\n\n"
-           "Args:\n"
-           "    saving_interval: Interval in time steps between data saves\n"
-           "    save_average_stats: Whether to save average statistics (speed, density, "
-           "flow)\n"
-           "    save_street_data: Whether to save per-street data (density, speed, coil "
-           "counts)\n"
-           "    save_travel_data: Whether to save travel data (distance, travel time)\n"
-           "    save_agent_data: Whether to save per-agent edge traversal data")
+      Returns:
+          dict[int, int]: Mapping of node id to destination count.)doc")
+
       .def(
           "summary",
           [](dsf::mobility::FirstOrderDynamics& self) {
@@ -1166,6 +1125,137 @@ Returns:
 
       Returns:
         None)doc");
+
+  // Bind TrafficSimulator class to mobility submodule
+  pybind11::class_<dsf::mobility::TrafficSimulator>(mobility, "TrafficSimulator")
+      .def(pybind11::init<>())
+      .def(pybind11::init<std::string const&>(),
+           pybind11::arg("jsonConfigFile"),
+           R"doc(Create a TrafficSimulator instance from a JSON configuration file.
+      Args:
+          jsonConfigFile (str): Path to the JSON configuration file.
+
+      Returns:
+          TrafficSimulator: A new instance of the traffic simulator initialized with the provided configuration.)doc")
+      .def("connectDataBase",
+           pybind11::overload_cast<std::string_view, std::string_view>(
+               &dsf::mobility::TrafficSimulator::connectDataBase),
+           pybind11::arg("dbPath"),
+           pybind11::arg("queries") =
+               "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
+               "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
+      .def(
+          "importRoadNetwork",
+          [](dsf::mobility::TrafficSimulator& self,
+             const std::string& edgesFile,
+             const std::string& nodePropertiesFile) {
+            self.importRoadNetwork(edgesFile, nodePropertiesFile);
+          },
+          pybind11::arg("edgesFile"),
+          pybind11::arg("nodePropertiesFile") = std::string())
+      .def("updatePaths",
+           &dsf::mobility::TrafficSimulator::updatePaths,
+           pybind11::arg("deltaT") = 0,
+           pybind11::arg("throwOnEmpty") = true,
+           R"doc(Recompute routing paths for the current network state.
+      Args:
+      deltaT (int, optional): Time interval between path updates.
+      throwOnEmpty (bool, optional): Raise exception for empty paths.
+
+      Returns:
+      None)doc")
+      .def("saveData",
+           &dsf::mobility::TrafficSimulator::saveData,
+           pybind11::arg("savingInterval"),
+           pybind11::arg("saveAverageStats") = false,
+           pybind11::arg("saveStreetData") = false,
+           pybind11::arg("saveTravelData") = false,
+           pybind11::arg("saveAgentData") = false)
+      .def("setName",
+           &dsf::mobility::TrafficSimulator::setName,
+           pybind11::arg("name"),
+           R"doc(Set a name for the traffic simulation instance.)
+
+      Args:
+        name (str): New name for the traffic simulation instance.
+
+      Returns:
+        None)doc")
+      .def(
+          "setTimeFrame",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::uint64_t initTime,
+             pybind11::object endTime) {
+            if (endTime.is_none()) {
+              self.setTimeFrame(static_cast<std::time_t>(initTime));
+            } else {
+              auto end = static_cast<std::time_t>(pybind11::cast<std::uint64_t>(endTime));
+              self.setTimeFrame(static_cast<std::time_t>(initTime),
+                                std::optional<std::time_t>(end));
+            }
+          },
+          pybind11::arg("initTime"),
+          pybind11::arg("endTime") = pybind11::none())
+      .def("setAgentInsertionMethod",
+           &dsf::mobility::TrafficSimulator::setAgentInsertionMethod,
+           pybind11::arg("insertionMethod"))
+      .def(
+          "run",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::vector<std::size_t> nAgentsPerTimeStep,
+             std::optional<std::time_t> deltaT) { self.run(nAgentsPerTimeStep, deltaT); },
+          pybind11::arg("nAgentsPerTimeStep"),
+          pybind11::arg("deltaT") = std::nullopt,
+          R"doc(Run the simulation in default mode.
+
+      Args:
+          nAgentsPerTimeStep: Number of agents to insert at each scheduled insertion step.
+          deltaT: Optional interval in seconds between agent insertions. If omitted,
+                  the interval is inferred from the configured start/end times and the
+                  length of nAgentsPerTimeStep.
+      )doc")
+
+      .def(
+          "run",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::size_t nInitialAgents,
+             std::time_t agentInsertionDeltaT,
+             std::time_t checkDeltaT,
+             std::size_t agentIncrement) {
+            self.run(nInitialAgents, agentInsertionDeltaT, checkDeltaT, agentIncrement);
+          },
+          pybind11::arg("nInitialAgents"),
+          pybind11::arg("agentInsertionDeltaT"),
+          pybind11::arg("checkDeltaT"),
+          pybind11::arg("agentIncrement") = 1,
+          R"doc(Run the simulation in slow-charge mode.
+
+      Gradually ramps up the agent population: every checkDeltaT seconds the current
+      agent count is compared against the target; if it has fallen below, the target
+      is raised by agentIncrement and a fresh batch is injected every
+      agentInsertionDeltaT seconds.
+
+      Args:
+          nInitialAgents:        Starting target number of agents in the network.
+          agentInsertionDeltaT:  Interval in seconds between agent insertion attempts.
+          checkDeltaT:           Interval in seconds between occupancy checks.
+          agentIncrement:        How many agents to add to the target at each check (default 1).
+      )doc")
+      .def(
+          "database",
+          [](dsf::mobility::TrafficSimulator& self) { return self.database(); },
+          pybind11::return_value_policy::reference)
+      .def(
+          "dynamics",
+          [](dsf::mobility::TrafficSimulator& self) { return self.dynamics(); },
+          pybind11::return_value_policy::reference)
+      .def("id", &dsf::mobility::TrafficSimulator::id)
+      .def("initTime", &dsf::mobility::TrafficSimulator::initTime)
+      .def("strInitTime", &dsf::mobility::TrafficSimulator::strInitTime)
+      .def("endTime", &dsf::mobility::TrafficSimulator::endTime)
+      .def("strEndTime", &dsf::mobility::TrafficSimulator::strEndTime)
+      .def("name", &dsf::mobility::TrafficSimulator::name)
+      .def("safeName", &dsf::mobility::TrafficSimulator::safeName);
 
   // Bind TrajectoryCollection class to mdt submodule
   pybind11::class_<dsf::mdt::TrajectoryCollection>(mdt, "TrajectoryCollection")
@@ -1384,7 +1474,7 @@ Returns:
 
             return pl.attr("DataFrame")(data_dict);
           },
-          "Convert the TrajectoryCollection to a polars DataFrame.\n\nReturns:\n\tpolars."
+          R"doc(Convert the TrajectoryCollection to a polars DataFrame.\n\nReturns:\n\tpolars."
           "DataFrame: DataFrame containing the trajectory data with columns 'uid', "
-          "'trajectory_id', 'lon', 'lat', 'timestamp_in', and 'timestamp_out'.");
+          "'trajectory_id', 'lon', 'lat', 'timestamp_in', and 'timestamp_out'.)doc");
 }

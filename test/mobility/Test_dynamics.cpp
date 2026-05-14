@@ -6,12 +6,10 @@
 #include "dsf/mobility/Agent.hpp"
 
 #include <tbb/tbb.h>
-#include <SQLiteCpp/SQLiteCpp.h>
 
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -376,23 +374,6 @@ TEST_CASE("FirstOrderDynamics") {
       // graph.adjustNodeCapacities();
       FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-#ifdef __APPLE__
-      {
-        std::time_t const t{0};
-        std::ostringstream oss;
-        oss << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S");
-        CHECK_EQ(dynamics.strDateTime(), oss.str());
-      }
-#else
-      CHECK_EQ(dynamics.strDateTime(),
-               std::format("{:%Y-%m-%d %H:%M:%S}",
-                           std::chrono::floor<std::chrono::seconds>(
-                               std::chrono::current_zone()->to_local(
-                                   std::chrono::system_clock::from_time_t(0)))));
-#endif
-      auto const epochStart{
-          std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())};
-      dynamics.setInitTime(epochStart);
       dynamics.setPassageProbability(p);
       WHEN("We add some agent") {
         dynamics.addAgents(n, AgentInsertionMethod::RANDOM);
@@ -400,27 +381,25 @@ TEST_CASE("FirstOrderDynamics") {
         THEN("If we evolve the dynamics agent disappear gradually") {
           auto constexpr nSteps = 1000;
           for (auto i{0}; i < nSteps; ++i) {
-            dynamics.evolve(false);
+            dynamics.evolve();
           }
           CHECK(dynamics.nAgents() < n);
           CHECK_EQ(dynamics.time_step(), nSteps);
-          CHECK_EQ(dynamics.time() - epochStart, nSteps);
-#ifdef __APPLE__
-          {
-            std::time_t const t = dynamics.time();
-            std::ostringstream oss;
-            oss << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S");
-            CHECK_EQ(dynamics.strDateTime(), oss.str());
-          }
-#else
-          CHECK_EQ(
-              dynamics.strDateTime(),
-              std::format(
-                  "{:%Y-%m-%d %H:%M:%S}",
-                  std::chrono::floor<std::chrono::seconds>(
-                      std::chrono::current_zone()->to_local(
-                          std::chrono::system_clock::from_time_t(dynamics.time())))));
-#endif
+        }
+      }
+    }
+  }
+
+  SUBCASE("setUTurnPenaltyFactor") {
+    GIVEN("A dynamics object") {
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      WHEN("We set a valid U-turn penalty factor") {
+        dynamics.setUTurnPenaltyFactor(0.5);
+        THEN("The call succeeds") { CHECK_NOTHROW(dynamics.setUTurnPenaltyFactor(0.5)); }
+      }
+      WHEN("We set an invalid U-turn penalty factor") {
+        THEN("The call throws") {
+          CHECK_THROWS_AS(dynamics.setUTurnPenaltyFactor(0.), std::invalid_argument);
         }
       }
     }
@@ -619,14 +598,16 @@ TEST_CASE("FirstOrderDynamics") {
           "We add an impossible itinerary (to source node) and update paths with "
           "throw_on_empty=true") {
         dynamics.addItinerary(std::make_shared<Itinerary>(0, 0));
-        THEN("It throws an exception") { CHECK_THROWS(dynamics.updatePaths(true)); }
+        dynamics.setUpdatePathsThrowOnEmpty(true);
+        THEN("It throws an exception") { CHECK_THROWS(dynamics.updatePaths()); }
       }
 
       WHEN(
           "We add an impossible itinerary (to source node) and update paths with "
           "throw_on_empty=false") {
         dynamics.addItinerary(std::make_shared<Itinerary>(0, 0));
-        dynamics.updatePaths(false);
+        dynamics.setUpdatePathsThrowOnEmpty(false);
+        dynamics.updatePaths();
         THEN("The itinerary is removed") { CHECK(dynamics.itineraries().empty()); }
       }
     }
@@ -645,10 +626,10 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.addAgent(dynamics.itineraries().at(1), 0);
 
       WHEN("We evolve until the agent reaches the destination") {
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
 
         THEN("The summary counts the agent as arrived but not killed") {
           std::ostringstream oss;
@@ -675,8 +656,8 @@ TEST_CASE("FirstOrderDynamics") {
       WHEN("We add an agent randomly and evolve the dynamics") {
         dynamics.addAgent(dynamics.itineraries().at(2), 0);
         auto const& network{dynamics.graph()};
-        dynamics.evolve(false);  // Agent goes into node 0
-        dynamics.evolve(false);  // Agent goes from node 0 to street 0->1
+        dynamics.evolve();  // Agent goes into node 0
+        dynamics.evolve();  // Agent goes from node 0 to street 0->1
         THEN("The agent evolves") {
           CHECK_EQ(network.edge(0).movingAgents().size(), 1);
           auto const& pAgent{network.edge(0).movingAgents().top()};
@@ -686,7 +667,7 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(pAgent->streetId().value(), 0);
           CHECK_EQ(pAgent->speed(), 13.8888888889);
         }
-        dynamics.evolve(false);  // Agent enqueues on street 0->1 and changes street
+        dynamics.evolve();  // Agent enqueues on street 0->1 and changes street
         THEN("The agent evolves again, changing street") {
           auto const& pAgent{network.edge(1).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), dynamics.time_step());
@@ -694,8 +675,8 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(pAgent->streetId().value(), 1);
           CHECK_EQ(pAgent->speed(), 13.8888888889);
         }
-        dynamics.evolve(
-            false);  // Enqueues on street 5, goes into destination nodes and gets killed
+        dynamics
+            .evolve();  // Enqueues on street 5, goes into destination nodes and gets killed
         THEN("And again, reaching the destination") { CHECK_EQ(dynamics.nAgents(), 0); }
       }
     }
@@ -711,8 +692,8 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.updatePaths();
       dynamics.addAgent(dynamics.itineraries().at(1), 0);
       WHEN("We evolve the dynamics") {
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent evolves") {
           auto const& pAgent{dynamics.graph().edge(0).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), 2);
@@ -721,8 +702,8 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(pAgent->speed(), 13.8888888889);
           CHECK_EQ(pAgent->distance(), 0.);  // Not updated yet
         }
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent reaches the destination") { CHECK_EQ(dynamics.nAgents(), 0); }
       }
     }
@@ -739,8 +720,8 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.updatePaths();
       dynamics.addAgent(dynamics.itineraries().at(0), 0);
       WHEN("We evolve the dynamics") {
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent evolves") {
           auto const& pAgent{dynamics.graph().edge(0).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), 2);
@@ -751,7 +732,7 @@ TEST_CASE("FirstOrderDynamics") {
         }
         auto i{0};
         while (dynamics.nAgents() > 0) {
-          dynamics.evolve(false);
+          dynamics.evolve();
           ++i;
         }
         THEN("The agent reaches the destination") {
@@ -771,9 +752,10 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.addItinerary(1, 1);
       dynamics.updatePaths();
       dynamics.addAgent(dynamics.itineraries().at(1), 0);
+      dynamics.setReinsertAgents(true);
       WHEN("We evolve the dynamics with reinsertion") {
-        dynamics.evolve(true);
-        dynamics.evolve(true);
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent has correct values") {
           auto const& pAgent{dynamics.graph().edge(0).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), 2);
@@ -782,8 +764,7 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(pAgent->speed(), 13.8888888889);
           CHECK_EQ(pAgent->distance(), 0.);  // Not updated yet
         }
-        dynamics.evolve(true);
-        // dynamics.evolve(true);
+        dynamics.evolve();
         THEN("The agent is reinserted") {
           CHECK(dynamics.graph().node(0).density() > 0.);
           CHECK_EQ(dynamics.nAgents(), 1);
@@ -808,24 +789,24 @@ TEST_CASE("FirstOrderDynamics") {
                                                    dynamics.itineraries().at(1)};
       dynamics.addAgent(trip, 0);
       WHEN("We evolve the dynamics") {
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent goes first into node 2") {
           auto const& pAgent{dynamics.graph().edge(5).queue(0).front()};
           CHECK_EQ(pAgent->streetId().value(), 5);
           CHECK_EQ(pAgent->distance(), 60.);
         }
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent goes then to node 1") {
           auto const& pAgent{dynamics.graph().edge(7).queue(0).front()};
           CHECK_EQ(pAgent->streetId().value(), 7);
           CHECK_EQ(pAgent->distance(), 90.);
         }
-        dynamics.evolve(false);
+        dynamics.evolve();
         THEN("The agent reaches the destination") {
           CHECK(dynamics.agents().empty());
           CHECK_EQ(dynamics.nAgents(), 0);
@@ -849,14 +830,14 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.addItinerary(itinerary);
       dynamics.addAgent(dynamics.itineraries().at(0), 0);
       WHEN("We evolve the dynamics until the agent reaches the dead-end") {
-        dynamics.evolve(false);  // Agent enters intersection at node 0
-        dynamics.evolve(false);  // Agent moves onto street 0
+        dynamics.evolve();  // Agent enters intersection at node 0
+        dynamics.evolve();  // Agent moves onto street 0
         THEN("The agent is alive and on street 0") {
           CHECK_EQ(dynamics.nAgents(), 1);
           CHECK_EQ(dynamics.graph().edge(0).nMovingAgents(), 1);
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 1);
         }
-        dynamics.evolve(false);  // Agent reaches dead-end at node 1: killed
+        dynamics.evolve();  // Agent reaches dead-end at node 1: killed
         THEN("The agent is killed instead of throwing an exception") {
           CHECK_EQ(dynamics.nAgents(), 0);
           CHECK_EQ(dynamics.graph().edge(0).nMovingAgents(), 0);
@@ -889,14 +870,14 @@ TEST_CASE("FirstOrderDynamics") {
       auto const& network{dynamics.graph()};
       WHEN("We evolve the dynamics") {
         // Logger::setLogLevel(dsf::log_level_t::DEBUG);
-        dynamics.evolve(false);
+        dynamics.evolve();
         THEN(
             "The agent is ready to go through the traffic light at time 3 but "
             "the "
             "traffic light is red"
             " until time 4, so the agent waits until time 4") {
           for (uint8_t i{0}; i < 5; ++i) {
-            dynamics.evolve(false);
+            dynamics.evolve();
             if (i < 3) {
               CHECK_EQ(network.edge(1).nAgents(), 1);
             } else {
@@ -956,18 +937,18 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_FALSE(dynamics.agents().at(0)->streetId().has_value());
           CHECK_FALSE(dynamics.agents().at(1)->streetId().has_value());
         }
-        dynamics.evolve(false);  // Counter 0
-        dynamics.evolve(false);  // Counter 1
+        dynamics.evolve();  // Counter 0
+        dynamics.evolve();  // Counter 1
         THEN("The agents are correctly placed") {
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
         }
-        dynamics.evolve(false);  // Counter 2
-        dynamics.evolve(false);  // Counter 3
+        dynamics.evolve();  // Counter 2
+        dynamics.evolve();  // Counter 3
         THEN("The agent 0 passes and agent 1 waits") {
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
           CHECK_EQ(dynamics.graph().edge(7).nAgents(), 1);
         }
-        dynamics.evolve(false);  // Counter 4
+        dynamics.evolve();  // Counter 4
         THEN("The agent 1 passes") {
           CHECK_EQ(dynamics.graph().edge(7).nAgents(), 1);
           CHECK_EQ(dynamics.graph().edge(9).nAgents(), 1);
@@ -1017,13 +998,13 @@ TEST_CASE("FirstOrderDynamics") {
       WHEN("We add agents and make the system evolve") {
         dynamics.addAgent(dynamics.itineraries().at(2), 0);
         dynamics.addAgent(dynamics.itineraries().at(4), 0);
-        dynamics.evolve(false);  // Counter 0
-        dynamics.evolve(false);  // Counter 1
+        dynamics.evolve();  // Counter 0
+        dynamics.evolve();  // Counter 1
         THEN("The agents are correctly placed") {
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
         }
-        dynamics.evolve(false);  // Counter 2
-        dynamics.evolve(false);  // Counter 3
+        dynamics.evolve();  // Counter 2
+        dynamics.evolve();  // Counter 3
         THEN("The agents are still") {
           CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(), 2);
           CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::ANY, true),
@@ -1032,15 +1013,15 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::STRAIGHT), 1);
           CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::LEFT), 1);
         }
-        dynamics.evolve(false);  // Counter 4
-        dynamics.evolve(false);  // Counter 5
-        dynamics.evolve(false);  // Counter 0
+        dynamics.evolve();  // Counter 4
+        dynamics.evolve();  // Counter 5
+        dynamics.evolve();  // Counter 0
         THEN("The agent 0 passes and agent 1 waits") {
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
           CHECK_EQ(dynamics.graph().edge(7).nAgents(), 1);
         }
-        dynamics.evolve(false);  // Counter 1
-        dynamics.evolve(false);  // Counter 2
+        dynamics.evolve();  // Counter 1
+        dynamics.evolve();  // Counter 2
         THEN("The agent 1 passes") { CHECK_EQ(dynamics.graph().edge(9).nAgents(), 1); }
       }
     }
@@ -1076,7 +1057,7 @@ TEST_CASE("FirstOrderDynamics") {
           }
           dynamics.setDataUpdatePeriod(4);
           for (int i = 0; i < 9; ++i) {
-            dynamics.evolve(false);
+            dynamics.evolve();
           }
           dynamics.optimizeTrafficLights(
               dsf::TrafficLightOptimization::SINGLE_TAIL, std::string(), 1);
@@ -1096,7 +1077,7 @@ TEST_CASE("FirstOrderDynamics") {
           }
           dynamics.setDataUpdatePeriod(8);
           for (int i = 0; i < 15; ++i) {
-            dynamics.evolve(false);
+            dynamics.evolve();
           }
           dynamics.optimizeTrafficLights(
               dsf::TrafficLightOptimization::SINGLE_TAIL, std::string(), 1);
@@ -1133,11 +1114,11 @@ TEST_CASE("FirstOrderDynamics") {
           "We evolve the dynamics adding an agent on the path of the agent "
           "with "
           "priority") {
-        dynamics.evolve(false);  // Agents into sources
-        // dynamics.evolve(false);  // Agents from sources to streets
+        dynamics.evolve();  // Agents into sources
+        // dynamics.evolve();  // Agents from sources to streets
         dynamics.addAgent(dynamics.itineraries().at(2), 1);
-        dynamics.evolve(false);  // Agents into queues, other agent into roundabout
-        dynamics.evolve(false);  // Agents from queues to roundabout
+        dynamics.evolve();  // Agents into queues, other agent into roundabout
+        dynamics.evolve();  // Agents from queues to roundabout
         auto const& network{dynamics.graph()};
         THEN("The agents are trapped into the roundabout") {
           CHECK_EQ(network.edge(1).nAgents(), 0);
@@ -1145,14 +1126,14 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(network.edge(7).nAgents(), 1);
           CHECK_EQ(rb.agents().size(), 1);
         }
-        dynamics.evolve(false);
+        dynamics.evolve();
         THEN("The agent with priority leaves the roundabout") {
           CHECK_EQ(network.edge(3).nAgents(), 1);
           CHECK_EQ(network.edge(5).nAgents(), 1);
           CHECK_EQ(network.edge(7).nAgents(), 0);
           CHECK(rb.agents().empty());
         }
-        dynamics.evolve(false);
+        dynamics.evolve();
         THEN("The agent with priority leaves the roundabout") {
           CHECK_EQ(network.edge(3).nAgents(), 0);
           CHECK_EQ(network.edge(5).nAgents(), 0);
@@ -1174,9 +1155,9 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.updatePaths();
       dynamics.addAgent(dynamics.itineraries().at(2), 0);
       WHEN("We evolve the dynamics") {
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent has travelled the correct distance") {
           auto const& pAgent{dynamics.graph().edge(5).movingAgents().top()};
           CHECK_EQ(dynamics.time_step() - pAgent->spawnTime(), 3);
@@ -1205,7 +1186,7 @@ TEST_CASE("FirstOrderDynamics") {
         // Logger::setLogLevel(dsf::log_level_t::DEBUG);
         CHECK_EQ(dynamics.nAgents(), 1);
         while (dynamics.nAgents() > 0) {
-          dynamics.evolve(false);
+          dynamics.evolve();
         }
         // Logger::setLogLevel(dsf::log_level_t::INFO);
         THEN("The agent has travelled the correct distance") {
@@ -1247,21 +1228,21 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.addAgent(dynamics.itineraries().at(2), 4);  // Second
         dynamics.addAgent(dynamics.itineraries().at(2), 3);  // Third
         dynamics.addAgent(dynamics.itineraries().at(2), 1);  // First
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent in A passes first") {
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
           CHECK_EQ(nodeO.agents().size(), 2);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
         }
-        dynamics.evolve(false);
+        dynamics.evolve();
         THEN("The agent in D passes second") {
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
           CHECK_EQ(nodeO.agents().size(), 1);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 15);
         }
-        dynamics.evolve(false);
+        dynamics.evolve();
         THEN("The agent in C passes last") {
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 3);
           CHECK(nodeO.agents().empty());
@@ -1271,21 +1252,21 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.addAgent(dynamics.itineraries().at(1), 2);
         dynamics.addAgent(dynamics.itineraries().at(1), 3);
         dynamics.addAgent(dynamics.itineraries().at(1), 4);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent in D passes first") {
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
           CHECK_EQ(nodeO.agents().size(), 2);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 15);
         }
-        dynamics.evolve(false);
+        dynamics.evolve();
         THEN("The agent in C passes second") {
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
           CHECK_EQ(nodeO.agents().size(), 1);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 10);
         }
-        dynamics.evolve(false);
+        dynamics.evolve();
         THEN("The agent in C passes last") {
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
           CHECK(nodeO.agents().empty());
@@ -1296,548 +1277,14 @@ TEST_CASE("FirstOrderDynamics") {
         nodeO.addStreetPriority(15);
         dynamics.addAgent(dynamics.itineraries().at(2), 1);
         dynamics.addAgent(dynamics.itineraries().at(2), 4);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
         THEN("The agent in A passes first because it's on the main road") {
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
           CHECK_EQ(nodeO.agents().size(), 1);
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
         }
-      }
-    }
-  }
-  SUBCASE("saveData function to database") {
-    GIVEN("A dynamics object with some streets and agents") {
-      Street s1{0, std::make_pair(0, 1), 30., 15.};
-      Street s2{1, std::make_pair(1, 2), 30., 15.};
-      RoadNetwork graph2;
-      graph2.setEdgeWeight("length");
-      graph2.addStreets(s1, s2);
-      graph2.addCoil(0);  // Add coil for testing road_data with coils
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
-      dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-      dynamics.addItinerary(2, 2);
-      dynamics.updatePaths();
-      dynamics.addAgent(dynamics.itineraries().at(2), 0);
-
-      const std::string testDbPath = "test_dynamics.db";
-      // Remove existing test database if present
-      std::filesystem::remove(testDbPath);
-
-      WHEN("We connect a database and configure saveData with street data") {
-        dynamics.connectDataBase(testDbPath);
-        // Configure saving: interval=1 (save every step), saveStreetData=true
-        dynamics.saveData(1, false, true, false);
-
-        // Evolve a few times to generate and save data
-        for (int i = 0; i < 5; ++i) {
-          dynamics.evolve(true);
-        }
-
-        THEN("The road_data table is created with correct data") {
-          SQLite::Database db(testDbPath, SQLite::OPEN_READONLY);
-          SQLite::Statement query(db, "SELECT COUNT(*) FROM road_data");
-          REQUIRE(query.executeStep());
-          CHECK(query.getColumn(0).getInt() >= 2);  // At least 2 streets
-
-          SQLite::Statement cols(
-              db, "SELECT street_id, density_vpk, avg_speed_kph FROM road_data");
-          while (cols.executeStep()) {
-            auto streetId = cols.getColumn(0).getInt();
-            CHECK(streetId >= 0);
-            CHECK(streetId < 2);
-          }
-        }
-
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN(
-          "We configure saveData with street data and then evolve without an active "
-          "database") {
-        dynamics.setName("csv_street_data_test");
-        auto const csvPath = std::to_string(static_cast<std::uint64_t>(dynamics.id())) +
-                             "_" + dynamics.name() + "_road_data.csv";
-        std::filesystem::remove(csvPath);
-
-        dynamics.saveData(1, false, true, false);
-
-        for (int i = 0; i < 3; ++i) {
-          dynamics.evolve(true);
-        }
-
-        THEN("Street data is saved to CSV with header and rows") {
-          REQUIRE(std::filesystem::exists(csvPath));
-
-          std::ifstream csvFile(csvPath);
-          REQUIRE(csvFile.is_open());
-
-          std::string header;
-          REQUIRE(std::getline(csvFile, header));
-          CHECK_EQ(
-              header,
-              "datetime;time_step;street_id;coil;density_vpk;avg_speed_kph;std_speed_kph;"
-              "n_observations;counts;queue_length");
-
-          std::string row;
-          int rowCount = 0;
-          while (std::getline(csvFile, row)) {
-            if (row.empty()) {
-              continue;
-            }
-            ++rowCount;
-            int separatorCount = 0;
-            for (char c : row) {
-              if (c == ';') {
-                ++separatorCount;
-              }
-            }
-            CHECK_EQ(separatorCount, 9);
-          }
-          CHECK(rowCount >= 2);
-        }
-
-        std::filesystem::remove(csvPath);
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN(
-          "We configure saveData with average stats and then evolve without an "
-          "active database") {
-        dynamics.setName("csv_avg_stats_test");
-        auto const csvPath = std::to_string(static_cast<std::uint64_t>(dynamics.id())) +
-                             "_" + dynamics.name() + "_avg_stats.csv";
-        std::filesystem::remove(csvPath);
-
-        dynamics.saveData(1, true, false, false);
-        dynamics.addAgents(10, AgentInsertionMethod::RANDOM);
-
-        for (int i = 0; i < 10; ++i) {
-          dynamics.evolve(true);
-        }
-
-        THEN("Average stats are saved to CSV with header and rows") {
-          REQUIRE(std::filesystem::exists(csvPath));
-
-          std::ifstream csvFile(csvPath);
-          REQUIRE(csvFile.is_open());
-
-          std::string header;
-          REQUIRE(std::getline(csvFile, header));
-          CHECK_EQ(
-              header,
-              "datetime;time_step;n_ghost_agents;n_agents;mean_speed_kph;std_speed_kph;"
-              "mean_density_vpk;std_density_vpk;mean_travel_time_s;mean_queue_length");
-
-          std::string row;
-          int rowCount = 0;
-          while (std::getline(csvFile, row)) {
-            if (row.empty()) {
-              continue;
-            }
-            ++rowCount;
-            int separatorCount = 0;
-            for (char c : row) {
-              if (c == ';') {
-                ++separatorCount;
-              }
-            }
-            CHECK_EQ(separatorCount, 9);
-          }
-          CHECK(rowCount >= 1);
-        }
-
-        std::filesystem::remove(csvPath);
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN(
-          "We configure saveData with travel data and then evolve without an active "
-          "database") {
-        dynamics.setName("csv_travel_data_test");
-        auto const csvPath = std::to_string(static_cast<std::uint64_t>(dynamics.id())) +
-                             "_" + dynamics.name() + "_travel_data.csv";
-        std::filesystem::remove(csvPath);
-
-        dynamics.saveData(1, false, false, true);
-
-        for (int iter = 0; iter < 1000 && dynamics.nAgents() > 0; ++iter) {
-          dynamics.evolve(false);
-        }
-
-        THEN("Travel data is saved to CSV with header and rows") {
-          REQUIRE(std::filesystem::exists(csvPath));
-
-          std::ifstream csvFile(csvPath);
-          REQUIRE(csvFile.is_open());
-
-          std::string header;
-          REQUIRE(std::getline(csvFile, header));
-          CHECK_EQ(header, "datetime;time_step;distance_m;travel_time_s");
-
-          std::string row;
-          int rowCount = 0;
-          while (std::getline(csvFile, row)) {
-            if (row.empty()) {
-              continue;
-            }
-            ++rowCount;
-            int separatorCount = 0;
-            for (char c : row) {
-              if (c == ';') {
-                ++separatorCount;
-              }
-            }
-            CHECK_EQ(separatorCount, 3);
-          }
-          CHECK(rowCount >= 1);
-        }
-
-        std::filesystem::remove(csvPath);
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN(
-          "We configure saveData with agent data and then evolve without an active "
-          "database") {
-        dynamics.setName("csv_agent_data_test");
-        auto const csvPath = std::to_string(static_cast<std::uint64_t>(dynamics.id())) +
-                             "_" + dynamics.name() + "_agent_data.csv";
-        std::filesystem::remove(csvPath);
-
-        dynamics.saveData(1, false, false, false, true);
-
-        for (int iter = 0; iter < 50; ++iter) {
-          dynamics.evolve(false);
-        }
-
-        THEN("Agent data is saved to CSV with header and rows") {
-          REQUIRE(std::filesystem::exists(csvPath));
-
-          std::ifstream csvFile(csvPath);
-          REQUIRE(csvFile.is_open());
-
-          std::string header;
-          REQUIRE(std::getline(csvFile, header));
-          CHECK_EQ(header, "simulation_id;agent_id;edge_id;time_step_in;time_step_out");
-
-          std::string row;
-          int rowCount = 0;
-          while (std::getline(csvFile, row)) {
-            if (row.empty()) {
-              continue;
-            }
-            ++rowCount;
-            int separatorCount = 0;
-            for (char c : row) {
-              if (c == ';') {
-                ++separatorCount;
-              }
-            }
-            CHECK_EQ(separatorCount, 4);
-          }
-          CHECK(rowCount >= 1);
-        }
-
-        std::filesystem::remove(csvPath);
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN("We connect a database and configure saveData with travel data") {
-        dynamics.connectDataBase(testDbPath);
-        // Configure saving: interval=1, saveTravelData=true
-        dynamics.saveData(1, false, false, true);
-
-        // Evolve until agent reaches destination (with limit)
-        for (int iter = 0; iter < 1000 && dynamics.nAgents() > 0; ++iter) {
-          dynamics.evolve(true);
-        }
-
-        THEN("The travel_data table is created with correct data") {
-          SQLite::Database db(testDbPath, SQLite::OPEN_READONLY);
-          SQLite::Statement query(db, "SELECT COUNT(*) FROM travel_data");
-          REQUIRE(query.executeStep());
-          CHECK(query.getColumn(0).getInt() >= 1);  // At least one trip
-
-          SQLite::Statement cols(db, "SELECT distance_m, travel_time_s FROM travel_data");
-          while (cols.executeStep()) {
-            auto distance = cols.getColumn(0).getDouble();
-            auto time = cols.getColumn(1).getDouble();
-            CHECK(distance > 0.0);
-            CHECK(time > 0.0);
-          }
-        }
-
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN("We connect a database and configure saveData with agent data") {
-        dynamics.connectDataBase(testDbPath);
-        // Configure saving: interval=1, saveAgentData=true
-        dynamics.saveData(1, false, false, false, true);
-
-        // Evolve a few times to generate edge crossing events
-        for (int iter = 0; iter < 50; ++iter) {
-          dynamics.evolve(true);
-        }
-
-        THEN("The agent_data table is created with correct data") {
-          SQLite::Database db(testDbPath, SQLite::OPEN_READONLY);
-          SQLite::Statement query(db, "SELECT COUNT(*) FROM agent_data");
-          REQUIRE(query.executeStep());
-          CHECK(query.getColumn(0).getInt() >= 1);
-
-          SQLite::Statement schema(db, "PRAGMA table_info(agent_data)");
-          std::set<std::string> columns;
-          while (schema.executeStep()) {
-            columns.insert(schema.getColumn(1).getString());
-          }
-          CHECK(columns.count("id") == 1);
-          CHECK(columns.count("simulation_id") == 1);
-          CHECK(columns.count("agent_id") == 1);
-          CHECK(columns.count("edge_id") == 1);
-          CHECK(columns.count("time_step_in") == 1);
-          CHECK(columns.count("time_step_out") == 1);
-
-          SQLite::Statement rows(
-              db,
-              "SELECT simulation_id, agent_id, edge_id, time_step_in, time_step_out "
-              "FROM agent_data");
-          while (rows.executeStep()) {
-            CHECK(rows.getColumn(0).getInt() >= 0);
-            CHECK(rows.getColumn(1).getInt() >= 0);
-            CHECK(rows.getColumn(2).getInt() >= 0);
-            CHECK(rows.getColumn(3).getInt64() >= 0);
-            CHECK(rows.getColumn(4).getInt64() >= rows.getColumn(3).getInt64());
-          }
-        }
-
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN("We connect a database and configure saveData with average stats") {
-        dynamics.connectDataBase(testDbPath);
-        // Configure saving: interval=1, saveAverageStats=true
-        dynamics.saveData(1, true, false, false);
-
-        // Add agents and evolve
-        dynamics.addAgents(10, AgentInsertionMethod::RANDOM);
-        for (int iter = 0; iter < 10; ++iter) {
-          dynamics.evolve(true);
-        }
-
-        THEN("The avg_stats table is created with correct data") {
-          SQLite::Database db(testDbPath, SQLite::OPEN_READONLY);
-          SQLite::Statement query(db, "SELECT COUNT(*) FROM avg_stats");
-          REQUIRE(query.executeStep());
-          CHECK(query.getColumn(0).getInt() >= 1);
-
-          SQLite::Statement cols(
-              db,
-              "SELECT n_ghost_agents, n_agents, mean_speed_kph, std_speed_kph, "
-              "mean_density_vpk, std_density_vpk "
-              "FROM avg_stats");
-          REQUIRE(cols.executeStep());
-          CHECK(cols.getColumn(0).getInt() >= 0);     // n_ghost_agents
-          CHECK(cols.getColumn(1).getInt() >= 0);     // n_agents
-          CHECK(cols.getColumn(2).getDouble() >= 0);  // mean_speed_kph
-        }
-
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN("We configure saveData with all options enabled") {
-        dynamics.connectDataBase(testDbPath);
-        // Configure saving: interval=1, all data types enabled
-        dynamics.saveData(1, true, true, true, true);
-
-        // Add agents and evolve until some reach destination
-        dynamics.addAgents(10, AgentInsertionMethod::RANDOM);
-        for (int iter = 0; iter < 1000 && dynamics.nAgents() > 0; ++iter) {
-          dynamics.evolve(true);
-        }
-
-        THEN("All tables are created with correct schema") {
-          SQLite::Database db(testDbPath, SQLite::OPEN_READONLY);
-
-          // Check road_data table
-          SQLite::Statement roadQuery(db, "SELECT COUNT(*) FROM road_data");
-          REQUIRE(roadQuery.executeStep());
-          CHECK(roadQuery.getColumn(0).getInt() >= 1);
-
-          SQLite::Statement roadSchema(db, "PRAGMA table_info(road_data)");
-          std::set<std::string> roadColumns;
-          while (roadSchema.executeStep()) {
-            roadColumns.insert(roadSchema.getColumn(1).getString());
-          }
-          CHECK(roadColumns.count("id") == 1);
-          CHECK(roadColumns.count("simulation_id") == 1);
-          CHECK(roadColumns.count("datetime") == 1);
-          CHECK(roadColumns.count("time_step") == 1);
-          CHECK(roadColumns.count("street_id") == 1);
-          CHECK(roadColumns.count("coil") == 1);
-          CHECK(roadColumns.count("density_vpk") == 1);
-          CHECK(roadColumns.count("avg_speed_kph") == 1);
-          CHECK(roadColumns.count("std_speed_kph") == 1);
-          CHECK(roadColumns.count("n_observations") == 1);
-          CHECK(roadColumns.count("counts") == 1);
-          CHECK(roadColumns.count("queue_length") == 1);
-
-          // Check avg_stats table
-          SQLite::Statement avgQuery(db, "SELECT COUNT(*) FROM avg_stats");
-          REQUIRE(avgQuery.executeStep());
-          CHECK(avgQuery.getColumn(0).getInt() >= 1);
-
-          SQLite::Statement avgSchema(db, "PRAGMA table_info(avg_stats)");
-          std::set<std::string> avgColumns;
-          while (avgSchema.executeStep()) {
-            avgColumns.insert(avgSchema.getColumn(1).getString());
-          }
-          CHECK(avgColumns.count("id") == 1);
-          CHECK(avgColumns.count("simulation_id") == 1);
-          CHECK(avgColumns.count("datetime") == 1);
-          CHECK(avgColumns.count("time_step") == 1);
-          CHECK(avgColumns.count("n_ghost_agents") == 1);
-          CHECK(avgColumns.count("n_agents") == 1);
-          CHECK(avgColumns.count("mean_speed_kph") == 1);
-          CHECK(avgColumns.count("std_speed_kph") == 1);
-          CHECK(avgColumns.count("mean_density_vpk") == 1);
-          CHECK(avgColumns.count("std_density_vpk") == 1);
-
-          // Check travel_data table
-          SQLite::Statement travelQuery(db, "SELECT COUNT(*) FROM travel_data");
-          REQUIRE(travelQuery.executeStep());
-          CHECK(travelQuery.getColumn(0).getInt() >= 1);
-
-          SQLite::Statement travelSchema(db, "PRAGMA table_info(travel_data)");
-          std::set<std::string> travelColumns;
-          while (travelSchema.executeStep()) {
-            travelColumns.insert(travelSchema.getColumn(1).getString());
-          }
-          CHECK(travelColumns.count("id") == 1);
-          CHECK(travelColumns.count("simulation_id") == 1);
-          CHECK(travelColumns.count("datetime") == 1);
-          CHECK(travelColumns.count("time_step") == 1);
-          CHECK(travelColumns.count("distance_m") == 1);
-          CHECK(travelColumns.count("travel_time_s") == 1);
-
-          // Check agent_data table
-          SQLite::Statement agentQuery(db, "SELECT COUNT(*) FROM agent_data");
-          REQUIRE(agentQuery.executeStep());
-          CHECK(agentQuery.getColumn(0).getInt() >= 1);
-
-          SQLite::Statement agentSchema(db, "PRAGMA table_info(agent_data)");
-          std::set<std::string> agentColumns;
-          while (agentSchema.executeStep()) {
-            agentColumns.insert(agentSchema.getColumn(1).getString());
-          }
-          CHECK(agentColumns.count("id") == 1);
-          CHECK(agentColumns.count("simulation_id") == 1);
-          CHECK(agentColumns.count("agent_id") == 1);
-          CHECK(agentColumns.count("edge_id") == 1);
-          CHECK(agentColumns.count("time_step_in") == 1);
-          CHECK(agentColumns.count("time_step_out") == 1);
-
-          // Check simulations table
-          SQLite::Statement simQuery(
-              db,
-              "SELECT name FROM sqlite_master WHERE type='table' AND name='simulations'");
-          REQUIRE(simQuery.executeStep());
-
-          SQLite::Statement simSchema(db, "PRAGMA table_info(simulations)");
-          std::set<std::string> simColumns;
-          while (simSchema.executeStep()) {
-            simColumns.insert(simSchema.getColumn(1).getString());
-          }
-          CHECK(simColumns.count("id") == 1);
-          CHECK(simColumns.count("name") == 1);
-          CHECK(simColumns.count("speed_function") == 1);
-          CHECK(simColumns.count("error_probability") == 1);
-          CHECK(simColumns.count("passage_probability") == 1);
-          CHECK(simColumns.count("mean_travel_distance_m") == 1);
-          CHECK(simColumns.count("mean_travel_time_s") == 1);
-          CHECK(simColumns.count("stagnant_tolerance_factor") == 1);
-          CHECK(simColumns.count("force_priorities") == 1);
-          CHECK(simColumns.count("save_avg_stats") == 1);
-          CHECK(simColumns.count("save_road_data") == 1);
-          CHECK(simColumns.count("save_travel_data") == 1);
-          CHECK(simColumns.count("save_agent_data") == 1);
-
-          // Check edges table exists
-          SQLite::Statement edgesQuery(
-              db, "SELECT name FROM sqlite_master WHERE type='table' AND name='edges'");
-          REQUIRE(edgesQuery.executeStep());
-
-          SQLite::Statement edgesSchema(db, "PRAGMA table_info(edges)");
-          std::set<std::string> edgesColumns;
-          while (edgesSchema.executeStep()) {
-            edgesColumns.insert(edgesSchema.getColumn(1).getString());
-          }
-          CHECK(edgesColumns.count("id") == 1);
-          CHECK(edgesColumns.count("source") == 1);
-          CHECK(edgesColumns.count("target") == 1);
-          CHECK(edgesColumns.count("length") == 1);
-          CHECK(edgesColumns.count("maxspeed") == 1);
-          CHECK(edgesColumns.count("name") == 1);
-          CHECK(edgesColumns.count("nlanes") == 1);
-          CHECK(edgesColumns.count("geometry") == 1);
-
-          // Check nodes table exists
-          SQLite::Statement nodesQuery(
-              db, "SELECT name FROM sqlite_master WHERE type='table' AND name='nodes'");
-          REQUIRE(nodesQuery.executeStep());
-
-          SQLite::Statement nodesSchema(db, "PRAGMA table_info(nodes)");
-          std::set<std::string> nodesColumns;
-          while (nodesSchema.executeStep()) {
-            nodesColumns.insert(nodesSchema.getColumn(1).getString());
-          }
-          CHECK(nodesColumns.count("id") == 1);
-          CHECK(nodesColumns.count("type") == 1);
-          CHECK(nodesColumns.count("geometry") == 1);
-        }
-
-        std::filesystem::remove(testDbPath);
-      }
-
-      WHEN("We configure saveData with savingInterval == 0 (one-shot save)") {
-        dynamics.connectDataBase(testDbPath);
-        // interval=0 means: save exactly once on the next evolve(), then reset
-        dynamics.saveData(0, true, true, false);
-
-        // First evolve: should trigger the save and reset m_savingInterval
-        dynamics.evolve(true);
-
-        int rowsAfterFirstEvolve{0};
-        {
-          SQLite::Database db(testDbPath, SQLite::OPEN_READONLY);
-          SQLite::Statement q(db, "SELECT COUNT(*) FROM avg_stats");
-          REQUIRE(q.executeStep());
-          rowsAfterFirstEvolve = q.getColumn(0).getInt();
-        }
-
-        // Subsequent evolves: m_savingInterval has been reset, so no more rows
-        for (int i = 0; i < 5; ++i) {
-          dynamics.evolve(true);
-        }
-
-        THEN("Data is saved exactly once and no further rows are added") {
-          SQLite::Database db(testDbPath, SQLite::OPEN_READONLY);
-
-          // avg_stats must have been written exactly once
-          SQLite::Statement avgQ(db, "SELECT COUNT(*) FROM avg_stats");
-          REQUIRE(avgQ.executeStep());
-          CHECK_EQ(avgQ.getColumn(0).getInt(), rowsAfterFirstEvolve);
-          CHECK(rowsAfterFirstEvolve >= 1);
-
-          // road_data must also have been written exactly once (one entry per street)
-          SQLite::Statement roadQ(db, "SELECT COUNT(DISTINCT time_step) FROM road_data");
-          REQUIRE(roadQ.executeStep());
-          CHECK_EQ(roadQ.getColumn(0).getInt(), 1);
-        }
-
-        std::filesystem::remove(testDbPath);
       }
     }
   }
@@ -1866,21 +1313,21 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.addAgents(6, AgentInsertionMethod::RANDOM);
         CHECK_EQ(dynamics.nAgents(), 6);
         // Evolve to get agents onto street 0
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
         CHECK_EQ(dynamics.graph().edge(0).nAgents(), 6);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
@@ -1916,20 +1363,20 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.addAgents(6, AgentInsertionMethod::RANDOM);
         CHECK_EQ(dynamics.nAgents(), 6);
         // Evolve to get agents onto street 0
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
         CHECK_EQ(dynamics.graph().edge(0).nAgents(), 6);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
-        dynamics.evolve(false);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
@@ -1985,7 +1432,7 @@ TEST_CASE("RoadDynamics Configuration") {
 
         // Evolve until agents reach destination
         while (dyn.nAgents() > 0) {
-          dyn.evolve(false);
+          dyn.evolve();
         }
 
         THEN("destinationCounts returns the correct counts") {
@@ -2022,7 +1469,7 @@ TEST_CASE("RoadDynamics Configuration") {
 
         // Evolve until all agents reach destination
         while (dyn.nAgents() > 0) {
-          dyn.evolve(false);
+          dyn.evolve();
         }
 
         THEN("destinationCounts tracks each destination separately") {

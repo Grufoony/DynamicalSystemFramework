@@ -1,19 +1,48 @@
-from datetime import datetime, timezone
+from pathlib import Path
+import sqlite3
 
-import numpy as np
 import pytest
 
 from dsf import mobility
 
 
-def test_road_network_import_counts(loaded_road_network):
-    assert loaded_road_network.nNodes() == 120
-    assert loaded_road_network.nEdges() == 436
+def _write_tiny_edges_csv(file_path: Path) -> None:
+    file_path.write_text(
+        "id;source;target;length;maxspeed;name;type;nlanes\n"
+        "0;0;1;13.8888888889;50;edge_0;residential;1\n"
+        "1;1;0;13.8888888889;50;edge_1;residential;1\n"
+    )
 
 
-def test_shortest_path_returns_path_collection(loaded_road_network):
-    loaded_road_network.setEdgeWeight("length")
-    path_map = loaded_road_network.shortestPath(0, 119)
+def test_traffic_simulator_configuration():
+    simulator = mobility.TrafficSimulator()
+
+    assert simulator.dynamics() is None
+
+    simulator.setName("traffic simulator test")
+    simulator.setTimeFrame(10, 16)
+
+    assert simulator.id() > 0
+    assert simulator.initTime() == 10
+    assert simulator.endTime() == 16
+    assert simulator.name() == "traffic simulator test"
+    assert simulator.safeName() == "traffic_simulator_test"
+
+
+def test_traffic_simulator_import_counts_and_shortest_path(
+    manhattan_edges_path, manhattan_nodes_path
+):
+    simulator = mobility.TrafficSimulator()
+    simulator.importRoadNetwork(str(manhattan_edges_path), str(manhattan_nodes_path))
+
+    dynamics = simulator.dynamics()
+
+    assert dynamics is not None
+    assert dynamics.graph().nNodes() == 120
+    assert dynamics.graph().nEdges() == 436
+
+    dynamics.graph().setEdgeWeight("length")
+    path_map = dynamics.graph().shortestPath(0, 119)
 
     assert isinstance(path_map, mobility.PathCollection)
     assert len(path_map) > 0
@@ -43,38 +72,49 @@ def test_path_collection_dict_protocol_and_explode():
         _ = path_collection[99]
 
 
-def test_dynamics_set_init_time_accepts_epoch_and_datetime(dynamics):
-    epoch = 1_700_000_000
-    dynamics.setInitTime(epoch)
-    assert dynamics.time() == epoch
+def test_traffic_simulator_smoke_run_with_linear_speed(tmp_path):
+    edges_path = tmp_path / "tiny_edges.csv"
+    db_path = tmp_path / "traffic_simulator.db"
+    _write_tiny_edges_csv(edges_path)
 
-    dt = datetime.fromtimestamp(epoch + 3600, tz=timezone.utc)
-    dynamics.setInitTime(dt)
-    assert dynamics.time() == int(dt.timestamp())
+    simulator = mobility.TrafficSimulator()
+    simulator.setName("traffic simulator csv test")
+    simulator.connectDataBase(str(db_path))
+    simulator.importRoadNetwork(str(edges_path))
 
+    dynamics = simulator.dynamics()
 
-def test_dynamics_accepts_origin_destination_overloads(dynamics):
-    node_array = np.array([0, 1, 2], dtype=np.uint64)
+    assert dynamics is not None
 
-    dynamics.setDestinationNodes([0, 1, 2])
-    dynamics.setDestinationNodes({0: 0.6, 1: 0.4})
-    dynamics.setDestinationNodes(node_array)
-
-    dynamics.setOriginNodes({0: 1.0, 1: 1.0, 2: 1.0})
-    dynamics.setOriginNodes(node_array)
-
-
-def test_dynamics_smoke_step_with_linear_speed(dynamics):
-    dynamics.graph().setEdgeWeight("length")
     dynamics.setSpeedFunction(mobility.SpeedFunction.LINEAR, 0.8)
-    dynamics.setDestinationNodes([0, 1, 2])
-    dynamics.setOriginNodes({3: 1.0, 4: 1.0, 5: 1.0})
-
+    dynamics.setODs([(0, 1, 1.0)])
     dynamics.updatePaths()
-    dynamics.addAgentsUniformly(1)
 
-    assert dynamics.nAgents() == 1
+    simulator.setTimeFrame(0, 6)
+    simulator.saveData(1, True, True, False, False)
+    simulator.setAgentInsertionMethod(mobility.AgentInsertionMethod.ODS)
+    simulator.run([1, 0, 0, 0, 0, 0])
 
-    previous_step = dynamics.time_step()
-    dynamics.evolve(False)
-    assert dynamics.time_step() == previous_step + 1
+    assert db_path.exists()
+
+    with sqlite3.connect(db_path) as connection:
+        cursor = connection.cursor()
+
+        for table_name in (
+            "simulation_info",
+            "edges",
+            "nodes",
+            "road_data",
+            "avg_stats",
+        ):
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            )
+            assert cursor.fetchone() is not None
+
+        cursor.execute("SELECT COUNT(*) FROM road_data")
+        assert cursor.fetchone()[0] > 0
+
+        cursor.execute("SELECT COUNT(*) FROM avg_stats")
+        assert cursor.fetchone()[0] > 0
