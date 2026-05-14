@@ -194,6 +194,8 @@ namespace dsf::mobility {
         m_agentInsertionMethod = AgentInsertionMethod::ODS;
       } else if (agentInsertionMethod == "RANDOM_ODS") {
         m_agentInsertionMethod = AgentInsertionMethod::RANDOM_ODS;
+      } else if (agentInsertionMethod == "UNIFORM") {
+        m_agentInsertionMethod = AgentInsertionMethod::UNIFORM;
       } else {
         throw std::runtime_error(
             std::format("Invalid 'agent_insertion_method' value in JSON file '{}': {}",
@@ -397,9 +399,11 @@ namespace dsf::mobility {
           (currentStep == 0)) {
         m_dynamics->updatePaths();
       }
-      if (currentStep % checkDeltaT == 0 && m_dynamics->nAgents() < previousAgents) {
+      if (currentStep > 0 && currentStep % checkDeltaT == 0) {
+        if (m_dynamics->nAgents() < previousAgents) {
+          currentAgents += agentIncrement;
+        }
         previousAgents = m_dynamics->nAgents();
-        currentAgents += agentIncrement;
       }
       if (currentStep % agentInsertionDeltaT == 0) {
         m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);

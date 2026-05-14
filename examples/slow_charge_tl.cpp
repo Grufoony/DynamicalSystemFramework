@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
                                            BASE_OUT_FOLDER,
                                            ERROR_PROBABILITY,
                                            std::to_string(SEED))};  // output folder
-  constexpr auto MAX_TIME{static_cast<unsigned int>(5e5)};  // maximum time of simulation
+  constexpr auto MAX_TIME{static_cast<unsigned int>(5e4)};  // maximum time of simulation
   // Create output folder if it doesn't exist (preserve existing database)
   if (!fs::exists(BASE_OUT_FOLDER)) {
     fs::create_directory(BASE_OUT_FOLDER);
@@ -154,6 +154,7 @@ int main(int argc, char** argv) {
   dynamics->updatePaths();
 
   dynamics->setErrorProbability(ERROR_PROBABILITY);
+  dynamics->killStagnantAgents(40.);
   // dynamics->setMaxFlowPercentage(0.69);
   // dynamics->setForcePriorities(false);
   if (OPTIMIZE)
@@ -161,6 +162,8 @@ int main(int argc, char** argv) {
 
   // Connect database for saving data
   simulator.connectDataBase(OUT_FOLDER + "simulation_data.db");
+
+  simulator.setAgentInsertionMethod(dsf::mobility::AgentInsertionMethod::UNIFORM);
 
   // Configure data saving: interval=10, saveAverageStats=true, saveStreetData=true
 #ifdef PRINT_DENSITIES

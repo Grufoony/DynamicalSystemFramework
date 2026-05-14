@@ -1233,10 +1233,13 @@ namespace dsf::mobility {
       case AgentInsertionMethod::RANDOM_ODS:
         this->m_addAgentsRandomODs(nAgents);
         break;
+      case AgentInsertionMethod::UNIFORM:
+        this->addAgentsUniformly(nAgents);
+        break;
       default:
         throw std::runtime_error(
             "Cannot add agents without a valid insertion methods. Possible values are "
-            "\"RANDOM\", \"ODS\" and \"RANDOM_ODS\"");
+            "\"RANDOM\", \"ODS\", \"RANDOM_ODS\" and \"UNIFORM\"");
     }
   }
 
