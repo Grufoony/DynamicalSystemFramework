@@ -161,16 +161,23 @@ namespace dsf::mobility {
       return;
     }
     if (m_ODCumulativeWeights.size() != m_ODs.size()) {
-      throw std::logic_error("ODS cumulative weights are not initialized");
+      m_ODCumulativeWeights.clear();
+      m_ODCumulativeWeights.reserve(m_ODs.size());
+      double cumulativeWeight{0.};
+      for (auto const& od : m_ODs) {
+        cumulativeWeight += std::get<2>(od);
+        m_ODCumulativeWeights.push_back(cumulativeWeight);
+      }
+      if (!m_ODCumulativeWeights.empty()) {
+        m_ODCumulativeWeights.back() = 1.;
+      }
     }
-    std::uniform_real_distribution<double> uniformDist{
-        0., m_ODCumulativeWeights.back()};
+    std::uniform_real_distribution<double> uniformDist{0., m_ODCumulativeWeights.back()};
     while (nAgents--) {
       auto randValue = uniformDist(this->m_generator);
       auto selectedOdIdx = static_cast<std::size_t>(
-          std::lower_bound(m_ODCumulativeWeights.cbegin(),
-                           m_ODCumulativeWeights.cend(),
-                           randValue) -
+          std::lower_bound(
+              m_ODCumulativeWeights.cbegin(), m_ODCumulativeWeights.cend(), randValue) -
           m_ODCumulativeWeights.cbegin());
       if (selectedOdIdx >= m_ODs.size()) {
         selectedOdIdx = m_ODs.size() - 1;
@@ -1609,7 +1616,6 @@ namespace dsf::mobility {
     m_ODs.clear();
     m_ODCumulativeWeights.clear();
     m_ODs.reserve(ODs.size());
-    m_ODCumulativeWeights.reserve(ODs.size());
     auto const sumWeights = std::accumulate(
         ODs.begin(), ODs.end(), 0., [this](double sum, auto const& tuple) {
           // Add itineraries while summing weights
@@ -1634,14 +1640,6 @@ namespace dsf::mobility {
                                               std::get<1>(tuple),
                                               std::get<2>(tuple) / sumWeights);
                      });
-    }
-    double cumulativeWeight{0.};
-    for (auto const& od : m_ODs) {
-      cumulativeWeight += std::get<2>(od);
-      m_ODCumulativeWeights.push_back(cumulativeWeight);
-    }
-    if (!m_ODCumulativeWeights.empty()) {
-      m_ODCumulativeWeights.back() = 1.;
     }
   }
 
@@ -1878,18 +1876,19 @@ namespace dsf::mobility {
     spdlog::debug("Pre-nodes");
     // Move transport capacity agents from each node
     this->m_taskArena.execute([&] {
-      tbb::parallel_for(tbb::blocked_range<size_t>(0, numNodes, grainSize),
-                        [&](const tbb::blocked_range<size_t>& range) {
-                          for (size_t i = range.begin(); i != range.end(); ++i) {
-                            auto* pNode = &this->graph().node(m_nodeIndices[i]);
-                            m_evolveNode(pNode);
-                            if (pNode->isTrafficLight()) {
-                              auto& tl = dynamic_cast<TrafficLight&>(*pNode);
-                              ++tl;
-                            }
-                          }
-                        },
-                        tbb::auto_partitioner{});
+      tbb::parallel_for(
+          tbb::blocked_range<size_t>(0, numNodes, grainSize),
+          [&](const tbb::blocked_range<size_t>& range) {
+            for (size_t i = range.begin(); i != range.end(); ++i) {
+              auto* pNode = &this->graph().node(m_nodeIndices[i]);
+              m_evolveNode(pNode);
+              if (pNode->isTrafficLight()) {
+                auto& tl = dynamic_cast<TrafficLight&>(*pNode);
+                ++tl;
+              }
+            }
+          },
+          tbb::auto_partitioner{});
     });
     this->m_evolveAgents();
 
