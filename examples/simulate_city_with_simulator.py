@@ -11,12 +11,11 @@ from pathlib import Path
 import pickle
 
 import dsf
-from dsf.cartography import get_cartography
+from dsf.cartography import get_cartography, to_folium_map
 from dsf import logging
 from dsf.mobility import TrafficSimulator
 
 import numpy as np
-import networkx as nx
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -49,6 +48,7 @@ if __name__ == "__main__":
         G, df_edges, df_nodes = get_cartography(
             {"city": args.city.capitalize(), "country": args.country.capitalize()},
             infer_speeds=True,
+            scc=True,
         )
 
         df_edges.to_csv(f"{args.city}_{args.country}_edges.csv", sep=";", index=False)
@@ -62,8 +62,8 @@ if __name__ == "__main__":
     with open(f"{args.city}_{args.country}.pickle", "rb") as f:
         G = pickle.load(f)
 
-    # Keep only strong connected components
-    G = G.subgraph(max(nx.strongly_connected_components(G), key=len)).copy()
+    to_folium_map(G).save(f"{args.city}_{args.country}_map.html")
+
     nodes = G.nodes(data=False)
     # Extract 10% random node ids as origins and destinations for the traffic simulation
     origin_ids = np.random.choice(

@@ -33,6 +33,7 @@ examples/*.txt
 examples/*.log
 examples/*.db
 examples/*.pickle
+examples/*html
 
 # Utils generated files
 utils/*.csv
