@@ -164,10 +164,31 @@ namespace dsf::mobility {
     if (!m_cycles.at(streetId).contains(direction)) {
       return m_allowFreeTurns;
     }
+    // Use cached state if available, otherwise fall back to counter-based calculation
+    if (m_currentState.contains(streetId) &&
+        m_currentState.at(streetId).contains(direction)) {
+      return m_currentState.at(streetId).at(direction) == LightState::GREEN;
+    }
+    // Fallback for backward compatibility: compute state on-the-fly if cache is empty
     return m_cycles.at(streetId).at(direction).isGreen(m_cycleTime, m_counter);
   }
 
   void TrafficLight::resetCycles() {
     m_defaultCycles.empty() ? m_defaultCycles = m_cycles : m_cycles = m_defaultCycles;
+  }
+
+  void TrafficLight::evaluateState() noexcept {
+    // Clear previous states
+    m_currentState.clear();
+
+    // Compute and cache the state for all cycles
+    for (auto const& [streetId, cycles] : m_cycles) {
+      for (auto const& [direction, cycle] : cycles) {
+        auto const greenStart = cycle.phase() % m_cycleTime;
+        auto const greenEnd = (cycle.phase() + cycle.greenTime()) % m_cycleTime;
+        m_currentState[streetId][direction] =
+            TrafficLightStateMachine::getState(greenStart, greenEnd, m_counter);
+      }
+    }
   }
 }  // namespace dsf::mobility

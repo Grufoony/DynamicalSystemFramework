@@ -16,6 +16,40 @@
 #include <string>
 
 namespace dsf::mobility {
+  /// @enum LightState
+  /// @brief Enumeration representing the state of a traffic light
+  enum class LightState : uint8_t {
+    RED = 0,    ///< Traffic light is red
+    GREEN = 1,  ///< Traffic light is green
+    YELLOW = 2  ///< Traffic light is yellow (for future extension)
+  };
+
+  /// @class TrafficLightStateMachine
+  /// @brief Helper class to compute traffic light state from cycle parameters
+  /// @details Uses the same mathematical logic as TrafficLightCycle::isGreen()
+  ///          to determine the state of a light at a given counter value.
+  class TrafficLightStateMachine {
+  public:
+    /// @brief Compute the state of a traffic light at a given counter value
+    /// @param greenStart The green phase start (phase % cycleTime)
+    /// @param greenEnd The green phase end ((phase + greenTime) % cycleTime)
+    /// @param counter The current counter value
+    /// @return LightState::GREEN if in green phase, LightState::RED otherwise
+    static inline LightState getState(Delay greenStart,
+                                      Delay greenEnd,
+                                      Delay counter) noexcept {
+      if (greenStart < greenEnd) {
+        // Normal case: green does not wrap around cycle boundary
+        return (counter >= greenStart && counter < greenEnd) ? LightState::GREEN
+                                                             : LightState::RED;
+      } else {
+        // Wraparound case: green spans cycle boundary
+        return (counter >= greenStart || counter < greenEnd) ? LightState::GREEN
+                                                             : LightState::RED;
+      }
+    }
+  };
+
   class TrafficLightCycle {
   private:
     Delay m_greenTime;
@@ -58,6 +92,7 @@ namespace dsf::mobility {
     std::unordered_map<Id, std::unordered_map<Direction, TrafficLightCycle>> m_cycles;
     std::unordered_map<Id, std::unordered_map<Direction, TrafficLightCycle>>
         m_defaultCycles;
+    std::unordered_map<Id, std::unordered_map<Direction, LightState>> m_currentState;
     Delay m_cycleTime;  // The total time of a red-green cycle
     Delay m_counter;
     static bool m_allowFreeTurns;
@@ -138,6 +173,11 @@ namespace dsf::mobility {
     /// @brief Resets all traffic light cycles
     /// @details For more info, see @ref TrafficLightCycle::reset()
     void resetCycles();
+    /// @brief Evaluate and cache the current state of all traffic light signals
+    /// @details This should be called once per simulation step after incrementing the counter.
+    ///          Computes the state (RED/GREEN) for all (streetId, direction) pairs based on
+    ///          the current counter and cycle parameters.
+    void evaluateState() noexcept;
     constexpr bool isTrafficLight() const noexcept { return true; }
   };
 }  // namespace dsf::mobility

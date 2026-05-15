@@ -1373,6 +1373,7 @@ namespace dsf::mobility {
               if (pNode->isTrafficLight()) {
                 auto& tl = dynamic_cast<TrafficLight&>(*pNode);
                 ++tl;
+                tl.evaluateState();  // Update cached state after incrementing counter
               }
             }
           },
