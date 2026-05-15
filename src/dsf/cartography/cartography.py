@@ -151,8 +151,17 @@ def process_cartography(
 
         if "highway" in data:
             hw = data["highway"]
-            updates["type"] = ",".join(hw) if isinstance(hw, list) else hw
+            if isinstance(hw, list):
+                updates["type"] = ",".join(map(str, hw))
+            else:
+                # handle NaN floats and None gracefully
+                if isinstance(hw, float) and np.isnan(hw):
+                    updates["type"] = "unknown"
+                else:
+                    updates["type"] = str(hw)
             updates["_remove_highway"] = True
+        else:
+            updates["type"] = "unknown"
 
         name = data.get("name", None)
         if isinstance(name, list):
@@ -197,7 +206,13 @@ def process_cartography(
             updates["id"] = data["osmid"]
         if "highway" in data:
             hw = data["highway"]
-            updates["type"] = ",".join(hw) if isinstance(hw, list) else hw
+            if isinstance(hw, list):
+                updates["type"] = ",".join(map(str, hw))
+            else:
+                if isinstance(hw, float) and np.isnan(hw):
+                    updates["type"] = "N/A"
+                else:
+                    updates["type"] = str(hw)
             updates["_remove_highway"] = True
         else:
             updates["type"] = "N/A"
