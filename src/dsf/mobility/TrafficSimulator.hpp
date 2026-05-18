@@ -191,6 +191,16 @@ namespace dsf::mobility {
                          std::time_t const agentInsertionDeltaT,
                          std::time_t const checkDeltaT,
                          std::size_t const agentIncrement = 1);
+    void m_runAutoCharge(std::size_t baseAgentCount,
+                         std::size_t dtAgent,
+                         std::size_t saveIntervalSeconds,
+                         std::optional<std::size_t> maxSteps,
+                         std::optional<double> stopMeanDensityVpk,
+                         std::size_t stabilityHoldSeconds,
+                         std::size_t stabilityCooldownSeconds,
+                         std::size_t chargeIncrement,
+                         bool injectOnCharge,
+                         std::string const& stabilityLogFile);
 
   public:
     /// @brief Construct a new TrafficSimulator with a generated simulation id.
@@ -268,6 +278,34 @@ namespace dsf::mobility {
       }
       m_dynamics->prepareNetwork();
       m_runSlowCharge(nInitialAgents, agentInsertionDeltaT, checkDeltaT, agentIncrement);
+    }
+
+    inline void runAutoCharge(std::size_t baseAgentCount,
+                              std::size_t dtAgent,
+                              std::size_t saveIntervalSeconds,
+                              std::optional<std::size_t> maxSteps = std::nullopt,
+                              std::optional<double> stopMeanDensityVpk = std::nullopt,
+                              std::size_t stabilityHoldSeconds = 60,
+                              std::size_t stabilityCooldownSeconds = 0,
+                              std::size_t chargeIncrement = 1,
+                              bool injectOnCharge = true,
+                              std::string const& stabilityLogFile = std::string()) {
+      if (m_dynamics == nullptr) {
+        throw std::runtime_error(
+            "Cannot run the simulation without imported road network dynamics.");
+      }
+      m_dynamics->prepareNetwork();
+      m_preparePersistence();
+      m_runAutoCharge(baseAgentCount,
+                      dtAgent,
+                      saveIntervalSeconds,
+                      maxSteps,
+                      stopMeanDensityVpk,
+                      stabilityHoldSeconds,
+                      stabilityCooldownSeconds,
+                      chargeIncrement,
+                      injectOnCharge,
+                      stabilityLogFile);
     }
 
     /// @brief Get the database connection (const version)

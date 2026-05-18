@@ -434,6 +434,139 @@ namespace dsf::mobility {
     }
   }
 
+  void TrafficSimulator::m_runAutoCharge(std::size_t baseAgentCount,
+                                         std::size_t dtAgent,
+                                         std::size_t saveIntervalSeconds,
+                                         std::optional<std::size_t> maxSteps,
+                                         std::optional<double> stopMeanDensityVpk,
+                                         std::size_t stabilityHoldSeconds,
+                                         std::size_t stabilityCooldownSeconds,
+                                         std::size_t chargeIncrement,
+                                         bool injectOnCharge,
+                                         std::string const& stabilityLogFile) {
+    if (m_endTime < m_initTime) {
+      throw std::runtime_error(
+          "End time must be greater than or equal to initial time for the simulation.");
+    }
+    if (dtAgent == 0) {
+      throw std::invalid_argument("dtAgent must be > 0");
+    }
+
+    auto const totalTimeSteps = static_cast<std::size_t>(m_endTime - m_initTime);
+
+    m_preparePersistence();
+
+    spdlog::info("Starting auto-charge run from {} to {} ({} time steps).",
+                 m_timeToStr(m_initTime),
+                 m_timeToStr(m_endTime),
+                 totalTimeSteps);
+    auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
+
+    std::size_t base = baseAgentCount;
+    std::size_t last_charge_time_step = 0;
+    std::optional<std::size_t> stable_since_time_step = std::nullopt;
+    // Prepare moving window for stability detection
+    std::deque<double> densityWindow;
+    auto windowSize = std::size_t(1);
+    if (saveIntervalSeconds > 0 && stabilityHoldSeconds > 0) {
+      windowSize = std::max<std::size_t>(1, stabilityHoldSeconds / saveIntervalSeconds);
+    }
+    const double stabilityRelStdThreshold = 0.01;  // relative std/mean threshold
+
+    std::optional<CSVWriter> stabilityWriter;
+    if (!stabilityLogFile.empty()) {
+      bool fileExists = std::filesystem::exists(stabilityLogFile);
+      stabilityWriter.emplace(stabilityLogFile, ';');
+      if (!fileExists) {
+        stabilityWriter->writeHeader("time_step", "base_agent_count", "mean_density");
+      }
+    }
+
+    for (std::size_t i = 0; i < totalTimeSteps; ++i) {
+      if ((m_updatePathDeltaT > 0 && i % m_updatePathDeltaT == 0) || (i == 0)) {
+        m_dynamics->updatePaths();
+      }
+
+      if (maxSteps.has_value() && i >= maxSteps.value()) {
+        spdlog::info("Reached max steps ({}). Stopping.", maxSteps.value());
+        break;
+      }
+
+      if (i % dtAgent == 0) {
+        if (base > 0) {
+          m_dynamics->addAgents(base, AgentInsertionMethod::ODS);
+        }
+      }
+
+      bool const shouldSave = (saveIntervalSeconds > 0 && i % saveIntervalSeconds == 0);
+      auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
+                                                                      m_saveStreetData,
+                                                                      m_saveTravelData,
+                                                                      m_saveAgentData}
+                                                    : StepDataRequest{});
+
+      if (shouldSave) {
+        if (stepData.averageStats.has_value()) {
+          double meanDensity = stepData.averageStats->meanDensity;
+
+          if (stopMeanDensityVpk.has_value() &&
+              meanDensity >= stopMeanDensityVpk.value()) {
+            spdlog::info(
+                "Stopping: mean_density_vpk={} reached threshold {} at time_step {}.",
+                meanDensity,
+                stopMeanDensityVpk.value(),
+                stepData.timeStep);
+            break;
+          }
+
+          // Push density into moving window
+          densityWindow.push_back(meanDensity);
+          if (densityWindow.size() > windowSize)
+            densityWindow.pop_front();
+          if (densityWindow.size() >= windowSize) {
+            // compute mean and std
+            double sum = 0.;
+            for (auto v : densityWindow)
+              sum += v;
+            double mean = sum / static_cast<double>(densityWindow.size());
+            double sq = 0.;
+            for (auto v : densityWindow)
+              sq += (v - mean) * (v - mean);
+            double std = std::sqrt(sq / static_cast<double>(densityWindow.size()));
+            double relStd = (mean > 0.) ? std / mean : std;
+            if (relStd <= stabilityRelStdThreshold) {
+              if (!stable_since_time_step.has_value()) {
+                stable_since_time_step = i;
+              } else if ((i - stable_since_time_step.value() >= stabilityHoldSeconds) &&
+                         (i - last_charge_time_step >= stabilityCooldownSeconds)) {
+                // Trigger charge
+                base += chargeIncrement;
+                last_charge_time_step = i;
+                stable_since_time_step = std::nullopt;
+                if (stabilityWriter.has_value()) {
+                  stabilityWriter->writeRow(i, base, meanDensity);
+                }
+                spdlog::info(
+                    "[auto-charge] New BASE_AGENT_COUNT: {} at step {}.", base, i);
+                if (injectOnCharge && chargeIncrement > 0) {
+                  m_dynamics->addAgents(chargeIncrement, AgentInsertionMethod::ODS);
+                }
+              }
+            } else {
+              stable_since_time_step = std::nullopt;
+            }
+          }
+        }
+
+        m_pendingStepData.push_back(std::move(stepData));
+        m_flushStepData(std::move(m_pendingStepData.back()));
+        m_pendingStepData.clear();
+      }
+
+      pbar->update();
+    }
+  }
+
   void TrafficSimulator::connectDataBase(std::string_view const dbPath,
                                          std::string_view const queries) {
     m_database = std::make_unique<SQLite::Database>(

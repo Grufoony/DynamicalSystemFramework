@@ -1242,6 +1242,62 @@ Returns:
           agentIncrement:        How many agents to add to the target at each check (default 1).
       )doc")
       .def(
+          "runAutoCharge",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::size_t baseAgentCount,
+             std::size_t dtAgent,
+             std::size_t saveIntervalSeconds,
+             pybind11::object maxSteps,
+             pybind11::object stopMeanDensityVpk,
+             std::size_t stabilityHoldSeconds,
+             std::size_t stabilityCooldownSeconds,
+             std::size_t chargeIncrement,
+             bool injectOnCharge,
+             std::string stabilityLogFile) {
+            std::optional<std::size_t> optMaxSteps = std::nullopt;
+            if (!maxSteps.is_none()) {
+              optMaxSteps = static_cast<std::size_t>(pybind11::cast<std::uint64_t>(maxSteps));
+            }
+            std::optional<double> optStopMeanDensity = std::nullopt;
+            if (!stopMeanDensityVpk.is_none()) {
+              optStopMeanDensity = pybind11::cast<double>(stopMeanDensityVpk);
+            }
+            self.runAutoCharge(baseAgentCount,
+                               dtAgent,
+                               saveIntervalSeconds,
+                               optMaxSteps,
+                               optStopMeanDensity,
+                               stabilityHoldSeconds,
+                               stabilityCooldownSeconds,
+                               chargeIncrement,
+                               injectOnCharge,
+                               stabilityLogFile);
+          },
+          pybind11::arg("baseAgentCount"),
+          pybind11::arg("dtAgent"),
+          pybind11::arg("saveIntervalSeconds"),
+          pybind11::arg("maxSteps") = pybind11::none(),
+          pybind11::arg("stopMeanDensityVpk") = pybind11::none(),
+          pybind11::arg("stabilityHoldSeconds") = 60,
+          pybind11::arg("stabilityCooldownSeconds") = 0,
+          pybind11::arg("chargeIncrement") = 1,
+          pybind11::arg("injectOnCharge") = true,
+          pybind11::arg("stabilityLogFile") = std::string(),
+          R"doc(Run the simulation in auto-charge mode.
+
+      Args:
+          baseAgentCount: Number of agents to insert every dtAgent steps.
+          dtAgent: Interval in steps between agent insertions.
+          saveIntervalSeconds: Interval in steps between save/check operations.
+          maxSteps: Optional maximum number of steps to run.
+          stopMeanDensityVpk: Optional threshold to stop when mean density reaches this value.
+          stabilityHoldSeconds: Seconds of stability required before auto-charging.
+          stabilityCooldownSeconds: Minimum seconds since last charge before charging again.
+          chargeIncrement: Number of agents to add when charging triggers.
+          injectOnCharge: Whether to inject agents immediately when charging.
+          stabilityLogFile: Optional CSV file path to append stability events.
+      )doc")
+      .def(
           "database",
           [](dsf::mobility::TrafficSimulator& self) { return self.database(); },
           pybind11::return_value_policy::reference)
