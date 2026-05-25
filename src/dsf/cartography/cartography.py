@@ -7,6 +7,7 @@ from OpenStreetMap using OSMnx, with support for graph simplification and
 standardization of attributes.
 """
 
+import ast
 import folium
 import geopandas as gpd
 import networkx as nx
@@ -97,6 +98,17 @@ def process_cartography(
             - gdf_edges: edges with columns source, target, nlanes, type,
               name, id, geometry, …
             - gdf_nodes: nodes with columns id, type, geometry, …
+
+    Notes on determinism:
+        - The raw graph should be loaded from a cached file (e.g. GraphML)
+          rather than re-downloaded from OSM, since OSM data changes over time
+          and consolidate_intersections produces different synthetic node IDs
+          on each download.
+        - SCC tie-breaking is resolved by sorting candidate sets.
+        - to_digraph parallel-edge selection is stabilized by pre-sorting
+          multi-edges so the minimum-osmid edge is always preferred.
+        - Edge IDs are assigned over a sorted edge list so the mapping is
+          stable across runs given the same input graph.
     """
     if consolidate_intersections is True:
         consolidate_intersections = 10  # default tolerance
@@ -125,7 +137,12 @@ def process_cartography(
     G.remove_nodes_from(list(nx.isolates(G)))
 
     if scc:
-        largest_scc = max(nx.strongly_connected_components(G), key=len)
+        # FIX: sort candidate SCCs so that ties in size are broken
+        # deterministically rather than by arbitrary hash/set order.
+        largest_scc = max(
+            sorted(nx.strongly_connected_components(G), key=lambda s: sorted(s)),
+            key=len,
+        )
         G = G.subgraph(largest_scc).copy()
 
     # --- Speed inference ---
@@ -137,6 +154,30 @@ def process_cartography(
                 data["maxspeed"] = data["speed_kph"]
                 del data["speed_kph"]
 
+    for u, v in set(G.edges()):
+        keys = list(G[u][v].keys())
+        if len(keys) <= 1:
+            continue
+
+        def _sort_key(k):
+            d = G[u][v][k]
+            osmid = d.get("osmid", None)
+            # osmid can be a list when edges were merged
+            if isinstance(osmid, list):
+                osmid = min(osmid)
+            return (osmid if osmid is not None else float("inf"), d.get("length", 0))
+
+        preferred_key = min(keys, key=_sort_key)
+        # Swap the preferred edge into key=0 position.
+        if preferred_key != 0:
+            d0 = G[u][v][0]
+            dp = G[u][v][preferred_key]
+            tmp = dict(d0)
+            d0.clear()
+            d0.update(dp)
+            dp.clear()
+            dp.update(tmp)
+
     # --- Convert to DiGraph ---
     G = ox.convert.to_digraph(G)
 
@@ -147,11 +188,14 @@ def process_cartography(
 
         if "lanes" in data:
             lanes = data["lanes"]
+            if isinstance(lanes, str):
+                lanes = ast.literal_eval(lanes) if lanes.startswith("[") else lanes
             n = (
-                max(min([int(x) for x in lanes], default=1), 1)
+                max([int(x) for x in lanes], default=1)
                 if isinstance(lanes, list)
                 else max(int(lanes), 1)
             )
+            n = max(n, 1)
             oneway = data.get("oneway", False)
             if not (oneway is True or oneway in ("yes", "True")):
                 n = max(n // 2, 1)
@@ -163,9 +207,8 @@ def process_cartography(
         if "highway" in data:
             hw = data["highway"]
             if isinstance(hw, list):
-                updates["type"] = ",".join(map(str, hw))
+                updates["type"] = ",".join(sorted(map(str, hw)))
             else:
-                # handle NaN floats and None gracefully
                 if isinstance(hw, float) and np.isnan(hw):
                     updates["type"] = "unknown"
                 else:
@@ -176,7 +219,7 @@ def process_cartography(
 
         name = data.get("name", None)
         if isinstance(name, list):
-            name = ",".join(name)
+            name = ",".join(sorted(name))
         updates["name"] = str(name).lower().replace(" ", "_") if name else "unknown"
 
         for attr in (
@@ -206,7 +249,7 @@ def process_cartography(
             else:
                 G[u][v][key] = value
 
-    for i, (u, v) in enumerate(G.edges()):
+    for i, (u, v) in enumerate(sorted(G.edges())):
         G[u][v].update({"id": i, "source": u, "target": v})
 
     # --- Standardize node attributes ---
@@ -264,6 +307,7 @@ def process_cartography(
 def get_cartography(
     place_name: str | None = None,
     bbox: tuple[float, float, float, float] | None = None,
+    polygon: gpd.GeoSeries | None = None,
     network_type: str = "drive",
     consolidate_intersections: bool | float = 10,
     dead_ends: bool = False,
@@ -283,6 +327,7 @@ def get_cartography(
         place_name (str): The name of the place (e.g., city, neighborhood) to retrieve cartography for.
         bbox (tuple, optional): A tuple specifying the bounding box (north, south, east, west)
             to retrieve cartography for.
+        polygon (gpd.GeoSeries, optional): A GeoSeries containing a polygon to use for retrieving cartography.
         network_type (str, optional): The type of network to retrieve. Common values include "drive",
             "walk", "bike". Defaults to "drive".
         consolidate_intersections (bool | float, optional): If True, consolidates intersections using
@@ -307,6 +352,7 @@ def get_cartography(
     G = fetch_cartography(
         place_name=place_name,
         bbox=bbox,
+        polygon=polygon,
         network_type=network_type,
         custom_filter=custom_filter,
     )
