@@ -8,18 +8,19 @@ standardization of attributes.
 """
 
 import ast
+import re
 import folium
 import geopandas as gpd
 import networkx as nx
 import numpy as np
 import osmnx as ox
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, Point, Polygon
 
 
 def fetch_cartography(
     place_name: str | None = None,
     bbox: tuple[float, float, float, float] | None = None,
-    polygon: gpd.GeoSeries | None = None,
+    polygon: Polygon | None = None,
     network_type: str = "drive",
     custom_filter: str | list[str] | None = None,
 ) -> nx.MultiDiGraph:
@@ -33,7 +34,7 @@ def fetch_cartography(
     Args:
         place_name (str | None): Place name to geocode (e.g. "Bologna, Italy").
         bbox (tuple[float, float, float, float] | None): Bounding box (north, south, east, west). Used if place_name is None.
-        polygon (gpd.GeoSeries | None): Polygon to use for filtering the graph. Used if place_name and bbox are None.
+        polygon (Polygon | None): Polygon to use for filtering the graph. Used if place_name and bbox are None.
         network_type (str): OSMnx network type ("drive", "walk", "bike", …).
         custom_filter (str | list[str] | None): Raw OSM filter string or list of strings.
 
@@ -96,19 +97,8 @@ def process_cartography(
         tuple:
             - nx.DiGraph with standardized attributes.
             - gdf_edges: edges with columns source, target, nlanes, type,
-              name, id, geometry, …
-            - gdf_nodes: nodes with columns id, type, geometry, …
-
-    Notes on determinism:
-        - The raw graph should be loaded from a cached file (e.g. GraphML)
-          rather than re-downloaded from OSM, since OSM data changes over time
-          and consolidate_intersections produces different synthetic node IDs
-          on each download.
-        - SCC tie-breaking is resolved by sorting candidate sets.
-        - to_digraph parallel-edge selection is stabilized by pre-sorting
-          multi-edges so the minimum-osmid edge is always preferred.
-        - Edge IDs are assigned over a sorted edge list so the mapping is
-          stable across runs given the same input graph.
+              name, id, geometry, ...
+            - gdf_nodes: nodes with columns id, type, geometry, ...
     """
     if consolidate_intersections is True:
         consolidate_intersections = 10  # default tolerance
@@ -137,13 +127,7 @@ def process_cartography(
     G.remove_nodes_from(list(nx.isolates(G)))
 
     if scc:
-        # FIX: sort candidate SCCs so that ties in size are broken
-        # deterministically rather than by arbitrary hash/set order.
-        largest_scc = max(
-            sorted(nx.strongly_connected_components(G), key=lambda s: sorted(s)),
-            key=len,
-        )
-        G = G.subgraph(largest_scc).copy()
+        G = ox.truncate.largest_component(G, strongly=True)
 
     # --- Speed inference ---
     if infer_speeds:
@@ -182,9 +166,55 @@ def process_cartography(
     G = ox.convert.to_digraph(G)
 
     # --- Standardize edge attributes ---
+    def _normalize_maxspeed(value):
+        """Return a scalar maxspeed when the input is a list-like value."""
+
+        def _extract_numeric(item):
+            if isinstance(item, (int, float, np.integer, np.floating)):
+                return float(item)
+
+            if isinstance(item, str):
+                if item.startswith("[") and item.endswith("]"):
+                    try:
+                        return _normalize_maxspeed(ast.literal_eval(item))
+                    except (ValueError, SyntaxError):
+                        return None
+
+                match = re.search(r"-?\d+(?:\.\d+)?", item.replace(",", "."))
+                if match:
+                    return float(match.group())
+
+            return None
+
+        if isinstance(value, str) and value.startswith("[") and value.endswith("]"):
+            try:
+                value = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                return value
+
+        if isinstance(value, (list, tuple, set)):
+            numeric_values = []
+            for item in value:
+                numeric = _extract_numeric(item)
+                if numeric is not None:
+                    numeric_values.append(numeric)
+
+            if numeric_values:
+                maximum = max(numeric_values)
+                return int(maximum) if maximum.is_integer() else maximum
+
+        numeric_value = _extract_numeric(value)
+        if numeric_value is not None:
+            return int(numeric_value) if numeric_value.is_integer() else numeric_value
+
+        return value
+
     edges_to_update = []
     for u, v, data in G.edges(data=True):
         updates = {}
+
+        if "maxspeed" in data:
+            updates["maxspeed"] = _normalize_maxspeed(data["maxspeed"])
 
         if "lanes" in data:
             lanes = data["lanes"]
@@ -295,6 +325,7 @@ def process_cartography(
     gdf_edges.reset_index(inplace=True)
     gdf_edges.insert(0, "id", gdf_edges.pop("id"))
     gdf_edges["length"] = gdf_edges["length"].astype(float)
+    gdf_edges["maxspeed"] = gdf_edges["maxspeed"].apply(_normalize_maxspeed)
     gdf_edges.drop(columns=["u", "v", "key"], inplace=True, errors="ignore")
 
     gdf_nodes.reset_index(inplace=True)
@@ -307,7 +338,7 @@ def process_cartography(
 def get_cartography(
     place_name: str | None = None,
     bbox: tuple[float, float, float, float] | None = None,
-    polygon: gpd.GeoSeries | None = None,
+    polygon: Polygon | None = None,
     network_type: str = "drive",
     consolidate_intersections: bool | float = 10,
     dead_ends: bool = False,
@@ -327,7 +358,7 @@ def get_cartography(
         place_name (str): The name of the place (e.g., city, neighborhood) to retrieve cartography for.
         bbox (tuple, optional): A tuple specifying the bounding box (north, south, east, west)
             to retrieve cartography for.
-        polygon (gpd.GeoSeries, optional): A GeoSeries containing a polygon to use for retrieving cartography.
+        polygon (Polygon, optional): A Polygon to use for retrieving cartography.
         network_type (str, optional): The type of network to retrieve. Common values include "drive",
             "walk", "bike". Defaults to "drive".
         consolidate_intersections (bool | float, optional): If True, consolidates intersections using
