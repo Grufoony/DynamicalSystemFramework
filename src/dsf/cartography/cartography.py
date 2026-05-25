@@ -18,6 +18,7 @@ from shapely.geometry import LineString, Point
 def fetch_cartography(
     place_name: str | None = None,
     bbox: tuple[float, float, float, float] | None = None,
+    polygon: gpd.GeoSeries | None = None,
     network_type: str = "drive",
     custom_filter: str | list[str] | None = None,
 ) -> nx.MultiDiGraph:
@@ -31,14 +32,13 @@ def fetch_cartography(
     Args:
         place_name (str | None): Place name to geocode (e.g. "Bologna, Italy").
         bbox (tuple[float, float, float, float] | None): Bounding box (north, south, east, west). Used if place_name is None.
+        polygon (gpd.GeoSeries | None): Polygon to use for filtering the graph. Used if place_name and bbox are None.
         network_type (str): OSMnx network type ("drive", "walk", "bike", …).
         custom_filter (str | list[str] | None): Raw OSM filter string or list of strings.
 
     Returns:
         nx.MultiDiGraph: Raw, unsimplified graph in WGS-84 (lat/lon).
     """
-    if place_name is None and bbox is None:
-        raise ValueError("Either place_name or bbox must be provided.")
 
     if place_name is not None:
         return ox.graph_from_place(
@@ -48,13 +48,24 @@ def fetch_cartography(
             custom_filter=custom_filter,
         )
 
-    return ox.graph_from_bbox(
-        bbox,
-        network_type=network_type,
-        simplify=False,
-        truncate_by_edge=True,
-        custom_filter=custom_filter,
-    )
+    elif bbox is not None:
+        return ox.graph_from_bbox(
+            bbox,
+            network_type=network_type,
+            simplify=False,
+            truncate_by_edge=True,
+            custom_filter=custom_filter,
+        )
+
+    elif polygon is not None:
+        return ox.graph_from_polygon(
+            polygon,
+            network_type=network_type,
+            simplify=False,
+            custom_filter=custom_filter,
+        )
+
+    raise ValueError("Either place_name, bbox, or polygon must be provided.")
 
 
 def process_cartography(
