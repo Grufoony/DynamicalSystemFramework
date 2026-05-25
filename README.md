@@ -48,10 +48,6 @@ To install requirements on macOS:
 brew install cmake tbb
 ```
 
-Utilities are written in python. To install their dependencies:
-```shell
-pip install -r ./requirements.txt
-```
 ### Installation (C++)
 The library can be installed using CMake. To build and install the project in the default folder run:
 ```shell
