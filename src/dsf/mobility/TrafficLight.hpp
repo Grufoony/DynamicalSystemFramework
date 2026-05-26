@@ -74,30 +74,27 @@ namespace dsf::mobility {
                       std::unordered_map<Id, std::unordered_set<Direction>> greenSet)
         : m_duration{duration}, m_greenSet{std::move(greenSet)} {}
 
+    // ── Green-set builders ────────────────────────────────────────────────
+
     /// @brief Mark a specific direction on a street as green.
-    inline void addGreen(Id const streetId, Direction const direction) {
-      m_greenSet.emplace(streetId, direction);
+    void addGreen(Id streetId, Direction direction) {
+      m_greenSet[streetId].insert(direction);
     }
 
     /// @brief Mark several directions on a street as green.
-    inline void addGreen(Id const streetId, std::initializer_list<Direction> directions) {
-      for (auto const dir : directions) {
-        m_greenSet.emplace(streetId, dir);
-      }
+    void addGreen(Id streetId, std::initializer_list<Direction> directions) {
+      for (auto const dir : directions)
+        m_greenSet[streetId].insert(dir);
     }
 
     /// @brief Mark a street as green for ALL directions (inserts Direction::ANY).
     /// This is the typical entry produced by auto-deduction.
-    inline void addGreen(Id const streetId) {
-      m_greenSet.emplace(streetId, Direction::ANY);
-    }
+    void addGreen(Id streetId) { m_greenSet[streetId].insert(Direction::ANY); }
 
     // ── Queries ───────────────────────────────────────────────────────────
 
     /// @brief True if streetId appears in the green set (any direction).
-    inline bool containsStreet(Id const streetId) const {
-      return m_greenSet.contains(streetId);
-    }
+    bool containsStreet(Id streetId) const { return m_greenSet.contains(streetId); }
 
     /// @brief Exact lookup — does NOT apply the direction-fallback ladder.
     /// Use TrafficLight::isGreen() for the full resolved query.
@@ -105,6 +102,8 @@ namespace dsf::mobility {
       auto const it = m_greenSet.find(streetId);
       return it != m_greenSet.end() && it->second.contains(direction);
     }
+
+    // ── Accessors ─────────────────────────────────────────────────────────
 
     inline Delay duration() const { return m_duration; }
     /// @brief Set the phase duration (used by the optimiser — does not affect
@@ -141,32 +140,40 @@ namespace dsf::mobility {
                                    Direction direction);
 
   public:
+    // ── Constructors ──────────────────────────────────────────────────────
+
     explicit TrafficLight(Id id) : Intersection{id} {}
     TrafficLight(Id id, geometry::Point point) : Intersection{id, std::move(point)} {}
     explicit TrafficLight(RoadJunction const& node) : Intersection{node} {}
     ~TrafficLight() = default;
+
+    // ── State-machine advance ─────────────────────────────────────────────
 
     /// @brief Advance by one simulation tick.
     /// When the counter reaches the current phase's duration the machine
     /// moves to the next phase (wrapping) and resets the counter to 0.
     TrafficLight& operator++();
 
-    /// @brief When true (default), a street absent from the active phase's green set is treated as green (free turn).
-    /// @param allow The new value for m_allowFreeTurns.
-    static void setAllowFreeTurns(bool const allow);
+    // ── Global flag ───────────────────────────────────────────────────────
+
+    /// @brief When true (default), a street absent from the active phase's
+    /// green set is treated as green (free turn).
+    static void setAllowFreeTurns(bool allow);
+
+    // ── Phase management ──────────────────────────────────────────────────
 
     /// @brief Append one phase to the sequence and update stored defaults.
     /// Resets the state machine to phase 0, counter 0.
-    /// @param phase The new phase to add.
     void addPhase(TrafficLightPhase phase);
 
     /// @brief Replace the entire phase sequence and update stored defaults.
     /// Resets the state machine to phase 0, counter 0.
-    /// @param phases The new phase sequence.
     void setPhases(std::vector<TrafficLightPhase> phases);
 
     /// @brief Remove all phases and clear all stored defaults/snapshots.
     void clearPhases();
+
+    // ── Reset API ─────────────────────────────────────────────────────────
 
     /// @brief Save the current phase sequence as a restore point.
     /// Does NOT reset the running counter or current phase index.
@@ -182,11 +189,15 @@ namespace dsf::mobility {
     /// Resets m_currentPhaseIndex and m_counter to 0.
     void reset();
 
+    // ── Core query ────────────────────────────────────────────────────────
+
     /// @brief Returns true if the light is currently green for
     /// (streetId, direction), applying the fallback ladder:
     ///   exact direction → ANY → compound (RIGHTANDSTRAIGHT/LEFTANDSTRAIGHT).
     /// Returns m_allowFreeTurns when streetId is absent from the active phase.
     bool isGreen(Id streetId, Direction direction) const;
+
+    // ── Timing ────────────────────────────────────────────────────────────
 
     /// @brief Total cycle time = sum of all phase durations.
     Delay cycleTime() const;
@@ -198,6 +209,8 @@ namespace dsf::mobility {
     /// @brief True if the live phase sequence equals the stored defaults.
     bool isDefault() const;
 
+    // ── Green-wave helper ─────────────────────────────────────────────────
+
     /// @brief Fast-forward the state machine by `offset` ticks.
     /// offset is taken modulo cycleTime() so large values are safe.
     /// Used by the DOUBLE_TAIL optimiser.
@@ -205,20 +218,18 @@ namespace dsf::mobility {
 
     // ── Accessors ─────────────────────────────────────────────────────────
 
-    /// @brief Get the current value of the running counter (ticks elapsed in the current phase).
-    /// @return Delay The current value of the running counter.
-    inline auto counter() const { return m_counter; }
-    /// @brief Get the index of the current active phase.
-    /// @return std::size_t The index of the current active phase.
-    inline auto currentPhaseIndex() const { return m_currentPhaseIndex; }
+    inline Delay counter() const { return m_counter; }
+    inline std::size_t currentPhaseIndex() const { return m_currentPhaseIndex; }
 
     /// @brief Read-only view of the live phase sequence.
-    inline auto const& phases() const { return m_phases; }
+    inline std::vector<TrafficLightPhase> const& phases() const { return m_phases; }
 
     /// @brief Read-only view of the default (baseline) phase sequence.
     /// Used by the optimiser to access baseline durations without mutating
     /// the live sequence.
-    inline auto const& defaultPhases() const { return m_defaultPhases; }
+    inline std::vector<TrafficLightPhase> const& defaultPhases() const {
+      return m_defaultPhases;
+    }
 
     /// @brief Mutable access to one live phase (intended for optimiser only).
     inline TrafficLightPhase& phase(std::size_t index) { return m_phases.at(index); }
@@ -227,6 +238,8 @@ namespace dsf::mobility {
   };
 
 }  // namespace dsf::mobility
+
+// ── std::formatter specialisations ──────────────────────────────────────────
 
 template <>
 struct std::formatter<dsf::mobility::TrafficLightPhase> {
