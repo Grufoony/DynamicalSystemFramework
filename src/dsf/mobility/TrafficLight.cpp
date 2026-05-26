@@ -1,5 +1,6 @@
 #include "TrafficLight.hpp"
 
+#include <algorithm>
 #include <format>
 #include <numeric>
 #include <stdexcept>
@@ -7,167 +8,233 @@
 #include <spdlog/spdlog.h>
 
 namespace dsf::mobility {
-  bool TrafficLightCycle::isGreen(Delay const cycleTime, Delay const counter) const {
-    auto const greenStart = m_phase % cycleTime;
-    auto const greenEnd = (m_phase + m_greenTime) % cycleTime;
 
-    if (greenStart < greenEnd) {
-      // Normal case: green does not wrap around
-      return (counter >= greenStart) && (counter < greenEnd);
-    } else {
-      // Wraparound case: green spans cycle boundary
-      return (counter >= greenStart) || (counter < greenEnd);
-    }
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // Static members
+  // ══════════════════════════════════════════════════════════════════════════
 
   bool TrafficLight::m_allowFreeTurns{true};
+
   void TrafficLight::setAllowFreeTurns(bool allow) { m_allowFreeTurns = allow; }
-  void TrafficLight::setCycle(Id const streetId,
-                              Direction direction,
-                              TrafficLightCycle const& cycle) {
-    if ((cycle.greenTime() > m_cycleTime)) {
-      throw std::invalid_argument(
-          std::format("Green time ({}) must not exceed the cycle time ({}).",
-                      cycle.greenTime(),
-                      m_cycleTime));
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Direction-fallback ladder (private, static)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  bool TrafficLight::m_resolveDirection(std::unordered_set<Direction> const& dirSet,
+                                        Direction direction) {
+    // 1. Exact match.
+    if (dirSet.contains(direction))
+      return true;
+
+    // 2. ANY covers every direction.
+    if (dirSet.contains(Direction::ANY))
+      return true;
+
+    // 3. Compound-direction fallbacks.
+    switch (direction) {
+      case Direction::RIGHT:
+        return dirSet.contains(Direction::RIGHTANDSTRAIGHT);
+
+      case Direction::LEFT:
+        return dirSet.contains(Direction::LEFTANDSTRAIGHT);
+
+      case Direction::STRAIGHT:
+        return dirSet.contains(Direction::RIGHTANDSTRAIGHT) ||
+               dirSet.contains(Direction::LEFTANDSTRAIGHT);
+
+      case Direction::UTURN:
+        // U-turn treated similarly to left turn for signal purposes.
+        return dirSet.contains(Direction::LEFT) ||
+               dirSet.contains(Direction::LEFTANDSTRAIGHT);
+
+      default:
+        // Compound directions (RIGHTANDSTRAIGHT, LEFTANDSTRAIGHT) arrive here
+        // only when there is no exact or ANY match — no further fallback.
+        return false;
     }
-    if (!(cycle.phase() < m_cycleTime)) {
-      throw std::invalid_argument(
-          std::format("Phase ({}) must be less than the cycle time ({}).",
-                      cycle.phase(),
-                      m_cycleTime));
-    }
-    m_cycles[streetId].emplace(direction, cycle);
   }
 
-  void TrafficLightCycle::reset() {
-    m_greenTime = m_defaultValues.first;
-    m_phase = m_defaultValues.second;
-  }
-
-  void TrafficLight::setComplementaryCycle(Id const streetId, Id const existingCycle) {
-    if (m_cycles.contains(streetId)) {
-      throw std::invalid_argument(std::format(
-          "Street with id {} already has a cycle in traffic light with id {}.",
-          streetId,
-          m_id));
-    }
-    if (!m_cycles.contains(existingCycle)) {
-      throw std::invalid_argument(std::format(
-          "Existing cycle with id {} does not exist in traffic light with id {}.",
-          existingCycle,
-          m_id));
-    }
-    m_cycles.emplace(streetId, m_cycles.at(existingCycle));
-    for (auto& [direction, cycle] : m_cycles.at(streetId)) {
-      cycle = TrafficLightCycle(m_cycleTime - cycle.greenTime(),
-                                cycle.phase() + m_cycleTime - cycle.greenTime());
-    }
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // State-machine advance
+  // ══════════════════════════════════════════════════════════════════════════
 
   TrafficLight& TrafficLight::operator++() {
-    m_counter = (m_counter + 1) % m_cycleTime;
+    if (m_phases.empty())
+      return *this;
+
+    ++m_counter;
+    if (m_counter >= m_phases[m_currentPhaseIndex].duration()) {
+      m_counter = 0;
+      m_currentPhaseIndex = (m_currentPhaseIndex + 1) % m_phases.size();
+    }
     return *this;
   }
 
-  double TrafficLight::meanGreenTime(bool priorityStreets) const {
-    double meanTime{0.};
-    size_t nCycles{0};
-    for (auto const& [streetId, cycles] : m_cycles) {
-      if ((priorityStreets && m_streetPriorities.contains(streetId)) ||
-          (!priorityStreets && !m_streetPriorities.contains(streetId))) {
-        meanTime +=
-            std::transform_reduce(cycles.begin(),
-                                  cycles.end(),
-                                  0.0,                  // Initial value (double)
-                                  std::plus<double>(),  // Reduction function (addition)
-                                  [](const auto& pair) -> double {
-                                    return static_cast<double>(pair.second.greenTime());
-                                  });
-        nCycles += cycles.size();
-      }
-    }
-    return meanTime / nCycles;
+  // ══════════════════════════════════════════════════════════════════════════
+  // Phase management
+  // ══════════════════════════════════════════════════════════════════════════
+
+  void TrafficLight::addPhase(TrafficLightPhase phase) {
+    m_phases.push_back(phase);
+    m_defaultPhases.push_back(std::move(phase));
+    // Reset state machine so the index cannot go stale.
+    m_currentPhaseIndex = 0;
+    m_counter = 0;
   }
 
-  void TrafficLight::increasePhases(Delay const phase) {
-    for (auto& [streetId, cycles] : m_cycles) {
-      for (auto& [direction, cycle] : cycles) {
-        // Module new phase with cycleTime
-        auto const newPhase{static_cast<Delay>((phase + cycle.phase()) % m_cycleTime)};
-        cycle = TrafficLightCycle(cycle.greenTime(), newPhase);
-      }
-    }
+  void TrafficLight::setPhases(std::vector<TrafficLightPhase> phases) {
+    m_phases = phases;
+    m_defaultPhases = std::move(phases);
+    m_currentPhaseIndex = 0;
+    m_counter = 0;
   }
 
-  bool TrafficLight::isDefault() const {
-    for (auto const& [streetId, cycles] : m_cycles) {
-      for (auto const& [direction, cycle] : cycles) {
-        if (!cycle.isDefault()) {
-          return false;
-        }
-      }
-    }
-    return true;
+  void TrafficLight::clearPhases() {
+    m_phases.clear();
+    m_defaultPhases.clear();
+    m_snapshot.clear();
+    m_currentPhaseIndex = 0;
+    m_counter = 0;
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Reset API
+  // ══════════════════════════════════════════════════════════════════════════
+
+  void TrafficLight::snapshot() {
+    m_snapshot = m_phases;
+    spdlog::debug(
+        "TrafficLight {}: snapshot saved ({} phases).", m_id, m_snapshot.size());
+  }
+
+  void TrafficLight::restore() {
+    if (m_snapshot.empty()) {
+      spdlog::warn("TrafficLight {}: restore() called but no snapshot exists — ignoring.",
+                   m_id);
+      return;
+    }
+    m_phases = m_snapshot;
+    m_currentPhaseIndex = 0;
+    m_counter = 0;
+    spdlog::debug(
+        "TrafficLight {}: restored to snapshot ({} phases).", m_id, m_phases.size());
+  }
+
+  void TrafficLight::reset() {
+    m_phases = m_defaultPhases;
+    m_currentPhaseIndex = 0;
+    m_counter = 0;
+    spdlog::debug(
+        "TrafficLight {}: reset to defaults ({} phases).", m_id, m_phases.size());
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Core query
+  // ══════════════════════════════════════════════════════════════════════════
 
   bool TrafficLight::isGreen(Id const streetId, Direction direction) const {
-    if (!m_cycles.contains(streetId)) {
-      throw std::invalid_argument(
-          std::format("Street id {} is not valid for node {}.", streetId, id()));
-    }
-    if (!m_cycles.at(streetId).contains(direction)) {
-      if (m_cycles.at(streetId).contains(Direction::ANY)) {
-        direction = Direction::ANY;
-      } else {
-        switch (direction) {
-          case Direction::RIGHT:
-            if (m_cycles.at(streetId).contains(Direction::RIGHTANDSTRAIGHT)) {
-              direction = Direction::RIGHTANDSTRAIGHT;
-            } else if (m_cycles.at(streetId).contains(Direction::ANY)) {
-              direction = Direction::ANY;
-            }
-            break;
-          case Direction::LEFT:
-            if (m_cycles.at(streetId).contains(Direction::LEFTANDSTRAIGHT)) {
-              direction = Direction::LEFTANDSTRAIGHT;
-            } else if (m_cycles.at(streetId).contains(Direction::ANY)) {
-              direction = Direction::ANY;
-            }
-            break;
-          case Direction::STRAIGHT:
-            if (m_cycles.at(streetId).contains(Direction::RIGHTANDSTRAIGHT)) {
-              direction = Direction::RIGHTANDSTRAIGHT;
-            } else if (m_cycles.at(streetId).contains(Direction::LEFTANDSTRAIGHT)) {
-              direction = Direction::LEFTANDSTRAIGHT;
-            } else if (m_cycles.at(streetId).contains(Direction::ANY)) {
-              direction = Direction::ANY;
-            }
-            break;
-          case Direction::UTURN:
-            if (m_cycles.at(streetId).contains(Direction::LEFT)) {
-              direction = Direction::LEFT;
-            } else if (m_cycles.at(streetId).contains(Direction::LEFTANDSTRAIGHT)) {
-              direction = Direction::LEFTANDSTRAIGHT;
-            } else if (m_cycles.at(streetId).contains(Direction::ANY)) {
-              direction = Direction::ANY;
-            }
-            break;
-          default:
-            spdlog::debug(
-                "Street {} has ...ANDSTRAIGHT phase but Traffic Light {} doesn't.",
-                streetId,
-                m_id);
-        }
-      }
-    }
-    if (!m_cycles.at(streetId).contains(direction)) {
+    if (m_phases.empty()) {
+      spdlog::trace("TrafficLight {}: no phases — returning m_allowFreeTurns={}.",
+                    m_id,
+                    m_allowFreeTurns);
       return m_allowFreeTurns;
     }
-    return m_cycles.at(streetId).at(direction).isGreen(m_cycleTime, m_counter);
+
+    auto const& activePhase = m_phases[m_currentPhaseIndex];
+    auto const streetIt = activePhase.greenSet().find(streetId);
+
+    if (streetIt == activePhase.greenSet().end()) {
+      // Street is not listed in this phase at all.
+      spdlog::trace(
+          "TrafficLight {}: street {} absent from phase {} — returning "
+          "m_allowFreeTurns={}.",
+          m_id,
+          streetId,
+          m_currentPhaseIndex,
+          m_allowFreeTurns);
+      return m_allowFreeTurns;
+    }
+
+    bool const green = m_resolveDirection(streetIt->second, direction);
+    spdlog::trace("TrafficLight {}: street {} dir {} → {}.",
+                  m_id,
+                  streetId,
+                  dsf::directionToString.at(direction),
+                  green ? "GREEN" : "RED");
+    return green;
   }
 
-  void TrafficLight::resetCycles() {
-    m_defaultCycles.empty() ? m_defaultCycles = m_cycles : m_cycles = m_defaultCycles;
+  // ══════════════════════════════════════════════════════════════════════════
+  // Timing helpers
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Delay TrafficLight::cycleTime() const {
+    return std::accumulate(
+        m_phases.cbegin(),
+        m_phases.cend(),
+        Delay{0},
+        [](Delay sum, TrafficLightPhase const& p) { return sum + p.duration(); });
   }
+
+  double TrafficLight::meanGreenTime(bool const priorityStreets) const {
+    // Collect the set of unique streets that appear in any phase.
+    std::unordered_set<Id> streets;
+    for (auto const& phase : m_phases)
+      for (auto const& [streetId, _] : phase.greenSet())
+        streets.insert(streetId);
+
+    double total{0.};
+    std::size_t count{0};
+
+    for (auto const streetId : streets) {
+      bool const isPriority = m_streetPriorities.contains(streetId);
+      if (isPriority != priorityStreets)
+        continue;
+
+      // Sum duration of every phase that has this street green.
+      for (auto const& phase : m_phases)
+        if (phase.containsStreet(streetId))
+          total += static_cast<double>(phase.duration());
+      ++count;
+    }
+
+    return (count > 0) ? (total / static_cast<double>(count)) : 0.;
+  }
+
+  bool TrafficLight::isDefault() const { return m_phases == m_defaultPhases; }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Green-wave helper
+  // ══════════════════════════════════════════════════════════════════════════
+
+  void TrafficLight::advanceBy(Delay offset) {
+    if (m_phases.empty() || offset == 0)
+      return;
+
+    auto const total = cycleTime();
+    if (total == 0)
+      return;
+    offset %= total;
+
+    // Walk forward phase-by-phase consuming `offset` ticks.
+    while (offset > 0) {
+      Delay const remaining = m_phases[m_currentPhaseIndex].duration() - m_counter;
+
+      if (offset < remaining) {
+        m_counter += offset;
+        break;
+      }
+      // Consume the rest of this phase and move to the next.
+      offset -= remaining;
+      m_counter = 0;
+      m_currentPhaseIndex = (m_currentPhaseIndex + 1) % m_phases.size();
+    }
+
+    spdlog::debug("TrafficLight {}: advanced by offset → phase {}, counter {}.",
+                  m_id,
+                  m_currentPhaseIndex,
+                  m_counter);
+  }
+
 }  // namespace dsf::mobility

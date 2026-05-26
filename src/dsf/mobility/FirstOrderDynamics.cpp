@@ -1303,10 +1303,12 @@ namespace dsf::mobility {
                 if (bUpdateData && pNode->isTrafficLight()) {
                   if (!m_queuesAtTrafficLights.contains(inEdgeId)) {
                     auto& tl = dynamic_cast<TrafficLight&>(*pNode);
-                    assert(!tl.cycles().empty());
-                    for (auto const& [id, pair] : tl.cycles()) {
-                      for (auto const& [direction, cycle] : pair) {
-                        m_queuesAtTrafficLights[id].emplace(direction, 0.);
+                    // Walk every phase and register each (street, direction) pair once.
+                    for (auto const& phase : tl.phases()) {
+                      for (auto const& [streetId, dirSet] : phase.greenSet()) {
+                        for (auto const dir : dirSet) {
+                          m_queuesAtTrafficLights[streetId].emplace(dir, 0.);
+                        }
                       }
                     }
                   }
@@ -1422,379 +1424,117 @@ namespace dsf::mobility {
 
   void FirstOrderDynamics::m_trafficlightSingleTailOptimizer(
       double const& beta, std::optional<std::ofstream>& logStream) {
-    assert(beta >= 0. && beta <= 1.);
     if (logStream.has_value()) {
       *logStream << std::format(
-          "Init Traffic Lights optimization (SINGLE TAIL) - Time {} - Alpha {}\n",
+          "Init Traffic Lights optimisation (SINGLE TAIL) — time {} — beta {:.2f}\n",
           this->time_step(),
           beta);
     }
+
     for (auto const& [nodeId, pNode] : this->graph().nodes()) {
-      if (!pNode->isTrafficLight()) {
+      if (!pNode->isTrafficLight())
+        continue;
+      auto& tl = dynamic_cast<TrafficLight&>(*pNode);
+      if (tl.phases().empty())
+        continue;
+
+      auto const nPhases = tl.phases().size();
+      auto const currentCycle = tl.cycleTime();
+      if (currentCycle == 0)
+        continue;
+
+      // ── Step 1: compute demand per phase ───────────────────────────────
+      // Demand for phase i = sum of queue lengths of every (street, dir)
+      // pair that appears in that phase's green set.
+      std::vector<double> demand(nPhases, 0.);
+      for (std::size_t i = 0; i < nPhases; ++i) {
+        for (auto const& [streetId, dirSet] : tl.phases()[i].greenSet()) {
+          auto const queueIt = m_queuesAtTrafficLights.find(streetId);
+          if (queueIt == m_queuesAtTrafficLights.end())
+            continue;
+          for (auto const& [dir, count] : queueIt->second) {
+            if (dirSet.contains(dir) || dirSet.contains(Direction::ANY)) {
+              demand[i] += count;
+            }
+          }
+        }
+      }
+
+      double const totalDemand = std::accumulate(demand.cbegin(), demand.cend(), 0.);
+      if (totalDemand == 0.) {
+        spdlog::debug("TrafficLight {}: no queue data — skipping optimisation.", nodeId);
         continue;
       }
-      auto& tl = dynamic_cast<TrafficLight&>(*pNode);
 
-      auto const& inNeighbours{pNode->ingoingEdges()};
+      // ── Step 2: normalise demand → demand ratio per phase ──────────────
+      std::vector<double> demandRatio(nPhases);
+      for (std::size_t i = 0; i < nPhases; ++i)
+        demandRatio[i] = demand[i] / totalDemand;
 
-      // Default is RIGHTANDSTRAIGHT - LEFT phases for both priority and non-priority
-      std::array<double, 2> inputPrioritySum{0., 0.}, inputNonPrioritySum{0., 0.};
-      bool isPrioritySinglePhase{false}, isNonPrioritySinglePhase{false};
+      // ── Step 3: baseline duration ratio (from stored defaults) ─────────
+      // The optimiser always blends against the originally configured timing
+      // so that repeated optimisation calls do not drift away from the
+      // designed baseline.
+      auto const& defaults = tl.defaultPhases();
+      double const defaultCycle = static_cast<double>(std::accumulate(
+          defaults.cbegin(),
+          defaults.cend(),
+          Delay{0},
+          [](Delay s, TrafficLightPhase const& p) { return s + p.duration(); }));
 
-      for (const auto& streetId : inNeighbours) {
-        if (tl.cycles().at(streetId).contains(Direction::ANY)) {
-          tl.streetPriorities().contains(streetId) ? isPrioritySinglePhase = true
-                                                   : isNonPrioritySinglePhase = true;
-        }
+      std::vector<double> baseRatio(nPhases);
+      for (std::size_t i = 0; i < nPhases; ++i)
+        baseRatio[i] = (defaultCycle > 0.)
+                           ? static_cast<double>(defaults[i].duration()) / defaultCycle
+                           : 1. / static_cast<double>(nPhases);
+
+      // ── Step 4: blend ──────────────────────────────────────────────────
+      //   targetRatio[i] = beta * demand[i] + (1 - beta) * base[i]
+      std::vector<double> targetRatio(nPhases);
+      for (std::size_t i = 0; i < nPhases; ++i)
+        targetRatio[i] = beta * demandRatio[i] + (1. - beta) * baseRatio[i];
+
+      // ── Step 5: convert to integer durations summing to currentCycle ───
+      std::vector<Delay> newDurations(nPhases);
+      std::vector<double> fractionals(nPhases);
+      Delay allocatedTotal{0};
+
+      for (std::size_t i = 0; i < nPhases; ++i) {
+        double const exact = targetRatio[i] * static_cast<double>(currentCycle);
+        newDurations[i] = static_cast<Delay>(std::floor(exact));
+        fractionals[i] = exact - static_cast<double>(newDurations[i]);
+        allocatedTotal += newDurations[i];
       }
-      if (isPrioritySinglePhase && logStream.has_value()) {
-        *logStream << "\tFound a single phase for priority streets.\n";
-      }
-      if (isNonPrioritySinglePhase && logStream.has_value()) {
-        *logStream << "\tFound a single phase for non-priority streets.\n";
-      }
 
-      for (const auto& streetId : inNeighbours) {
-        for (auto const& [direction, tail] : m_queuesAtTrafficLights.at(streetId)) {
-          if (tl.streetPriorities().contains(streetId)) {
-            if (isPrioritySinglePhase) {
-              inputPrioritySum[0] += tail;
-            } else {
-              if (direction == Direction::LEFT ||
-                  direction == Direction::LEFTANDSTRAIGHT) {
-                inputPrioritySum[1] += tail;
-              } else {
-                inputPrioritySum[0] += tail;
-              }
-            }
-          } else {
-            if (isNonPrioritySinglePhase) {
-              inputNonPrioritySum[0] += tail;
-            } else {
-              if (direction == Direction::LEFT ||
-                  direction == Direction::LEFTANDSTRAIGHT) {
-                inputNonPrioritySum[1] += tail;
-              } else {
-                inputNonPrioritySum[0] += tail;
-              }
-            }
-          }
-        }
-      }
-      {
-        // Sum normalization
-        auto const sum{inputPrioritySum[0] + inputPrioritySum[1] +
-                       inputNonPrioritySum[0] + inputNonPrioritySum[1]};
-        if (sum == 0.) {
-          continue;
-        }
-        inputPrioritySum[0] /= sum;
-        inputPrioritySum[1] /= sum;
-        inputNonPrioritySum[0] /= sum;
-        inputNonPrioritySum[1] /= sum;
+      // Distribute remaining ticks to phases with the largest fractional parts.
+      Delay remainder = currentCycle - allocatedTotal;
+      std::vector<std::size_t> order(nPhases);
+      std::iota(order.begin(), order.end(), 0u);
+      std::sort(order.begin(), order.end(), [&](auto a, auto b) {
+        return fractionals[a] > fractionals[b];
+      });
+      for (Delay r = 0; r < remainder; ++r)
+        ++newDurations[order[r % nPhases]];
 
-        // int const cycleTime{(1. - alpha) * tl.cycleTime()};
+      // Guarantee every phase gets at least 1 tick (prevents degenerate phases).
+      for (auto& d : newDurations)
+        d = std::max(d, Delay{1});
 
-        inputPrioritySum[0] *= beta;
-        inputPrioritySum[1] *= beta;
-        inputNonPrioritySum[0] *= beta;
-        inputNonPrioritySum[1] *= beta;
-      }
+      // ── Step 6: apply durations in-place ───────────────────────────────
+      for (std::size_t i = 0; i < nPhases; ++i)
+        tl.phase(i).setDuration(newDurations[i]);
 
       if (logStream.has_value()) {
-        *logStream << std::format(
-            "\tInput cycle queue ratios are {:.2f} {:.2f} - {:.2f} {:.2f}\n",
-            inputPrioritySum[0],
-            inputPrioritySum[1],
-            inputNonPrioritySum[0],
-            inputNonPrioritySum[1]);
+        *logStream << std::format("\nNew phases for {}", tl);
       }
-
-      tl.resetCycles();
-      auto cycles{tl.cycles()};
-      std::array<int, 4> n{0, 0, 0, 0};
-      std::array<double, 4> greenTimes{0., 0., 0., 0.};
-
-      for (auto const& [streetId, pair] : cycles) {
-        for (auto const& [direction, cycle] : pair) {
-          if (tl.streetPriorities().contains(streetId)) {
-            if (isPrioritySinglePhase) {
-              greenTimes[0] += cycle.greenTime();
-              ++n[0];
-            } else {
-              if (direction == Direction::LEFT ||
-                  direction == Direction::LEFTANDSTRAIGHT) {
-                greenTimes[1] += cycle.greenTime();
-                ++n[1];
-              } else {
-                greenTimes[0] += cycle.greenTime();
-                ++n[0];
-              }
-            }
-          } else {
-            if (isNonPrioritySinglePhase) {
-              greenTimes[2] += cycle.greenTime();
-              ++n[2];
-            } else {
-              if (direction == Direction::LEFT ||
-                  direction == Direction::LEFTANDSTRAIGHT) {
-                greenTimes[3] += cycle.greenTime();
-                ++n[3];
-              } else {
-                greenTimes[2] += cycle.greenTime();
-                ++n[2];
-              }
-            }
-          }
-        }
-      }
-
-      if (logStream.has_value()) {
-        *logStream << std::format("\tGreen times are {} {} - {} {}\n",
-                                  greenTimes[0],
-                                  greenTimes[1],
-                                  greenTimes[2],
-                                  greenTimes[3]);
-      }
-
-      for (auto i{0}; i < 4; ++i) {
-        if (n[i] > 1) {
-          greenTimes[i] /= n[i];
-        }
-      }
-
-      {
-        auto sum{0.};
-        for (auto const& greenTime : greenTimes) {
-          sum += greenTime;
-        }
-        if (sum == 0.) {
-          continue;
-        }
-        for (auto& greenTime : greenTimes) {
-          greenTime /= sum;
-        }
-      }
-      for (auto& el : greenTimes) {
-        el *= (1. - beta);
-      }
-
-      int inputPriorityR{static_cast<int>(
-          std::floor((inputPrioritySum[0] + greenTimes[0]) * tl.cycleTime()))};
-      int inputPriorityS{inputPriorityR};
-      int inputPriorityL{static_cast<int>(
-          std::floor((inputPrioritySum[1] + greenTimes[1]) * tl.cycleTime()))};
-
-      int inputNonPriorityR{static_cast<int>(
-          std::floor((inputNonPrioritySum[0] + greenTimes[2]) * tl.cycleTime()))};
-      int inputNonPriorityS{inputNonPriorityR};
-      int inputNonPriorityL{static_cast<int>(
-          std::floor((inputNonPrioritySum[1] + greenTimes[3]) * tl.cycleTime()))};
-
-      {
-        // Adjust phases to have the sum equal to the cycle time
-        // To do this, first add seconds to the priority streets, then to the
-        // non-priority streets
-        auto total{static_cast<Delay>(inputPriorityR + inputPriorityL +
-                                      inputNonPriorityR + inputNonPriorityL)};
-        size_t idx{0};
-        while (total < tl.cycleTime()) {
-          switch (idx % 4) {
-            case 0:
-              ++inputPriorityR;
-              ++inputPriorityS;
-              break;
-            case 1:
-              ++inputPriorityL;
-              break;
-            case 2:
-              ++inputNonPriorityR;
-              ++inputNonPriorityS;
-              break;
-            case 3:
-              ++inputNonPriorityL;
-              break;
-          }
-          ++idx;
-          ++total;
-        }
-      }
-
-      if (isPrioritySinglePhase) {
-        inputPriorityR = 0;
-        inputPriorityL = 0;
-      }
-      if (isNonPrioritySinglePhase) {
-        inputNonPriorityR = 0;
-        inputNonPriorityL = 0;
-      }
-
-      // Logger::info(std::format(
-      //     "Cycle time: {} - Current sum: {}",
-      //     tl.cycleTime(),
-      //     inputPriorityRS + inputPriorityL + inputNonPriorityRS + inputNonPriorityL));
-      assert(inputPriorityS + inputPriorityL + inputNonPriorityS + inputNonPriorityL ==
-             tl.cycleTime());
-
-      std::unordered_map<Direction, TrafficLightCycle> priorityCycles;
-      priorityCycles.emplace(Direction::RIGHT,
-                             TrafficLightCycle{static_cast<Delay>(inputPriorityR), 0});
-      priorityCycles.emplace(Direction::STRAIGHT,
-                             TrafficLightCycle{static_cast<Delay>(inputPriorityS), 0});
-      priorityCycles.emplace(Direction::RIGHTANDSTRAIGHT,
-                             TrafficLightCycle{static_cast<Delay>(inputPriorityS), 0});
-      priorityCycles.emplace(
-          Direction::ANY,
-          TrafficLightCycle{static_cast<Delay>(inputPriorityS + inputPriorityL), 0});
-      priorityCycles.emplace(Direction::LEFT,
-                             TrafficLightCycle{static_cast<Delay>(inputPriorityL),
-                                               static_cast<Delay>(inputPriorityS)});
-
-      std::unordered_map<Direction, TrafficLightCycle> nonPriorityCycles;
-      nonPriorityCycles.emplace(
-          Direction::RIGHT,
-          TrafficLightCycle{static_cast<Delay>(inputNonPriorityR),
-                            static_cast<Delay>(inputPriorityS + inputPriorityL)});
-      nonPriorityCycles.emplace(
-          Direction::STRAIGHT,
-          TrafficLightCycle{static_cast<Delay>(inputNonPriorityS),
-                            static_cast<Delay>(inputPriorityS + inputPriorityL)});
-      nonPriorityCycles.emplace(
-          Direction::RIGHTANDSTRAIGHT,
-          TrafficLightCycle{static_cast<Delay>(inputNonPriorityS),
-                            static_cast<Delay>(inputPriorityS + inputPriorityL)});
-      nonPriorityCycles.emplace(
-          Direction::ANY,
-          TrafficLightCycle{static_cast<Delay>(inputNonPriorityS + inputNonPriorityL),
-                            static_cast<Delay>(inputPriorityS + inputPriorityL)});
-      nonPriorityCycles.emplace(
-          Direction::LEFT,
-          TrafficLightCycle{
-              static_cast<Delay>(inputNonPriorityL),
-              static_cast<Delay>(inputPriorityS + inputPriorityL + inputNonPriorityS)});
-      nonPriorityCycles.emplace(
-          Direction::LEFTANDSTRAIGHT,
-          TrafficLightCycle{
-              static_cast<Delay>(inputNonPriorityL + inputNonPriorityS),
-              static_cast<Delay>(inputPriorityS + inputPriorityL + inputNonPriorityR)});
-
-      std::vector<Id> streetIds;
-      std::set<Id> forbiddenLeft;
-
-      for (auto const& pair : cycles) {
-        streetIds.push_back(pair.first);
-      }
-      for (auto const streetId : streetIds) {
-        auto* pStreet{&this->graph().edge(streetId)};
-        if (tl.streetPriorities().contains(streetId)) {
-          for (auto& [dir, cycle] : cycles.at(streetId)) {
-            if (isPrioritySinglePhase) {
-              cycle = priorityCycles.at(Direction::STRAIGHT);
-            } else {
-              cycle = priorityCycles.at(dir);
-            }
-          }
-          if (cycles.at(streetId).contains(Direction::RIGHT) &&
-              cycles.at(streetId).contains(Direction::STRAIGHT)) {
-            TrafficLightCycle freecycle{
-                static_cast<Delay>(inputPriorityS + inputPriorityL), 0};
-            // Logger::info(std::format("Free cycle (RIGHT) for {} -> {}: {} {}",
-            //                          pStreet->source(),
-            //                          pStreet->target(),
-            //                          freecycle.greenTime(),
-            //                          freecycle.phase()));
-            cycles.at(streetId).at(Direction::RIGHT) = freecycle;
-          }
-        } else {
-          for (auto& [dir, cycle] : cycles.at(streetId)) {
-            if (isNonPrioritySinglePhase) {
-              cycle = nonPriorityCycles.at(Direction::STRAIGHT);
-            } else {
-              cycle = nonPriorityCycles.at(dir);
-            }
-          }
-          if (cycles.at(streetId).contains(Direction::RIGHT) &&
-              cycles.at(streetId).contains(Direction::STRAIGHT)) {
-            TrafficLightCycle freecycle{
-                static_cast<Delay>(inputNonPriorityS + inputNonPriorityL),
-                static_cast<Delay>(inputPriorityS + inputPriorityL)};
-            // Logger::info(std::format("Free cycle (RIGHT) for {} -> {}: {} {}",
-            //                          pStreet->source(),
-            //                          pStreet->target(),
-            //                          freecycle.greenTime(),
-            //                          freecycle.phase()));
-            cycles.at(streetId).at(Direction::RIGHT) = freecycle;
-          }
-        }
-        bool found{false};
-        for (auto const dir : pStreet->laneMapping()) {
-          if (dir == Direction::LEFT || dir == Direction::LEFTANDSTRAIGHT ||
-              dir == Direction::ANY) {
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          forbiddenLeft.insert(streetId);
-          // Logger::info(std::format("Street {} -> {} has forbidden left turn.",
-          //                          pStreet->source(),
-          //                          pStreet->target()));
-        }
-      }
-      for (auto const forbiddenLeftStreetId : forbiddenLeft) {
-        for (auto const streetId : streetIds) {
-          if (streetId == forbiddenLeftStreetId) {
-            continue;
-          }
-          if (tl.streetPriorities().contains(streetId) &&
-              tl.streetPriorities().contains(forbiddenLeftStreetId)) {
-            TrafficLightCycle freecycle{
-                static_cast<Delay>(inputPriorityS + inputPriorityL), 0};
-            for (auto& [direction, cycle] : cycles.at(streetId)) {
-              if (direction == Direction::RIGHT || direction == Direction::STRAIGHT ||
-                  direction == Direction::RIGHTANDSTRAIGHT) {
-                auto* pStreet{&this->graph().edge(streetId)};
-                if (logStream.has_value()) {
-                  *logStream << std::format("\tFree cycle for {} -> {}: dir {} - {}\n",
-                                            pStreet->source(),
-                                            pStreet->target(),
-                                            directionToString[direction],
-                                            freecycle);
-                }
-                cycle = freecycle;
-              }
-            }
-          } else if (!tl.streetPriorities().contains(streetId) &&
-                     !tl.streetPriorities().contains(forbiddenLeftStreetId)) {
-            TrafficLightCycle freecycle{
-                static_cast<Delay>(inputNonPriorityS + inputNonPriorityL),
-                static_cast<Delay>(inputPriorityS + inputPriorityL)};
-            for (auto& [direction, cycle] : cycles.at(streetId)) {
-              if (direction == Direction::RIGHT || direction == Direction::STRAIGHT ||
-                  direction == Direction::RIGHTANDSTRAIGHT) {
-                auto* pStreet{&this->graph().edge(streetId)};
-                if (logStream.has_value()) {
-                  *logStream << std::format("Free cycle ({}) for {} -> {}: {} {}\n",
-                                            directionToString[direction],
-                                            pStreet->source(),
-                                            pStreet->target(),
-                                            freecycle.greenTime(),
-                                            freecycle.phase());
-                }
-                cycle = freecycle;
-              }
-            }
-          }
-        }
-      }
-
-      tl.setCycles(cycles);
-      if (logStream.has_value()) {
-        *logStream << std::format("\nNew cycles for {}", tl);
-      }
+      spdlog::debug("TrafficLight {}: optimised {} phases (cycle={} ticks).",
+                    nodeId,
+                    nPhases,
+                    currentCycle);
     }
+
     if (logStream.has_value()) {
-      *logStream << std::format("End Traffic Lights optimization - Time {}\n",
+      *logStream << std::format("End Traffic Lights optimisation — time {}\n",
                                 this->time_step());
     }
   }
@@ -1857,8 +1597,9 @@ namespace dsf::mobility {
           }
           // Try to green-wave the situation
           auto& tl{dynamic_cast<TrafficLight&>(this->graph().node(sourceId))};
-          tl.increasePhases(pStreet->length() /
-                            (pStreet->maxSpeed() * (1. - 0.6 * pStreet->density(true))));
+          auto const travelTimeTicks =
+              static_cast<Delay>(std::round(pStreet->estimatedTravelTime()));
+          tl.advanceBy(travelTimeTicks);
           optimizedNodes.insert(sourceId);
           if (logStream.has_value()) {
             *logStream << std::format("\nNew cycles for {}", tl);
