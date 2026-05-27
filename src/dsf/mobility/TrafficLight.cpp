@@ -9,13 +9,8 @@
 
 namespace dsf::mobility {
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Static members
-  // ══════════════════════════════════════════════════════════════════════════
-
   bool TrafficLight::m_allowFreeTurns{true};
-
-  void TrafficLight::setAllowFreeTurns(bool allow) { m_allowFreeTurns = allow; }
+  void TrafficLight::setAllowFreeTurns(bool const allow) { m_allowFreeTurns = allow; }
 
   // ══════════════════════════════════════════════════════════════════════════
   // Direction-fallback ladder (private, static)
@@ -55,10 +50,6 @@ namespace dsf::mobility {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // State-machine advance
-  // ══════════════════════════════════════════════════════════════════════════
-
   TrafficLight& TrafficLight::operator++() {
     if (m_phases.empty())
       return *this;
@@ -71,10 +62,6 @@ namespace dsf::mobility {
     return *this;
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Phase management
-  // ══════════════════════════════════════════════════════════════════════════
-
   void TrafficLight::addPhase(TrafficLightPhase phase) {
     m_phases.push_back(phase);
     m_defaultPhases.push_back(std::move(phase));
@@ -82,14 +69,12 @@ namespace dsf::mobility {
     m_currentPhaseIndex = 0;
     m_counter = 0;
   }
-
   void TrafficLight::setPhases(std::vector<TrafficLightPhase> phases) {
     m_phases = phases;
     m_defaultPhases = std::move(phases);
     m_currentPhaseIndex = 0;
     m_counter = 0;
   }
-
   void TrafficLight::clearPhases() {
     m_phases.clear();
     m_defaultPhases.clear();
@@ -98,16 +83,11 @@ namespace dsf::mobility {
     m_counter = 0;
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Reset API
-  // ══════════════════════════════════════════════════════════════════════════
-
   void TrafficLight::snapshot() {
     m_snapshot = m_phases;
     spdlog::debug(
         "TrafficLight {}: snapshot saved ({} phases).", m_id, m_snapshot.size());
   }
-
   void TrafficLight::restore() {
     if (m_snapshot.empty()) {
       spdlog::warn("TrafficLight {}: restore() called but no snapshot exists — ignoring.",
@@ -120,7 +100,6 @@ namespace dsf::mobility {
     spdlog::debug(
         "TrafficLight {}: restored to snapshot ({} phases).", m_id, m_phases.size());
   }
-
   void TrafficLight::reset() {
     m_phases = m_defaultPhases;
     m_currentPhaseIndex = 0;
@@ -129,11 +108,7 @@ namespace dsf::mobility {
         "TrafficLight {}: reset to defaults ({} phases).", m_id, m_phases.size());
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Core query
-  // ══════════════════════════════════════════════════════════════════════════
-
-  bool TrafficLight::isGreen(Id const streetId, Direction direction) const {
+  bool TrafficLight::isGreen(Id const streetId, Direction const direction) const {
     if (m_phases.empty()) {
       spdlog::trace("TrafficLight {}: no phases — returning m_allowFreeTurns={}.",
                     m_id,
@@ -165,10 +140,6 @@ namespace dsf::mobility {
     return green;
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Timing helpers
-  // ══════════════════════════════════════════════════════════════════════════
-
   Delay TrafficLight::cycleTime() const {
     return std::accumulate(
         m_phases.cbegin(),
@@ -180,22 +151,27 @@ namespace dsf::mobility {
   double TrafficLight::meanGreenTime(bool const priorityStreets) const {
     // Collect the set of unique streets that appear in any phase.
     std::unordered_set<Id> streets;
-    for (auto const& phase : m_phases)
-      for (auto const& [streetId, _] : phase.greenSet())
-        streets.insert(streetId);
+    for (auto const& phase : m_phases) {
+      for (auto const& [streetId, _] : phase.greenSet()) {
+        streets.emplace(streetId);
+      }
+    }
 
     double total{0.};
     std::size_t count{0};
 
     for (auto const streetId : streets) {
       bool const isPriority = m_streetPriorities.contains(streetId);
-      if (isPriority != priorityStreets)
+      if (isPriority != priorityStreets) {
         continue;
+      }
 
       // Sum duration of every phase that has this street green.
-      for (auto const& phase : m_phases)
-        if (phase.containsStreet(streetId))
+      for (auto const& phase : m_phases) {
+        if (phase.containsStreet(streetId)) {
           total += static_cast<double>(phase.duration());
+        }
+      }
       ++count;
     }
 
@@ -204,13 +180,10 @@ namespace dsf::mobility {
 
   bool TrafficLight::isDefault() const { return m_phases == m_defaultPhases; }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Green-wave helper
-  // ══════════════════════════════════════════════════════════════════════════
-
   void TrafficLight::advanceBy(Delay offset) {
-    if (m_phases.empty() || offset == 0)
+    if (m_phases.empty() || offset == 0) {
       return;
+    }
 
     auto const total = cycleTime();
     if (total == 0)
@@ -219,7 +192,7 @@ namespace dsf::mobility {
 
     // Walk forward phase-by-phase consuming `offset` ticks.
     while (offset > 0) {
-      Delay const remaining = m_phases[m_currentPhaseIndex].duration() - m_counter;
+      auto const remaining = m_phases[m_currentPhaseIndex].duration() - m_counter;
 
       if (offset < remaining) {
         m_counter += offset;
