@@ -53,22 +53,27 @@ int main() {
   Street s12{7, std::make_pair(1, 2), 118., 13.9, 2};
   Street s23{13, std::make_pair(2, 3), 222., 13.9, 2};
   Street s34{19, std::make_pair(3, 4), 651., 13.9, 2};
+  TrafficLight::setAllowFreeTurns(false);
   // Viale Aldo Moro
-  graph.addNode<TrafficLight>(1, 132);
+  graph.addNode<TrafficLight>(1);
   auto& tl1 = graph.node<TrafficLight>(1);
-  tl1.setCycle(s01.id(), dsf::Direction::ANY, {62, 0});
+  tl1.addPhase(TrafficLightPhase{62, {{s01.id(), {dsf::Direction::ANY}}}});
+  tl1.addPhase(TrafficLightPhase{70});
   // Via Donato Creti
-  graph.addNode<TrafficLight>(2, 141);
+  graph.addNode<TrafficLight>(2);
   auto& tl2 = graph.node<TrafficLight>(2);
-  tl2.setCycle(s12.id(), dsf::Direction::ANY, {72, 0});
+  tl2.addPhase(TrafficLightPhase{72, {{s12.id(), {dsf::Direction::ANY}}}});
+  tl2.addPhase(TrafficLightPhase{69});
   // Via del Lavoro
-  graph.addNode<TrafficLight>(3, 138);
+  graph.addNode<TrafficLight>(3);
   auto& tl3 = graph.node<TrafficLight>(3);
-  tl3.setCycle(s23.id(), dsf::Direction::ANY, {88, 0});
+  tl3.addPhase(TrafficLightPhase{88, {{s23.id(), {dsf::Direction::ANY}}}});
+  tl3.addPhase(TrafficLightPhase{50});
   // Viali
-  graph.addNode<TrafficLight>(4, 131);
+  graph.addNode<TrafficLight>(4);
   auto& tl4 = graph.node<TrafficLight>(4);
-  tl4.setCycle(s34.id(), dsf::Direction::ANY, {81, 0});
+  tl4.addPhase(TrafficLightPhase{81, {{s34.id(), {dsf::Direction::ANY}}}});
+  tl4.addPhase(TrafficLightPhase{50});
 
   graph.addStreets(s01, s12, s23, s34);
   graph.adjustNodeCapacities();

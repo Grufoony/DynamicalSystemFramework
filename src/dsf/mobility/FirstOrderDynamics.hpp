@@ -151,7 +151,7 @@ namespace dsf::mobility {
     /// and increments all travel times.
     void m_evolveAgents();
 
-    void m_trafficlightSingleTailOptimizer(double const& beta,
+    void m_trafficlightSingleTailOptimizer(double const beta,
                                            std::optional<std::ofstream>& logStream);
 
   public:

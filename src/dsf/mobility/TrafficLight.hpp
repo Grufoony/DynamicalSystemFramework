@@ -39,6 +39,7 @@
 
 #include <format>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -128,7 +129,7 @@ namespace dsf::mobility {
   private:
     std::vector<TrafficLightPhase> m_phases;         // Live phase sequence.
     std::vector<TrafficLightPhase> m_defaultPhases;  // Set by setPhases/addPhase.
-    std::vector<TrafficLightPhase> m_snapshot;       // Saved by snapshot().
+    std::optional<std::vector<TrafficLightPhase>> m_snapshot;  // Saved by snapshot().
 
     std::size_t m_currentPhaseIndex{0};
     Delay m_counter{0};  // Ticks elapsed within the current phase.

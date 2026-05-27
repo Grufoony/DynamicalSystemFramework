@@ -1423,7 +1423,11 @@ namespace dsf::mobility {
   }
 
   void FirstOrderDynamics::m_trafficlightSingleTailOptimizer(
-      double const& beta, std::optional<std::ofstream>& logStream) {
+      double const beta, std::optional<std::ofstream>& logStream) {
+    if (beta < 0. || beta > 1.) {
+      throw std::invalid_argument(
+          std::format("The beta parameter ({}) must be in [0, 1]", beta));
+    }
     if (logStream.has_value()) {
       *logStream << std::format(
           "Init Traffic Lights optimisation (SINGLE TAIL) — time {} — beta {:.2f}\n",
@@ -1516,9 +1520,33 @@ namespace dsf::mobility {
       for (Delay r = 0; r < remainder; ++r)
         ++newDurations[order[r % nPhases]];
 
-      // Guarantee every phase gets at least 1 tick (prevents degenerate phases).
-      for (auto& d : newDurations)
-        d = std::max(d, Delay{1});
+      // Guarantee every phase gets at least 1 tick when feasible, while
+      // preserving the invariant that the total duration equals currentCycle.
+      if (currentCycle >= static_cast<Delay>(nPhases)) {
+        Delay extraTicksNeeded{0};
+        for (auto& d : newDurations) {
+          if (d < Delay{1}) {
+            d = Delay{1};
+            ++extraTicksNeeded;
+          }
+        }
+        if (extraTicksNeeded > 0) {
+          std::vector<std::size_t> donors(nPhases);
+          std::iota(donors.begin(), donors.end(), 0u);
+          std::sort(donors.begin(), donors.end(), [&](auto a, auto b) {
+            return newDurations[a] > newDurations[b];
+          });
+          for (auto idx : donors) {
+            while (extraTicksNeeded > 0 && newDurations[idx] > Delay{1}) {
+              --newDurations[idx];
+              --extraTicksNeeded;
+            }
+            if (extraTicksNeeded == 0) {
+              break;
+            }
+          }
+        }
+      }
 
       // ── Step 6: apply durations in-place ───────────────────────────────
       for (std::size_t i = 0; i < nPhases; ++i)

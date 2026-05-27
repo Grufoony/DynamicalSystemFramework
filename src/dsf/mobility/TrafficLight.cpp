@@ -63,6 +63,10 @@ namespace dsf::mobility {
   }
 
   void TrafficLight::addPhase(TrafficLightPhase phase) {
+    if (phase.duration() == 0) {
+      throw std::invalid_argument(
+          std::format("TrafficLight {}: cannot add phase with zero duration.", m_id));
+    }
     m_phases.push_back(phase);
     m_defaultPhases.push_back(std::move(phase));
     // Reset state machine so the index cannot go stale.
@@ -70,6 +74,12 @@ namespace dsf::mobility {
     m_counter = 0;
   }
   void TrafficLight::setPhases(std::vector<TrafficLightPhase> phases) {
+    for (auto const& phase : phases) {
+      if (phase.duration() == 0) {
+        throw std::invalid_argument(
+            std::format("TrafficLight {}: cannot add phase with zero duration.", m_id));
+      }
+    }
     m_phases = phases;
     m_defaultPhases = std::move(phases);
     m_currentPhaseIndex = 0;
@@ -78,7 +88,7 @@ namespace dsf::mobility {
   void TrafficLight::clearPhases() {
     m_phases.clear();
     m_defaultPhases.clear();
-    m_snapshot.clear();
+    m_snapshot.reset();
     m_currentPhaseIndex = 0;
     m_counter = 0;
   }
@@ -86,15 +96,15 @@ namespace dsf::mobility {
   void TrafficLight::snapshot() {
     m_snapshot = m_phases;
     spdlog::debug(
-        "TrafficLight {}: snapshot saved ({} phases).", m_id, m_snapshot.size());
+        "TrafficLight {}: snapshot saved ({} phases).", m_id, m_snapshot->size());
   }
   void TrafficLight::restore() {
-    if (m_snapshot.empty()) {
+    if (!m_snapshot.has_value()) {
       spdlog::warn("TrafficLight {}: restore() called but no snapshot exists — ignoring.",
                    m_id);
       return;
     }
-    m_phases = m_snapshot;
+    m_phases = *m_snapshot;
     m_currentPhaseIndex = 0;
     m_counter = 0;
     spdlog::debug(

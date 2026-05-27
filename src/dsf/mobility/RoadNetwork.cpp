@@ -1022,7 +1022,6 @@ namespace dsf::mobility {
       Delay greenTime;
     };
     std::unordered_map<Id, std::vector<TLEntry>> entriesPerNode;
-    std::unordered_map<Id, geometry::Point> nodeGeometries;
 
     std::string line;
     std::getline(file, line);  // skip header

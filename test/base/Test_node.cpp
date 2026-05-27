@@ -229,6 +229,25 @@ TEST_CASE("TrafficLight") {
       }
     }
   }
+  SUBCASE("Snapshot restore") {
+    GIVEN("A traffic light with an empty phase list") {
+      TrafficLight tl{0, dsf::geometry::Point{0., 0.}};
+      tl.snapshot();
+
+      WHEN("A phase is added after the snapshot") {
+        tl.addPhase(TrafficLightPhase{60});
+        CHECK_EQ(tl.phases().size(), 1);
+
+        WHEN("The snapshot is restored") {
+          tl.restore();
+          THEN("The empty phase list is restored") {
+            CHECK(tl.phases().empty());
+            CHECK_EQ(tl.cycleTime(), 0);
+          }
+        }
+      }
+    }
+  }
   // SUBCASE("Phase") {
   //   /// This tests the phase.
   //   /// GIVEN: A TrafficLight
