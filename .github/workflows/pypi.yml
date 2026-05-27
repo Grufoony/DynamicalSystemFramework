@@ -81,7 +81,7 @@ jobs:
           path: |
             ~/vcpkg
             C:\vcpkg
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'CMakeLists.txt', '.github/workflows/pypi.yml') }}
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4.1
