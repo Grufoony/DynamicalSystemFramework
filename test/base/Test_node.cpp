@@ -163,9 +163,12 @@ TEST_CASE("Intersection") {
 }
 
 TEST_CASE("TrafficLight") {
+  using TrafficLightPhase = dsf::mobility::TrafficLightPhase;
+
   SUBCASE("Constructor") {
     GIVEN("A traffic light object") {
-      TrafficLight tl{0, 60};
+      TrafficLight tl{0, dsf::geometry::Point{0., 0.}};
+      tl.addPhase(TrafficLightPhase{60});
       THEN("The traffic light is created with the correct id and cycle time") {
         CHECK_EQ(tl.id(), 0);
         CHECK_EQ(tl.cycleTime(), 60);
@@ -174,7 +177,8 @@ TEST_CASE("TrafficLight") {
     GIVEN("A node object") {
       Intersection intersection(0, dsf::geometry::Point{1., 2.});
       WHEN("The node is converted to a traffic light") {
-        TrafficLight tl(intersection, 60);
+        TrafficLight tl(intersection);
+        tl.addPhase(TrafficLightPhase{60});
         THEN("The traffic light is created with correct parameters") {
           CHECK_EQ(tl.id(), 0);
           CHECK_EQ(tl.cycleTime(), 60);
@@ -187,49 +191,40 @@ TEST_CASE("TrafficLight") {
   }
   SUBCASE("Light cycle") {
     TrafficLight::setAllowFreeTurns(true);
-    GIVEN("A traffic light object with a cycle set") {
-      TrafficLight tl{0, 2};
-      tl.setCycle(0, dsf::Direction::LEFT, {1, 0});
+    GIVEN("A traffic light object with two phases") {
+      TrafficLight tl{0, dsf::geometry::Point{0., 0.}};
+
+      TrafficLightPhase phase0{1};
+      phase0.addGreen(0, dsf::Direction::RIGHT);
+      phase0.addGreen(0, dsf::Direction::STRAIGHT);
+
+      TrafficLightPhase phase1{1};
+      phase1.addGreen(0);
+
+      tl.addPhase(phase0);
+      tl.addPhase(phase1);
+
+      THEN("The first phase resolves only right and straight movements") {
+        CHECK(tl.isGreen(0, dsf::Direction::RIGHT));
+        CHECK(tl.isGreen(0, dsf::Direction::STRAIGHT));
+        CHECK_FALSE(tl.isGreen(0, dsf::Direction::LEFT));
+        CHECK_FALSE(tl.isGreen(0, dsf::Direction::UTURN));
+      }
+
       WHEN("We increase counter") {
         ++tl;
-        THEN("The traffic light is green for all except Left and U turns") {
+        THEN("The second phase makes all movements green") {
+          CHECK(tl.isGreen(0, dsf::Direction::RIGHT));
+          CHECK(tl.isGreen(0, dsf::Direction::STRAIGHT));
+          CHECK(tl.isGreen(0, dsf::Direction::LEFT));
+          CHECK(tl.isGreen(0, dsf::Direction::UTURN));
+        }
+        ++tl;
+        THEN("The cycle wraps back to the first phase") {
           CHECK(tl.isGreen(0, dsf::Direction::RIGHT));
           CHECK(tl.isGreen(0, dsf::Direction::STRAIGHT));
           CHECK_FALSE(tl.isGreen(0, dsf::Direction::LEFT));
           CHECK_FALSE(tl.isGreen(0, dsf::Direction::UTURN));
-        }
-        ++tl;
-        THEN("The traffic light is green for all") {
-          CHECK(tl.isGreen(0, dsf::Direction::RIGHT));
-          CHECK(tl.isGreen(0, dsf::Direction::STRAIGHT));
-          CHECK(tl.isGreen(0, dsf::Direction::LEFT));
-          CHECK(tl.isGreen(0, dsf::Direction::UTURN));
-        }
-      }
-    }
-    GIVEN("A traffic light object with a cycle set") {
-      TrafficLight tl{0, 3};
-      tl.setCycle(0, dsf::Direction::RIGHT, {2, 2});
-      THEN("Traffic light is green for all") {
-        CHECK(tl.isGreen(0, dsf::Direction::RIGHT));
-        CHECK(tl.isGreen(0, dsf::Direction::STRAIGHT));
-        CHECK(tl.isGreen(0, dsf::Direction::LEFT));
-        CHECK(tl.isGreen(0, dsf::Direction::UTURN));
-      }
-      WHEN("We increase counter") {
-        ++tl;
-        THEN("Traffic light is green for all except Right") {
-          CHECK_FALSE(tl.isGreen(0, dsf::Direction::RIGHT));
-          CHECK(tl.isGreen(0, dsf::Direction::STRAIGHT));
-          CHECK(tl.isGreen(0, dsf::Direction::LEFT));
-          CHECK(tl.isGreen(0, dsf::Direction::UTURN));
-        }
-        ++tl;
-        THEN("Traffic light is green for all") {
-          CHECK(tl.isGreen(0, dsf::Direction::RIGHT));
-          CHECK(tl.isGreen(0, dsf::Direction::STRAIGHT));
-          CHECK(tl.isGreen(0, dsf::Direction::LEFT));
-          CHECK(tl.isGreen(0, dsf::Direction::UTURN));
         }
       }
     }
@@ -376,60 +371,69 @@ TEST_CASE("Station") {
 }
 
 TEST_CASE("TrafficLight formatting") {
-  using TrafficLightCycle = dsf::mobility::TrafficLightCycle;
+  using TrafficLightPhase = dsf::mobility::TrafficLightPhase;
 
-  SUBCASE("std::format TrafficLightCycle") {
-    TrafficLightCycle cycle{30, 5};
+  SUBCASE("std::format TrafficLightPhase") {
+    TrafficLightPhase phase{30};
+    phase.addGreen(5, dsf::Direction::STRAIGHT);
+    phase.addGreen(5, dsf::Direction::LEFT);
 
-    std::string formatted = std::format("{}", cycle);
-    CHECK(formatted.find("TrafficLightCycle") != std::string::npos);
-    CHECK(formatted.find("green time: 30") != std::string::npos);
-    CHECK(formatted.find("phase shift: 5") != std::string::npos);
+    std::string formatted = std::format("{}", phase);
+    CHECK(formatted.find("Phase (duration: 30 ticks)") != std::string::npos);
+    CHECK(formatted.find("street 5:") != std::string::npos);
+    CHECK(formatted.find("STRAIGHT") != std::string::npos);
+    CHECK(formatted.find("LEFT") != std::string::npos);
   }
 
-  SUBCASE("std::format TrafficLight without cycles") {
-    TrafficLight tl{10, 60};
+  SUBCASE("std::format TrafficLight without phases") {
+    TrafficLight tl{10, dsf::geometry::Point{0., 0.}};
     tl.setName("Intersection A");
 
     std::string formatted = std::format("{}", tl);
     CHECK(formatted.find("TrafficLight \"Intersection A\"") != std::string::npos);
-    CHECK(formatted.find("(10)") != std::string::npos);
-    CHECK(formatted.find("cycle time 60") != std::string::npos);
-    CHECK(formatted.find("counter 0") != std::string::npos);
+    CHECK(formatted.find("(id 10)") != std::string::npos);
+    CHECK(formatted.find("cycle=0 ticks") != std::string::npos);
+    CHECK(formatted.find("phase 0/0") != std::string::npos);
+    CHECK(formatted.find("counter=0") != std::string::npos);
   }
 
-  SUBCASE("std::format TrafficLight with cycles") {
-    TrafficLight tl{20, 90};
+  SUBCASE("std::format TrafficLight with phases") {
+    TrafficLight tl{20, dsf::geometry::Point{0., 0.}};
     tl.setName("Main Intersection");
 
-    // Add cycles for different streets and directions
-    TrafficLightCycle cycle1{40, 0};
-    TrafficLightCycle cycle2{50, 40};
+    TrafficLightPhase phase1{40};
+    phase1.addGreen(1, dsf::Direction::STRAIGHT);
+    phase1.addGreen(1, dsf::Direction::LEFT);
+    TrafficLightPhase phase2{50};
+    phase2.addGreen(2, dsf::Direction::STRAIGHT);
+    phase2.addGreen(2, dsf::Direction::RIGHT);
 
-    tl.setCycle(1, dsf::Direction::STRAIGHT, cycle1);
-    tl.setCycle(1, dsf::Direction::LEFT, cycle2);
-    tl.setCycle(2, dsf::Direction::STRAIGHT, cycle2);
-    tl.setCycle(2, dsf::Direction::RIGHT, cycle1);
+    tl.addPhase(phase1);
+    tl.addPhase(phase2);
 
     std::string formatted = std::format("{}", tl);
     CHECK(formatted.find("TrafficLight \"Main Intersection\"") != std::string::npos);
-    CHECK(formatted.find("(20)") != std::string::npos);
-    CHECK(formatted.find("cycle time 90") != std::string::npos);
-    CHECK(formatted.find("Street 1:") != std::string::npos);
-    CHECK(formatted.find("Street 2:") != std::string::npos);
-    CHECK(formatted.find("dir STRAIGHT") != std::string::npos);
-    CHECK(formatted.find("dir LEFT") != std::string::npos);
-    CHECK(formatted.find("dir RIGHT") != std::string::npos);
+    CHECK(formatted.find("(id 20)") != std::string::npos);
+    CHECK(formatted.find("cycle=90 ticks") != std::string::npos);
+    CHECK(formatted.find("phase 0/2") != std::string::npos);
+    CHECK(formatted.find("Phase (duration: 40 ticks)") != std::string::npos);
+    CHECK(formatted.find("Phase (duration: 50 ticks)") != std::string::npos);
+    CHECK(formatted.find("street 1:") != std::string::npos);
+    CHECK(formatted.find("street 2:") != std::string::npos);
+    CHECK(formatted.find("STRAIGHT") != std::string::npos);
+    CHECK(formatted.find("LEFT") != std::string::npos);
+    CHECK(formatted.find("RIGHT") != std::string::npos);
   }
 
   SUBCASE("std::format TrafficLight after counter increment") {
-    TrafficLight tl{30, 60};
+    TrafficLight tl{30, dsf::geometry::Point{0., 0.}};
     tl.setName("Test Light");
+    tl.addPhase(TrafficLightPhase{60});
     ++tl;
     ++tl;
     ++tl;
 
     std::string formatted = std::format("{}", tl);
-    CHECK(formatted.find("counter 3") != std::string::npos);
+    CHECK(formatted.find("counter=3") != std::string::npos);
   }
 }
