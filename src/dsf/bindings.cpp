@@ -560,22 +560,14 @@ PYBIND11_MODULE(dsf_cpp, m) {
         id (int): Node id to convert.)doc")
       .def(
           "makeTrafficLight",
-          [](dsf::mobility::RoadNetwork& self,
-             dsf::Id id,
-             dsf::Delay const cycleTime,
-             dsf::Delay const counter) -> dsf::mobility::TrafficLight& {
-            return self.makeTrafficLight(id, cycleTime, counter);
+          [](dsf::mobility::RoadNetwork& self, dsf::Id id) -> void {
+            self.makeTrafficLight(id);
           },
           pybind11::arg("id"),
-          pybind11::arg("cycleTime"),
-          pybind11::arg("counter") = 0,
-          pybind11::return_value_policy::reference_internal,
-          R"doc(Create a traffic light at the given node id and return it.
+          R"doc(Create a traffic light at the given node id.
 
       Args:
-        id (int): Node id.
-        cycleTime (Delay): Cycle time for the traffic light.
-        counter (Delay): Initial counter value.)doc")
+        id (int): Node id.)doc")
       .def("setStreetStatusById",
            &dsf::mobility::RoadNetwork::setStreetStatusById,
            pybind11::arg("streetId"),
