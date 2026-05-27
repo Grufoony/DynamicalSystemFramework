@@ -1,52 +1,70 @@
 [build-system]
-requires = ["setuptools>=77.0.0", "wheel", "cmake>=3.16"]
+requires = [
+    "setuptools>=77.0.0",
+    "wheel",
+    "cmake>=3.16"
+]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsf-suite"
 description = "DSF C++ core with Python bindings via pybind11"
+
 readme = { file = "README.md", content-type = "text/markdown" }
+
 requires-python = ">=3.12"
+
 license = "AGPL-3.0-only"
+
 license-files = ["LICENSE"]
+
 authors = [
-	{ name = "Grufoony", email = "gregorio.berselli@studio.unibo.it" },
+    { name = "Grufoony", email = "gregorio.berselli@studio.unibo.it" }
 ]
+
 keywords = [
-	"traffic",
-	"simulation",
-	"dynamics",
-	"network",
-	"modeling",
-	"transportation",
-	"mobility",
-	"congestion",
-	"flow",
-	"optimization",
+    "traffic",
+    "simulation",
+    "dynamics",
+    "network",
+    "modeling",
+    "transportation",
+    "mobility",
+    "congestion",
+    "flow",
+    "optimization"
 ]
+
 classifiers = [
-	"Development Status :: 5 - Production/Stable",
-	"Intended Audience :: Science/Research",
-	"Intended Audience :: Developers",
-	"Programming Language :: Python :: 3.12",
-	"Programming Language :: Python :: 3.13",
-	"Programming Language :: Python :: 3.14",
-	"Programming Language :: C++",
-	"Topic :: Scientific/Engineering :: Physics",
-	"Topic :: Scientific/Engineering :: Information Analysis",
-	"Topic :: Software Development :: Libraries :: Python Modules",
-	"Operating System :: POSIX :: Linux",
-	"Operating System :: MacOS",
-	"Operating System :: Microsoft :: Windows",
+    "Development Status :: 5 - Production/Stable",
+
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+
+    "Programming Language :: C++",
+
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows"
 ]
+
 dependencies = [
-	"osmnx>=2.0.6",
-	"networkx>=3",
-	"numpy",
-	"geopandas",
-	"shapely",
-	"folium",
+    "osmnx>=2.0.6",
+    "networkx>=3",
+    "numpy",
+    "geopandas",
+    "shapely",
+    "folium"
 ]
+
 dynamic = ["version"]
 
 [project.urls]
@@ -66,22 +84,72 @@ namespaces = true
 [tool.setuptools.package-data]
 dsf = ["*.pyi", "py.typed", "**/*.pyi"]
 
+# =========================================================
+# cibuildwheel
+# =========================================================
+
 [tool.cibuildwheel]
-build = ["cp312-*", "cp313-*", "cp314-*"]
-skip = ["*-musllinux_*"]
+
+build = [
+    "cp312-*",
+    "cp313-*",
+    "cp314-*"
+]
+
+skip = [
+    "*-musllinux_*",
+    "pp*"
+]
+
+build-verbosity = 1
+
+# Avoid unnecessary architectures
+archs = ["auto64"]
+
+# =========================================================
+# Linux
+# =========================================================
 
 [tool.cibuildwheel.linux]
-before-all = "dnf install -y gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils git zip unzip curl tar && git clone https://github.com/microsoft/vcpkg /opt/vcpkg && /opt/vcpkg/bootstrap-vcpkg.sh && /opt/vcpkg/vcpkg install tbb"
+
+before-all = """
+dnf install -y gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils git curl tar zip unzip &&
+git clone --depth 1 https://github.com/microsoft/vcpkg /opt/vcpkg &&
+/opt/vcpkg/bootstrap-vcpkg.sh &&
+/opt/vcpkg/vcpkg install tbb
+"""
 
 [tool.cibuildwheel.linux.environment]
 CC = "/opt/rh/gcc-toolset-13/root/usr/bin/gcc"
 CXX = "/opt/rh/gcc-toolset-13/root/usr/bin/g++"
-CMAKE_ARGS = "-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake -DDSF_COMPATIBILITY_BUILD=ON -DBUILD_PYTHON_BINDINGS=ON -DPython_EXECUTABLE=$(which python)"
+
+CMAKE_ARGS = """
+-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+-DDSF_COMPATIBILITY_BUILD=ON
+-DBUILD_PYTHON_BINDINGS=ON
+"""
+
+# =========================================================
+# macOS
+# =========================================================
 
 [tool.cibuildwheel.macos]
+
 before-all = "brew install cmake tbb"
-environment = { MACOSX_DEPLOYMENT_TARGET = "15.0", CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_PREFIX_PATH=/opt/homebrew;/usr/local" }
+
+[tool.cibuildwheel.macos.environment]
+MACOSX_DEPLOYMENT_TARGET = "15.0"
+CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_PREFIX_PATH=/opt/homebrew;/usr/local"
+
+# =========================================================
+# Windows
+# =========================================================
 
 [tool.cibuildwheel.windows]
-before-all = "vcpkg install tbb:x64-windows tbb:x86-windows"
-environment = { CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_PREFIX_PATH=C:/vcpkg/installed/x64-windows" }
+
+before-all = """
+vcpkg install tbb:x64-windows
+"""
+
+[tool.cibuildwheel.windows.environment]
+CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows"
