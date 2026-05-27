@@ -29,6 +29,7 @@ classifiers = [
 	"Intended Audience :: Science/Research",
 	"Intended Audience :: Developers",
 	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
 	"Programming Language :: Python :: 3.14",
 	"Programming Language :: C++",
 	"Topic :: Scientific/Engineering :: Physics",
@@ -66,7 +67,7 @@ namespaces = true
 dsf = ["*.pyi", "py.typed", "**/*.pyi"]
 
 [tool.cibuildwheel]
-build = ["cp312-*", "cp314-*"]
+build = ["cp312-*", "cp313-*", "cp314-*"]
 skip = ["*-musllinux_*"]
 
 [tool.cibuildwheel.linux]
