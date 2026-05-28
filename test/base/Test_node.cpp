@@ -190,9 +190,9 @@ TEST_CASE("TrafficLight") {
     }
   }
   SUBCASE("Light cycle") {
-    TrafficLight::setAllowFreeTurns(true);
     GIVEN("A traffic light object with two phases") {
       TrafficLight tl{0, dsf::geometry::Point{0., 0.}};
+      tl.setAllowFreeTurns(true);
 
       TrafficLightPhase phase0{1};
       phase0.addGreen(0, dsf::Direction::RIGHT);

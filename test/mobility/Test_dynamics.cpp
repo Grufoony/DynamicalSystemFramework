@@ -851,7 +851,6 @@ TEST_CASE("FirstOrderDynamics") {
     }
   }
   SUBCASE("TrafficLights") {
-    TrafficLight::setAllowFreeTurns(false);
     GIVEN(
         "A dynamics object, a network with traffic lights, an itinerary and "
         "an agent") {
@@ -864,6 +863,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addNode<TrafficLight>(1);
       graph2.addStreets(s1, s2, s3, s4);
       auto& tl = graph2.node<TrafficLight>(1);
+      tl.setAllowFreeTurns(false);
       // Phase 0 (ticks 0-1): street 1 green — agent can exit toward node 2
       {
         TrafficLightPhase p{2};

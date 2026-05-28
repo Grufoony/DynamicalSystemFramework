@@ -53,7 +53,6 @@ int main() {
   Street s12{7, std::make_pair(1, 2), 118., 13.9, 2};
   Street s23{13, std::make_pair(2, 3), 222., 13.9, 2};
   Street s34{19, std::make_pair(3, 4), 651., 13.9, 2};
-  TrafficLight::setAllowFreeTurns(false);
   // Viale Aldo Moro
   graph.addNode<TrafficLight>(1);
   auto& tl1 = graph.node<TrafficLight>(1);
@@ -98,7 +97,7 @@ int main() {
   auto it = vehiclesToInsert.begin();
   std::ofstream ofs{"./stalingrado_output.csv"};
   // print two columns, time and vehicles
-  ofs << "time;vehicle_flux" << '\n';
+  ofs << "time;vehicle_flux\n";
   while (progress < MAX_TIME) {
     if (progress % 60 == 0) {
       if (progress != 0) {

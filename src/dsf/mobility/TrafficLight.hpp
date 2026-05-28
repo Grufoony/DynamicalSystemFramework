@@ -134,7 +134,7 @@ namespace dsf::mobility {
     std::size_t m_currentPhaseIndex{0};
     Delay m_counter{0};  // Ticks elapsed within the current phase.
 
-    static bool m_allowFreeTurns;
+    bool m_allowFreeTurns{false};
 
     /// @brief Apply the direction-fallback ladder to a set of directions.
     /// Ladder: exact match → ANY → compound (RIGHTANDSTRAIGHT/LEFTANDSTRAIGHT).
@@ -162,7 +162,7 @@ namespace dsf::mobility {
 
     /// @brief When true (default), a street absent from the active phase's
     /// green set is treated as green (free turn).
-    static void setAllowFreeTurns(bool const allow);
+    inline void setAllowFreeTurns(bool const allow) { m_allowFreeTurns = allow; }
 
     // ── Phase management ──────────────────────────────────────────────────
 

@@ -9,9 +9,6 @@
 
 namespace dsf::mobility {
 
-  bool TrafficLight::m_allowFreeTurns{true};
-  void TrafficLight::setAllowFreeTurns(bool const allow) { m_allowFreeTurns = allow; }
-
   // ══════════════════════════════════════════════════════════════════════════
   // Direction-fallback ladder (private, static)
   // ══════════════════════════════════════════════════════════════════════════

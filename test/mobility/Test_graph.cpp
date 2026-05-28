@@ -126,6 +126,46 @@ TEST_CASE("RoadNetwork") {
       }
     }
   }
+  SUBCASE("importTrafficLights") {
+    GIVEN("A graph object with a legacy traffic light CSV") {
+      RoadNetwork graph;
+      graph.addNDefaultNodes(4);
+      graph.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
+                       Street{101, std::make_pair(2, 1), 50., 13.8888888889},
+                       Street{102, std::make_pair(3, 1), 50., 13.8888888889});
+
+      auto const csvPath =
+          std::filesystem::temp_directory_path() / "dsf_import_traffic_lights.csv";
+      {
+        std::ofstream out{csvPath};
+        REQUIRE(out.is_open());
+        out << "id;sourceId;cycleTime;greenTime\n";
+        out << "1;0;90;30\n";
+        out << "1;2;90;60\n";
+      }
+
+      WHEN("We import the legacy traffic light definition") {
+        graph.importTrafficLights(csvPath.string());
+        auto& tl = graph.node<TrafficLight>(1);
+
+        THEN("The importer reconstructs the two phases") {
+          CHECK_EQ(graph.nTrafficLights(), 1);
+          CHECK_EQ(tl.phases().size(), 2);
+          CHECK_EQ(tl.phases()[0].duration(), 30);
+          CHECK_EQ(tl.phases()[1].duration(), 60);
+          CHECK(tl.phases()[0].containsGreen(100, dsf::Direction::ANY));
+          CHECK(tl.phases()[1].containsGreen(101, dsf::Direction::ANY));
+        }
+
+        THEN("Free turns stay disabled for streets absent from the CSV") {
+          CHECK_FALSE(tl.isGreen(102, dsf::Direction::RIGHT));
+        }
+      }
+
+      std::filesystem::remove(csvPath);
+    }
+  }
+
   SUBCASE("importEdges and importNodeProperties") {
     GIVEN("A graph object") {
       RoadNetwork graph;
