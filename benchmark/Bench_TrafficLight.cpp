@@ -6,7 +6,7 @@
 
 static void BM_TrafficLight_Construction(benchmark::State& state) {
   for (auto _ : state) {
-    dsf::mobility::TrafficLight tl(0, 60);
+    dsf::mobility::TrafficLight tl(0);
     benchmark::DoNotOptimize(tl);
   }
 }
@@ -14,13 +14,15 @@ static void BM_TrafficLight_Construction(benchmark::State& state) {
 static void BM_TrafficLight_ConstructionWithPoint(benchmark::State& state) {
   dsf::geometry::Point point{0.0, 0.0};
   for (auto _ : state) {
-    dsf::mobility::TrafficLight tl(0, 60, point);
+    dsf::mobility::TrafficLight tl(0, point);
     benchmark::DoNotOptimize(tl);
   }
 }
 
 static void BM_TrafficLight_OperatorIncrement(benchmark::State& state) {
-  dsf::mobility::TrafficLight tl(0, 60);
+  dsf::mobility::TrafficLight tl(0);
+  // ensure at least one phase so operator++ cycles
+  tl.addPhase(dsf::mobility::TrafficLightPhase{1});
   for (auto _ : state) {
     ++tl;
     benchmark::DoNotOptimize(tl);
@@ -28,26 +30,31 @@ static void BM_TrafficLight_OperatorIncrement(benchmark::State& state) {
 }
 
 static void BM_TrafficLight_SetCycle(benchmark::State& state) {
-  dsf::mobility::TrafficLight tl(0, 60);
-  dsf::mobility::TrafficLightCycle cycle(30, 0);
+  dsf::mobility::TrafficLight tl(0);
+  dsf::mobility::TrafficLightPhase phase(30);
+  phase.addGreen(1, dsf::Direction::STRAIGHT);
   for (auto _ : state) {
-    tl.setCycle(1, dsf::Direction::STRAIGHT, cycle);
+    // replace phases to simulate setting a cycle
+    tl.setPhases({phase});
   }
 }
 
 static void BM_TrafficLight_SetComplementaryCycle(benchmark::State& state) {
   for (auto _ : state) {
-    dsf::mobility::TrafficLight tl(0, 60);
-    dsf::mobility::TrafficLightCycle cycle(30, 0);
-    tl.setCycle(1, dsf::Direction::STRAIGHT, cycle);
-    tl.setComplementaryCycle(2, 1);
+    dsf::mobility::TrafficLight tl(0);
+    dsf::mobility::TrafficLightPhase p1(30);
+    p1.addGreen(1, dsf::Direction::STRAIGHT);
+    dsf::mobility::TrafficLightPhase p2(30);
+    p2.addGreen(2, dsf::Direction::LEFT);
+    tl.setPhases({p1, p2});
   }
 }
 
 static void BM_TrafficLight_IsGreen(benchmark::State& state) {
-  dsf::mobility::TrafficLight tl(0, 60);
-  dsf::mobility::TrafficLightCycle cycle(30, 0);
-  tl.setCycle(1, dsf::Direction::STRAIGHT, cycle);
+  dsf::mobility::TrafficLight tl(0);
+  dsf::mobility::TrafficLightPhase cycle(30);
+  cycle.addGreen(1, dsf::Direction::STRAIGHT);
+  tl.setPhases({cycle});
   for (auto _ : state) {
     bool green = tl.isGreen(1, dsf::Direction::STRAIGHT);
     benchmark::DoNotOptimize(green);
@@ -55,11 +62,12 @@ static void BM_TrafficLight_IsGreen(benchmark::State& state) {
 }
 
 static void BM_TrafficLight_MeanGreenTime(benchmark::State& state) {
-  dsf::mobility::TrafficLight tl(0, 60);
-  dsf::mobility::TrafficLightCycle cycle1(30, 0);
-  dsf::mobility::TrafficLightCycle cycle2(20, 30);
-  tl.setCycle(1, dsf::Direction::STRAIGHT, cycle1);
-  tl.setCycle(2, dsf::Direction::LEFT, cycle2);
+  dsf::mobility::TrafficLight tl(0);
+  dsf::mobility::TrafficLightPhase cycle1(30);
+  cycle1.addGreen(1, dsf::Direction::STRAIGHT);
+  dsf::mobility::TrafficLightPhase cycle2(20);
+  cycle2.addGreen(2, dsf::Direction::LEFT);
+  tl.setPhases({cycle1, cycle2});
   for (auto _ : state) {
     double mean = tl.meanGreenTime(false);
     benchmark::DoNotOptimize(mean);
@@ -67,20 +75,22 @@ static void BM_TrafficLight_MeanGreenTime(benchmark::State& state) {
 }
 
 static void BM_TrafficLight_ResetCycles(benchmark::State& state) {
-  dsf::mobility::TrafficLight tl(0, 60);
-  dsf::mobility::TrafficLightCycle cycle(30, 0);
-  tl.setCycle(1, dsf::Direction::STRAIGHT, cycle);
+  dsf::mobility::TrafficLight tl(0);
+  dsf::mobility::TrafficLightPhase cycle(30);
+  cycle.addGreen(1, dsf::Direction::STRAIGHT);
+  tl.setPhases({cycle});
   for (auto _ : state) {
-    tl.resetCycles();
+    tl.reset();
   }
 }
 
 static void BM_TrafficLight_IncreasePhases(benchmark::State& state) {
-  dsf::mobility::TrafficLight tl(0, 60);
-  dsf::mobility::TrafficLightCycle cycle(30, 0);
-  tl.setCycle(1, dsf::Direction::STRAIGHT, cycle);
+  dsf::mobility::TrafficLight tl(0);
+  dsf::mobility::TrafficLightPhase cycle(30);
+  cycle.addGreen(1, dsf::Direction::STRAIGHT);
   for (auto _ : state) {
-    tl.increasePhases(5);
+    // simulate increasing phases by appending phases
+    tl.addPhase(cycle);
   }
 }
 

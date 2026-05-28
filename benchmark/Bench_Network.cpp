@@ -41,8 +41,8 @@ static void BM_RoadNetwork_NodesLooping(benchmark::State& state) {
   network.importNodeProperties((DATA_FOLDER / "forlì_nodes.csv").string());
   for (auto _ : state) {
     for (auto const& [id, node] : network.nodes()) {
-      benchmark::DoNotOptimize(id);
-      benchmark::DoNotOptimize(node);
+      benchmark::DoNotOptimize(static_cast<dsf::Id>(id));
+      benchmark::DoNotOptimize(node.get());
     }
   }
 }
@@ -52,8 +52,8 @@ static void BM_RoadNetwork_EdgesLooping(benchmark::State& state) {
   network.importNodeProperties((DATA_FOLDER / "forlì_nodes.csv").string());
   for (auto _ : state) {
     for (auto const& [id, edge] : network.edges()) {
-      benchmark::DoNotOptimize(id);
-      benchmark::DoNotOptimize(edge);
+      benchmark::DoNotOptimize(static_cast<dsf::Id>(id));
+      benchmark::DoNotOptimize(edge.get());
     }
   }
 }

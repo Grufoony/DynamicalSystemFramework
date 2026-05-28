@@ -129,7 +129,7 @@ static void BM_Agent_Itinerary(benchmark::State& state) {
   dsf::mobility::Agent agent(0, 0, std::make_shared<dsf::mobility::Itinerary>(1, 1), 0);
   for (auto _ : state) {
     auto const& pItinerary = agent.itinerary();
-    benchmark::DoNotOptimize(pItinerary);
+    benchmark::DoNotOptimize(pItinerary.get());
   }
 }
 
