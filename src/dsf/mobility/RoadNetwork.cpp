@@ -196,25 +196,39 @@ namespace dsf::mobility {
       }
 
       // Handle additional attributes
-      for (auto const attrName : additionalAttributes) {
-        auto const strAttrName{std::string(attrName)};
+      for (auto const& attrName : additionalAttributes) {
+        auto const strAttrName = std::string(attrName);
         auto const attrValue = row[strAttrName].get<std::string>();
+        auto& e = edge(streetId);
+
         if (attrValue.empty()) {
-          edge(streetId).setAttribute(strAttrName, std::monostate{});
+          e.setAttribute(strAttrName, std::monostate{});
         } else if (attrValue == "true" || attrValue == "false") {
-          edge(streetId).setAttribute(strAttrName, attrValue == "true");
+          e.setAttribute(strAttrName, attrValue == "true");
         } else {
+          std::size_t const valueSize = attrValue.size();
+          std::size_t pos{0};
+
+          // Try casting to int
           try {
-            int64_t intValue = std::stoll(attrValue);
-            edge(streetId).setAttribute(strAttrName, intValue);
-          } catch (...) {
-            try {
-              double doubleValue = std::stod(attrValue);
-              edge(streetId).setAttribute(strAttrName, doubleValue);
-            } catch (...) {
-              edge(streetId).setAttribute(strAttrName, attrValue);
+            auto const value = std::stoll(attrValue, &pos);
+            if (pos == valueSize) {
+              e.setAttribute(strAttrName, value);
+              continue;
             }
+          } catch (std::exception const&) {
+            // Not an int, try double
           }
+          try {
+            auto const value = std::stod(attrValue, &pos);
+            if (pos == valueSize) {
+              e.setAttribute(strAttrName, value);
+              continue;
+            }
+          } catch (std::exception const&) {
+            // Not a double, keep as string
+          }
+          e.setAttribute(strAttrName, attrValue);  // Fall back to string
         }
       }
     }
