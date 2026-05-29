@@ -44,6 +44,17 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .value("LINEAR", dsf::SpeedFunction::LINEAR)
       .export_values();
 
+  // Bind Direction enum
+  pybind11::enum_<dsf::Direction>(mobility, "Direction")
+      .value("RIGHT", dsf::Direction::RIGHT)
+      .value("STRAIGHT", dsf::Direction::STRAIGHT)
+      .value("LEFT", dsf::Direction::LEFT)
+      .value("UTURN", dsf::Direction::UTURN)
+      .value("RIGHTANDSTRAIGHT", dsf::Direction::RIGHTANDSTRAIGHT)
+      .value("LEFTANDSTRAIGHT", dsf::Direction::LEFTANDSTRAIGHT)
+      .value("ANY", dsf::Direction::ANY)
+      .export_values();
+
   // Bind RoadStatus enum
   pybind11::enum_<dsf::mobility::RoadStatus>(mobility, "RoadStatus")
       .value("OPEN", dsf::mobility::RoadStatus::OPEN)
@@ -106,82 +117,99 @@ PYBIND11_MODULE(dsf_cpp, m) {
       "Log a debug message");
 
   // Bind Street class to mobility submodule
-  pybind11::class_<dsf::mobility::Street>(mobility, "Street")
-      .def("id",
-           &dsf::mobility::Street::id,
-           R"doc(Return the unique identifier of this street.
+  auto street =
+      pybind11::class_<dsf::mobility::Street>(mobility, "Street")
+          .def("id",
+               &dsf::mobility::Street::id,
+               R"doc(Return the unique identifier of this street.
 
     Returns:
       int: The street id.)doc")
-      .def("source",
-           &dsf::mobility::Street::source,
-           R"doc(Get the source node id of this street.
+          .def("source",
+               &dsf::mobility::Street::source,
+               R"doc(Get the source node id of this street.
 
     Returns:
         int: Source node id.)doc")
-      .def("target",
-           &dsf::mobility::Street::target,
-           R"doc(Get the target node id of this street.
+          .def("target",
+               &dsf::mobility::Street::target,
+               R"doc(Get the target node id of this street.
 
     Returns:
         int: Target node id.)doc")
-      .def("geometry",
-           &dsf::mobility::Street::geometry,
-           R"doc(Get the geometry object for this street.
+          .def("geometry",
+               &dsf::mobility::Street::geometry,
+               R"doc(Get the geometry object for this street.
 
     Returns:
         object: Geometry representation (library-specific).)doc")
-      .def("name",
-           &dsf::mobility::Street::name,
-           R"doc(Get the name of the street.
+          .def("name",
+               &dsf::mobility::Street::name,
+               R"doc(Get the name of the street.
 
     Returns:
         str: The street's name (empty if unnamed).)doc")
-      .def("length",
-           &dsf::mobility::Street::length,
-           R"doc(Get the length of the street.
+          .def("length",
+               &dsf::mobility::Street::length,
+               R"doc(Get the length of the street.
 
     Returns:
         float: Length in metres.)doc")
-      .def("nLanes",
-           &dsf::mobility::Street::nLanes,
-           R"doc(Get the number of lanes on this street.
+          .def("nLanes",
+               &dsf::mobility::Street::nLanes,
+               R"doc(Get the number of lanes on this street.
 
     Returns:
         int: Number of lanes.)doc")
-      .def("maxSpeed",
-           &dsf::mobility::Street::maxSpeed,
-           R"doc(Get the maximum permitted speed on this street.
+          .def("maxSpeed",
+               &dsf::mobility::Street::maxSpeed,
+               R"doc(Get the maximum permitted speed on this street.
 
     Returns:
         float: Maximum speed in m/s.)doc")
-      .def("capacity",
-           &dsf::mobility::Street::capacity,
-           R"doc(Get the capacity of this street.
+          .def("capacity",
+               &dsf::mobility::Street::capacity,
+               R"doc(Get the capacity of this street.
 
     Returns:
         int: Capacity as the number of vehicles.)doc")
-      .def("transportCapacity",
-           &dsf::mobility::Street::transportCapacity,
-           R"doc(Get the transport capacity of this street.
+          .def("transportCapacity",
+               &dsf::mobility::Street::transportCapacity,
+               R"doc(Get the transport capacity of this street.
 
     Returns:
         float: Transport capacity (units: vehicles or payload).)doc")
-      .def("roadStatus",
-           &dsf::mobility::Street::roadStatus,
-           R"doc(Get the current status of the road.
+          .def("roadStatus",
+               &dsf::mobility::Street::roadStatus,
+               R"doc(Get the current status of the road.
 
     Returns:
         RoadStatus: Enum value indicating OPEN or CLOSED.)doc")
-      .def("estimatedTravelTime",
-           &dsf::mobility::Street::estimatedTravelTime,
-           "Get estimated travel time for this street using the active estimator.")
-      .def("attributes",
-           &dsf::mobility::Street::attributes,
-           R"doc(Get the attribute dictionary for this street.
+          .def("estimatedTravelTime",
+               &dsf::mobility::Street::estimatedTravelTime,
+               "Get estimated travel time for this street using the active estimator.")
+          .def("attributes",
+               &dsf::mobility::Street::attributes,
+               R"doc(Get the attribute dictionary for this street.
 
     Returns:
         dict: Mapping of attribute names to values.)doc");
+
+  // Expose coil counter helpers and road-level static setter
+  street
+      .def_static("setMeanVehicleLength",
+                  &dsf::mobility::Road::setMeanVehicleLength,
+                  pybind11::arg("meanVehicleLength"),
+                  R"doc(Set the global mean vehicle length in metres.)doc")
+      .def("counts",
+           &dsf::mobility::Street::counts,
+           R"doc(Get the counts of the coil (if enabled).
+
+    Returns:
+        int: Number of counts recorded by the coil, or 0 if none.)doc")
+      .def("resetCounter",
+           &dsf::mobility::Street::resetCounter,
+           R"doc(Reset the coil counter on this street.)doc");
 
   // Bind RoadJunction class to mobility submodule
   pybind11::class_<dsf::mobility::RoadJunction>(mobility, "RoadJunction")
@@ -215,6 +243,61 @@ PYBIND11_MODULE(dsf_cpp, m) {
 
     Returns:
         dict: Mapping of attribute names to values.)doc");
+
+  // Bind TrafficLightCycle and TrafficLight classes
+  pybind11::class_<dsf::mobility::TrafficLightCycle>(mobility, "TrafficLightCycle")
+      .def(pybind11::init<dsf::Delay, dsf::Delay>(),
+           pybind11::arg("greenTime"),
+           pybind11::arg("phase"),
+           R"doc(Create a TrafficLightCycle(greenTime, phase).)doc")
+      .def("greenTime", &dsf::mobility::TrafficLightCycle::greenTime)
+      .def("phase", &dsf::mobility::TrafficLightCycle::phase)
+      .def("isDefault", &dsf::mobility::TrafficLightCycle::isDefault)
+      .def("isGreenTimeIncreased",
+           &dsf::mobility::TrafficLightCycle::isGreenTimeIncreased)
+      .def("isRedTimeIncreased", &dsf::mobility::TrafficLightCycle::isRedTimeIncreased)
+      .def("isGreen",
+           &dsf::mobility::TrafficLightCycle::isGreen,
+           pybind11::arg("cycleTime"),
+           pybind11::arg("counter"))
+      .def("reset", &dsf::mobility::TrafficLightCycle::reset);
+
+  pybind11::class_<dsf::mobility::TrafficLight, dsf::mobility::RoadJunction>(
+      mobility, "TrafficLight")
+      .def(pybind11::init<dsf::Id, dsf::Delay>(),
+           pybind11::arg("id"),
+           pybind11::arg("cycleTime"))
+      .def(
+          "setCycle",
+          [](dsf::mobility::TrafficLight& self,
+             dsf::Id streetId,
+             dsf::Direction direction,
+             dsf::mobility::TrafficLightCycle const& cycle) {
+            self.setCycle(streetId, direction, cycle);
+          },
+          pybind11::arg("streetId"),
+          pybind11::arg("direction"),
+          pybind11::arg("cycle"))
+      .def("setComplementaryCycle",
+           &dsf::mobility::TrafficLight::setComplementaryCycle,
+           pybind11::arg("streetId"),
+           pybind11::arg("existingCycle"))
+      .def("increasePhases",
+           &dsf::mobility::TrafficLight::increasePhases,
+           pybind11::arg("phase"))
+      .def("meanGreenTime",
+           &dsf::mobility::TrafficLight::meanGreenTime,
+           pybind11::arg("priorityStreets"))
+      .def("cycleTime", &dsf::mobility::TrafficLight::cycleTime)
+      .def("counter", &dsf::mobility::TrafficLight::counter)
+      .def("isGreen",
+           &dsf::mobility::TrafficLight::isGreen,
+           pybind11::arg("streetId"),
+           pybind11::arg("direction"))
+      .def("resetCycles", &dsf::mobility::TrafficLight::resetCycles)
+      .def("cycles",
+           &dsf::mobility::TrafficLight::cycles,
+           pybind11::return_value_policy::reference_internal);
 
   // Bind Measurement to main module (can be used across different contexts)
   pybind11::class_<dsf::Measurement<double>>(m, "Measurement")
@@ -299,6 +382,46 @@ PYBIND11_MODULE(dsf_cpp, m) {
 
       Returns:
         int: Count of traffic lights.)doc")
+      .def(
+          "addNode",
+          [](dsf::mobility::RoadNetwork& self, dsf::Id id) {
+            self.addNode(dsf::mobility::RoadJunction(id));
+          },
+          pybind11::arg("id"),
+          R"doc(Add a node with the given id to the network.)doc")
+      .def(
+          "addStreet",
+          [](dsf::mobility::RoadNetwork& self,
+             dsf::Id id,
+             dsf::Id source,
+             dsf::Id target,
+             double length,
+             double maxSpeed,
+             int nLanes,
+             std::string name) {
+            self.addStreet(dsf::mobility::Street(
+                id, std::make_pair(source, target), length, maxSpeed, nLanes, name));
+          },
+          pybind11::arg("id"),
+          pybind11::arg("source"),
+          pybind11::arg("target"),
+          pybind11::arg("length"),
+          pybind11::arg("maxSpeed"),
+          pybind11::arg("nLanes") = 1,
+          pybind11::arg("name") = std::string(),
+          R"doc(Add a street to the network using simple parameters.
+       
+       Args:
+         id (int): Street identifier.
+         source (int): Source node identifier.
+         target (int): Target node identifier.
+         length (float): Street length.
+         maxSpeed (float): Maximum speed on the street.
+         nLanes (int): Number of lanes.
+         name (str): Street name.
+
+       Returns:
+         None)doc")
       // Bind node and edge Network accessors, which return a ref or a cost ref
       // node should return a RoadJunction and edge should return a Street
       .def(
@@ -440,13 +563,14 @@ PYBIND11_MODULE(dsf_cpp, m) {
           [](dsf::mobility::RoadNetwork& self,
              dsf::Id id,
              dsf::Delay const cycleTime,
-             dsf::Delay const counter) -> void {
-            self.makeTrafficLight(id, cycleTime, counter);
+             dsf::Delay const counter) -> dsf::mobility::TrafficLight& {
+            return self.makeTrafficLight(id, cycleTime, counter);
           },
           pybind11::arg("id"),
           pybind11::arg("cycleTime"),
-          pybind11::arg("counter"),
-          R"doc(Create a traffic light at the given node id.
+          pybind11::arg("counter") = 0,
+          pybind11::return_value_policy::reference_internal,
+          R"doc(Create a traffic light at the given node id and return it.
 
       Args:
         id (int): Node id.
@@ -946,6 +1070,31 @@ Returns:
 
     Returns:
       None)doc")
+      .def(
+          "addItinerary",
+          [](dsf::mobility::FirstOrderDynamics& self, dsf::Id id, dsf::Id destination) {
+            self.addItinerary(id, destination);
+          },
+          pybind11::arg("id"),
+          pybind11::arg("destination"),
+          R"doc(Add an itinerary by id and destination.
+
+    Args:
+      id (int): Itinerary id.
+      destination (int): Destination node id.
+
+    Returns:
+      None)doc")
+      .def(
+          "itineraries",
+          [](const dsf::mobility::FirstOrderDynamics& self) {
+            pybind11::dict py_result;
+            for (const auto& [id, pItin] : self.itineraries()) {
+              py_result[pybind11::int_(id)] = pybind11::cast(pItin);
+            }
+            return py_result;
+          },
+          R"doc(Get the itineraries mapping as a dict[id, Itinerary].)doc")
       .def("addAgentsUniformly",
            &dsf::mobility::FirstOrderDynamics::addAgentsUniformly,
            pybind11::arg("nAgents"),
@@ -975,9 +1124,10 @@ Returns:
 
       Returns:
         None)doc")
-      .def("evolve",
-           &dsf::mobility::FirstOrderDynamics::evolve,
-           R"doc(Advance the simulation by one time step.
+      .def(
+          "evolve",
+          [](dsf::mobility::FirstOrderDynamics& self) { self.evolve(); },
+          R"doc(Advance the simulation by one time step.
 
       Returns:
         None)doc")
@@ -1144,6 +1294,16 @@ Returns:
            pybind11::arg("queries") =
                "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
                "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
+      .def("setOutputPrefix",
+           &dsf::mobility::TrafficSimulator::setOutputPrefix,
+           pybind11::arg("prefix"),
+           R"doc(Set the output prefix for saved data files.
+
+      Args:
+        prefix (str): The prefix for the output files.
+
+      Returns:
+        None)doc")
       .def(
           "importRoadNetwork",
           [](dsf::mobility::TrafficSimulator& self,
