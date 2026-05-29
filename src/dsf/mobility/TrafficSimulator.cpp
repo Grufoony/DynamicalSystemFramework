@@ -184,6 +184,9 @@ namespace dsf::mobility {
       if (!dynamicsConfig["seed"].error()) {
         m_dynamics->setSeed(dynamicsConfig["seed"].get_uint64().value());
       }
+      if (!dynamicsConfig["max_concurrency"].error()) {
+        m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
+      }
       auto const agentInsertionMethod =
           require_field(dynamicsConfig, "dynamics", "agent_insertion_method")
               .get_string()
