@@ -138,11 +138,69 @@ namespace dsf::mobility {
     auto const output_folder = std::filesystem::path(
         require_field(generalConfig, "general", "output_folder").get_string().value());
     std::filesystem::create_directories(output_folder);
-    setOutputPrefix(output_folder.string());
+    if (!generalConfig["output_basename"].error()) {
+      setOutputPrefix(
+          (output_folder /
+           std::filesystem::path(generalConfig["output_basename"].get_string().value()))
+              .string());
+    } else {
+      setOutputPrefix(output_folder.string());
+    }
     {
       auto const name =
           require_field(generalConfig, "general", "name").get_string().value();
       setName(name);
+    }
+    // Init and End times
+    {
+      // Helper lambda to parse "YYYYMMDD hhmmss" or "YYYYMMDD" string into time_t
+      auto parseTimeString = [](std::string_view s) -> std::time_t {
+        // Pad with "000000" if hhmmss is omitted
+        std::string normalized{s};
+        if (normalized.size() == 8) {
+          normalized += " 000000";
+        }
+
+        if (normalized.size() != 15) {
+          throw std::invalid_argument("Invalid time string format: " + std::string(s));
+        }
+
+        std::tm tm{};
+        tm.tm_year = std::stoi(normalized.substr(0, 4)) - 1900;
+        tm.tm_mon = std::stoi(normalized.substr(4, 2)) - 1;
+        tm.tm_mday = std::stoi(normalized.substr(6, 2));
+        tm.tm_hour = std::stoi(normalized.substr(9, 2));
+        tm.tm_min = std::stoi(normalized.substr(11, 2));
+        tm.tm_sec = std::stoi(normalized.substr(13, 2));
+        tm.tm_isdst = -1;  // let mktime determine DST
+
+        std::time_t result = std::mktime(&tm);
+        if (result == -1) {
+          throw std::invalid_argument("mktime failed for: " + std::string(s));
+        }
+        return result;
+      };
+      auto parseTimeValue =
+          [&parseTimeString](simdjson::dom::element elem) -> std::time_t {
+        if (elem.is_uint64()) {
+          return static_cast<std::time_t>(elem.get_uint64().value());
+        }
+        if (elem.is_string()) {
+          return parseTimeString(elem.get_string().value());
+        }
+        throw std::invalid_argument("Time field must be a uint64 or a string");
+      };
+
+      std::time_t initTime{0};
+      std::optional<std::time_t> endTime{std::nullopt};
+
+      if (!generalConfig["init_time"].error()) {
+        initTime = parseTimeValue(generalConfig["init_time"].value());
+      }
+      if (!generalConfig["end_time"].error()) {
+        endTime = parseTimeValue(generalConfig["end_time"].value());
+      }
+      setTimeFrame(initTime, endTime);
     }
     // Road network config
     {
