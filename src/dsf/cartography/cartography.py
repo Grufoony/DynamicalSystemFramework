@@ -75,7 +75,7 @@ def process_cartography(
     consolidate_intersections: bool | float = 10,
     dead_ends: bool = False,
     infer_speeds: bool = False,
-    scc: bool = False,
+    scc: bool | str = False,
 ) -> tuple[nx.DiGraph, gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
     Processes and standardizes a raw OSMnx cartography.
@@ -91,7 +91,8 @@ def process_cartography(
         dead_ends (bool, optional): Whether to preserve dead-end nodes during consolidation. Defaults to False.
         infer_speeds (bool, optional): If True, infers edge speeds via np.nanmedian and
             computes travel times. Defaults to False.
-        scc (bool, optional): If True, keeps only the largest strongly connected component of the graph. Defaults to False.
+        scc (bool | str, optional): If True, keeps only the largest strongly connected component of the graph. Defaults to False.
+            If "mark", adds a boolean "in_scc" attribute to nodes and edges instead of filtering.
 
     Returns:
         tuple:
@@ -126,7 +127,15 @@ def process_cartography(
     G.remove_edges_from([(u, v, k) for u, v, k in G.edges(keys=True) if u == v])
     G.remove_nodes_from(list(nx.isolates(G)))
 
-    if scc:
+    if isinstance(scc, str) and scc == "mark":
+        G_scc = ox.truncate.largest_component(G, strongly=True)
+        for node in G.nodes():
+            G.nodes[node]["in_scc"] = node in G_scc.nodes()
+        for u, v in G.edges():
+            G[u][v][0]["in_scc"] = G.nodes[u].get("in_scc", False) and G.nodes[v].get(
+                "in_scc", False
+            )
+    elif scc is True:
         G = ox.truncate.largest_component(G, strongly=True)
 
     # --- Speed inference ---
@@ -344,7 +353,7 @@ def get_cartography(
     dead_ends: bool = False,
     infer_speeds: bool = False,
     custom_filter: str | list[str] | None = None,
-    scc: bool = False,
+    scc: bool | str = False,
 ) -> tuple[nx.DiGraph, gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
     Retrieves and processes cartography data for a specified place using OpenStreetMap data.
@@ -370,7 +379,8 @@ def get_cartography(
             If True, calls ox.routing.add_edge_speeds using np.nanmedian as aggregation function.
             Finally, the "maxspeed" attribute is replaced with the inferred "speed_kph", and the "travel_time" attribute is computed.
         custom_filter (str | list[str], optional): A custom OSM filter string or list of strings to apply when retrieving the graph. Defaults to None.
-        scc (bool, optional): Whether to keep only the largest strongly connected component of the graph. Defaults to False.
+        scc (bool | str, optional): Whether to keep only the largest strongly connected component of the graph. Defaults to False.
+            If True, filters the graph to keep only the largest strongly connected component. If "mark", adds a boolean "in_scc" attribute to nodes and edges instead of filtering.
 
     Returns:
         tuple[nx.DiGraph, gpd.GeoDataFrame, gpd.GeoDataFrame]: Returns a tuple containing:
