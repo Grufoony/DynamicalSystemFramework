@@ -131,8 +131,8 @@ def process_cartography(
         G_scc = ox.truncate.largest_component(G, strongly=True)
         for node in G.nodes():
             G.nodes[node]["in_scc"] = node in G_scc.nodes()
-        for u, v in G.edges():
-            G[u][v][0]["in_scc"] = G.nodes[u].get("in_scc", False) and G.nodes[v].get(
+        for u, v, k in G.edges(keys=True):
+            G[u][v][k]["in_scc"] = G.nodes[u].get("in_scc", False) and G.nodes[v].get(
                 "in_scc", False
             )
     elif scc is True:
