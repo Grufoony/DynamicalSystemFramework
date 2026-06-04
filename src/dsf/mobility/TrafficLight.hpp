@@ -1,11 +1,36 @@
-/// @file src/dsf/headers/TrafficLight.hpp
-/// @brief Header file for the TrafficLight class
-
-/// @details This file contains the definition of the TrafficLightCycle and TrafficLight classes.
-///          The TrafficLightCycle class represents a cycle of a traffic light, with a green time
-///          and a phase. The TrafficLight class represents a traffic light intersection node in
-///          the road network. It is derived from the Intersection class and has a map of cycles for each
-///          street queue.
+/// @file TrafficLight.hpp
+/// @brief Phase-based traffic light state machine.
+///
+/// Design overview
+/// ───────────────
+/// A TrafficLight cycles through an ordered sequence of TrafficLightPhase
+/// objects.  Each phase has a fixed duration (in simulation ticks) and an
+/// explicit *green set*: the collection of (streetId, Direction) pairs that
+/// are green while that phase is active.  Every street/direction pair that
+/// is absent from the green set is implicitly red — no arithmetic offsets or
+/// wraparound logic is required.
+///
+/// State-machine transition (operator++):
+///   m_counter is incremented every tick.
+///   When m_counter reaches m_phases[m_currentPhaseIndex].duration() the
+///   machine moves to the next phase (wrapping) and resets m_counter to 0.
+///
+/// Query (isGreen):
+///   Looks up the active phase's green set and applies the standard
+///   direction-fallback ladder (RIGHT → RIGHTANDSTRAIGHT → ANY, etc.).
+///   If the street is absent entirely, returns m_allowFreeTurns.
+///
+/// Reset API:
+///   snapshot()  — saves current phase sequence as a restore point.
+///   restore()   — returns to the last snapshot.
+///   reset()     — returns to construction-time defaults (set by the last
+///                 setPhases() / addPhase() calls).
+///
+/// Optimiser interface:
+///   phase(i).setDuration(d) — mutates a single phase duration in-place.
+///   defaultPhases()         — read-only view of baseline durations.
+///   advanceBy(offset)       — fast-forwards the state machine by `offset`
+///                             ticks (used for green-wave synchronisation).
 
 #pragma once
 
@@ -13,144 +38,223 @@
 #include "../utility/Typedef.hpp"
 
 #include <format>
+#include <numeric>
+#include <optional>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace dsf::mobility {
-  class TrafficLightCycle {
+  /// @brief One phase in a TrafficLight program.
+  ///
+  /// A phase owns:
+  ///   - a duration  : how many ticks it stays active.
+  ///   - a green set : unordered_map<streetId, unordered_set<Direction>>
+  ///                   listing every (street, direction) that is green.
+  ///
+  /// Streets absent from the green set are implicitly red.
+  /// Direction fallback resolution is applied at query time by TrafficLight,
+  /// not here — containsGreen() performs an exact lookup only.
+  class TrafficLightPhase {
   private:
-    Delay m_greenTime;
-    Delay m_phase;
-    std::pair<Delay, Delay> m_defaultValues;
+    Delay m_duration;
+    std::unordered_map<Id, std::unordered_set<Direction>> m_greenSet;
 
   public:
-    /// @brief Construct a new TrafficLightCycle object
-    /// @param greenTime Delay, the green time
-    /// @param phase Delay, the phase
-    TrafficLightCycle(Delay greenTime, Delay phase)
-        : m_greenTime{greenTime},
-          m_phase{phase},
-          m_defaultValues{std::make_pair(m_greenTime, m_phase)} {}
+    /// @brief Construct a phase with the given duration and an empty green set.
+    /// @param duration Duration of the phase in ticks.
+    explicit TrafficLightPhase(Delay const duration) : m_duration{duration} {}
+    /// @brief Construct a phase with a duration and a pre-built green set.
+    /// @param duration Duration of the phase in ticks.
+    /// @param greenSet Unordered map of streetId to the set of green directions for that street.
+    TrafficLightPhase(Delay const duration,
+                      std::unordered_map<Id, std::unordered_set<Direction>> greenSet)
+        : m_duration{duration}, m_greenSet{std::move(greenSet)} {}
 
-    inline Delay greenTime() const { return m_greenTime; }
-    inline Delay phase() const { return m_phase; }
-    /// @brief Returns true if the cycle has its default values
-    inline bool isDefault() const {
-      return m_greenTime == m_defaultValues.first && m_phase == m_defaultValues.second;
+    /// @brief Mark a specific direction on a street as green.
+    /// @param streetId Street identifier.
+    /// @param direction Direction to mark as green.
+    inline void addGreen(Id const streetId, Direction const direction) {
+      m_greenSet[streetId].insert(direction);
     }
-    /// @brief Returns true if the current green time is greater than the default one
-    inline bool isGreenTimeIncreased() const {
-      return m_greenTime > m_defaultValues.first;
+    /// @brief Mark several directions on a street as green.
+    /// @param streetId Street identifier.
+    /// @param directions List of directions to mark as green for the given street.
+    inline void addGreen(Id const streetId, std::initializer_list<Direction> directions) {
+      for (auto const dir : directions) {
+        m_greenSet[streetId].insert(dir);
+      }
     }
-    /// @brief Returns true if the current green time is smaller than the default one
-    inline bool isRedTimeIncreased() const { return m_greenTime < m_defaultValues.first; }
-    /// @brief Returns true if the traffic light is green
-    /// @param cycleTime Delay, the total time of a red-green cycle
-    /// @param counter Delay, the current counter
-    /// @return true if counter < m_phase || (counter >= m_phase + m_greenTime && counter < cycleTime)
-    bool isGreen(Delay const cycleTime, Delay const counter) const;
-    /// @brief Reset the green and phase values to the default values
-    /// @details The default values are the values that the cycle had when it was created
-    void reset();
+    /// @brief Mark a street as green for ALL directions (inserts Direction::ANY).
+    /// This is the typical entry produced by auto-deduction.
+    /// @param streetId Street identifier.
+    inline void addGreen(Id const streetId) {
+      m_greenSet[streetId].insert(Direction::ANY);
+    }
+
+    /// @brief Check if a street is present in the green set, regardless of direction.
+    /// @return True if the street is present in the green set, regardless of direction.
+    inline auto containsStreet(Id const streetId) const {
+      return m_greenSet.contains(streetId);
+    }
+    /// @brief Exact lookup — does NOT apply the direction-fallback ladder.
+    /// Use TrafficLight::isGreen() for the full resolved query.
+    /// @param streetId Street identifier.
+    /// @param direction Direction of the movement.
+    /// @return True if the (streetId, direction) pair is present in the green set.
+    inline auto containsGreen(Id const streetId, Direction const direction) const {
+      auto const it = m_greenSet.find(streetId);
+      return it != m_greenSet.end() && it->second.contains(direction);
+    }
+
+    /// @brief Get the phase duration in ticks.
+    /// @return Duration of the phase in ticks.
+    inline auto duration() const { return m_duration; }
+    /// @brief Set the phase duration (used by the optimiser — does not affect
+    /// the green set or the running state machine counter).
+    /// @param duration New duration for the phase in ticks.
+    inline void setDuration(Delay const duration) { m_duration = duration; }
+    /// @brief Get a read-only view of the green set.
+    /// @return Read-only view of the green set.
+    inline auto const& greenSet() const { return m_greenSet; }
+
+    bool operator==(TrafficLightPhase const& other) const {
+      return m_duration == other.m_duration && m_greenSet == other.m_greenSet;
+    }
+    bool operator!=(TrafficLightPhase const& other) const { return !(*this == other); }
   };
 
   class TrafficLight final : public Intersection {
   private:
-    std::unordered_map<Id, std::unordered_map<Direction, TrafficLightCycle>> m_cycles;
-    std::unordered_map<Id, std::unordered_map<Direction, TrafficLightCycle>>
-        m_defaultCycles;
-    Delay m_cycleTime;  // The total time of a red-green cycle
-    Delay m_counter;
-    static bool m_allowFreeTurns;
+    std::vector<TrafficLightPhase> m_phases;         // Live phase sequence.
+    std::vector<TrafficLightPhase> m_defaultPhases;  // Set by setPhases/addPhase.
+    std::optional<std::vector<TrafficLightPhase>> m_snapshot;  // Saved by snapshot().
+
+    std::size_t m_currentPhaseIndex{0};
+    Delay m_counter{0};  // Ticks elapsed within the current phase.
+
+    bool m_allowFreeTurns{false};
+
+    /// @brief Apply the direction-fallback ladder to a set of directions.
+    /// Ladder: exact match → ANY → compound (RIGHTANDSTRAIGHT/LEFTANDSTRAIGHT).
+    static bool m_resolveDirection(std::unordered_set<Direction> const& dirSet,
+                                   Direction direction);
 
   public:
-    /// @brief Construct a new TrafficLight object
+    /// @brief Construct a new Traffic Light object
     /// @param id The node's id
-    /// @param cycleTime The node's cycle time
-    TrafficLight(Id id, Delay cycleTime)
-        : Intersection{id}, m_cycleTime{cycleTime}, m_counter{0} {}
-    /// @brief Construct a new TrafficLight object
+    explicit TrafficLight(Id const id) : Intersection{id} {}
+    /// @brief Construct a new Traffic Light object with a location
     /// @param id The node's id
-    /// @param cycleTime The node's cycle time
-    /// @param point A dsf::geometry::Point containing the node's coordinates
-    TrafficLight(Id id, Delay cycleTime, geometry::Point point)
-        : Intersection{id, std::move(point)}, m_cycleTime{cycleTime}, m_counter{0} {}
-    /// @brief Construct a new TrafficLight object
-    /// @param node A RoadJunction object representing the traffic light
-    /// @param cycleTime The node's cycle time
-    /// @param counter The node's counter
-    TrafficLight(RoadJunction const& node, Delay const cycleTime, Delay const counter = 0)
-        : Intersection{node}, m_cycleTime{cycleTime}, m_counter{counter} {}
-
+    /// @param point The location of the traffic light
+    TrafficLight(Id const id, geometry::Point point)
+        : Intersection{id, std::move(point)} {}
+    /// @brief Construct a new Traffic Light object from a road junction
+    /// @param node The road junction to convert into a traffic light
+    explicit TrafficLight(RoadJunction const& node) : Intersection{node} {}
     ~TrafficLight() = default;
 
+    /// @brief Advance by one simulation tick.
+    /// When the counter reaches the current phase's duration the machine
+    /// moves to the next phase (wrapping) and resets the counter to 0.
     TrafficLight& operator++();
 
-    static void setAllowFreeTurns(bool allow);
+    /// @brief When true, a street absent from the active phase's green set is treated as green
+    /// (free turn).
+    /// @note Default is false.
+    inline void setAllowFreeTurns(bool const allow) { m_allowFreeTurns = allow; }
 
-    /// @brief Get the mean green time over every cycle
-    /// @param priorityStreets bool, if true, only the priority streets are considered;
-    ///        if false, only the non-priority streets are considered
-    /// @return double The mean green time
-    /// @details The mean green time is the mean green time of all the cycles for
-    ///          the priority streets if priorityStreets is true, or for the non-priority
-    ///          streets if priorityStreets is false.
+    // ── Phase management ──────────────────────────────────────────────────
+
+    /// @brief Append one phase to the sequence and update stored defaults.
+    /// Resets the state machine to phase 0, counter 0.
+    void addPhase(TrafficLightPhase phase);
+    /// @brief Replace the entire phase sequence and update stored defaults.
+    /// Resets the state machine to phase 0, counter 0.
+    void setPhases(std::vector<TrafficLightPhase> phases);
+    /// @brief Remove all phases and clear all stored defaults/snapshots.
+    void clearPhases();
+
+    /// @brief Save the current phase sequence as a restore point.
+    /// Does NOT reset the running counter or current phase index.
+    void snapshot();
+    /// @brief Restore the phase sequence to the last snapshot().
+    /// Resets m_currentPhaseIndex and m_counter to 0.
+    /// Logs a warning and is a no-op if no snapshot exists.
+    void restore();
+    /// @brief Restore the phase sequence to construction-time defaults
+    /// (the state after the last setPhases() / addPhase() chain).
+    /// Resets m_currentPhaseIndex and m_counter to 0.
+    void reset();
+
+    /// @brief Returns true if the light is currently green for
+    /// (streetId, direction), applying the fallback ladder:
+    ///   exact direction → ANY → compound (RIGHTANDSTRAIGHT/LEFTANDSTRAIGHT).
+    /// Returns m_allowFreeTurns when streetId is absent from the active phase.
+    /// @param streetId Street identifier.
+    /// @param direction Direction of the movement.
+    /// @return True if the light is currently green for the given street and direction.
+    bool isGreen(Id const streetId, Direction const direction) const;
+
+    // ── Timing ────────────────────────────────────────────────────────────
+
+    /// @brief Total cycle time = sum of all phase durations.
+    Delay cycleTime() const;
+
+    /// @brief Mean green time (ticks) across priority or non-priority streets.
+    /// A street's green time = sum of durations of phases that list it.
     double meanGreenTime(bool priorityStreets) const;
-    /// @brief Get the traffic light's total cycle time
-    /// @return Delay The traffic light's cycle time
-    inline Delay cycleTime() const { return m_cycleTime; }
-    /// @brief Set the cycle for a street and a direction
-    /// @param streetId The street's id
-    /// @param direction The direction
-    /// @param cycle The traffic light cycle
-    void setCycle(Id const streetId, Direction direction, TrafficLightCycle const& cycle);
-    /// @brief Set the traffic light's cycles
-    /// @param cycles std::unordered_map<Id, std::unordered_map<Direction, TrafficLightCycle>> The traffic light's cycles
-    inline void setCycles(
-        std::unordered_map<Id, std::unordered_map<Direction, TrafficLightCycle>> cycles) {
-      m_cycles = std::move(cycles);
-    }
-    /// @brief Set the complementary cycle for a street
-    /// @param streetId Id, The street's id
-    /// @param existingCycle Id, The street's id associated with the existing cycle
-    /// @throws std::invalid_argument if the street id does not exist
-    /// @throws std::invalid_argument if the cycle does not exist
-    /// @details The complementary cycle is a cycle that has as green time the total cycle time minus
-    ///          the green time of the existing cycle. The phase is the total cycle time minus the
-    ///          green time of the existing cycle, plus the phase of the existing cycle.
-    void setComplementaryCycle(Id const streetId, Id const existingCycle);
-    /// @brief Increase the phase times of the traffic light cycles
-    /// @param phase Delay, the amount of time to increase the phase for each cycle
-    void increasePhases(Delay const phase);
-    /// @brief Get the traffic light's cycles
-    /// @return std::unordered_map<Id, std::unordered_map<Direction, TrafficLightCycle>> const& The traffic light's cycles
-    inline std::unordered_map<Id, std::unordered_map<Direction, TrafficLightCycle>> const&
-    cycles() const {
-      return m_cycles;
-    }
-    inline Delay counter() const { return m_counter; }
-    /// @brief Returns true if all the cycles are set to their default values
+
+    /// @brief True if the live phase sequence equals the stored defaults.
     bool isDefault() const;
-    /// @brief Returns true if the traffic light is green for a street and a direction
-    /// @param streetId Id, the street's id
-    /// @param direction Direction, the direction
-    /// @return true if the traffic light is green for the street and direction
-    bool isGreen(Id const streetId, Direction direction) const;
-    /// @brief Resets all traffic light cycles
-    /// @details For more info, see @ref TrafficLightCycle::reset()
-    void resetCycles();
+
+    // ── Green-wave helper ─────────────────────────────────────────────────
+
+    /// @brief Fast-forward the state machine by `offset` ticks.
+    /// offset is taken modulo cycleTime() so large values are safe.
+    /// Used by the DOUBLE_TAIL optimiser.
+    void advanceBy(Delay offset);
+
+    // ── Accessors ─────────────────────────────────────────────────────────
+
+    inline Delay counter() const { return m_counter; }
+    inline std::size_t currentPhaseIndex() const { return m_currentPhaseIndex; }
+
+    /// @brief Read-only view of the live phase sequence.
+    inline std::vector<TrafficLightPhase> const& phases() const { return m_phases; }
+
+    /// @brief Read-only view of the default (baseline) phase sequence.
+    /// Used by the optimiser to access baseline durations without mutating
+    /// the live sequence.
+    inline std::vector<TrafficLightPhase> const& defaultPhases() const {
+      return m_defaultPhases;
+    }
+
+    /// @brief Mutable access to one live phase (intended for optimiser only).
+    inline TrafficLightPhase& phase(std::size_t index) { return m_phases.at(index); }
+
     constexpr bool isTrafficLight() const noexcept { return true; }
   };
+
 }  // namespace dsf::mobility
 
+// ── std::formatter specialisations ──────────────────────────────────────────
+
 template <>
-struct std::formatter<dsf::mobility::TrafficLightCycle> {
+struct std::formatter<dsf::mobility::TrafficLightPhase> {
   constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
   template <typename FormatContext>
-  auto format(const dsf::mobility::TrafficLightCycle& cycle, FormatContext&& ctx) const {
-    return std::format_to(ctx.out(),
-                          "TrafficLightCycle (green time: {} - phase shift: {})",
-                          cycle.greenTime(),
-                          cycle.phase());
+  auto format(dsf::mobility::TrafficLightPhase const& p, FormatContext&& ctx) const {
+    std::string body;
+    for (auto const& [streetId, dirs] : p.greenSet()) {
+      body += std::format("\tstreet {}:", streetId);
+      for (auto const dir : dirs)
+        body += std::format(" {}", dsf::directionToString.at(dir));
+      body += "\n";
+    }
+    return std::format_to(
+        ctx.out(), "Phase (duration: {} ticks)\n{}", p.duration(), body);
   }
 };
 
@@ -158,23 +262,21 @@ template <>
 struct std::formatter<dsf::mobility::TrafficLight> {
   constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
   template <typename FormatContext>
-  auto format(const dsf::mobility::TrafficLight& tl, FormatContext&& ctx) const {
-    std::string strCycles;
-    for (auto const& [streetId, cycles] : tl.cycles()) {
-      std::string strStreetCycles{std::format("\tStreet {}:\n", streetId)};
-      for (auto const& [direction, cycle] : cycles) {
-        strStreetCycles += std::format(
-            "\t\t- dir {}: {}\n", dsf::directionToString.at(direction), cycle);
-      }
-      strCycles += strStreetCycles;
+  auto format(dsf::mobility::TrafficLight const& tl, FormatContext&& ctx) const {
+    std::string phases;
+    for (std::size_t i = 0; i < tl.phases().size(); ++i) {
+      phases += std::format(
+          "  [{}]{} {}", i, (i == tl.currentPhaseIndex()) ? '*' : ' ', tl.phases()[i]);
     }
-    return std::format_to(
-        ctx.out(),
-        "TrafficLight \"{}\" ({}): cycle time {} - counter {}. Cycles:\n{}",
-        tl.name(),
-        tl.id(),
-        tl.cycleTime(),
-        tl.counter(),
-        strCycles);
+    return std::format_to(ctx.out(),
+                          "TrafficLight \"{}\" (id {}): cycle={} ticks, "
+                          "phase {}/{}, counter={}\n{}",
+                          tl.name(),
+                          tl.id(),
+                          tl.cycleTime(),
+                          tl.currentPhaseIndex(),
+                          tl.phases().size(),
+                          tl.counter(),
+                          phases);
   }
 };

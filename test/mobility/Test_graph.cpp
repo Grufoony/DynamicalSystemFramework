@@ -2,6 +2,7 @@
 #include "dsf/base/Node.hpp"
 #include "dsf/mobility/Road.hpp"
 #include "dsf/mobility/Street.hpp"
+#include "dsf/mobility/TrafficLight.hpp"
 
 #include <cassert>
 #include <cstdint>
@@ -125,6 +126,46 @@ TEST_CASE("RoadNetwork") {
       }
     }
   }
+  SUBCASE("importTrafficLights") {
+    GIVEN("A graph object with a legacy traffic light CSV") {
+      RoadNetwork graph;
+      graph.addNDefaultNodes(4);
+      graph.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
+                       Street{101, std::make_pair(2, 1), 50., 13.8888888889},
+                       Street{102, std::make_pair(3, 1), 50., 13.8888888889});
+
+      auto const csvPath =
+          std::filesystem::temp_directory_path() / "dsf_import_traffic_lights.csv";
+      {
+        std::ofstream out{csvPath};
+        REQUIRE(out.is_open());
+        out << "id;sourceId;cycleTime;greenTime\n";
+        out << "1;0;90;30\n";
+        out << "1;2;90;60\n";
+      }
+
+      WHEN("We import the legacy traffic light definition") {
+        graph.importTrafficLights(csvPath.string());
+        auto& tl = graph.node<TrafficLight>(1);
+
+        THEN("The importer reconstructs the two phases") {
+          CHECK_EQ(graph.nTrafficLights(), 1);
+          CHECK_EQ(tl.phases().size(), 2);
+          CHECK_EQ(tl.phases()[0].duration(), 30);
+          CHECK_EQ(tl.phases()[1].duration(), 60);
+          CHECK(tl.phases()[0].containsGreen(100, dsf::Direction::ANY));
+          CHECK(tl.phases()[1].containsGreen(101, dsf::Direction::ANY));
+        }
+
+        THEN("Free turns stay disabled for streets absent from the CSV") {
+          CHECK_FALSE(tl.isGreen(102, dsf::Direction::RIGHT));
+        }
+      }
+
+      std::filesystem::remove(csvPath);
+    }
+  }
+
   SUBCASE("importEdges and importNodeProperties") {
     GIVEN("A graph object") {
       RoadNetwork graph;
@@ -327,7 +368,7 @@ TEST_CASE("RoadNetwork") {
         Street s4{21, std::make_pair(4, 1), 30., 15., 2};
         RoadNetwork graph2;
         graph2.addNDefaultNodes(5);
-        graph2.makeTrafficLight(1, 120);
+        graph2.makeTrafficLight(1);
         graph2.addStreets(s1, s2, s3, s4);
         for (auto const& [streetId, pStreet] : graph2.edges()) {
           pStreet->setCapacity(2 * pStreet->nLanes());
@@ -336,28 +377,29 @@ TEST_CASE("RoadNetwork") {
           graph2.autoInitTrafficLights();
           THEN("Parameters are correctly set") {
             auto& tl{graph2.node<dsf::mobility::TrafficLight>(1)};
-            CHECK_EQ(tl.cycleTime(), 120);
-            auto const& cycles{tl.cycles()};
-            CHECK_EQ(cycles.size(), 4);
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::RIGHTANDSTRAIGHT).greenTime(), 48);
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::LEFT).greenTime(), 24);
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::RIGHTANDSTRAIGHT).phase(), 0);
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::LEFT).phase(), 48);
-            CHECK_EQ(cycles.at(11).at(dsf::Direction::RIGHTANDSTRAIGHT).greenTime(), 48);
-            CHECK_EQ(cycles.at(11).at(dsf::Direction::LEFT).greenTime(), 24);
-            CHECK_EQ(cycles.at(11).at(dsf::Direction::RIGHTANDSTRAIGHT).phase(), 0);
-            CHECK_EQ(cycles.at(11).at(dsf::Direction::LEFT).phase(), 48);
-            CHECK_EQ(cycles.at(16).at(dsf::Direction::ANY).greenTime(), 48);
-            CHECK_EQ(cycles.at(16).at(dsf::Direction::ANY).phase(), 72);
-            CHECK_EQ(cycles.at(21).at(dsf::Direction::ANY).greenTime(), 48);
-            CHECK_EQ(cycles.at(21).at(dsf::Direction::ANY).phase(), 72);
+            // cycleTime = TRAFFICLIGHT_DEFAULT_CYCLE = 90
+            CHECK_EQ(tl.cycleTime(), 90);
+            auto const& phases{tl.phases()};
+            CHECK_EQ(phases.size(), 2);
+            // Phase 0: priority streets 1 and 11 (3-lane → RIGHTANDSTRAIGHT + LEFT)
+            // duration = floor(0.6 * 90) = 54
+            CHECK_EQ(phases[0].duration(), 54);
+            CHECK(phases[0].containsGreen(1, dsf::Direction::RIGHTANDSTRAIGHT));
+            CHECK(phases[0].containsGreen(1, dsf::Direction::LEFT));
+            CHECK(phases[0].containsGreen(11, dsf::Direction::RIGHTANDSTRAIGHT));
+            CHECK(phases[0].containsGreen(11, dsf::Direction::LEFT));
+            // Phase 1: non-priority streets 16 and 21 (1-lane → ANY)
+            // duration = 90 - 54 = 36
+            CHECK_EQ(phases[1].duration(), 36);
+            CHECK(phases[1].containsGreen(16, dsf::Direction::ANY));
+            CHECK(phases[1].containsGreen(21, dsf::Direction::ANY));
           }
         }
       }
       GIVEN("A traffic light with streets having same names (priority by name)") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
-        graph.makeTrafficLight(0, 100);
+        graph.makeTrafficLight(0);
         // Constructor: id, nodePair, length, maxSpeed, nLanes, name
         Street s1{1, std::make_pair(1, 0), 50., 15., 1, "Main Street"};
         Street s2{2, std::make_pair(2, 0), 50., 15., 1, "Main Street"};
@@ -379,7 +421,7 @@ TEST_CASE("RoadNetwork") {
       GIVEN("A traffic light with streets having different max speeds") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
-        graph.makeTrafficLight(0, 100);
+        graph.makeTrafficLight(0);
         // All streets have unique names (no name-based priority) but different speeds
         Street s1{1, std::make_pair(1, 0), 50., 50., 1, "Road A"};  // Higher speed
         Street s2{2, std::make_pair(2, 0), 50., 50., 1, "Road B"};  // Higher speed
@@ -401,7 +443,7 @@ TEST_CASE("RoadNetwork") {
       GIVEN("A traffic light with streets having different lane counts") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
-        graph.makeTrafficLight(0, 100);
+        graph.makeTrafficLight(0);
         // All unique names, same speed, different lane counts
         Street s1{1, std::make_pair(1, 0), 50., 30., 2, "Road A"};  // Higher lanes
         Street s2{2, std::make_pair(2, 0), 50., 30., 2, "Road B"};  // Higher lanes
@@ -423,7 +465,7 @@ TEST_CASE("RoadNetwork") {
       GIVEN("A traffic light with less than 3 incoming streets") {
         RoadNetwork graph;
         graph.addNDefaultNodes(3);
-        graph.makeTrafficLight(0, 100);
+        graph.makeTrafficLight(0);
         Street s1{1, std::make_pair(1, 0), 50., 30., 1};
         Street s2{2, std::make_pair(2, 0), 50., 30., 1};
         graph.addStreets(s1, s2);
@@ -439,7 +481,7 @@ TEST_CASE("RoadNetwork") {
       GIVEN("A traffic light with custom mainRoadPercentage") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
-        graph.makeTrafficLight(0, 100);
+        graph.makeTrafficLight(0);
         Street s1{1, std::make_pair(1, 0), 50., 15., 1};
         s1.setPriority();
         Street s2{2, std::make_pair(2, 0), 50., 15., 1};
@@ -449,45 +491,42 @@ TEST_CASE("RoadNetwork") {
 
         WHEN("We auto-init Traffic Lights with 70% main road percentage") {
           graph.autoInitTrafficLights(0.7);
-          THEN("Green times reflect the custom percentage") {
+          THEN("Phase durations reflect the custom percentage") {
             auto& tl{graph.node<dsf::mobility::TrafficLight>(0)};
-            auto const& cycles{tl.cycles()};
-            // Main road gets 70% of 100 = 70
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::ANY).greenTime(), 70);
-            CHECK_EQ(cycles.at(2).at(dsf::Direction::ANY).greenTime(), 70);
-            // Secondary road gets 30% of 100 = 30
-            CHECK_EQ(cycles.at(3).at(dsf::Direction::ANY).greenTime(), 30);
-            // Phases: main roads start at 0, secondary at 70
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::ANY).phase(), 0);
-            CHECK_EQ(cycles.at(2).at(dsf::Direction::ANY).phase(), 0);
-            CHECK_EQ(cycles.at(3).at(dsf::Direction::ANY).phase(), 70);
+            auto const& phases{tl.phases()};
+            CHECK_EQ(phases.size(), 2);
+            CHECK_EQ(phases.at(0).duration(), 62);
+            CHECK_EQ(phases.at(1).duration(), 28);
+            CHECK(phases.at(0).containsGreen(1, dsf::Direction::ANY));
+            CHECK(phases.at(0).containsGreen(2, dsf::Direction::ANY));
+            CHECK(phases.at(1).containsGreen(3, dsf::Direction::ANY));
           }
         }
       }
       GIVEN("A traffic light already initialized with cycles") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
-        auto& tl = graph.makeTrafficLight(0, 100);
+        auto& tl = graph.makeTrafficLight(0);
         Street s1{1, std::make_pair(1, 0), 50., 15., 1};
         Street s2{2, std::make_pair(2, 0), 50., 15., 1};
         Street s3{3, std::make_pair(3, 0), 50., 15., 1};
         graph.addStreets(s1, s2, s3);
-        // Pre-initialize cycles
-        tl.setCycle(1, dsf::Direction::ANY, dsf::mobility::TrafficLightCycle{50, 0});
+        // Pre-initialize phases so auto-init should skip this traffic light
+        tl.setPhases(std::vector<TrafficLightPhase>{TrafficLightPhase{50}});
 
         WHEN("We auto-init Traffic Lights") {
           graph.autoInitTrafficLights();
           THEN("Traffic light is not modified") {
-            auto const& cycles{tl.cycles()};
-            CHECK_EQ(cycles.size(), 1);
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::ANY).greenTime(), 50);
+            auto const& phases{tl.phases()};
+            CHECK_EQ(phases.size(), 1);
+            CHECK_EQ(phases.at(0).duration(), 50);
           }
         }
       }
       GIVEN("A traffic light with 4 streets all having the same characteristics") {
         RoadNetwork graph;
         graph.addNDefaultNodes(5);
-        graph.makeTrafficLight(0, 120);
+        graph.makeTrafficLight(0);
         // All streets identical with unique names - will fall back to angle or capacity-based selection
         Street s1{1, std::make_pair(1, 0), 50., 30., 1, "Road A"};
         Street s2{2, std::make_pair(2, 0), 50., 30., 1, "Road B"};
@@ -504,16 +543,16 @@ TEST_CASE("RoadNetwork") {
             auto& tl{graph.node<dsf::mobility::TrafficLight>(0)};
             auto const& priorities{tl.streetPriorities()};
             CHECK_EQ(priorities.size(), 2);
-            // Cycles should be initialized for all 4 streets
-            auto const& cycles{tl.cycles()};
-            CHECK_EQ(cycles.size(), 4);
+            // Phases should be initialized for priority and non-priority streets
+            auto const& phases{tl.phases()};
+            CHECK_EQ(phases.size(), 2);
           }
         }
       }
       GIVEN("A traffic light with 3-lane streets") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
-        graph.makeTrafficLight(0, 90);
+        graph.makeTrafficLight(0);
         Street s1{1, std::make_pair(1, 0), 50., 15., 3};
         s1.setPriority();
         Street s2{2, std::make_pair(2, 0), 50., 15., 3};
@@ -523,22 +562,18 @@ TEST_CASE("RoadNetwork") {
 
         WHEN("We auto-init Traffic Lights") {
           graph.autoInitTrafficLights();
-          THEN("3-lane streets get RIGHTANDSTRAIGHT and LEFT cycles") {
+          THEN("3-lane streets get RIGHTANDSTRAIGHT and LEFT phases") {
             auto& tl{graph.node<dsf::mobility::TrafficLight>(0)};
-            auto const& cycles{tl.cycles()};
-            // Each 3-lane street should have 2 cycle entries
-            CHECK(cycles.at(1).contains(dsf::Direction::RIGHTANDSTRAIGHT));
-            CHECK(cycles.at(1).contains(dsf::Direction::LEFT));
-            CHECK(cycles.at(2).contains(dsf::Direction::RIGHTANDSTRAIGHT));
-            CHECK(cycles.at(2).contains(dsf::Direction::LEFT));
-            CHECK(cycles.at(3).contains(dsf::Direction::RIGHTANDSTRAIGHT));
-            CHECK(cycles.at(3).contains(dsf::Direction::LEFT));
-            // Main road (60% of 90 = 54): RIGHTANDSTRAIGHT = 36, LEFT = 18
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::RIGHTANDSTRAIGHT).greenTime(), 36);
-            CHECK_EQ(cycles.at(1).at(dsf::Direction::LEFT).greenTime(), 18);
-            // Secondary road (40% of 90 = 36): RIGHTANDSTRAIGHT = 24, LEFT = 12
-            CHECK_EQ(cycles.at(3).at(dsf::Direction::RIGHTANDSTRAIGHT).greenTime(), 24);
-            CHECK_EQ(cycles.at(3).at(dsf::Direction::LEFT).greenTime(), 12);
+            auto const& phases{tl.phases()};
+            CHECK_EQ(phases.size(), 2);
+            // Each 3-lane street should have both directions green in the priority phase
+            CHECK(phases.at(0).containsGreen(1, dsf::Direction::RIGHTANDSTRAIGHT));
+            CHECK(phases.at(0).containsGreen(1, dsf::Direction::LEFT));
+            CHECK(phases.at(0).containsGreen(2, dsf::Direction::RIGHTANDSTRAIGHT));
+            CHECK(phases.at(0).containsGreen(2, dsf::Direction::LEFT));
+            // Non-priority phase should still carry the 3-lane street directions
+            CHECK(phases.at(1).containsGreen(3, dsf::Direction::RIGHTANDSTRAIGHT));
+            CHECK(phases.at(1).containsGreen(3, dsf::Direction::LEFT));
           }
         }
       }
@@ -547,11 +582,11 @@ TEST_CASE("RoadNetwork") {
       RoadNetwork graph{};
       graph.addStreet(Street{1, std::make_pair(0, 1)});
       WHEN("We make node 0 a traffic light") {
-        auto& tl = graph.makeTrafficLight(0, 60);
+        auto& tl = graph.makeTrafficLight(0);
         THEN("The node 0 is a traffic light") { CHECK(graph.node(0).isTrafficLight()); }
         THEN("The traffic light has the correct parameters") {
           CHECK_EQ(tl.id(), 0);
-          CHECK_EQ(tl.cycleTime(), 60);
+          CHECK_EQ(tl.cycleTime(), 0);
         }
       }
     }

@@ -3,6 +3,7 @@
 #include "dsf/mobility/Itinerary.hpp"
 #include "dsf/mobility/Street.hpp"
 #include "dsf/mobility/Intersection.hpp"
+#include "dsf/mobility/TrafficLight.hpp"
 #include "dsf/mobility/Agent.hpp"
 
 #include <tbb/tbb.h>
@@ -85,7 +86,10 @@ TEST_CASE("FirstOrderDynamics") {
         }
       }
       WHEN("We transform a node into a traffic light and create the dynamics") {
-        auto& tl = defaultNetwork.makeTrafficLight(0, 2);
+        auto& tl = defaultNetwork.makeTrafficLight(0);
+        // Two phases of 1 tick each → cycleTime() == 2
+        tl.addPhase(TrafficLightPhase{1});
+        tl.addPhase(TrafficLightPhase{1});
         FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
         THEN("The node is a traffic light") {
           CHECK(dynamics.graph().node(0).isTrafficLight());
@@ -847,7 +851,6 @@ TEST_CASE("FirstOrderDynamics") {
     }
   }
   SUBCASE("TrafficLights") {
-    TrafficLight::setAllowFreeTurns(false);
     GIVEN(
         "A dynamics object, a network with traffic lights, an itinerary and "
         "an agent") {
@@ -857,11 +860,22 @@ TEST_CASE("FirstOrderDynamics") {
       Street s4{9, std::make_pair(1, 4), 30., 15.};
       RoadNetwork graph2;
       graph2.setEdgeWeight("length");
-      graph2.addNode<TrafficLight>(1, 4);
+      graph2.addNode<TrafficLight>(1);
       graph2.addStreets(s1, s2, s3, s4);
       auto& tl = graph2.node<TrafficLight>(1);
-      tl.setCycle(1, dsf::Direction::ANY, {2, 0});
-      tl.setCycle(16, dsf::Direction::ANY, {2, 2});
+      tl.setAllowFreeTurns(false);
+      // Phase 0 (ticks 0-1): street 1 green — agent can exit toward node 2
+      {
+        TrafficLightPhase p{2};
+        p.addGreen(1, dsf::Direction::ANY);
+        tl.addPhase(p);
+      }
+      // Phase 1 (ticks 2-3): street 16 green — agent can exit toward node 4
+      {
+        TrafficLightPhase p{2};
+        p.addGreen(16, dsf::Direction::ANY);
+        tl.addPhase(p);
+      }
       FirstOrderDynamics dynamics{std::move(graph2), false, 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
@@ -909,13 +923,37 @@ TEST_CASE("FirstOrderDynamics") {
       RoadNetwork graph2;
       graph2.setEdgeWeight("length");
       {
-        graph2.addNode<TrafficLight>(1, 6, dsf::geometry::Point(0., 0.));
+        graph2.addNode<TrafficLight>(1, dsf::geometry::Point(0., 0.));
         auto& tl = graph2.node<TrafficLight>(1);
-        tl.setCycle(1, dsf::Direction::RIGHTANDSTRAIGHT, {2, 2});
-        tl.setCycle(1, dsf::Direction::LEFT, {1, 4});
-        tl.setCycle(11, dsf::Direction::ANY, {3, 2});
-        tl.setComplementaryCycle(8, 11);
-        tl.setComplementaryCycle(21, 11);
+        // Equivalent timing to the old cycle setup (cycleTime=6):
+        // Phase 0 (duration=2, ticks 0-1): streets 8 and 21 green — no exit from street 1
+        {
+          TrafficLightPhase p{2};
+          p.addGreen(8);
+          p.addGreen(21);
+          tl.addPhase(p);
+        }
+        // Phase 1 (duration=2, ticks 2-3): street 1 RIGHTANDSTRAIGHT + street 11 green
+        {
+          TrafficLightPhase p{2};
+          p.addGreen(1, dsf::Direction::RIGHTANDSTRAIGHT);
+          p.addGreen(11);
+          tl.addPhase(p);
+        }
+        // Phase 2 (duration=1, tick 4): street 1 LEFT + street 11 green
+        {
+          TrafficLightPhase p{1};
+          p.addGreen(1, dsf::Direction::LEFT);
+          p.addGreen(11);
+          tl.addPhase(p);
+        }
+        // Phase 3 (duration=1, tick 5): streets 8 and 21 green (wrap-around)
+        {
+          TrafficLightPhase p{1};
+          p.addGreen(8);
+          p.addGreen(21);
+          tl.addPhase(p);
+        }
       }
       graph2.addNode<dsf::mobility::Intersection>(0, dsf::geometry::Point(-1, 0));
       graph2.addNode<dsf::mobility::Intersection>(2, dsf::geometry::Point(1, 0));
@@ -973,14 +1011,30 @@ TEST_CASE("FirstOrderDynamics") {
       RoadNetwork graph2;
       graph2.setEdgeWeight("length");
       {
-        graph2.addNode<TrafficLight>(1, 6, dsf::geometry::Point(0, 0));
+        graph2.addNode<TrafficLight>(1, dsf::geometry::Point(0., 0.));
         auto& tl = graph2.node<TrafficLight>(1);
-        // Now testing red light = NO PHASE
-        tl.setCycle(1, dsf::Direction::RIGHTANDSTRAIGHT, {2, 0});
-        tl.setCycle(1, dsf::Direction::LEFT, {1, 2});
-        tl.setCycle(11, dsf::Direction::ANY, {3, 0});
-        tl.setComplementaryCycle(8, 11);
-        tl.setComplementaryCycle(21, 11);
+        // Equivalent timing to the old cycle setup (cycleTime=6):
+        // Phase 0 (duration=2, ticks 0-1): street 1 RIGHTANDSTRAIGHT + street 11 green
+        {
+          TrafficLightPhase p{2};
+          p.addGreen(1, dsf::Direction::RIGHTANDSTRAIGHT);
+          p.addGreen(11);
+          tl.addPhase(p);
+        }
+        // Phase 1 (duration=1, tick 2): street 1 LEFT + street 11 green
+        {
+          TrafficLightPhase p{1};
+          p.addGreen(1, dsf::Direction::LEFT);
+          p.addGreen(11);
+          tl.addPhase(p);
+        }
+        // Phase 2 (duration=3, ticks 3-5): streets 8 and 21 green
+        {
+          TrafficLightPhase p{3};
+          p.addGreen(8);
+          p.addGreen(21);
+          tl.addPhase(p);
+        }
       }
       graph2.addNode<dsf::mobility::Intersection>(0, dsf::geometry::Point(-1, 0));
       graph2.addNode<dsf::mobility::Intersection>(2, dsf::geometry::Point(1, 0));
@@ -1039,13 +1093,25 @@ TEST_CASE("FirstOrderDynamics") {
         RoadNetwork graph2;
         graph2.setEdgeWeight("length");
         graph2.addStreets(s_01, s_10, s_12, s_21, s_13, s_31, s_14, s_41);
-        auto& tl = graph2.makeTrafficLight(1, 8, 3);
+        auto& tl = graph2.makeTrafficLight(1);
         tl.addStreetPriority(1);
         tl.addStreetPriority(11);
-        tl.setCycle(1, dsf::Direction::ANY, {4, 0});
-        tl.setCycle(11, dsf::Direction::ANY, {4, 0});
-        tl.setComplementaryCycle(16, 11);
-        tl.setComplementaryCycle(21, 11);
+        // Phase 0 (4 ticks): priority streets 1 and 11 green
+        {
+          TrafficLightPhase p{4};
+          p.addGreen(1);
+          p.addGreen(11);
+          tl.addPhase(p);
+        }
+        // Phase 1 (4 ticks): non-priority streets 16 and 21 green
+        {
+          TrafficLightPhase p{4};
+          p.addGreen(16);
+          p.addGreen(21);
+          tl.addPhase(p);
+        }
+        // The original counter started at 3 — reproduce with advanceBy
+        tl.advanceBy(3);
         FirstOrderDynamics dynamics{std::move(graph2), false, 69};
         dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
         dynamics.setDestinationNodes({0, 2, 3, 4});

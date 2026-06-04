@@ -84,11 +84,22 @@ namespace dsf::mobility {
     /// @brief Adjust the nodes' transport capacity
     /// @details The nodes' capacity is adjusted using the graph's streets transport capacity, which may vary basing on the number of lanes. The node capacity will be set to the sum of the incoming streets' transport capacity.
     void adjustNodeCapacities();
-    /// @brief Initialize the traffic lights with random parameters
-    /// @param mainRoadPercentage The percentage of main roads for the traffic lights cycles (default is 0.6)
-    /// @details Traffic Lights with no parameters set are initialized with random parameters.
-    /// Street priorities are assigned considering the number of lanes and the speed limit.
-    /// Traffic Lights with an input degree lower than 3 are converted to standard intersections.
+    /// @brief Auto-initialise traffic light phases from street geometry.
+    /// @param mainRoadPercentage Fraction of the cycle time allocated to
+    ///        priority streets (default 0.6).
+    /// @details For each TrafficLight node that has no phases yet:
+    ///   - Nodes with fewer than 3 ingoing edges are downgraded to plain
+    ///     Intersection nodes.
+    ///   - Priority streets are detected by name, speed limit, lane count
+    ///     or angle (in that order of precedence).
+    ///   - Two phases are created:
+    ///       Phase 0 (priority streets)    — duration = mainRoadPercentage * DEFAULT_CYCLE
+    ///       Phase 1 (non-priority streets) — duration = remaining ticks
+    ///   - Every street is added to its phase with Direction::ANY; for
+    ///     3-lane streets, RIGHTANDSTRAIGHT and LEFT are used instead so
+    ///     that autoMapStreetLanes() can produce correct per-lane mappings.
+    ///   - Nodes whose phases have been set manually (via JSON config or
+    ///     importTrafficLights()) are skipped.
     void autoInitTrafficLights(double const mainRoadPercentage = 0.6);
     /// @brief Automatically re-maps street lanes basing on network's topology
     /// @details For example, if one street has the right turn forbidden, then the right lane becomes a straight one
@@ -139,19 +150,23 @@ namespace dsf::mobility {
     /// - geometry: The geometry of the node, as a POINT
     template <typename... TArgs>
     void importNodeProperties(const std::string& fileName, TArgs&&... args);
-    /// @brief Import the graph's traffic lights from a file
-    /// @param fileName The name of the file to import the traffic lights from.
-    /// @details The file format is csv-like with the ';' separator. Supported columns (in order):
-    /// - id: The id of the TrafficLight node
-    /// - sourceId: The id of the source node of the incoming street
-    /// - cycleTime: The traffic light's cycle time, in seconds
-    /// - greenTime: The green time of the considered phase, in time-steps
-    /// @throws std::invalid_argument if the file is not found, invalid or the format is not supported
-    /// @details The traffic lights are imported from the specified file. If the file does not provide
-    ///           sufficient parameters, the behavior of the traffic light initialization is undefined.
-    ///           Ensure the file contains valid and complete data for accurate traffic light configuration.
-    ///           Street priorities may be assigned based on additional parameters such as the number of lanes
-    ///           and the speed limit, if such data is available in the file.
+    /// @brief Import traffic light phases from a legacy CSV file.
+    /// @param fileName The path to the CSV file.
+    /// @details The file uses ';' as separator. Expected columns (in order):
+    ///   - id        : The TrafficLight node id
+    ///   - sourceId  : The source node id of the ingoing street
+    ///   - cycleTime : Total cycle duration in ticks
+    ///   - greenTime : Green duration for this street in ticks
+    ///
+    /// The importer reconstructs a two-phase TrafficLight from each node's
+    /// entries:
+    ///   - Streets whose greenTime equals the first greenTime seen for that
+    ///     node → Phase 0 (duration = firstGreenTime).
+    ///   - Remaining streets → Phase 1 (duration = cycleTime − firstGreenTime).
+    ///
+    /// All streets are added with Direction::ANY. Use the JSON config block
+    /// under road_network.traffic_lights for direction-level control.
+    /// @throws std::runtime_error if the file cannot be opened.
     void importTrafficLights(const std::string& fileName);
 
     template <typename T1, typename... Tn>
@@ -159,15 +174,14 @@ namespace dsf::mobility {
                (is_node_v<std::remove_reference_t<Tn>> && ...)
     void addNodes(T1&& node, Tn&&... nodes);
 
-    /// @brief Convert an existing node to a traffic light
-    /// @param nodeId The id of the node to convert to a traffic light
-    /// @param cycleTime The traffic light's cycle time
-    /// @param counter The traffic light's counter initial value. Default is 0
-    /// @return A reference to the traffic light
-    /// @throws std::invalid_argument if the node does not exist
-    TrafficLight& makeTrafficLight(Id const nodeId,
-                                   Delay const cycleTime,
-                                   Delay const counter = 0);
+    /// @brief Convert an existing node to a traffic light.
+    /// @param nodeId The id of the node to convert.
+    /// @return A reference to the new TrafficLight node.
+    /// @throws std::invalid_argument if the node does not exist.
+    /// @note Phases are NOT set here. Call autoInitTrafficLights() afterwards
+    ///       for geometry-based auto-deduction, or configure phases explicitly
+    ///       via TrafficLight::setPhases() / TrafficLight::addPhase().
+    TrafficLight& makeTrafficLight(Id const nodeId);
     /// @brief Convert an existing node into a roundabout
     /// @param nodeId The id of the node to convert to a roundabout
     /// @return A reference to the roundabout

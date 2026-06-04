@@ -125,7 +125,7 @@ int main(int argc, char** argv) {
   std::cout << "Traffic Lightning the simulation...\n";
   for (auto const& [nodeId, pNode] : graph.nodes()) {
     if (pNode->outgoingEdges().size() > 3) {
-      graph.makeTrafficLight(nodeId, 120);
+      graph.makeTrafficLight(nodeId);
     }
   }
   std::cout << "Add a coil on every street...\n";

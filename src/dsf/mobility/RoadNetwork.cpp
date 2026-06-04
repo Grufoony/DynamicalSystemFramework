@@ -254,7 +254,7 @@ namespace dsf::mobility {
             return std::tolower(c);
           });
       if (strType.find("traffic_signals") != std::string::npos) {
-        makeTrafficLight(nodeId, TRAFFICLIGHT_DEFAULT_CYCLE);
+        makeTrafficLight(nodeId);
       } else if (strType.find("roundabout") != std::string::npos) {
         makeRoundabout(nodeId);
       }
@@ -492,7 +492,7 @@ namespace dsf::mobility {
             return;
           }
           auto& tl = static_cast<TrafficLight&>(*pNode);
-          if (!tl.streetPriorities().empty() || !tl.cycles().empty()) {
+          if (!tl.streetPriorities().empty() || !tl.phases().empty()) {
             return;
           }
           auto const& inNeighbours = pNode->ingoingEdges();
@@ -626,47 +626,39 @@ namespace dsf::mobility {
             tl.addStreetPriority(thirdKey);
           }
 
-          // Assign cycles
-          std::pair<Delay, Delay> greenTimes;
-          {
-            auto const mainGreenTime{
-                static_cast<Delay>(mainRoadPercentage * tl.cycleTime())};
-            auto const secondaryGreenTime{
-                static_cast<Delay>(tl.cycleTime() - mainGreenTime)};
-            greenTimes = std::make_pair(mainGreenTime, secondaryGreenTime);
-          }
-          std::for_each(inNeighbours.begin(), inNeighbours.end(), [&](auto const& edgeId) {
-            auto const streetId{this->edge(edgeId).id()};
-            auto const nLane{nLanes.at(streetId)};
-            Delay greenTime{greenTimes.first};
-            Delay phase{0};
-            if (!tl.streetPriorities().contains(streetId)) {
-              phase = greenTime;
-              greenTime = greenTimes.second;
-            }
-            spdlog::debug("Setting cycle for street {} with green time {} and phase {}",
-                          streetId,
-                          greenTime,
-                          phase);
-            switch (nLane) {
-              case 3:
-                tl.setCycle(
-                    streetId,
-                    dsf::Direction::RIGHTANDSTRAIGHT,
-                    TrafficLightCycle{static_cast<Delay>(greenTime * 2. / 3), phase});
-                tl.setCycle(streetId,
-                            dsf::Direction::LEFT,
-                            TrafficLightCycle{
-                                static_cast<Delay>(greenTime / 3.),
-                                static_cast<Delay>(
-                                    phase + static_cast<Delay>(greenTime * 2. / 3))});
-                break;
-              default:
-                tl.setCycle(
-                    streetId, dsf::Direction::ANY, TrafficLightCycle{greenTime, phase});
-                break;
-            }
-          });
+          // Build two phases: priority streets (phase 0) and non-priority (phase 1).
+          auto const mainGreenTime{
+              static_cast<Delay>(mainRoadPercentage * TRAFFICLIGHT_DEFAULT_CYCLE)};
+          auto const secondaryGreenTime{
+              static_cast<Delay>(TRAFFICLIGHT_DEFAULT_CYCLE - mainGreenTime)};
+
+          TrafficLightPhase priorityPhase{mainGreenTime};
+          TrafficLightPhase nonPriorityPhase{secondaryGreenTime};
+
+          std::for_each(
+              inNeighbours.begin(), inNeighbours.end(), [&](auto const& edgeId) {
+                auto const streetId{this->edge(edgeId).id()};
+                auto const nLane{nLanes.at(streetId)};
+                bool const isPriority{tl.streetPriorities().contains(streetId)};
+                auto& targetPhase{isPriority ? priorityPhase : nonPriorityPhase};
+
+                spdlog::debug("Adding street {} to {} phase (nLanes={})",
+                              streetId,
+                              isPriority ? "priority" : "non-priority",
+                              nLane);
+
+                // 3-lane streets get separate RIGHTANDSTRAIGHT and LEFT entries so
+                // that autoMapStreetLanes() can detect and map each lane correctly.
+                // All other streets use Direction::ANY (simpler, optimiser-friendly).
+                if (nLane == 3) {
+                  targetPhase.addGreen(streetId, dsf::Direction::RIGHTANDSTRAIGHT);
+                  targetPhase.addGreen(streetId, dsf::Direction::LEFT);
+                } else {
+                  targetPhase.addGreen(streetId);  // Direction::ANY
+                }
+              });
+
+          tl.setPhases({priorityPhase, nonPriorityPhase});
         });
   }
   void RoadNetwork::autoMapStreetLanes() {
@@ -771,26 +763,31 @@ namespace dsf::mobility {
             if (allowedTurns.size() > static_cast<size_t>(nLanes)) {
               if (pNode->isTrafficLight()) {
                 auto& tl = static_cast<TrafficLight&>(*pNode);
-                auto const& cycles{tl.cycles()};
-                if (cycles.contains(pInStreet->id())) {
-                  if (cycles.size() == static_cast<size_t>(nLanes)) {
-                    // Replace with the traffic light cycles
-                    spdlog::debug("Using traffic light {} cycles for street {} -> {}",
-                                  tl.id(),
-                                  pInStreet->source(),
-                                  pInStreet->target());
-                    auto const& cycle{cycles.at(pInStreet->id())};
+                // Collect all directions configured for this street across all phases.
+                std::unordered_set<Direction> tlDirs;
+                for (auto const& phase : tl.phases()) {
+                  auto const streetIt = phase.greenSet().find(pInStreet->id());
+                  if (streetIt == phase.greenSet().end())
+                    continue;
+                  for (auto const dir : streetIt->second)
+                    tlDirs.insert(dir);
+                }
+                if (!tlDirs.empty()) {
+                  if (tlDirs.size() == static_cast<std::size_t>(nLanes)) {
+                    // Phase directions match lane count — use them directly.
+                    spdlog::debug(
+                        "Using traffic light {} phase directions for street {} -> {}",
+                        tl.id(),
+                        pInStreet->source(),
+                        pInStreet->target());
                     allowedTurns.clear();
-                    for (auto const& [direction, cycle] : cycle) {
-                      allowedTurns.emplace(direction);
-                    }
-                  } else if (cycles.at(pInStreet->id())
-                                 .contains(Direction::LEFTANDSTRAIGHT)) {
+                    for (auto const dir : tlDirs)
+                      allowedTurns.emplace(dir);
+                  } else if (tlDirs.contains(Direction::LEFTANDSTRAIGHT)) {
                     allowedTurns.erase(Direction::LEFT);
                     allowedTurns.erase(Direction::STRAIGHT);
                     allowedTurns.emplace(Direction::LEFTANDSTRAIGHT);
-                  } else if (cycles.at(pInStreet->id())
-                                 .contains(Direction::RIGHTANDSTRAIGHT)) {
+                  } else if (tlDirs.contains(Direction::RIGHTANDSTRAIGHT)) {
                     allowedTurns.erase(Direction::RIGHT);
                     allowedTurns.erase(Direction::STRAIGHT);
                     allowedTurns.emplace(Direction::RIGHTANDSTRAIGHT);
@@ -830,16 +827,21 @@ namespace dsf::mobility {
                     allowedTurns.contains(Direction::LEFT)) {
                   if (pNode->isTrafficLight()) {
                     auto& tl = static_cast<TrafficLight&>(*pNode);
-                    auto const& cycles{tl.cycles()};
-                    if (cycles.contains(pInStreet->id())) {
-                      auto const& cycle{cycles.at(pInStreet->id())};
-                      if (cycle.contains(Direction::LEFTANDSTRAIGHT) &&
-                          cycle.contains(Direction::RIGHT)) {
-                        allowedTurns.erase(Direction::LEFT);
-                        allowedTurns.erase(Direction::STRAIGHT);
-                        allowedTurns.emplace(Direction::LEFTANDSTRAIGHT);
-                        break;
-                      }
+                    // Check if any phase configures LEFTANDSTRAIGHT+RIGHT for this street.
+                    bool hasLeftAndStraight{false}, hasRight{false};
+                    for (auto const& phase : tl.phases()) {
+                      auto const streetIt = phase.greenSet().find(pInStreet->id());
+                      if (streetIt == phase.greenSet().end())
+                        continue;
+                      hasLeftAndStraight |=
+                          streetIt->second.contains(Direction::LEFTANDSTRAIGHT);
+                      hasRight |= streetIt->second.contains(Direction::RIGHT);
+                    }
+                    if (hasLeftAndStraight && hasRight) {
+                      allowedTurns.erase(Direction::LEFT);
+                      allowedTurns.erase(Direction::STRAIGHT);
+                      allowedTurns.emplace(Direction::LEFTANDSTRAIGHT);
+                      break;
                     }
                   }
                   allowedTurns.clear();
@@ -1012,51 +1014,102 @@ namespace dsf::mobility {
     if (!file.is_open()) {
       throw std::runtime_error("Error opening file \"" + fileName + "\" for reading.");
     }
-    std::unordered_map<Id, Delay> storedGreenTimes;
-    std::string line;
-    std::getline(file, line);  // skip first line
-    while (std::getline(file, line)) {
-      if (line.empty()) {
-        continue;
-      }
-      std::istringstream iss{line};
-      std::string strId, streetSource, strCycleTime, strGT;
-      // id;streetSource;cycleTime;greenTime
-      std::getline(iss, strId, ';');
-      std::getline(iss, streetSource, ';');
-      std::getline(iss, strCycleTime, ';');
-      std::getline(iss, strGT, '\n');
 
-      auto const cycleTime{static_cast<Delay>(std::stoul(strCycleTime))};
-      // Cast node(id) to traffic light
+    // ── Parse all rows into per-node entry lists ──────────────────────────
+    struct TLEntry {
+      Id streetId;
+      Delay cycleTime;
+      Delay greenTime;
+    };
+    std::unordered_map<Id, std::vector<TLEntry>> entriesPerNode;
+
+    std::string line;
+    std::getline(file, line);  // skip header
+    while (std::getline(file, line)) {
+      if (line.empty())
+        continue;
+      std::istringstream iss{line};
+      std::string strId, strSource, strCycle, strGreen;
+      // Format: id;sourceNodeId;cycleTime;greenTime
+      std::getline(iss, strId, ';');
+      std::getline(iss, strSource, ';');
+      std::getline(iss, strCycle, ';');
+      std::getline(iss, strGreen, '\n');
+
       auto const nodeId = static_cast<Id>(std::stoul(strId));
+      auto const cycleUl = std::stoul(strCycle);
+      auto const greenUl = std::stoul(strGreen);
+      if (cycleUl > std::numeric_limits<Delay>::max() ||
+          greenUl > std::numeric_limits<Delay>::max()) {
+        throw std::invalid_argument(std::format(
+            "importTrafficLights: cycleTime/greenTime out of range for node {}.",
+            nodeId));
+      }
+      auto const cycleTime = static_cast<Delay>(cycleUl);
+      auto const greenTime = static_cast<Delay>(greenUl);
+      if (greenTime > cycleTime) {
+        throw std::invalid_argument(std::format(
+            "importTrafficLights: greenTime ({}) exceeds cycleTime ({}) for node {}.",
+            greenTime,
+            cycleTime,
+            nodeId));
+      }
+      auto const streetId = edge(std::stoul(strSource), nodeId).id();
+
+      auto& list = entriesPerNode[nodeId];
+      if (!list.empty() && list.front().cycleTime != cycleTime) {
+        throw std::invalid_argument(std::format(
+            "importTrafficLights: inconsistent cycleTime for node {} ({} vs {}).",
+            nodeId,
+            cycleTime,
+            list.front().cycleTime));
+      }
+      list.push_back({streetId, cycleTime, greenTime});
+    }
+
+    // ── Convert each node's entries into a two-phase TrafficLight ─────────
+    for (auto& [nodeId, entries] : entriesPerNode) {
       auto& pNode = m_nodes.at(nodeId);
+
+      // Promote the node to TrafficLight if it isn't one already.
       if (!pNode->isTrafficLight()) {
-        pNode = std::make_unique<TrafficLight>(
-            pNode->id(), cycleTime, pNode->geometry().value());
+        pNode = std::make_unique<TrafficLight>(*pNode);
       }
       auto& tl = static_cast<TrafficLight&>(*pNode);
-      auto const streetId{edge(std::stoul(streetSource), pNode->id()).id()};
-      auto const greenTime{static_cast<Delay>(std::stoul(strGT))};
-      if (!storedGreenTimes.contains(pNode->id())) {
-        storedGreenTimes.emplace(pNode->id(), greenTime);
+
+      // The first greenTime seen for this node is the "phase 0" duration.
+      // Streets with the same greenTime → Phase 0.
+      // Streets with a different greenTime → Phase 1.
+      auto const firstGreenTime = entries.front().greenTime;
+      auto const cycleTime = entries.front().cycleTime;
+      auto const secondaryGreenTime = static_cast<Delay>(cycleTime - firstGreenTime);
+
+      TrafficLightPhase phase0{firstGreenTime};
+      TrafficLightPhase phase1{secondaryGreenTime};
+
+      for (auto const& entry : entries) {
+        if (entry.greenTime == firstGreenTime) {
+          phase0.addGreen(entry.streetId);  // Direction::ANY
+        } else {
+          phase1.addGreen(entry.streetId);  // Direction::ANY
+        }
       }
-      auto const storedGT{storedGreenTimes.at(pNode->id())};
-      if (storedGT == greenTime) {
-        auto cycle = TrafficLightCycle(greenTime, 0);
-        tl.setCycle(streetId, dsf::Direction::ANY, cycle);
-      } else {
-        auto cycle = TrafficLightCycle(greenTime, storedGT);
-        tl.setCycle(streetId, dsf::Direction::ANY, cycle);
-      }
+
+      tl.setPhases({phase0, phase1});
+      spdlog::debug(
+          "importTrafficLights: node {} → phase0 ({} ticks, {} streets) + "
+          "phase1 ({} ticks, {} streets).",
+          nodeId,
+          firstGreenTime,
+          phase0.greenSet().size(),
+          secondaryGreenTime,
+          phase1.greenSet().size());
     }
   }
 
-  TrafficLight& RoadNetwork::makeTrafficLight(Id const nodeId,
-                                              Delay const cycleTime,
-                                              Delay const counter) {
+  TrafficLight& RoadNetwork::makeTrafficLight(Id const nodeId) {
     auto& pNode = m_nodes.at(nodeId);
-    pNode = std::make_unique<TrafficLight>(*pNode, cycleTime, counter);
+    pNode = std::make_unique<TrafficLight>(*pNode);
     return node<TrafficLight>(nodeId);
   }
 
