@@ -244,59 +244,70 @@ PYBIND11_MODULE(dsf_cpp, m) {
     Returns:
         dict: Mapping of attribute names to values.)doc");
 
-  // Bind TrafficLightCycle and TrafficLight classes
-  pybind11::class_<dsf::mobility::TrafficLightCycle>(mobility, "TrafficLightCycle")
-      .def(pybind11::init<dsf::Delay, dsf::Delay>(),
-           pybind11::arg("greenTime"),
-           pybind11::arg("phase"),
-           R"doc(Create a TrafficLightCycle(greenTime, phase).)doc")
-      .def("greenTime", &dsf::mobility::TrafficLightCycle::greenTime)
-      .def("phase", &dsf::mobility::TrafficLightCycle::phase)
-      .def("isDefault", &dsf::mobility::TrafficLightCycle::isDefault)
-      .def("isGreenTimeIncreased",
-           &dsf::mobility::TrafficLightCycle::isGreenTimeIncreased)
-      .def("isRedTimeIncreased", &dsf::mobility::TrafficLightCycle::isRedTimeIncreased)
-      .def("isGreen",
-           &dsf::mobility::TrafficLightCycle::isGreen,
-           pybind11::arg("cycleTime"),
-           pybind11::arg("counter"))
-      .def("reset", &dsf::mobility::TrafficLightCycle::reset);
+  // Bind TrafficLightPhase and TrafficLight classes.
+  pybind11::class_<dsf::mobility::TrafficLightPhase>(mobility, "TrafficLightPhase")
+      .def(pybind11::init<dsf::Delay>(),
+           pybind11::arg("duration"),
+           R"doc(Create a TrafficLightPhase(duration).)doc")
+      .def(
+          pybind11::init<dsf::Delay,
+                         std::unordered_map<dsf::Id, std::unordered_set<dsf::Direction>>>(),
+          pybind11::arg("duration"),
+          pybind11::arg("greenSet"),
+          R"doc(Create a TrafficLightPhase(duration, greenSet).)doc")
+      .def("addGreen",
+           pybind11::overload_cast<dsf::Id, dsf::Direction>(
+               &dsf::mobility::TrafficLightPhase::addGreen),
+           pybind11::arg("streetId"),
+           pybind11::arg("direction"))
+      .def("addGreen",
+           pybind11::overload_cast<dsf::Id>(&dsf::mobility::TrafficLightPhase::addGreen),
+           pybind11::arg("streetId"))
+      .def("containsStreet", &dsf::mobility::TrafficLightPhase::containsStreet)
+      .def("containsGreen", &dsf::mobility::TrafficLightPhase::containsGreen)
+      .def("duration", &dsf::mobility::TrafficLightPhase::duration)
+      .def("setDuration", &dsf::mobility::TrafficLightPhase::setDuration)
+      .def("greenSet",
+           &dsf::mobility::TrafficLightPhase::greenSet,
+           pybind11::return_value_policy::reference_internal);
 
   pybind11::class_<dsf::mobility::TrafficLight, dsf::mobility::RoadJunction>(
       mobility, "TrafficLight")
-      .def(pybind11::init<dsf::Id, dsf::Delay>(),
+      .def(pybind11::init<dsf::Id>(), pybind11::arg("id"))
+      .def(pybind11::init<dsf::Id, dsf::geometry::Point>(),
            pybind11::arg("id"),
-           pybind11::arg("cycleTime"))
-      .def(
-          "setCycle",
-          [](dsf::mobility::TrafficLight& self,
-             dsf::Id streetId,
-             dsf::Direction direction,
-             dsf::mobility::TrafficLightCycle const& cycle) {
-            self.setCycle(streetId, direction, cycle);
-          },
-          pybind11::arg("streetId"),
-          pybind11::arg("direction"),
-          pybind11::arg("cycle"))
-      .def("setComplementaryCycle",
-           &dsf::mobility::TrafficLight::setComplementaryCycle,
-           pybind11::arg("streetId"),
-           pybind11::arg("existingCycle"))
-      .def("increasePhases",
-           &dsf::mobility::TrafficLight::increasePhases,
-           pybind11::arg("phase"))
-      .def("meanGreenTime",
-           &dsf::mobility::TrafficLight::meanGreenTime,
-           pybind11::arg("priorityStreets"))
-      .def("cycleTime", &dsf::mobility::TrafficLight::cycleTime)
-      .def("counter", &dsf::mobility::TrafficLight::counter)
+           pybind11::arg("point"))
+      .def(pybind11::init<dsf::mobility::RoadJunction const&>(), pybind11::arg("node"))
+      .def("setAllowFreeTurns",
+           &dsf::mobility::TrafficLight::setAllowFreeTurns,
+           pybind11::arg("allow"))
+      .def("addPhase", &dsf::mobility::TrafficLight::addPhase, pybind11::arg("phase"))
+      .def("setPhases", &dsf::mobility::TrafficLight::setPhases, pybind11::arg("phases"))
+      .def("clearPhases", &dsf::mobility::TrafficLight::clearPhases)
+      .def("snapshot", &dsf::mobility::TrafficLight::snapshot)
+      .def("restore", &dsf::mobility::TrafficLight::restore)
+      .def("reset", &dsf::mobility::TrafficLight::reset)
       .def("isGreen",
            &dsf::mobility::TrafficLight::isGreen,
            pybind11::arg("streetId"),
            pybind11::arg("direction"))
-      .def("resetCycles", &dsf::mobility::TrafficLight::resetCycles)
-      .def("cycles",
-           &dsf::mobility::TrafficLight::cycles,
+      .def("cycleTime", &dsf::mobility::TrafficLight::cycleTime)
+      .def("meanGreenTime",
+           &dsf::mobility::TrafficLight::meanGreenTime,
+           pybind11::arg("priorityStreets"))
+      .def("isDefault", &dsf::mobility::TrafficLight::isDefault)
+      .def("advanceBy", &dsf::mobility::TrafficLight::advanceBy, pybind11::arg("offset"))
+      .def("counter", &dsf::mobility::TrafficLight::counter)
+      .def("currentPhaseIndex", &dsf::mobility::TrafficLight::currentPhaseIndex)
+      .def("phases",
+           &dsf::mobility::TrafficLight::phases,
+           pybind11::return_value_policy::reference_internal)
+      .def("defaultPhases",
+           &dsf::mobility::TrafficLight::defaultPhases,
+           pybind11::return_value_policy::reference_internal)
+      .def("phase",
+           &dsf::mobility::TrafficLight::phase,
+           pybind11::arg("index"),
            pybind11::return_value_policy::reference_internal);
 
   // Bind Measurement to main module (can be used across different contexts)
