@@ -160,8 +160,9 @@ namespace dsf::mobility {
     /// moves to the next phase (wrapping) and resets the counter to 0.
     TrafficLight& operator++();
 
-    /// @brief When true (default), a street absent from the active phase's
-    /// green set is treated as green (free turn).
+    /// @brief When true, a street absent from the active phase's green set is treated as green
+    /// (free turn).
+    /// @note Default is false.
     inline void setAllowFreeTurns(bool const allow) { m_allowFreeTurns = allow; }
 
     // ── Phase management ──────────────────────────────────────────────────

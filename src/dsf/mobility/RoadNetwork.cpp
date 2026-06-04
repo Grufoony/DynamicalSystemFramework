@@ -1037,11 +1037,34 @@ namespace dsf::mobility {
       std::getline(iss, strGreen, '\n');
 
       auto const nodeId = static_cast<Id>(std::stoul(strId));
-      auto const cycleTime = static_cast<Delay>(std::stoul(strCycle));
-      auto const greenTime = static_cast<Delay>(std::stoul(strGreen));
+      auto const cycleUl = std::stoul(strCycle);
+      auto const greenUl = std::stoul(strGreen);
+      if (cycleUl > std::numeric_limits<Delay>::max() ||
+          greenUl > std::numeric_limits<Delay>::max()) {
+        throw std::invalid_argument(std::format(
+            "importTrafficLights: cycleTime/greenTime out of range for node {}.",
+            nodeId));
+      }
+      auto const cycleTime = static_cast<Delay>(cycleUl);
+      auto const greenTime = static_cast<Delay>(greenUl);
+      if (greenTime > cycleTime) {
+        throw std::invalid_argument(std::format(
+            "importTrafficLights: greenTime ({}) exceeds cycleTime ({}) for node {}.",
+            greenTime,
+            cycleTime,
+            nodeId));
+      }
       auto const streetId = edge(std::stoul(strSource), nodeId).id();
 
-      entriesPerNode[nodeId].push_back({streetId, cycleTime, greenTime});
+      auto& list = entriesPerNode[nodeId];
+      if (!list.empty() && list.front().cycleTime != cycleTime) {
+        throw std::invalid_argument(std::format(
+            "importTrafficLights: inconsistent cycleTime for node {} ({} vs {}).",
+            nodeId,
+            cycleTime,
+            list.front().cycleTime));
+      }
+      list.push_back({streetId, cycleTime, greenTime});
     }
 
     // ── Convert each node's entries into a two-phase TrafficLight ─────────
