@@ -66,6 +66,43 @@ class CMakeExtension(Extension):  # pylint: disable=too-few-public-methods
 class CMakeBuild(build_ext):
     """Custom build_ext command to handle CMake extensions"""
 
+    def _generate_stubs(self, extdir: Path) -> None:
+        """
+        Run pybind11-stubgen with the freshly built extension on sys.path.
+        Stubs land next to the .so so they're picked up by the wheel.
+        """
+        env = os.environ.copy()
+        # Prepend extdir so the newly built dsf_cpp.so is importable
+        env["PYTHONPATH"] = str(extdir) + os.pathsep + env.get("PYTHONPATH", "")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pybind11_stubgen",
+                "dsf_cpp",
+                "--output-dir",
+                str(extdir),
+                "--ignore-all-errors",  # don't break the build on stub warnings
+            ],
+            env=env,
+        )
+
+        if result.returncode != 0:
+            print(
+                "WARNING: pybind11-stubgen exited with errors — "
+                "stubs may be incomplete but the wheel will still be built."
+            )
+        else:
+            # pybind11-stubgen outputs to extdir/dsf_cpp.pyi
+            stub = extdir / "dsf_cpp.pyi"
+            if stub.exists():
+                print(f"Stubs generated: {stub}")
+            else:
+                print(
+                    f"WARNING: pybind11-stubgen succeeded but did not create {stub}; stubs may be missing from the wheel."
+                )
+
     def run(self):
         try:
             subprocess.check_output(["cmake", "--version"])
@@ -145,6 +182,8 @@ class CMakeBuild(build_ext):
             ["cmake", "--build", ".", "--config", cfg, "--verbose"] + build_args,
             cwd=build_temp,
         )
+
+        self._generate_stubs(extdir)
 
 
 # Get version from header file, unless explicitly overridden for CI pre-releases.
