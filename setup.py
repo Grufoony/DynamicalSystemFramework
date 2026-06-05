@@ -98,6 +98,10 @@ class CMakeBuild(build_ext):
             stub = extdir / "dsf_cpp.pyi"
             if stub.exists():
                 print(f"Stubs generated: {stub}")
+            else:
+                print(
+                    f"WARNING: pybind11-stubgen succeeded but did not create {stub}; stubs may be missing from the wheel."
+                )
 
     def run(self):
         try:

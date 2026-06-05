@@ -185,6 +185,12 @@ PYBIND11_MODULE(dsf_cpp, m) {
 
     Returns:
         RoadStatus: Enum value indicating OPEN or CLOSED.)doc")
+          .def("nExitingAgents",
+               &dsf::mobility::Street::nExitingAgents,
+               R"doc(Get the number of agents exiting this street in the current step.
+
+    Returns:
+        int: Number of exiting agents.)doc")
           .def("estimatedTravelTime",
                &dsf::mobility::Street::estimatedTravelTime,
                "Get estimated travel time for this street using the active estimator.")
@@ -262,14 +268,55 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("direction"))
       .def("addGreen",
            pybind11::overload_cast<dsf::Id>(&dsf::mobility::TrafficLightPhase::addGreen),
-           pybind11::arg("streetId"))
-      .def("containsStreet", &dsf::mobility::TrafficLightPhase::containsStreet)
-      .def("containsGreen", &dsf::mobility::TrafficLightPhase::containsGreen)
-      .def("duration", &dsf::mobility::TrafficLightPhase::duration)
-      .def("setDuration", &dsf::mobility::TrafficLightPhase::setDuration)
+           pybind11::arg("streetId"),
+           R"doc(Add a street to the phase's green set.
+
+        Args:
+          streetId (int): Identifier of the street to grant green.
+
+        Returns:
+          None)doc")
+      .def("containsStreet",
+           &dsf::mobility::TrafficLightPhase::containsStreet,
+           R"doc(Check whether the phase controls the given street.
+
+        Args:
+          streetId (int): Street identifier to query.
+
+        Returns:
+          bool: True if the street is part of the phase's green set.)doc")
+      .def("containsGreen",
+           &dsf::mobility::TrafficLightPhase::containsGreen,
+           R"doc(Check whether the phase grants green for a given direction on a street.
+
+        Args:
+          streetId (int): Street identifier.
+          direction (Direction): Direction to query.
+
+        Returns:
+          bool: True if the direction on the street is green in this phase.)doc")
+      .def("duration",
+           &dsf::mobility::TrafficLightPhase::duration,
+           R"doc(Get the duration of this traffic light phase.
+
+        Returns:
+          Delay: Phase duration in simulation time units.)doc")
+      .def("setDuration",
+           &dsf::mobility::TrafficLightPhase::setDuration,
+           R"doc(Set the duration of this traffic light phase.
+
+        Args:
+          duration (Delay): New phase duration.
+
+        Returns:
+          None)doc")
       .def("greenSet",
            &dsf::mobility::TrafficLightPhase::greenSet,
-           pybind11::return_value_policy::reference_internal);
+           pybind11::return_value_policy::reference_internal,
+           R"doc(Return the internal green set for this phase.
+
+        Returns:
+          Mapping[int, set[Direction]]: Internal mapping of street id to allowed directions (reference).)doc");
 
   pybind11::class_<dsf::mobility::TrafficLight, dsf::mobility::RoadJunction>(
       mobility, "TrafficLight")
@@ -280,35 +327,131 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def(pybind11::init<dsf::mobility::RoadJunction const&>(), pybind11::arg("node"))
       .def("setAllowFreeTurns",
            &dsf::mobility::TrafficLight::setAllowFreeTurns,
-           pybind11::arg("allow"))
-      .def("addPhase", &dsf::mobility::TrafficLight::addPhase, pybind11::arg("phase"))
-      .def("setPhases", &dsf::mobility::TrafficLight::setPhases, pybind11::arg("phases"))
-      .def("clearPhases", &dsf::mobility::TrafficLight::clearPhases)
-      .def("snapshot", &dsf::mobility::TrafficLight::snapshot)
-      .def("restore", &dsf::mobility::TrafficLight::restore)
-      .def("reset", &dsf::mobility::TrafficLight::reset)
+           pybind11::arg("allow"),
+           R"doc(Enable or disable free (uncontrolled) turning movements at this junction.
+
+      Args:
+          allow (bool): True to allow free turns, False to enforce phases.
+
+      Returns:
+          None)doc")
+      .def("addPhase",
+           &dsf::mobility::TrafficLight::addPhase,
+           pybind11::arg("phase"),
+           R"doc(Add a traffic light phase to the end of the phase list.
+
+      Args:
+          phase (TrafficLightPhase): Phase to append.
+
+      Returns:
+          None)doc")
+      .def("setPhases",
+           &dsf::mobility::TrafficLight::setPhases,
+           pybind11::arg("phases"),
+           R"doc(Replace the current phases with the provided sequence.
+
+      Args:
+          phases (Sequence[TrafficLightPhase]): New ordered list of phases.
+
+      Returns:
+          None)doc")
+      .def(
+          "clearPhases",
+          &dsf::mobility::TrafficLight::clearPhases,
+          R"doc(Remove all configured phases, leaving the traffic light with no phases.)doc")
+      .def("snapshot",
+           &dsf::mobility::TrafficLight::snapshot,
+           R"doc(Capture the current traffic light state for later restoration.)doc")
+      .def(
+          "restore",
+          &dsf::mobility::TrafficLight::restore,
+          R"doc(Restore the traffic light state previously captured by `snapshot()`.)doc")
+      .def("reset",
+           &dsf::mobility::TrafficLight::reset,
+           R"doc(Reset the traffic light to its default configuration and timing.)doc")
       .def("isGreen",
            &dsf::mobility::TrafficLight::isGreen,
            pybind11::arg("streetId"),
-           pybind11::arg("direction"))
-      .def("cycleTime", &dsf::mobility::TrafficLight::cycleTime)
+           pybind11::arg("direction"),
+           R"doc(Check whether a given street and direction currently has green.
+
+      Args:
+          streetId (int): Street identifier.
+          direction (Direction): Direction to query.
+
+      Returns:
+          bool: True if green, False otherwise.)doc")
+      .def(
+          "cycleTime",
+          &dsf::mobility::TrafficLight::cycleTime,
+          R"doc(Get the total cycle time of the traffic light (sum of all phase durations).
+
+      Returns:
+          Delay: Cycle time in simulation units.)doc")
       .def("meanGreenTime",
            &dsf::mobility::TrafficLight::meanGreenTime,
-           pybind11::arg("priorityStreets"))
-      .def("isDefault", &dsf::mobility::TrafficLight::isDefault)
-      .def("advanceBy", &dsf::mobility::TrafficLight::advanceBy, pybind11::arg("offset"))
-      .def("counter", &dsf::mobility::TrafficLight::counter)
-      .def("currentPhaseIndex", &dsf::mobility::TrafficLight::currentPhaseIndex)
+           pybind11::arg("priorityStreets"),
+           R"doc(Compute mean green time for a set of priority streets.
+
+      Args:
+          priorityStreets (Sequence[int]): Streets to consider as priority.
+
+      Returns:
+          double: Mean green duration for the provided streets.)doc")
+      .def("isDefault",
+           &dsf::mobility::TrafficLight::isDefault,
+           R"doc(Check whether the traffic light is currently using its default phases.
+
+      Returns:
+          bool: True if default phases are active.)doc")
+      .def("advanceBy",
+           &dsf::mobility::TrafficLight::advanceBy,
+           pybind11::arg("offset"),
+           R"doc(Advance the internal phase clock by the given offset.
+
+      Args:
+          offset (Delay): Amount to advance the clock by.
+
+      Returns:
+          None)doc")
+      .def("counter",
+           &dsf::mobility::TrafficLight::counter,
+           R"doc(Get the internal event counter used for optimizations or statistics.
+
+      Returns:
+          size_t: Counter value.)doc")
+      .def("currentPhaseIndex",
+           &dsf::mobility::TrafficLight::currentPhaseIndex,
+           R"doc(Get the index of the currently active phase.
+
+      Returns:
+          int: Current phase index (0-based).)doc")
       .def("phases",
            &dsf::mobility::TrafficLight::phases,
-           pybind11::return_value_policy::reference_internal)
-      .def("defaultPhases",
-           &dsf::mobility::TrafficLight::defaultPhases,
-           pybind11::return_value_policy::reference_internal)
+           pybind11::return_value_policy::reference_internal,
+           R"doc(Return the list of configured phases (reference).
+
+      Returns:
+          Sequence[TrafficLightPhase]: Reference to phase list.)doc")
+      .def(
+          "defaultPhases",
+          &dsf::mobility::TrafficLight::defaultPhases,
+          pybind11::return_value_policy::reference_internal,
+          R"doc(Return the default phase configuration for this traffic light (reference).
+
+      Returns:
+          Sequence[TrafficLightPhase]: Reference to default phase list.)doc")
       .def("phase",
            &dsf::mobility::TrafficLight::phase,
            pybind11::arg("index"),
-           pybind11::return_value_policy::reference_internal);
+           pybind11::return_value_policy::reference_internal,
+           R"doc(Get a reference to the phase at the given index.
+
+      Args:
+          index (int): Index of the phase to retrieve.
+
+      Returns:
+          TrafficLightPhase: Reference to the requested phase.)doc");
 
   // Bind Measurement to main module (can be used across different contexts)
   pybind11::class_<dsf::Measurement<double>>(m, "Measurement")
@@ -1290,13 +1433,22 @@ Returns:
 
       Returns:
           TrafficSimulator: A new instance of the traffic simulator initialized with the provided configuration.)doc")
-      .def("connectDataBase",
-           pybind11::overload_cast<std::string_view, std::string_view>(
-               &dsf::mobility::TrafficSimulator::connectDataBase),
-           pybind11::arg("dbPath"),
-           pybind11::arg("queries") =
-               "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
-               "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
+      .def(
+          "connectDataBase",
+          pybind11::overload_cast<std::string_view, std::string_view>(
+              &dsf::mobility::TrafficSimulator::connectDataBase),
+          pybind11::arg("dbPath"),
+          pybind11::arg("queries") =
+              "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA "
+              "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;",
+          R"doc(Connect the simulator to a SQLite database and configure connection pragmas.
+
+    Args:
+      dbPath (str): Path to the SQLite database file.
+      queries (str, optional): Initialization PRAGMA statements to run on connect.
+
+    Returns:
+      None)doc")
       .def("setOutputPrefix",
            &dsf::mobility::TrafficSimulator::setOutputPrefix,
            pybind11::arg("prefix"),
@@ -1315,7 +1467,15 @@ Returns:
             self.importRoadNetwork(edgesFile, nodePropertiesFile);
           },
           pybind11::arg("edgesFile"),
-          pybind11::arg("nodePropertiesFile") = std::string())
+          pybind11::arg("nodePropertiesFile") = std::string(),
+          R"doc(Import the road network from edge and optional node property files.
+
+      Args:
+        edgesFile (str): Path to CSV file containing edges definitions.
+        nodePropertiesFile (str, optional): Path to CSV file with node attributes.
+
+      Returns:
+        None)doc")
       .def("updatePaths",
            &dsf::mobility::TrafficSimulator::updatePaths,
            pybind11::arg("deltaT") = 0,
@@ -1333,7 +1493,18 @@ Returns:
            pybind11::arg("saveAverageStats") = false,
            pybind11::arg("saveStreetData") = false,
            pybind11::arg("saveTravelData") = false,
-           pybind11::arg("saveAgentData") = false)
+           pybind11::arg("saveAgentData") = false,
+           R"doc(Save simulation data according to the requested options.
+
+    Args:
+      savingInterval (int): Interval (seconds) at which to save data.
+      saveAverageStats (bool): Save aggregated statistics when True.
+      saveStreetData (bool): Save per-street data when True.
+      saveTravelData (bool): Save travel statistics when True.
+      saveAgentData (bool): Save per-agent traces when True.
+
+    Returns:
+      None)doc")
       .def("setName",
            &dsf::mobility::TrafficSimulator::setName,
            pybind11::arg("name"),
@@ -1358,10 +1529,25 @@ Returns:
             }
           },
           pybind11::arg("initTime"),
-          pybind11::arg("endTime") = pybind11::none())
+          pybind11::arg("endTime") = pybind11::none(),
+          R"doc(Set the simulation time frame.
+
+      Args:
+        initTime (int): Start time in epoch seconds.
+        endTime (int | None): Optional end time in epoch seconds.
+
+      Returns:
+        None)doc")
       .def("setAgentInsertionMethod",
            &dsf::mobility::TrafficSimulator::setAgentInsertionMethod,
-           pybind11::arg("insertionMethod"))
+           pybind11::arg("insertionMethod"),
+           R"doc(Set how new agents are inserted into the simulation.
+
+    Args:
+      insertionMethod (AgentInsertionMethod): Policy controlling agent insertion.
+
+    Returns:
+      None)doc")
       .def(
           "run",
           [](dsf::mobility::TrafficSimulator& self,
@@ -1377,7 +1563,6 @@ Returns:
                   the interval is inferred from the configured start/end times and the
                   length of nAgentsPerTimeStep.
       )doc")
-
       .def(
           "run",
           [](dsf::mobility::TrafficSimulator& self,
@@ -1393,32 +1578,75 @@ Returns:
           pybind11::arg("agentIncrement") = 1,
           R"doc(Run the simulation in slow-charge mode.
 
-      Gradually ramps up the agent population: every checkDeltaT seconds the current
-      agent count is compared against the target; if it has fallen below, the target
-      is raised by agentIncrement and a fresh batch is injected every
-      agentInsertionDeltaT seconds.
+        Gradually ramps up the agent population: every checkDeltaT seconds the current
+        agent count is compared against the target; if it has fallen below, the target
+        is raised by agentIncrement and a fresh batch is injected every
+        agentInsertionDeltaT seconds.
 
-      Args:
+        Args:
           nInitialAgents:        Starting target number of agents in the network.
           agentInsertionDeltaT:  Interval in seconds between agent insertion attempts.
           checkDeltaT:           Interval in seconds between occupancy checks.
           agentIncrement:        How many agents to add to the target at each check (default 1).
-      )doc")
+        )doc")
       .def(
           "database",
           [](dsf::mobility::TrafficSimulator& self) { return self.database(); },
-          pybind11::return_value_policy::reference)
+          pybind11::return_value_policy::reference,
+          R"doc(Get a reference to the simulator's connected database object.
+
+    Returns:
+      Database: Reference to the database connection object.)doc")
       .def(
           "dynamics",
           [](dsf::mobility::TrafficSimulator& self) { return self.dynamics(); },
-          pybind11::return_value_policy::reference)
-      .def("id", &dsf::mobility::TrafficSimulator::id)
-      .def("initTime", &dsf::mobility::TrafficSimulator::initTime)
-      .def("strInitTime", &dsf::mobility::TrafficSimulator::strInitTime)
-      .def("endTime", &dsf::mobility::TrafficSimulator::endTime)
-      .def("strEndTime", &dsf::mobility::TrafficSimulator::strEndTime)
-      .def("name", &dsf::mobility::TrafficSimulator::name)
-      .def("safeName", &dsf::mobility::TrafficSimulator::safeName);
+          pybind11::return_value_policy::reference,
+          R"doc(Get a reference to the simulator's dynamics engine.
+
+    Returns:
+      Dynamics: Reference to the configured dynamics instance.)doc")
+      .def("id",
+           &dsf::mobility::TrafficSimulator::id,
+           R"doc(Get the simulator instance identifier.
+
+Returns:
+    int: Simulator id.)doc")
+      .def("initTime",
+           &dsf::mobility::TrafficSimulator::initTime,
+           R"doc(Get the configured simulation start time as epoch seconds.
+
+Returns:
+    int: Start time in epoch seconds.)doc")
+      .def("strInitTime",
+           &dsf::mobility::TrafficSimulator::strInitTime,
+           R"doc(Get the configured simulation start time as a human-readable string.
+
+Returns:
+    str: Formatted start time.)doc")
+      .def("endTime",
+           &dsf::mobility::TrafficSimulator::endTime,
+           R"doc(Get the configured simulation end time as epoch seconds.
+
+Returns:
+    int: End time in epoch seconds.)doc")
+      .def("strEndTime",
+           &dsf::mobility::TrafficSimulator::strEndTime,
+           R"doc(Get the configured simulation end time as a human-readable string.
+
+Returns:
+    str: Formatted end time.)doc")
+      .def("name",
+           &dsf::mobility::TrafficSimulator::name,
+           R"doc(Get the user-provided name for this simulation instance.
+
+Returns:
+    str: Simulation name.)doc")
+      .def("safeName",
+           &dsf::mobility::TrafficSimulator::safeName,
+           R"doc(Get a filesystem-safe version of the simulation name.
+
+Returns:
+    str: Safe name suitable for file prefixes.)doc");
 
   // Bind TrajectoryCollection class to mdt submodule
   pybind11::class_<dsf::mdt::TrajectoryCollection>(mdt, "TrajectoryCollection")
