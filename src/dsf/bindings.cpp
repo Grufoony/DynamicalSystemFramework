@@ -119,6 +119,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
   // Bind Street class to mobility submodule
   auto street =
       pybind11::class_<dsf::mobility::Street>(mobility, "Street")
+          .def(
+              "__repr__",
+              [](const dsf::mobility::Street& s) { return std::format("{}", s); },
+              R"doc(Return a string representation of the Street object.)doc")
           .def("id",
                &dsf::mobility::Street::id,
                R"doc(Return the unique identifier of this street.
@@ -187,10 +191,24 @@ PYBIND11_MODULE(dsf_cpp, m) {
         RoadStatus: Enum value indicating OPEN or CLOSED.)doc")
           .def("nExitingAgents",
                &dsf::mobility::Street::nExitingAgents,
+               pybind11::arg("direction") = dsf::Direction::ANY,
+               pybind11::arg("normalizeOnNLanes") = false,
                R"doc(Get the number of agents exiting this street in the current step.
+    Args:
+        direction (Direction, optional): Filter exiting agents by direction. Default is ANY.
+        normalizeOnNLanes (bool, optional): If true, normalize the count by the number
 
     Returns:
         int: Number of exiting agents.)doc")
+          .def("density",
+               &dsf::mobility::Street::density,
+               pybind11::arg("normalized") = false,
+               R"doc(Get the current density of agents on this street.
+    Args:
+        normalized (bool, optional): If true, return density normalized by capacity.
+
+    Returns:
+        float: Density value.)doc")
           .def("estimatedTravelTime",
                &dsf::mobility::Street::estimatedTravelTime,
                "Get estimated travel time for this street using the active estimator.")
@@ -261,6 +279,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
           pybind11::arg("duration"),
           pybind11::arg("greenSet"),
           R"doc(Create a TrafficLightPhase(duration, greenSet).)doc")
+      .def(
+          "__repr__",
+          [](const dsf::mobility::TrafficLightPhase& p) { return std::format("{}", p); },
+          R"doc(Return a string representation of the TrafficLightPhase object.)doc")
       .def("addGreen",
            pybind11::overload_cast<dsf::Id, dsf::Direction>(
                &dsf::mobility::TrafficLightPhase::addGreen),
@@ -325,6 +347,10 @@ PYBIND11_MODULE(dsf_cpp, m) {
            pybind11::arg("id"),
            pybind11::arg("point"))
       .def(pybind11::init<dsf::mobility::RoadJunction const&>(), pybind11::arg("node"))
+      .def(
+          "__repr__",
+          [](const dsf::mobility::TrafficLight& tl) { return std::format("{}", tl); },
+          R"doc(Return a string representation of the TrafficLight object.)doc")
       .def("setAllowFreeTurns",
            &dsf::mobility::TrafficLight::setAllowFreeTurns,
            pybind11::arg("allow"),
