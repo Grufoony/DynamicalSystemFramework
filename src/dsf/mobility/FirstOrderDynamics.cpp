@@ -284,6 +284,76 @@ namespace dsf::mobility {
       this->addAgent(itineraryIt->second, *srcId);
     }
   }
+  void FirstOrderDynamics::m_addAgentsConditionalRandomODs(std::size_t nAgents) {
+    m_nAddedAgents += nAgents;
+    if (m_timeToleranceFactor.has_value() && !m_agents.empty()) {
+      auto const nStagnantAgents{m_agents.size()};
+      spdlog::debug(
+          "Removing {} stagnant agents that were not inserted since the previous call to "
+          "addAgentsConditionalRandomODs().",
+          nStagnantAgents);
+      m_agents.clear();
+      m_nAgents -= nStagnantAgents;
+    }
+    if (m_originNodes.empty()) {  // || m_destinationNodes.empty()) {
+      throw std::runtime_error(
+          "FirstOrderDynamics::m_addAgentsConditionalRandomODs: Origin nodes must be "
+          "set");
+    }
+    std::uniform_real_distribution<double> uniformDist{0., 1.};
+    spdlog::debug("Adding {} agents at time {}.", nAgents, this->time_step());
+    while (nAgents--) {
+      // Select origin using weighted random selection
+      auto randValue = uniformDist(this->m_generator);
+      Id originId{0};
+      for (const auto& [id, weight] : m_originNodes) {
+        if (randValue < weight) {
+          originId = id;
+          break;
+        }
+        randValue -= weight;
+      }
+      // Select destination conditionally based on the selected origin
+      auto originToDestIt = m_originToDestinations.find(originId);
+      if (originToDestIt == m_originToDestinations.end() ||
+          originToDestIt->second.empty()) {
+        throw std::runtime_error(std::format(
+            "No destinations found for origin {} in conditional random OD insertion.",
+            originId));
+      }
+      const auto& destinations = originToDestIt->second;
+      randValue = uniformDist(this->m_generator);
+      Id destinationId{0};
+      for (const auto& [id, weight] : destinations) {
+        if (randValue < weight) {
+          destinationId = id;
+          break;
+        }
+        randValue -= weight;
+      }
+      // Find the itinerary with the given destination
+      auto itineraryIt{std::find_if(this->itineraries().cbegin(),
+                                    this->itineraries().cend(),
+                                    [destinationId](const auto& itinerary) {
+                                      return itinerary.second->destination() ==
+                                             destinationId;
+                                    })};
+      if (itineraryIt == this->itineraries().cend()) {
+        spdlog::error("Itinerary with destination {} not found. Skipping agent.",
+                      destinationId);
+        continue;
+      }
+      // Check if destination is reachable from origin
+      auto const& itinerary = itineraryIt->second;
+      if (!itinerary->path().contains(originId)) {
+        spdlog::debug("Destination {} not reachable from origin {}. Skipping agent.",
+                      destinationId,
+                      originId);
+        continue;
+      }
+      this->addAgent(itineraryIt->second, originId);
+    }
+  }
 
   std::optional<Id> FirstOrderDynamics::m_nextStreetId(
       const std::unique_ptr<Agent>& pAgent, RoadJunction const* pNode) {
@@ -960,8 +1030,11 @@ namespace dsf::mobility {
       if (colName == "node_id") {
         csvtype = AgentInsertionMethod::RANDOM_ODS;
         break;
-      } else if (colName == "origin_id") {
+      } else if (colName == "destination_id") {
         csvtype = AgentInsertionMethod::ODS;
+        break;
+      } else if (colName == "destinations") {
+        csvtype = AgentInsertionMethod::CONDITIONAL_RANDOM_ODS;
         break;
       }
     }
@@ -1030,6 +1103,47 @@ namespace dsf::mobility {
           ODs.emplace_back(originId, destinationId, weight);
         }
         this->setODs(std::move(ODs));
+        break;
+      }
+      case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS: {
+        spdlog::info(
+            "Importing ODs from CSV with CONDITIONAL_RANDOM_ODS method. Note that "
+            "destination probabilities are ignored in this method.");
+        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
+            conditionalODs;
+        for (auto const& row : reader) {
+          auto const originId = row["origin_id"].get<Id>();
+          auto const weight = row["weight"].get<double>();
+          // Get destination nodes as id:weight,id:weight,...
+          auto const destinationsStr = row["destinations"].get<std::string>();
+          if (destinationsStr.empty()) {
+            spdlog::warn("Empty destinations for origin {} in CSV. Skipping this row.",
+                         originId);
+            continue;
+          }
+          conditionalODs[originId] =
+              std::make_tuple(weight, std::vector<std::tuple<Id, double>>());
+          std::istringstream ss(destinationsStr);
+          std::string destinationPair;
+          while (std::getline(ss, destinationPair, ',')) {
+            auto const colonPos = destinationPair.find(':');
+            if (colonPos == std::string::npos) {
+              spdlog::warn(
+                  "Invalid destination pair '{}' for origin {} in CSV. Skipping this "
+                  "pair.",
+                  destinationPair,
+                  originId);
+              continue;
+            }
+            auto const destinationId =
+                static_cast<Id>(std::stoul(destinationPair.substr(0, colonPos)));
+            auto const destinationWeight =
+                std::stod(destinationPair.substr(colonPos + 1));
+            std::get<1>(conditionalODs.at(originId))
+                .emplace_back(destinationId, destinationWeight);
+          }
+        }
+        this->setConditionalODs(std::move(conditionalODs));
         break;
       }
       default:
@@ -1124,6 +1238,37 @@ namespace dsf::mobility {
                                               std::get<2>(tuple) / sumWeights);
                      });
     }
+  }
+  void FirstOrderDynamics::setConditionalODs(
+      std::unordered_map<Id,
+                         std::tuple<double, std::vector<std::tuple<Id, double>>>> const&
+          conditionalODs) {
+    m_originToDestinations.clear();
+    m_originToDestinations.reserve(conditionalODs.size());
+    std::unordered_map<Id, double> originWeights;
+    for (auto const& [originId, destinations] : conditionalODs) {
+      originWeights[originId] = std::get<0>(destinations);
+      auto sumDestinationWeights = std::accumulate(
+          std::get<1>(destinations).begin(),
+          std::get<1>(destinations).end(),
+          0.,
+          [](double sum, auto const& tuple) { return sum + std::get<1>(tuple); });
+      if (sumDestinationWeights <= 0.) {
+        throw std::invalid_argument(std::format(
+            "The sum of the destination weights ({}) for origin {} must be positive",
+            sumDestinationWeights,
+            originId));
+      }
+      m_originToDestinations[originId].reserve(std::get<1>(destinations).size());
+      for (auto const& [destinationId, weight] : std::get<1>(destinations)) {
+        if (!this->itineraries().contains(destinationId)) {
+          this->addItinerary(destinationId, destinationId);
+        }
+        m_originToDestinations.at(originId).emplace_back(destinationId,
+                                                         weight / sumDestinationWeights);
+      }
+    }
+    this->setOriginNodes(std::move(originWeights));
   }
 
   void FirstOrderDynamics::updatePaths() {
@@ -1252,6 +1397,9 @@ namespace dsf::mobility {
         break;
       case AgentInsertionMethod::RANDOM_ODS:
         this->m_addAgentsRandomODs(nAgents);
+        break;
+      case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS:
+        this->m_addAgentsConditionalRandomODs(nAgents);
         break;
       case AgentInsertionMethod::UNIFORM:
         this->addAgentsUniformly(nAgents);
