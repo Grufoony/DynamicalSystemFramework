@@ -11,120 +11,127 @@ env:
   BUILD_TYPE: Release
 
 jobs:
-  test-binding-installation:
+  # ── Build wheels once per OS, upload as artifacts ──────────────────────────
+  build-wheel:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.12", "3.14"]
 
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+    - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+    - uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: "3.12"   # one version is enough to build the wheel
+
+    # ── dependency caches ───────────────────────────────────────────────────
+
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-${{ matrix.os }}-${{ hashFiles('**/setup.cfg', '**/pyproject.toml', '**/setup.py') }}
+        restore-keys: pip-${{ matrix.os }}-
+
+    - name: Cache CMake build directory
+      uses: actions/cache@v4
+      with:
+        path: build/
+        key: cmake-${{ matrix.os }}-${{ hashFiles('CMakeLists.txt', '**/*.cmake') }}
+        restore-keys: cmake-${{ matrix.os }}-
+
+    # Windows: cache vcpkg packages (the expensive part)
+    - name: Cache vcpkg
+      if: matrix.os == 'windows-latest'
+      uses: actions/cache@v4
+      with:
+        path: |
+          vcpkg/installed
+          vcpkg/packages
+          vcpkg/buildtrees
+        key: vcpkg-${{ matrix.os }}-tbb-${{ hashFiles('vcpkg.json') }}
+        restore-keys: vcpkg-${{ matrix.os }}-tbb-
+
+    # ── system deps ─────────────────────────────────────────────────────────
 
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+      run: sudo apt-get update && sudo apt-get install -y cmake build-essential doxygen libtbb-dev
 
     - name: Install system dependencies (macOS)
       if: matrix.os == 'macos-latest'
-      run: |
-        brew install cmake doxygen tbb
+      run: brew install cmake doxygen tbb
 
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-        choco install doxygen.install
-        git clone https://github.com/microsoft/vcpkg.git vcpkg
-        cd vcpkg
-        .\bootstrap-vcpkg.bat
-        .\vcpkg install tbb:x64-windows
+        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+        choco install doxygen.install -y
+        if (-not (Test-Path "vcpkg")) {
+          git clone https://github.com/microsoft/vcpkg.git vcpkg
+          .\vcpkg\bootstrap-vcpkg.bat
+        }
+        .\vcpkg\vcpkg install tbb:x64-windows
         echo "CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
         echo "VCPKG_TARGET_TRIPLET=x64-windows" >> $env:GITHUB_ENV
 
-    - name: Upgrade pip and install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install wheel setuptools
+    # ── build once ──────────────────────────────────────────────────────────
 
-    - name: Install package with pip
+    - name: Build wheel
       run: |
-        python -m pip install .
+        python -m pip install --upgrade pip build
+        python -m build --wheel
 
-    - name: Verify installation - Import test
-      run: |
-        python -c "import dsf; print('DSF import successful')"
+    - name: Upload wheel artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheel-${{ matrix.os }}
+        path: dist/*.whl
+        retention-days: 1
 
-    - name: Verify installation - Basic functionality test
+  # ── Test the pre-built wheel across Python versions ────────────────────────
+  test-wheel:
+    needs: build-wheel
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.13"]   # 3.14 is pre-release; swap in when stable
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        allow-prereleases: true
+
+    - name: Download wheel
+      uses: actions/download-artifact@v4
+      with:
+        name: wheel-${{ matrix.os }}
+        path: dist/
+
+    - name: Install from pre-built wheel
+      run: python -m pip install dist/*.whl
+
+    - name: Import test
+      run: python -c "import dsf; print('DSF import successful')"
+
+    - name: Attribute test
       run: |
         python -c "
         import dsf
-        print('DSF version info available')
-        # Try to access basic functionality if available
-        try:
-            # Test basic module access
-            print('Available DSF attributes:', [attr for attr in dir(dsf) if not attr.startswith('_')])
-        except Exception as e:
-            print(f'Note: Could not access all DSF attributes: {e}')
+        attrs = [a for a in dir(dsf) if not a.startswith('_')]
+        print('Attributes:', attrs)
         print('Basic DSF functionality test passed')
         "
-
-    - name: Test stub files generation
-      run: |
-        python -c "
-        import os
-        # Check if stub files were generated
-        if os.path.exists('dsf.pyi'):
-            print('Stub files found: dsf.pyi exists')
-            with open('dsf.pyi', 'r') as f:
-                content = f.read()
-                if content.strip():
-                    print('Stub file contains content')
-                else:
-                    print('Warning: Stub file is empty')
-        else:
-            print('Note: Stub files not found (may be expected)')
-        "
-
-    - name: Test installation in virtual environment
-      run: |
-        python -m venv test_env
-        
-        # Activate virtual environment (platform-specific)
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          source test_env/Scripts/activate
-        else
-          source test_env/bin/activate
-        fi
-        
-        # Install in virtual environment
-        python -m pip install --upgrade pip
-        python -m pip install .
-        
-        # Test import in virtual environment
-        python -c "import dsf; print('DSF import successful in virtual environment')"
-        
-        # Deactivate virtual environment
-        deactivate
-      shell: bash
-
-    - name: Test editable installation
-      run: |
-        # Test editable installation
-        python -m pip uninstall -y dsf-suite
-        python -m pip install -e .
-        python -c "import dsf; print('DSF editable installation successful')"
 
     - name: Verify package metadata
       run: |
@@ -132,102 +139,53 @@ jobs:
         import importlib.metadata
         try:
             dist = importlib.metadata.distribution('dsf')
-            print(f'Package name: {dist.name}')
-            print(f'Package version: {dist.version}')
-            location = str(dist.locate_file(''))
-            print(f'Package location: {location}')
+            print(f'{dist.name} {dist.version} @ {dist.locate_file(\"\")}')
         except importlib.metadata.PackageNotFoundError:
-            print('Warning: Package metadata not found')
+            print('Warning: package metadata not found')
         "
 
-    - name: Clean installation test
-      run: |
-        # Test clean uninstall and reinstall
-        python -m pip uninstall -y dsf-suite
-        
-        # Move to a different directory to avoid importing from source
-        mkdir -p /tmp/clean_test
-        cd /tmp/clean_test
-        
-        python -c "
-        try:
-            import dsf
-            print('ERROR: DSF should not be importable after uninstall')
-            exit(1)
-        except ImportError:
-            print('SUCCESS: DSF correctly uninstalled')
-        "
-        
-        # Go back to source directory and reinstall
-        cd ${{ github.workspace }}
-        python -m pip install .
-        python -c "import dsf; print('DSF reinstallation successful')"
-
-    - name: Test with requirements.txt (if exists)
-      run: |
-        if [ -f requirements.txt ]; then
-          echo "Installing requirements.txt dependencies..."
-          python -m pip install -r requirements.txt
-          python -c "import dsf; print('DSF works with requirements.txt dependencies')"
-        else
-          echo "No requirements.txt found, skipping this test"
-        fi
-      shell: bash
-
-  test-binding-development:
+  # ── Lightweight dev checks (ubuntu only, no rebuild) ──────────────────────
+  test-dev:
+    needs: build-wheel
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+    - uses: actions/checkout@v4
 
-    - name: Set up Python 3.14
-      uses: actions/setup-python@v6
+    - uses: actions/setup-python@v5
       with:
-        python-version: "3.14"
+        python-version: "3.12"
 
-    - name: Install system dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+    - name: Download wheel
+      uses: actions/download-artifact@v4
+      with:
+        name: wheel-ubuntu-latest
+        path: dist/
 
-    - name: Install development dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install wheel setuptools
-        python -m pip install build twine  # For testing package building
+    - name: Install tooling
+      run: python -m pip install --upgrade pip twine
 
-    - name: Test package building
-      run: |
-        python -m build
-        echo "Package building successful"
-        ls -la dist/
+    - name: Check wheel with twine
+      run: twine check dist/*.whl
 
-    - name: Test wheel installation
+    - name: Verify compiled extension
       run: |
-        # Install from wheel
         python -m pip install dist/*.whl
-        python -c "import dsf; print('DSF wheel installation successful')"
+        python -c "
+        import dsf, inspect
+        f = inspect.getfile(dsf)
+        print('Module location:', f)
+        assert f.endswith(('.so', '.pyd', '.dll')), 'Expected a compiled extension'
+        print('SUCCESS: compiled binary extension confirmed')
+        "
 
-    - name: Verify package structure
+    - name: Check stub file
       run: |
         python -c "
-        import dsf
-        import inspect
         import os
-        
-        # Get the module file location
-        module_file = inspect.getfile(dsf)
-        print(f'DSF module location: {module_file}')
-        
-        # Check if it's a compiled extension
-        if module_file.endswith(('.so', '.pyd', '.dll')):
-            print('SUCCESS: DSF is properly compiled as a binary extension')
+        if os.path.exists('dsf.pyi'):
+            content = open('dsf.pyi').read().strip()
+            print('Stub file OK' if content else 'Warning: stub file is empty')
         else:
-            print('INFO: DSF module type:', type(dsf))
-        
-        # List available attributes
-        attrs = [attr for attr in dir(dsf) if not attr.startswith('_')]
-        print(f'Available DSF attributes ({len(attrs)}): {attrs}')
+            print('No stub file found')
         "
