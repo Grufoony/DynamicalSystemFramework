@@ -30,6 +30,9 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .value("ODS", dsf::mobility::AgentInsertionMethod::ODS)
       .value("RANDOM", dsf::mobility::AgentInsertionMethod::RANDOM)
       .value("RANDOM_ODS", dsf::mobility::AgentInsertionMethod::RANDOM_ODS)
+      .value("CONDITIONAL_RANDOM_ODS",
+             dsf::mobility::AgentInsertionMethod::CONDITIONAL_RANDOM_ODS)
+      .value("UNIFORM", dsf::mobility::AgentInsertionMethod::UNIFORM)
       .export_values();
 
   // Bind TrafficLightOptimization enum

@@ -255,6 +255,8 @@ namespace dsf::mobility {
         m_agentInsertionMethod = AgentInsertionMethod::ODS;
       } else if (agentInsertionMethod == "RANDOM_ODS") {
         m_agentInsertionMethod = AgentInsertionMethod::RANDOM_ODS;
+      } else if (agentInsertionMethod == "CONDITIONAL_RANDOM_ODS") {
+        m_agentInsertionMethod = AgentInsertionMethod::CONDITIONAL_RANDOM_ODS;
       } else if (agentInsertionMethod == "UNIFORM") {
         m_agentInsertionMethod = AgentInsertionMethod::UNIFORM;
       } else {
