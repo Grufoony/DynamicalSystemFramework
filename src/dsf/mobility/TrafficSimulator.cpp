@@ -442,8 +442,6 @@ namespace dsf::mobility {
           *nextODUpdateTime));
     }
     for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
-      std::cout << "Current step: " << currentStep
-                << " nextODUpdateTime: " << nextODUpdateTime.value_or(69) << "\n";
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
         m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
         m_dynamicODsUpdate.pop();
