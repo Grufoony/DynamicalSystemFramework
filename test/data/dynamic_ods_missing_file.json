@@ -1,0 +1,18 @@
+{
+  "general": {
+    "input_folder": "../test/data",
+    "output_folder": "/tmp/dsf_test_dynamic_ods",
+    "name": "test_dynamic_ods_missing_file",
+    "dynamic_ods": [
+        { "time": 0 }
+    ]
+  },
+  "road_network": {
+    "edges_file": "manhattan_edges.csv",
+    "node_properties_file": "manhattan_nodes.csv",
+    "set_edge_weight": { "weight": "length", "threshold": 1e9 }
+  },
+  "dynamics": {
+    "agent_insertion_method": "ODS"
+  }
+}

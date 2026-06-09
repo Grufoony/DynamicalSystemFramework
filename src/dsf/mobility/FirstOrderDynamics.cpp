@@ -1019,6 +1019,9 @@ namespace dsf::mobility {
   }
   void FirstOrderDynamics::importODsFromCSV(std::string_view const fileName,
                                             char const separator) {
+    if (!std::filesystem::exists(fileName)) {
+      throw std::invalid_argument(std::format("File {} does not exist", fileName));
+    }
     csv::CSVFormat format;
     format.delimiter(separator);
     csv::CSVReader reader(fileName, format);

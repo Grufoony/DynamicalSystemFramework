@@ -10,6 +10,7 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,7 @@ namespace dsf::mobility {
     bool m_saveTravelData{false};
     bool m_saveAgentData{false};
     std::deque<StepDataResult> m_pendingStepData;
+    std::queue<std::tuple<std::time_t, std::string>> m_dynamicODsUpdate;
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
     /// @param time The time_t to convert
