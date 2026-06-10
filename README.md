@@ -17,8 +17,9 @@ This rework consists of a full code rewriting, in order to implement more featur
 ## Table of Contents
 - [Installation](#installation)
 - [Installation (from source)](#installation-from-source)
-- [Testing](#testing)
-- [Benchmarking](#benchmarking)
+- [For Developers](#for-developers)
+  - [Testing](#testing)
+  - [Benchmarking](#benchmarking)
 - [Citing](#citing)
 - [Bibliography](#bibliography)
 
@@ -88,7 +89,15 @@ print(dsf.__version__)
 
 If you encounter issues, ensure that the installation path is in your `PYTHONPATH` environment variable.
 
-## Testing
+## For Developers
+This project as a `pre-commit` configuration.
+To use it properly, please install:
+```shell
+pip install pre-commit
+pre-commit install
+```
+
+### Testing
 This project uses [Doctest](https://github.com/doctest/doctest) for testing.
 
 If the project is compiled in `Debug` or `Coverage` mode, tests are always built.
@@ -103,7 +112,7 @@ To run the tests use the command:
 ctest --test-dir build -j$(nproc) --output-on-failure
 ```
 
-## Benchmarking
+### Benchmarking
 Some functionalities of the library have been benchmarked in order to assess their efficiency.  
 The benchmarks are performed using [Google Benchmarks](https://github.com/google/benchmark).
 To build the benchmarks add the flag `-DDSF_BENCHMARKS=ON` :
