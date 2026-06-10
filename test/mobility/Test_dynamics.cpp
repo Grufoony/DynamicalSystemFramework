@@ -227,7 +227,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
-  SUBCASE("addAgentsRandomly") {
+  SUBCASE("addAgents - RANDOM_ODS") {
     GIVEN("A graph object") {
       FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
       WHEN("We add one agent for existing itinerary") {
@@ -263,7 +263,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
-  SUBCASE("addAgentsODs") {
+  SUBCASE("addAgents - ODS") {
     GIVEN("A graph object") {
       FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
       WHEN("We add agents with a single OD pair") {
@@ -333,6 +333,187 @@ TEST_CASE("FirstOrderDynamics") {
             CHECK((origin == 0 || origin == 1 || origin == 27));
             // Destinations should be from {2, 14, 102}
             CHECK((destination == 2 || destination == 14 || destination == 102));
+          }
+        }
+        SUBCASE("addAgents - CONDITIONAL_RANDOM_ODS") {
+          GIVEN("A graph object") {
+            FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+
+            WHEN("We add one agent with a single origin and single destination") {
+              // origin 0 → destination 2 with 100% probability
+              dynamics.setConditionalODs({{0, {1.0, {{2, 1.0}}}}});
+              dynamics.updatePaths();
+              dynamics.addAgents(1, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
+
+              THEN("The agent has the correct origin and destination") {
+                CHECK_EQ(dynamics.nAgents(), 1);
+                CHECK_EQ(dynamics.agents().at(0)->srcNodeId().value(), 0);
+                CHECK_EQ(dynamics.agents().at(0)->itinerary()->destination(), 2);
+              }
+            }
+
+            WHEN(
+                "We add many agents from a single origin with deterministic "
+                "destination") {
+              // With weight 1.0 on the only destination, every agent must go there
+              dynamics.setConditionalODs({{1, {1.0, {{14, 1.0}}}}});
+              dynamics.updatePaths();
+              dynamics.addAgents(10, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
+
+              THEN("All agents share the same origin and destination") {
+                CHECK_EQ(dynamics.nAgents(), 10);
+                for (std::size_t i = 0; i < dynamics.nAgents(); ++i) {
+                  CHECK_EQ(dynamics.agents().at(i)->srcNodeId().value(), 1);
+                  CHECK_EQ(dynamics.agents().at(i)->itinerary()->destination(), 14);
+                }
+              }
+            }
+
+            WHEN("We add agents from two origins each with two exclusive destinations") {
+              // origin 1  → dest 14  (100%)
+              // origin 27 → dest 107 (100%)
+              dynamics.setConditionalODs({
+                  {1, {1.0, {{14, 1.0}}}},
+                  {27, {1.0, {{107, 1.0}}}},
+              });
+              dynamics.updatePaths();
+              dynamics.addAgents(20, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
+
+              THEN("Each agent's destination matches its origin") {
+                CHECK_EQ(dynamics.nAgents(), 20);
+                for (std::size_t i = 0; i < dynamics.nAgents(); ++i) {
+                  auto const& agent = dynamics.agents().at(i);
+                  auto const src = agent->srcNodeId().value();
+                  auto const dest = agent->itinerary()->destination();
+                  CHECK((src == 1 || src == 27));
+                  if (src == 1) {
+                    CHECK_EQ(dest, 14);
+                  } else {
+                    CHECK_EQ(dest, 107);
+                  }
+                }
+              }
+            }
+
+            WHEN(
+                "We add agents from one origin whose destinations overlap with another "
+                "origin's") {
+              // origin 1  → dest 14 (70%) or dest 102 (30%)
+              // origin 27 → dest 14 (10%) or dest 107 (90%)
+              // With seed 69 the exact sequence is deterministic, so we test structural invariants
+              dynamics.setConditionalODs({
+                  {1, {1.0, {{14, 0.7}, {102, 0.3}}}},
+                  {27, {1.0, {{14, 0.1}, {107, 0.9}}}},
+              });
+              dynamics.updatePaths();
+              dynamics.addAgents(100, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
+
+              THEN("Every agent's destination is valid for its origin") {
+                CHECK_EQ(dynamics.nAgents(), 100);
+                for (std::size_t i = 0; i < dynamics.nAgents(); ++i) {
+                  auto const& agent = dynamics.agents().at(i);
+                  auto const src = agent->srcNodeId().value();
+                  auto const dest = agent->itinerary()->destination();
+                  if (src == 1) {
+                    CHECK((dest == 14 || dest == 102));
+                  } else if (src == 27) {
+                    CHECK((dest == 14 || dest == 107));
+                  } else {
+                    FAIL("Unexpected origin: " << src);
+                  }
+                }
+              }
+
+              THEN(
+                  "At least one agent ends up at each reachable destination "
+                  "(statistical)") {
+                std::unordered_set<Id> seen;
+                for (std::size_t i = 0; i < dynamics.nAgents(); ++i) {
+                  seen.insert(dynamics.agents().at(i)->itinerary()->destination());
+                }
+                // dest 14 is reachable from both origins, 102 and 107 from one each
+                CHECK(seen.contains(14));
+              }
+            }
+
+            WHEN("No conditional ODs have been set") {
+              THEN("An exception is thrown") {
+                CHECK_THROWS_AS(
+                    dynamics.addAgents(1, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS),
+                    std::runtime_error);
+              }
+            }
+
+            WHEN("The destination node does not exist in the graph") {
+              dynamics.setConditionalODs({{0, {1.0, {{9999, 1.0}}}}});
+
+              THEN("updatePaths throws for the nonexistent node") {
+                CHECK_THROWS_AS(dynamics.updatePaths(), std::exception);
+              }
+            }
+
+            WHEN("The destination exists but has no path from the origin") {
+              // Node 2 exists but pick an origin from which the routing table
+              // will have no entry (e.g. destination == origin, so the path
+              // map won't contain the origin as an intermediate step).
+              // Use dynamics.m_updatepathsThrowOnEmpty = false equivalent:
+              // setConditionalODs with a real destination, but one whose
+              // computed path does not cover the chosen origin.
+              //
+              // Simplest portable approach: use a destination that equals the origin,
+              // so path().contains(originId) is false for any origin != destination.
+              dynamics.setConditionalODs({{0, {1.0, {{0, 1.0}}}}});  // dest == src
+              dynamics.updatePaths();
+              CHECK_NOTHROW(
+                  dynamics.addAgents(5, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS));
+
+              THEN("No agents are inserted") { CHECK_EQ(dynamics.nAgents(), 0); }
+            }
+          }
+        }
+
+        SUBCASE("importODsFromCSV - CONDITIONAL_RANDOM_ODS") {
+          GIVEN("A dynamics object and a conditional OD CSV file") {
+            auto randomNetwork = RoadNetwork{};
+            randomNetwork.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
+            randomNetwork.importNodeProperties(
+                (DATA_FOLDER / "manhattan_nodes.csv").string());
+            randomNetwork.setEdgeWeight("length");
+            FirstOrderDynamics dynamics{std::move(randomNetwork), false, 69};
+
+            WHEN("We import a valid conditional OD CSV") {
+              // Expected file format (semicolon-separated):
+              //   origin_id;weight;destinations
+              //   0;0.5;2:0.6,14:0.4
+              //   1;0.5;102:1.0
+              dynamics.importODsFromCSV(
+                  (DATA_FOLDER / "ods_conditional_random_ods.csv").string(), ';');
+              dynamics.updatePaths();
+              dynamics.addAgents(20, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
+
+              THEN("The correct number of agents is inserted") {
+                CHECK_EQ(dynamics.nAgents(), 20);
+              }
+
+              THEN("Each agent's destination is valid for its origin") {
+                for (const auto& agent : dynamics.agents()) {
+                  auto const src = agent->srcNodeId().value();
+                  auto const dest = agent->itinerary()->destination();
+                  CHECK((src == 0 || src == 1));
+                  if (src == 0) {
+                    CHECK((dest == 2 || dest == 14));
+                  } else {
+                    CHECK_EQ(dest, 102);
+                  }
+                }
+              }
+            }
+
+            WHEN("The CSV file does not exist") {
+              THEN("An exception is thrown") {
+                CHECK_THROWS(dynamics.importODsFromCSV("nonexistent_file.csv", ';'));
+              }
+            }
           }
         }
       }

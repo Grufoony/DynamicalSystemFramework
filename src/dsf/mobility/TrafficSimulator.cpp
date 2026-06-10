@@ -202,6 +202,37 @@ namespace dsf::mobility {
       }
       setTimeFrame(initTime, endTime);
     }
+    bool hasDynamicODs{false};
+    {
+      auto const dynamicODsConfig = generalConfig["dynamic_ods"];
+      if (!dynamicODsConfig.error()) {
+        hasDynamicODs = true;
+        // Expect a list of {"time": <time>, "file": <file_path>} objects
+        auto const dynamicODsArray = dynamicODsConfig.get_array();
+        if (dynamicODsArray.error()) {
+          throw std::runtime_error(std::format(
+              "'dynamic_ods' field must be an array in JSON file '{}'", jsonConfigFile));
+        }
+        for (auto const& item : dynamicODsArray) {
+          if (!item.is_object()) {
+            throw std::runtime_error(std::format(
+                "Each item in 'dynamic_ods' array must be an object in JSON file '{}'",
+                jsonConfigFile));
+          }
+          auto const timeField = item["time"];
+          auto const fileField = item["file"];
+          if (timeField.error() || fileField.error()) {
+            throw std::runtime_error(
+                std::format("Each item in 'dynamic_ods' array must have 'time' and "
+                            "'file' fields in JSON file '{}'",
+                            jsonConfigFile));
+          }
+          m_dynamicODsUpdate.push(
+              std::make_tuple(static_cast<std::time_t>(timeField.get_uint64().value()),
+                              std::string(fileField.get_string().value())));
+        }
+      }
+    }
     // Road network config
     {
       auto roadNetworkConfig = root["road_network"];
@@ -255,6 +286,8 @@ namespace dsf::mobility {
         m_agentInsertionMethod = AgentInsertionMethod::ODS;
       } else if (agentInsertionMethod == "RANDOM_ODS") {
         m_agentInsertionMethod = AgentInsertionMethod::RANDOM_ODS;
+      } else if (agentInsertionMethod == "CONDITIONAL_RANDOM_ODS") {
+        m_agentInsertionMethod = AgentInsertionMethod::CONDITIONAL_RANDOM_ODS;
       } else if (agentInsertionMethod == "UNIFORM") {
         m_agentInsertionMethod = AgentInsertionMethod::UNIFORM;
       } else {
@@ -272,21 +305,30 @@ namespace dsf::mobility {
             dynamicsConfig["kill_stagnant_agents"].get_double().value());
       }
       if (!dynamicsConfig["importODsFromCSV"].error()) {
-        auto const importODsFromCSVConfig = dynamicsConfig["importODsFromCSV"];
-        auto const odsFile =
-            input_folder /
-            std::filesystem::path(
-                require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
-                    .get_string()
-                    .value());
-        if (!importODsFromCSVConfig["separator"].error()) {
-          auto const sep =
-              require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
-                  .get_string()
-                  .value()[0];
-          m_dynamics->importODsFromCSV(odsFile.string(), sep);
+        if (hasDynamicODs) {
+          spdlog::warn(
+              "Both 'dynamic_ods' and 'importODsFromCSV' configurations are present in "
+              "JSON file '{}'. "
+              "'dynamic_ods' will take precedence and 'importODsFromCSV' will be "
+              "ignored.",
+              jsonConfigFile);
         } else {
-          m_dynamics->importODsFromCSV(odsFile.string());
+          auto const importODsFromCSVConfig = dynamicsConfig["importODsFromCSV"];
+          auto const odsFile =
+              input_folder /
+              std::filesystem::path(
+                  require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
+                      .get_string()
+                      .value());
+          if (!importODsFromCSVConfig["separator"].error()) {
+            auto const sep =
+                require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
+                    .get_string()
+                    .value()[0];
+            m_dynamics->importODsFromCSV(odsFile.string(), sep);
+          } else {
+            m_dynamics->importODsFromCSV(odsFile.string());
+          }
         }
       }
     }
@@ -352,7 +394,7 @@ namespace dsf::mobility {
           "Cannot run the simulation without an agent insertion schedule.");
     }
 
-    auto const totalTimeSteps = static_cast<std::size_t>(m_endTime - m_initTime);
+    auto totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
 
     if (agentInsertionDeltaT == 0) {
       if (m_endTime > m_initTime) {
@@ -376,6 +418,7 @@ namespace dsf::mobility {
     if (m_endTime == 0) {
       m_endTime = m_initTime + static_cast<std::time_t>(agentInsertionDeltaT *
                                                         nAgentsPerTimeStep.size());
+      totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
     }
 
     m_preparePersistence();
@@ -388,9 +431,27 @@ namespace dsf::mobility {
         totalTimeSteps,
         agentInsertionDeltaT);
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
-    for (std::size_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
-      if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-          (currentStep == 0)) {
+
+    std::optional<std::time_t> nextODUpdateTime =
+        m_dynamicODsUpdate.empty()
+            ? std::nullopt
+            : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+    if (nextODUpdateTime.has_value() && *nextODUpdateTime != 0) {
+      throw std::runtime_error(std::format(
+          "First dynamic OD update time must be 0 (initial time). Current value: {}",
+          *nextODUpdateTime));
+    }
+    for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
+      if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
+        m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
+        m_dynamicODsUpdate.pop();
+        nextODUpdateTime =
+            m_dynamicODsUpdate.empty()
+                ? std::nullopt
+                : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        m_dynamics->updatePaths();
+      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
+                 (currentStep == 0)) {
         m_dynamics->updatePaths();
       }
       if (currentStep % agentInsertionDeltaT == 0) {
@@ -441,7 +502,7 @@ namespace dsf::mobility {
       throw std::runtime_error(
           "End time must be greater than or equal to initial time for the simulation.");
     }
-    auto const totalTimeSteps = static_cast<std::size_t>(m_endTime - m_initTime);
+    auto const totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
 
     m_preparePersistence();
 
@@ -453,11 +514,29 @@ namespace dsf::mobility {
         totalTimeSteps,
         checkDeltaT);
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
+
+    std::optional<std::time_t> nextODUpdateTime =
+        m_dynamicODsUpdate.empty()
+            ? std::nullopt
+            : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+    if (nextODUpdateTime.has_value() && *nextODUpdateTime != 0) {
+      throw std::runtime_error(std::format(
+          "First dynamic OD update time must be 0 (initial time). Current value: {}",
+          *nextODUpdateTime));
+    }
     std::size_t currentAgents{nInitialAgents};
     std::size_t previousAgents{0};
-    for (std::size_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
-      if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-          (currentStep == 0)) {
+    for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
+      if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
+        m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
+        m_dynamicODsUpdate.pop();
+        nextODUpdateTime =
+            m_dynamicODsUpdate.empty()
+                ? std::nullopt
+                : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        m_dynamics->updatePaths();
+      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
+                 (currentStep == 0)) {
         m_dynamics->updatePaths();
       }
       if (currentStep > 0 && currentStep % checkDeltaT == 0) {

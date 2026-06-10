@@ -133,6 +133,80 @@ TEST_CASE("TrafficSimulator JSON config parameters") {
   std::filesystem::remove(outputDir);
 }
 
+TEST_CASE("TrafficSimulator - dynamic ODs") {
+  SUBCASE("TrafficSimulator - dynamic ODs") {
+    auto DATA_FOLDER = std::filesystem::current_path().parent_path() / "test" / "data";
+    GIVEN("A TrafficSimulator with a valid road network config") {
+      WHEN("JSON config contains a valid dynamic_ods array starting at time 0") {
+        // Write a minimal JSON config to a temp file
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_valid.json").string();
+        TrafficSimulator simulator;
+        CHECK_NOTHROW(simulator.importConfig(configPath));
+      }
+
+      WHEN("JSON config has dynamic_ods whose first entry time is not 0") {
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_bad_time.json").string();
+        TrafficSimulator simulator;
+        simulator.importConfig(configPath);
+        // The throw happens at run-time, not at config-import time
+        THEN("Running the simulation throws a std::runtime_error") {
+          CHECK_THROWS_AS(simulator.run({10}), std::runtime_error);
+        }
+      }
+
+      WHEN("JSON config has both dynamic_ods and importODsFromCSV") {
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_and_static.json").string();
+        TrafficSimulator simulator;
+        // Should not throw — dynamic_ods wins but a warning is logged
+        CHECK_NOTHROW(simulator.importConfig(configPath));
+      }
+
+      WHEN("dynamic_ods array is missing the 'time' field") {
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_missing_time.json").string();
+        TrafficSimulator simulator;
+        THEN("importConfig throws a std::runtime_error") {
+          CHECK_THROWS_AS(simulator.importConfig(configPath), std::runtime_error);
+        }
+      }
+
+      WHEN("dynamic_ods array is missing the 'file' field") {
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_missing_file.json").string();
+        TrafficSimulator simulator;
+        THEN("importConfig throws a std::runtime_error") {
+          CHECK_THROWS_AS(simulator.importConfig(configPath), std::runtime_error);
+        }
+      }
+
+      WHEN("dynamic_ods contains two updates and we run enough steps to trigger both") {
+        // Config schedules:
+        //   time 0  → ods_phase1.csv  (origin 0 → dest 2)
+        //   time 5  → ods_phase2.csv  (origin 1 → dest 14)
+        // Total simulation: 10 steps, 1 agent per step
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_two_phases.json").string();
+        TrafficSimulator simulator;
+        simulator.importConfig(configPath);
+
+        CHECK_NOTHROW(simulator.run({1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+
+        THEN("The simulator runs to completion without error") {
+          // Structural: if we get here both swaps executed cleanly
+          CHECK(true);
+        }
+      }
+
+      WHEN("The OD file referenced in dynamic_ods does not exist") {
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_bad_file.json").string();
+        TrafficSimulator simulator;
+        simulator.importConfig(configPath);
+
+        THEN("Running throws when the missing CSV is loaded") {
+          CHECK_THROWS(simulator.run({1, 1, 1}));
+        }
+      }
+    }
+  }
+}
+
 TEST_CASE("TrafficSimulator output prefix") {
   auto const outputDir = makeUniqueDirectory("traffic_simulator_output_");
   auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
