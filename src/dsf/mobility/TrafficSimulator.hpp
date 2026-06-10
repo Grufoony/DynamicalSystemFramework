@@ -58,6 +58,9 @@ namespace dsf::mobility {
 
     std::string m_generateCSVfilename(std::string_view const tableName) const;
 
+    /// @brief Assign a unique id to the simulation using the current time in the format YYYYMMDDHHMMSS
+    void m_createId();
+
     void m_dumpSimInfoSQL() const;
     /// @brief Initialize the street data table.
     /// This table contains the data of each street. Columns are:

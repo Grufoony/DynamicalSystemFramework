@@ -71,15 +71,7 @@ namespace dsf::mobility {
     ~CSVWriter() { close(); }
   };
 
-  std::string TrafficSimulator::m_generateCSVfilename(
-      std::string_view const tableName) const {
-    if (m_outputPrefix.empty()) {
-      return std::format("{}_{}_{}.csv", m_id, m_safeName, tableName);
-    }
-    return std::format("{}{}.csv", m_outputPrefix, tableName);
-  }
-
-  TrafficSimulator::TrafficSimulator() {
+  void TrafficSimulator::m_createId() {
     // Take the current time and set id as YYYYMMDDHHMMSS
     auto const now = std::chrono::system_clock::now();
 #ifdef __APPLE__
@@ -95,7 +87,18 @@ namespace dsf::mobility {
                 std::chrono::system_clock::to_time_t(now))))));
 #endif
   }
+
+  std::string TrafficSimulator::m_generateCSVfilename(
+      std::string_view const tableName) const {
+    if (m_outputPrefix.empty()) {
+      return std::format("{}_{}_{}.csv", m_id, m_safeName, tableName);
+    }
+    return std::format("{}{}.csv", m_outputPrefix, tableName);
+  }
+
+  TrafficSimulator::TrafficSimulator() { m_createId(); }
   TrafficSimulator::TrafficSimulator(std::string_view const jsonConfigPath) {
+    m_createId();
     importConfig(jsonConfigPath);
   }
 
