@@ -295,7 +295,7 @@ namespace dsf::mobility {
       m_agents.clear();
       m_nAgents -= nStagnantAgents;
     }
-    if (m_originNodes.empty()) {  // || m_destinationNodes.empty()) {
+    if (m_originNodes.empty()) {
       throw std::runtime_error(
           "FirstOrderDynamics::m_addAgentsConditionalRandomODs: Origin nodes must be "
           "set");
@@ -305,7 +305,8 @@ namespace dsf::mobility {
     while (nAgents--) {
       // Select origin using weighted random selection
       auto randValue = uniformDist(this->m_generator);
-      Id originId{0};
+      Id originId{
+          std::get<0>(m_originNodes.back())};  // fallback to last for numerical stability
       for (const auto& [id, weight] : m_originNodes) {
         if (randValue < weight) {
           originId = id;
@@ -323,7 +324,8 @@ namespace dsf::mobility {
       }
       const auto& destinations = originToDestIt->second;
       randValue = uniformDist(this->m_generator);
-      Id destinationId{0};
+      Id destinationId{
+          std::get<0>(destinations.back())};  // fallback to last for numerical stability
       for (const auto& [id, weight] : destinations) {
         if (randValue < weight) {
           destinationId = id;
@@ -1109,9 +1111,7 @@ namespace dsf::mobility {
         break;
       }
       case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS: {
-        spdlog::info(
-            "Importing ODs from CSV with CONDITIONAL_RANDOM_ODS method. Note that "
-            "destination probabilities are ignored in this method.");
+        spdlog::info("Importing ODs from CSV with CONDITIONAL_RANDOM_ODS method.");
         std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
             conditionalODs;
         for (auto const& row : reader) {
