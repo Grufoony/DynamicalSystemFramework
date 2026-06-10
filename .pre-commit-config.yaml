@@ -1,0 +1,16 @@
+---
+repos:
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.8
+    hooks:
+      - id: clang-format
+        files: ^(src|test|examples)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.0
+    hooks:
+      - id: ruff-format
+
+      - id: ruff
+        args: [--fix]
+        exclude: ^src/dsf/__init__\.py$
