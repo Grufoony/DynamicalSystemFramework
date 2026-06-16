@@ -1048,6 +1048,16 @@ Returns:
 
       Returns:
         None)doc")
+      .def("setTimestepsToSeconds",
+           &dsf::mobility::FirstOrderDynamics::setTimestepsToSeconds,
+           pybind11::arg("timestepsToSeconds"),
+           R"doc(Set the conversion factor from simulation time units to real seconds.
+
+      Args:
+        timestepsToSeconds (double): Conversion factor.
+
+      Returns:
+        None)doc")
       .def("setForcePriorities",
            &dsf::mobility::FirstOrderDynamics::setForcePriorities,
            pybind11::arg("forcePriorities"),
