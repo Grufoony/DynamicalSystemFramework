@@ -256,6 +256,10 @@ def process_cartography(
         else:
             updates["type"] = "unknown"
 
+        if "width" in data:
+            if isinstance(data["width"], list):
+                data["width"] = max([float(x) for x in data["width"]])
+
         name = data.get("name", None)
         if isinstance(name, list):
             name = ",".join(sorted(name))
@@ -327,6 +331,10 @@ def process_cartography(
         t = G.nodes[node].get("type")
         if t is None or (isinstance(t, float) and t != t):
             G.nodes[node]["type"] = "N/A"
+        elif isinstance(t, str) and "traffic_signals" in t.lower():
+            # Check the input degree of the node, if < 3, set type to "N/A"
+            if G.in_degree(node) < 3:
+                G.nodes[node]["type"] = "N/A"
 
     # --- Build GeoDataFrames ---
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(nx.MultiDiGraph(G))
