@@ -399,7 +399,20 @@ TEST_CASE("TrafficSimulator CSV datetime respects timestepsToSeconds") {
   std::getline(ss, datetimeStr, ';');
   std::getline(ss, timestepStr, ';');
 
-  CHECK_EQ(datetimeStr, "1970-01-01 01:00:00");
+  auto timeToStr = [](std::time_t const time) {
+#ifdef __APPLE__
+    std::ostringstream oss;
+    oss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+    return oss.str();
+#else
+    return std::format(
+        "{:%Y-%m-%d %H:%M:%S}",
+        std::chrono::floor<std::chrono::seconds>(std::chrono::current_zone()->to_local(
+            std::chrono::system_clock::from_time_t(time))));
+#endif
+  };
+
+  CHECK_EQ(datetimeStr, timeToStr(0));
   CHECK_EQ(std::stoull(timestepStr), 0);
 
   // second row
@@ -410,7 +423,7 @@ TEST_CASE("TrafficSimulator CSV datetime respects timestepsToSeconds") {
   std::getline(ss2, datetimeStr, ';');
   std::getline(ss2, timestepStr, ';');
 
-  CHECK_EQ(datetimeStr, "1970-01-01 01:00:02");
+  CHECK_EQ(datetimeStr, timeToStr(2));
   CHECK_EQ(std::stoull(timestepStr), 1);
 
   std::filesystem::remove(edgesPath);
