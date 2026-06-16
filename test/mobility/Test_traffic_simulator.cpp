@@ -320,3 +320,99 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   std::filesystem::remove(roadCsv);
   std::filesystem::remove(avgCsv);
 }
+
+TEST_CASE("TrafficSimulator agent insertion interval uses timestep conversion") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.importRoadNetwork(edgesPath.string());
+
+  REQUIRE(simulator.dynamics() != nullptr);
+
+  simulator.dynamics()->setTimestepsToSeconds(2.0);
+
+  simulator.setTimeFrame(0, 12);
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->updatePaths();
+
+  // insert one agent every 4 physical seconds
+  simulator.run({1, 1, 1}, 4);
+
+  auto counts = simulator.dynamics()->originCounts(false);
+
+  CHECK_EQ(counts.at(0), 3);
+
+  std::filesystem::remove(edgesPath);
+}
+
+TEST_CASE("TrafficSimulator CSV datetime respects timestepsToSeconds") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.setName("traffic_simulator_datetime_test");
+  simulator.importRoadNetwork(edgesPath.string());
+
+  REQUIRE(simulator.dynamics() != nullptr);
+
+  simulator.dynamics()->setTimestepsToSeconds(2.0);
+
+  simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
+
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+
+  simulator.dynamics()->updatePaths();
+
+  simulator.saveData(1, true, false, false, false);
+
+  simulator.setTimeFrame(0, 10);
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+
+  simulator.run(std::vector<std::size_t>{1, 0, 0, 0, 0});
+
+  auto const baseName = std::to_string(static_cast<std::uint64_t>(simulator.id())) +
+                        "_traffic_simulator_datetime_test";
+
+  auto const avgCsv = std::filesystem::current_path() / (baseName + "_avg_stats.csv");
+
+  REQUIRE(std::filesystem::exists(avgCsv));
+
+  std::ifstream file(avgCsv);
+  REQUIRE(file.is_open());
+
+  std::string line;
+
+  // header
+  REQUIRE(std::getline(file, line));
+
+  // first data row
+  REQUIRE(std::getline(file, line));
+
+  std::stringstream ss(line);
+
+  std::string datetimeStr;
+  std::string timestepStr;
+
+  std::getline(ss, datetimeStr, ';');
+  std::getline(ss, timestepStr, ';');
+
+  CHECK_EQ(datetimeStr, "1970-01-01 01:00:00");
+  CHECK_EQ(std::stoull(timestepStr), 0);
+
+  // second row
+  REQUIRE(std::getline(file, line));
+
+  std::stringstream ss2(line);
+
+  std::getline(ss2, datetimeStr, ';');
+  std::getline(ss2, timestepStr, ';');
+
+  CHECK_EQ(datetimeStr, "1970-01-01 01:00:02");
+  CHECK_EQ(std::stoull(timestepStr), 1);
+
+  std::filesystem::remove(edgesPath);
+  std::filesystem::remove(avgCsv);
+}

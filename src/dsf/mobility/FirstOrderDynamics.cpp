@@ -1021,8 +1021,8 @@ namespace dsf::mobility {
                      return {pair.first, pair.second / sumWeights};
                    });
   }
-  void FirstOrderDynamics::importODsFromCSV(std::string_view const fileName,
-                                            char const separator) {
+  AgentInsertionMethod FirstOrderDynamics::importODsFromCSV(
+      std::string_view const fileName, char const separator) {
     if (!std::filesystem::exists(fileName)) {
       throw std::invalid_argument(std::format("File {} does not exist", fileName));
     }
@@ -1157,6 +1157,7 @@ namespace dsf::mobility {
             "'node_id' for RANDOM_ODS or 'origin_id' and 'destination_id' for "
             "RANDOM_OD_PAIRS.");
     }
+    return csvtype;
   }
   void FirstOrderDynamics::initTurnCounts() {
     if (!m_turnCounts.empty()) {

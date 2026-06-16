@@ -1769,19 +1769,19 @@ TEST_CASE("RoadDynamics Configuration") {
       CHECK(agent->maxTime() >= 0);
     }
   }
-  SUBCASE("setTicksToSeconds") {
-    CHECK_EQ(dynamics.ticksToSeconds(), 1.0);
-    CHECK_THROWS_AS(dynamics.setTicksToSeconds(0.0), std::invalid_argument);
-    CHECK_THROWS_AS(dynamics.setTicksToSeconds(-1.0), std::invalid_argument);
+  SUBCASE("setTimestepsToSeconds") {
+    CHECK_EQ(dynamics.timestepsToSeconds(), 1.0);
+    CHECK_THROWS_AS(dynamics.setTimestepsToSeconds(0.0), std::invalid_argument);
+    CHECK_THROWS_AS(dynamics.setTimestepsToSeconds(-1.0), std::invalid_argument);
 
-    CHECK_NOTHROW(dynamics.setTicksToSeconds(1.0));
-    CHECK_EQ(dynamics.ticksToSeconds(), 1.0);
-    CHECK_NOTHROW(dynamics.setTicksToSeconds(0.5));
-    CHECK_EQ(dynamics.ticksToSeconds(), 0.5);
-    CHECK_NOTHROW(dynamics.setTicksToSeconds(2.0));
-    CHECK_EQ(dynamics.ticksToSeconds(), 2.0);
+    CHECK_NOTHROW(dynamics.setTimestepsToSeconds(1.0));
+    CHECK_EQ(dynamics.timestepsToSeconds(), 1.0);
+    CHECK_NOTHROW(dynamics.setTimestepsToSeconds(0.5));
+    CHECK_EQ(dynamics.timestepsToSeconds(), 0.5);
+    CHECK_NOTHROW(dynamics.setTimestepsToSeconds(2.0));
+    CHECK_EQ(dynamics.timestepsToSeconds(), 2.0);
   }
-  SUBCASE("ticksToSeconds affects street traversal time") {
+  SUBCASE("timestepsToSeconds affects street traversal time") {
     Street s0_1{0, std::make_pair(0, 1), 100., 10.};
     Street s1_2{1, std::make_pair(1, 2), 100., 10.};
     Street s1_3{2, std::make_pair(1, 3), 100., 10.};
@@ -1791,7 +1791,7 @@ TEST_CASE("RoadDynamics Configuration") {
 
     FirstOrderDynamics dyn{std::move(graph), false, 42};
     dyn.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-    dyn.setTicksToSeconds(2.0);
+    dyn.setTimestepsToSeconds(2.0);
 
     dyn.setDestinationNodes({3});
     dyn.updatePaths();
@@ -1833,7 +1833,7 @@ TEST_CASE("RoadDynamics Configuration") {
     graph2.addStreets(s0_1_2, s1_2_2, s1_3_2);
     FirstOrderDynamics dyn2{std::move(graph2), false, 42};
     dyn2.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-    dyn2.setTicksToSeconds(2.0);
+    dyn2.setTimestepsToSeconds(2.0);
 
     dyn2.setDestinationNodes({3});
     dyn2.updatePaths();

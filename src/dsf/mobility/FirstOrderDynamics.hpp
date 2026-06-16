@@ -274,7 +274,8 @@ namespace dsf::mobility {
     /// - origin_id;destination_id;weight (for AgentInsertionMethod::ODS)
     /// - node_id;type;weight (for AgentInsertionMethod::RANDOM_ODS, where type is either "O" or "D")
     /// - origin_id;weight;destinations (for AgentInsertionMethod::CONDITIONAL_RANDOM_ODS, where destinations is a comma-separated list of destination_id:weight pairs)
-    void importODsFromCSV(std::string_view const fileName, char const separator = ';');
+    AgentInsertionMethod importODsFromCSV(std::string_view const fileName,
+                                          char const separator = ';');
 
     /// @brief Initialize the turn counts map
     /// @throws std::runtime_error if the turn counts map is already initialized
