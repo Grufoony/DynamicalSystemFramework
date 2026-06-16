@@ -834,7 +834,8 @@ namespace dsf::mobility {
           pAgent->setStreetId();
           pAgent->setSpeed(this->m_speedFunction(*nextStreet));
           pAgent->setFreeTime(this->time_step() +
-                              std::ceil(nextStreet->length() / pAgent->speed()));
+                              std::ceil(nextStreet->length() /
+                                        (pAgent->speed() * this->m_timestepsToSeconds)));
           spdlog::debug(
               "{} at time {} has been dequeued from intersection {} and "
               "enqueued on street {} with free time {}.",
@@ -862,7 +863,8 @@ namespace dsf::mobility {
           pAgent->setStreetId();
           pAgent->setSpeed(this->m_speedFunction(*nextStreet));
           pAgent->setFreeTime(this->time_step() +
-                              std::ceil(nextStreet->length() / pAgent->speed()));
+                              std::ceil(nextStreet->length() /
+                                        (pAgent->speed() * this->m_timestepsToSeconds)));
           spdlog::debug(
               "An agent at time {} has been dequeued from roundabout {} and "
               "enqueued on street {} with free time {}: {}",
@@ -1368,8 +1370,9 @@ namespace dsf::mobility {
       auto& pAgent{this->m_agents.back()};
       pAgent->setStreetId(street->id());
       pAgent->setSpeed(this->m_speedFunction(*streetIt->second));
-      pAgent->setFreeTime(this->time_step() +
-                          std::ceil(street->length() / pAgent->speed()));
+      pAgent->setFreeTime(
+          this->time_step() +
+          std::ceil(street->length() / (pAgent->speed() * this->m_timestepsToSeconds)));
       street->addAgent(std::move(pAgent), this->time_step());
       this->m_agents.pop_back();
     }
@@ -1474,8 +1477,10 @@ namespace dsf::mobility {
 
                   auto const speedMeasure = pStreet->meanSpeed(true);
                   if (speedMeasure.is_valid) {
-                    auto const speed = speedMeasure.mean * 3.6;  // to kph
-                    auto const speed_std = speedMeasure.std * 3.6;
+                    auto const speed =
+                        speedMeasure.mean * 3.6 / this->m_timestepsToSeconds;  // to kph
+                    auto const speed_std =
+                        speedMeasure.std * 3.6 / this->m_timestepsToSeconds;
                     if (dataRequest.saveAverageStats) {
                       mean_speed.fetch_add(speed, std::memory_order_relaxed);
                       std_speed.fetch_add(speed * speed + speed_std * speed_std,
@@ -1501,8 +1506,10 @@ namespace dsf::mobility {
                       pStreet->resetCounter();
                     }
                     if (speedMeasure.is_valid) {
-                      record.avgSpeed = speedMeasure.mean * 3.6;  // to kph
-                      record.stdSpeed = speedMeasure.std * 3.6;
+                      record.avgSpeed =
+                          speedMeasure.mean * 3.6 / this->m_timestepsToSeconds;  // to kph
+                      record.stdSpeed =
+                          speedMeasure.std * 3.6 / this->m_timestepsToSeconds;
                       record.nObservations = speedMeasure.n;
                     }
                     record.queueLength = queueLength;

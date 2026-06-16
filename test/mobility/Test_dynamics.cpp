@@ -1769,4 +1769,82 @@ TEST_CASE("RoadDynamics Configuration") {
       CHECK(agent->maxTime() >= 0);
     }
   }
+  SUBCASE("setTicksToSeconds") {
+    CHECK_EQ(dynamics.ticksToSeconds(), 1.0);
+    CHECK_THROWS_AS(dynamics.setTicksToSeconds(0.0), std::invalid_argument);
+    CHECK_THROWS_AS(dynamics.setTicksToSeconds(-1.0), std::invalid_argument);
+
+    CHECK_NOTHROW(dynamics.setTicksToSeconds(1.0));
+    CHECK_EQ(dynamics.ticksToSeconds(), 1.0);
+    CHECK_NOTHROW(dynamics.setTicksToSeconds(0.5));
+    CHECK_EQ(dynamics.ticksToSeconds(), 0.5);
+    CHECK_NOTHROW(dynamics.setTicksToSeconds(2.0));
+    CHECK_EQ(dynamics.ticksToSeconds(), 2.0);
+  }
+  SUBCASE("ticksToSeconds affects street traversal time") {
+    Street s0_1{0, std::make_pair(0, 1), 100., 10.};
+    Street s1_2{1, std::make_pair(1, 2), 100., 10.};
+    Street s1_3{2, std::make_pair(1, 3), 100., 10.};
+
+    RoadNetwork graph;
+    graph.addStreets(s0_1, s1_2, s1_3);
+
+    FirstOrderDynamics dyn{std::move(graph), false, 42};
+    dyn.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+    dyn.setTicksToSeconds(2.0);
+
+    dyn.setDestinationNodes({3});
+    dyn.updatePaths();
+
+    dyn.addAgent(dyn.itineraries().at(3), 0);
+
+    dyn.evolve();
+    dyn.evolve();
+
+    auto const& agent = dyn.graph().edge(0).movingAgents().top();
+
+    CHECK_EQ(agent->speed(), doctest::Approx(10.0));
+    // +1 = insertion tick, +5 = travel time in ticks (100 / (10 * 2.0))
+    CHECK_EQ(agent->freeTime(), agent->spawnTime() + 1 + 5);
+  }
+  SUBCASE("larger ticksToSeconds reduces traversal ticks") {
+    Street s0_1_1{0, std::make_pair(0, 1), 100., 10.};
+    Street s1_2_1{1, std::make_pair(1, 2), 100., 10.};
+    Street s1_3_1{2, std::make_pair(1, 3), 100., 10.};
+
+    RoadNetwork graph1;
+    graph1.addStreets(s0_1_1, s1_2_1, s1_3_1);
+    FirstOrderDynamics dyn1{std::move(graph1), false, 42};
+    dyn1.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+
+    dyn1.setDestinationNodes({3});
+    dyn1.updatePaths();
+
+    dyn1.addAgent(dyn1.itineraries().at(3), 0);
+    dyn1.evolve();
+    dyn1.evolve();
+
+    auto freeTime1 = dyn1.graph().edge(0).movingAgents().top()->freeTime();
+
+    RoadNetwork graph2;
+    Street s0_1_2{0, std::make_pair(0, 1), 100., 10.};
+    Street s1_2_2{1, std::make_pair(1, 2), 100., 10.};
+    Street s1_3_2{2, std::make_pair(1, 3), 100., 10.};
+    graph2.addStreets(s0_1_2, s1_2_2, s1_3_2);
+    FirstOrderDynamics dyn2{std::move(graph2), false, 42};
+    dyn2.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+    dyn2.setTicksToSeconds(2.0);
+
+    dyn2.setDestinationNodes({3});
+    dyn2.updatePaths();
+
+    dyn2.addAgent(dyn2.itineraries().at(3), 0);
+    dyn2.evolve();
+    dyn2.evolve();
+
+    auto freeTime2 = dyn2.graph().edge(0).movingAgents().top()->freeTime();
+
+    CHECK_LT(freeTime2, freeTime1);
+    CHECK_EQ(freeTime1 - freeTime2, 5);
+  }
 }

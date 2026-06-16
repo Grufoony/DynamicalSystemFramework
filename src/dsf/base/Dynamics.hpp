@@ -37,6 +37,9 @@ namespace dsf {
     tbb::task_arena m_taskArena;
     std::mt19937_64 m_generator;
 
+    double m_timestepsToSeconds{
+        1.0};  // Conversion factor from time steps to seconds (default is 1.0, meaning 1 time step = 1 second)
+
   protected:
     inline void m_evolve() { ++m_timeStep; };
 
@@ -52,6 +55,18 @@ namespace dsf {
     /// @brief Set the maximum number of threads to use for parallel execution
     /// @param concurrency The maximum number of threads to use for parallel execution
     void setConcurrency(std::size_t const concurrency);
+    /// @brief Set the conversion factor from time steps to seconds
+    /// @param timestepsToSeconds The conversion factor from time steps to seconds
+    /// @throw std::invalid_argument If the conversion factor is not positive
+    inline void setTimestepsToSeconds(double const timestepsToSeconds) {
+      if (timestepsToSeconds <= 0.) {
+        throw std::invalid_argument(std::format(
+            "The time steps to seconds conversion factor ({}) must be positive",
+            timestepsToSeconds));
+      }
+      m_timestepsToSeconds = timestepsToSeconds;
+    }
+
     /// @brief Get the current concurrency (number of threads configured in the task arena)
     /// @return std::size_t, The current concurrency
     inline auto concurrency() const {
@@ -67,6 +82,9 @@ namespace dsf {
     /// @brief Get the current simulation time-step
     /// @return std::time_t, The current simulation time-step
     inline auto time_step() const { return m_timeStep; }
+    /// @brief Get the conversion factor from time steps to seconds
+    /// @return double, The conversion factor from time steps to seconds
+    inline auto timestepsToSeconds() const { return m_timestepsToSeconds; }
   };
 
   template <typename network_t>
