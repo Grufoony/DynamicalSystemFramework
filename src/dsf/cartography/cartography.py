@@ -230,7 +230,7 @@ def process_cartography(
             if isinstance(lanes, str):
                 lanes = ast.literal_eval(lanes) if lanes.startswith("[") else lanes
             n = (
-                max([int(x) for x in lanes], default=1)
+                min([int(x) for x in lanes], default=1)
                 if isinstance(lanes, list)
                 else max(int(lanes), 1)
             )
@@ -258,7 +258,7 @@ def process_cartography(
 
         if "width" in data:
             if isinstance(data["width"], list):
-                data["width"] = max([float(x) for x in data["width"]])
+                data["width"] = min([float(x) for x in data["width"]])
 
         name = data.get("name", None)
         if isinstance(name, list):
