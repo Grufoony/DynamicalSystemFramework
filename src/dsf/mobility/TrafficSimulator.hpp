@@ -8,6 +8,7 @@
 #include <chrono>
 #include <deque>
 #include <format>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <queue>
@@ -39,6 +40,11 @@ namespace dsf::mobility {
     bool m_saveAgentData{false};
     std::deque<StepDataResult> m_pendingStepData;
     std::queue<std::tuple<std::time_t, std::string>> m_dynamicODsUpdate;
+
+    inline auto m_secondsToTimesteps(std::time_t const seconds) {
+      return static_cast<std::size_t>(
+          std::ceil(seconds / m_dynamics->timestepsToSeconds()));
+    };
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
     /// @param time The time_t to convert

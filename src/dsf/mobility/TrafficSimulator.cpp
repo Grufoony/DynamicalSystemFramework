@@ -279,25 +279,9 @@ namespace dsf::mobility {
       if (!dynamicsConfig["max_concurrency"].error()) {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
       }
-      auto const agentInsertionMethod =
-          require_field(dynamicsConfig, "dynamics", "agent_insertion_method")
-              .get_string()
-              .value();
-      if (agentInsertionMethod == "RANDOM") {
-        m_agentInsertionMethod = AgentInsertionMethod::RANDOM;
-      } else if (agentInsertionMethod == "ODS") {
-        m_agentInsertionMethod = AgentInsertionMethod::ODS;
-      } else if (agentInsertionMethod == "RANDOM_ODS") {
-        m_agentInsertionMethod = AgentInsertionMethod::RANDOM_ODS;
-      } else if (agentInsertionMethod == "CONDITIONAL_RANDOM_ODS") {
-        m_agentInsertionMethod = AgentInsertionMethod::CONDITIONAL_RANDOM_ODS;
-      } else if (agentInsertionMethod == "UNIFORM") {
-        m_agentInsertionMethod = AgentInsertionMethod::UNIFORM;
-      } else {
-        throw std::runtime_error(
-            std::format("Invalid 'agent_insertion_method' value in JSON file '{}': {}",
-                        jsonConfigFile,
-                        agentInsertionMethod));
+      if (!dynamicsConfig["timesteps_to_seconds"].error()) {
+        m_dynamics->setTimestepsToSeconds(
+            dynamicsConfig["timesteps_to_seconds"].get_double().value());
       }
       if (!dynamicsConfig["error_probability"].error()) {
         m_dynamics->setErrorProbability(
@@ -328,10 +312,31 @@ namespace dsf::mobility {
                 require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
                     .get_string()
                     .value()[0];
-            m_dynamics->importODsFromCSV(odsFile.string(), sep);
+            m_agentInsertionMethod = m_dynamics->importODsFromCSV(odsFile.string(), sep);
           } else {
-            m_dynamics->importODsFromCSV(odsFile.string());
+            m_agentInsertionMethod = m_dynamics->importODsFromCSV(odsFile.string());
           }
+        }
+      } else {
+        auto const agentInsertionMethod =
+            require_field(dynamicsConfig, "dynamics", "agent_insertion_method")
+                .get_string()
+                .value();
+        if (agentInsertionMethod == "RANDOM") {
+          m_agentInsertionMethod = AgentInsertionMethod::RANDOM;
+        } else if (agentInsertionMethod == "ODS") {
+          m_agentInsertionMethod = AgentInsertionMethod::ODS;
+        } else if (agentInsertionMethod == "RANDOM_ODS") {
+          m_agentInsertionMethod = AgentInsertionMethod::RANDOM_ODS;
+        } else if (agentInsertionMethod == "CONDITIONAL_RANDOM_ODS") {
+          m_agentInsertionMethod = AgentInsertionMethod::CONDITIONAL_RANDOM_ODS;
+        } else if (agentInsertionMethod == "UNIFORM") {
+          m_agentInsertionMethod = AgentInsertionMethod::UNIFORM;
+        } else {
+          throw std::runtime_error(
+              std::format("Invalid 'agent_insertion_method' value in JSON file '{}': {}",
+                          jsonConfigFile,
+                          agentInsertionMethod));
         }
       }
     }
@@ -426,11 +431,13 @@ namespace dsf::mobility {
 
     m_preparePersistence();
 
+    auto const totalSeconds{
+        static_cast<std::time_t>(totalTimeSteps * m_dynamics->timestepsToSeconds())};
     spdlog::info(
         "Starting simulation run from {} to {} ({} time steps) with agent insertion "
         "every {} seconds.",
         m_timeToStr(m_initTime),
-        m_timeToStr(m_endTime),
+        m_timeToStr(m_initTime + totalSeconds),
         totalTimeSteps,
         agentInsertionDeltaT);
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
@@ -446,7 +453,8 @@ namespace dsf::mobility {
     }
     for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
-        m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
+        m_agentInsertionMethod =
+            m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
         m_dynamicODsUpdate.pop();
         nextODUpdateTime =
             m_dynamicODsUpdate.empty()
@@ -509,11 +517,13 @@ namespace dsf::mobility {
 
     m_preparePersistence();
 
+    auto const totalSeconds{
+        static_cast<std::time_t>(totalTimeSteps * m_dynamics->timestepsToSeconds())};
     spdlog::info(
         "Starting slow charge run from {} to {} ({} time steps) with agent insertion "
         " check every {} seconds.",
         m_timeToStr(m_initTime),
-        m_timeToStr(m_endTime),
+        m_timeToStr(m_initTime + totalSeconds),
         totalTimeSteps,
         checkDeltaT);
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
@@ -531,7 +541,8 @@ namespace dsf::mobility {
     std::size_t previousAgents{0};
     for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
-        m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
+        m_agentInsertionMethod =
+            m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
         m_dynamicODsUpdate.pop();
         nextODUpdateTime =
             m_dynamicODsUpdate.empty()
@@ -1168,7 +1179,8 @@ namespace dsf::mobility {
       return;
     }
 
-    auto const datetime = m_timeToStr(m_initTime + stepData.timeStep);
+    auto const datetime =
+        m_timeToStr(m_initTime + stepData.timeStep * m_dynamics->timestepsToSeconds());
     auto const timeStep = static_cast<std::int64_t>(stepData.timeStep);
     auto const simulationId = static_cast<std::int64_t>(m_id);
 
