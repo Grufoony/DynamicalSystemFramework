@@ -872,6 +872,17 @@ PYBIND11_MODULE(dsf_cpp, m) {
           "    dict[int, float | None]: A dictionary mapping edge id to its "
           "betweenness centrality value (None if not computed).")
       .def(
+          "allPathsTo",
+          [](const dsf::mobility::RoadNetwork& self, dsf::Id targetId) {
+            return self.allPathsTo(targetId);
+          },
+          pybind11::arg("targetId"),
+          R"doc(Compute all paths leading to a target node.
+      Args:
+        targetId (int): Target node id.
+      Returns:
+        PathCollection: A collection of paths leading to the target node.)doc")
+      .def(
           "exportCSV",
           [](const dsf::mobility::RoadNetwork& self, const std::string& outputDir) {
             self.exportCSV(outputDir);
