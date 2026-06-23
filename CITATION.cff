@@ -12,5 +12,5 @@ authors:
 repository-code: 'https://github.com/Grufoony/DynamicalSystemFramework'
 url: 'https://grufoony.github.io/DynamicalSystemFramework/'
 license: AGPL-3.0-only
-version: 6.2.4
-date-released: '2026-06-18'
+version: 6.2.5
+date-released: '2026-06-23'
