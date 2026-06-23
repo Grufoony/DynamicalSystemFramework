@@ -660,10 +660,12 @@ PYBIND11_MODULE(dsf_cpp, m) {
       .def("autoInitTrafficLights",
            &dsf::mobility::RoadNetwork::autoInitTrafficLights,
            pybind11::arg("mainRoadPercentage") = 0.6,
+           pybind11::arg("defaultCycleDuration") = 90,
            R"doc(Auto-initialize traffic lights based on network heuristics.
 
       Args:
-        mainRoadPercentage (float, optional): Fraction used to identify main roads. Default 0.6)doc")
+        mainRoadPercentage (float, optional): Fraction used to identify main roads. Default 0.6
+        defaultCycleDuration (int, optional): Default cycle duration in ticks. Default 90)doc")
       .def(
           "autoMapStreetLanes",
           &dsf::mobility::RoadNetwork::autoMapStreetLanes,

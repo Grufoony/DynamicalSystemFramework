@@ -12,9 +12,6 @@
 #include <simdjson.h>
 #include <tbb/parallel_for_each.h>
 
-// Default traffic light cycle duration in seconds
-constexpr dsf::Delay TRAFFICLIGHT_DEFAULT_CYCLE = 90;
-
 static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
     std::to_array<std::string_view>({"id",
                                      "source",
@@ -484,9 +481,12 @@ namespace dsf::mobility {
     });
   }
 
-  void RoadNetwork::autoInitTrafficLights(double const mainRoadPercentage) {
+  void RoadNetwork::autoInitTrafficLights(const double mainRoadPercentage,
+                                          const dsf::Delay defaultCycleDuration) {
     tbb::parallel_for_each(
-        m_nodes.begin(), m_nodes.end(), [this, mainRoadPercentage](auto& pair) {
+        m_nodes.begin(),
+        m_nodes.end(),
+        [this, mainRoadPercentage, defaultCycleDuration](auto& pair) {
           auto& pNode = pair.second;
           if (!pNode->isTrafficLight()) {
             return;
@@ -628,9 +628,9 @@ namespace dsf::mobility {
 
           // Build two phases: priority streets (phase 0) and non-priority (phase 1).
           auto const mainGreenTime{
-              static_cast<Delay>(mainRoadPercentage * TRAFFICLIGHT_DEFAULT_CYCLE)};
+              static_cast<Delay>(mainRoadPercentage * defaultCycleDuration)};
           auto const secondaryGreenTime{
-              static_cast<Delay>(TRAFFICLIGHT_DEFAULT_CYCLE - mainGreenTime)};
+              static_cast<Delay>(defaultCycleDuration - mainGreenTime)};
 
           TrafficLightPhase priorityPhase{mainGreenTime};
           TrafficLightPhase nonPriorityPhase{secondaryGreenTime};
