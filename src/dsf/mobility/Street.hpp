@@ -226,11 +226,39 @@ struct std::formatter<dsf::mobility::Street> {
   constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
   template <typename FormatContext>
   auto format(const dsf::mobility::Street& street, FormatContext&& ctx) const {
+    std::string laneMappingStr;
+    for (const auto& direction : street.laneMapping()) {
+      switch (direction) {
+        case dsf::Direction::RIGHT:
+          laneMappingStr += "R ";
+          break;
+        case dsf::Direction::STRAIGHT:
+          laneMappingStr += "S ";
+          break;
+        case dsf::Direction::LEFT:
+          laneMappingStr += "L ";
+          break;
+        case dsf::Direction::UTURN:
+          laneMappingStr += "U ";
+          break;
+        case dsf::Direction::RIGHTANDSTRAIGHT:
+          laneMappingStr += "RS ";
+          break;
+        case dsf::Direction::LEFTANDSTRAIGHT:
+          laneMappingStr += "LS ";
+          break;
+        case dsf::Direction::ANY:
+          laneMappingStr += "A ";
+          break;
+      }
+    }
+    laneMappingStr.pop_back();  // Remove the trailing space
     auto const& name =
         street.name().empty() ? std::string() : std::format(" \"{}\"", street.name());
     return std::format_to(ctx.out(),
                           "Street(id: {}{}, from {} to {}, length: {} m, max speed: "
-                          "{:.2f} m/s, lanes: {}, agents: {}, n enqueued: {})",
+                          "{:.2f} m/s, lanes: {}, agents: {}, n enqueued: {}.\n"
+                          "\tLane mapping: {})",
                           street.id(),
                           name,
                           street.nodePair().first,
@@ -239,6 +267,7 @@ struct std::formatter<dsf::mobility::Street> {
                           street.maxSpeed(),
                           street.nLanes(),
                           street.nAgents(),
-                          street.nExitingAgents());
+                          street.nExitingAgents(),
+                          laneMappingStr);
   }
 };

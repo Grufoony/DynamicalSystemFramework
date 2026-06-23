@@ -541,8 +541,8 @@ namespace dsf::mobility {
 
           if (tl.streetPriorities().empty()) {
             /*************************************************************
-         * 1. Check for street names with multiple occurrences
-         * ***********************************************************/
+             * 1. Check for street names with multiple occurrences
+             * ***********************************************************/
             std::unordered_map<std::string, int> counts;
             for (auto const& [streetId, name] : streetNames) {
               if (name.empty()) {
@@ -569,8 +569,8 @@ namespace dsf::mobility {
           }
           if (tl.streetPriorities().empty() && higherSpeed != lowerSpeed) {
             /*************************************************************
-         * 2. Check for street names with same max speed
-         * ***********************************************************/
+             * 2. Check for street names with same max speed
+             * ***********************************************************/
             for (auto const& [sid, speed] : maxSpeeds) {
               if (speed == higherSpeed) {
                 tl.addStreetPriority(sid);
@@ -892,55 +892,66 @@ namespace dsf::mobility {
 
   void RoadNetwork::autoAssignRoadPriorities() {
     spdlog::debug("Auto-assigning road priorities...");
-    tbb::parallel_for_each(m_nodes.cbegin(), m_nodes.cend(), [this](auto const& pair) {
-      auto const& pNode{pair.second};
-      auto const& inNeighbours{pNode->ingoingEdges()};
-      // NOTE: std::multimap iterates keys in ascending order of RoadType.
-      // RoadType is defined so that more important roads (e.g., HIGHWAY = 0,
-      // PRIMARY = 1, SECONDARY = 2, ...) have smaller enum values. The logic
-      // below relies on this ordering to consider higher-priority road types
-      // first when selecting streets to mark as priority roads.
-      std::multimap<RoadType, Id> types;
-      for (auto const& edgeId : inNeighbours) {
-        auto* pStreet{&this->edge(edgeId)};
-        auto const roadType = pStreet->roadType();
-        if (roadType != RoadType::UNKNOWN) {
-          types.emplace(roadType, pStreet->id());
-        }
-      }
-      if (types.size() < 2) {
-        return;
-      }
-      std::vector<Id> priorityRoads;
-      // Find the first road type that has at least 2 streets
-      for (auto it = types.begin(); it != types.end();) {
-        auto const& currentType = it->first;
-        auto const count = types.count(currentType);
-
-        if (count == 2) {
-          auto range = types.equal_range(currentType);
-          for (auto rangeIt = range.first; rangeIt != range.second; ++rangeIt) {
-            priorityRoads.push_back(rangeIt->second);
+    std::atomic<std::size_t> nAssigned{0}, nNotAssigned{0};
+    tbb::parallel_for_each(
+        m_nodes.cbegin(),
+        m_nodes.cend(),
+        [this, &nAssigned, &nNotAssigned](auto const& pair) {
+          auto const& pNode{pair.second};
+          auto const& inNeighbours{pNode->ingoingEdges()};
+          // NOTE: std::multimap iterates keys in ascending order of RoadType.
+          // RoadType is defined so that more important roads (e.g., HIGHWAY = 0,
+          // PRIMARY = 1, SECONDARY = 2, ...) have smaller enum values. The logic
+          // below relies on this ordering to consider higher-priority road types
+          // first when selecting streets to mark as priority roads.
+          std::multimap<RoadType, Id> types;
+          for (auto const& edgeId : inNeighbours) {
+            auto* pStreet{&this->edge(edgeId)};
+            auto const roadType = pStreet->roadType();
+            if (roadType != RoadType::UNKNOWN) {
+              types.emplace(roadType, pStreet->id());
+            }
           }
-          break;
-        }
+          if (types.size() < 2) {
+            ++nNotAssigned;
+            return;
+          }
+          std::vector<Id> priorityRoads;
+          // Find the first road type that has at least 2 streets
+          for (auto it = types.begin(); it != types.end();) {
+            auto const& currentType = it->first;
+            auto const count = types.count(currentType);
 
-        // Move to the next different type
-        it = types.upper_bound(currentType);
-      }
+            if (count == 2) {
+              auto range = types.equal_range(currentType);
+              for (auto rangeIt = range.first; rangeIt != range.second; ++rangeIt) {
+                priorityRoads.push_back(rangeIt->second);
+              }
+              break;
+            }
 
-      if (priorityRoads.size() < 2) {
-        spdlog::warn("{}: unable to auto-assign road priorities", *pNode);
-        return;
-      }
+            // Move to the next different type
+            it = types.upper_bound(currentType);
+          }
 
-      for (auto const& streetId : priorityRoads) {
-        auto* pStreet{&this->edge(streetId)};
-        pStreet->setPriority();
-        spdlog::debug("Setting priority to street {}", pStreet->id());
-      }
-    });
-    spdlog::debug("Done auto-assigning road priorities.");
+          if (priorityRoads.size() < 2) {
+            spdlog::debug("{}: unable to auto-assign road priorities", *pNode);
+            ++nNotAssigned;
+            return;
+          }
+
+          for (auto const& streetId : priorityRoads) {
+            auto* pStreet{&this->edge(streetId)};
+            pStreet->setPriority();
+            spdlog::debug("Setting priority to street {}", pStreet->id());
+            ++nAssigned;
+          }
+        });
+    spdlog::info(
+        "Correctly assigned road priorities to {} streets, failed to assign to {} "
+        "streets.",
+        nAssigned.load(),
+        nNotAssigned.load());
   }
 
   void RoadNetwork::setEdgeWeight(std::string_view const strv_weight,

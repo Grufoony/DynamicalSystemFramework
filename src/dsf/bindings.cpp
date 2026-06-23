@@ -343,6 +343,17 @@ PYBIND11_MODULE(dsf_cpp, m) {
         Returns:
           Mapping[int, set[Direction]]: Internal mapping of street id to allowed directions (reference).)doc");
 
+  pybind11::class_<dsf::mobility::Intersection, dsf::mobility::RoadJunction>(
+      mobility, "Intersection")
+      .def(pybind11::init<dsf::Id>(), pybind11::arg("id"))
+      .def(pybind11::init<dsf::Id, dsf::geometry::Point>(),
+           pybind11::arg("id"),
+           pybind11::arg("point"))
+      .def(
+          "__repr__",
+          [](const dsf::mobility::Intersection& i) { return std::format("{}", i); },
+          R"doc(Return a string representation of the Intersection object.)doc");
+
   pybind11::class_<dsf::mobility::TrafficLight, dsf::mobility::RoadJunction>(
       mobility, "TrafficLight")
       .def(pybind11::init<dsf::Id>(), pybind11::arg("id"))
