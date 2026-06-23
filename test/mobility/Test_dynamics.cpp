@@ -1142,6 +1142,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addNode<dsf::mobility::Intersection>(4, dsf::geometry::Point(0, 1));
       graph2.addStreets(s0_1, s1_0, s1_2, s2_1, s3_1, s1_3, s4_1, s1_4);
       graph2.adjustNodeCapacities();
+      graph2.autoMapStreetLanes();
 
       FirstOrderDynamics dynamics{std::move(graph2), false, 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
@@ -1642,6 +1643,7 @@ TEST_CASE("RoadDynamics Configuration") {
   // Assuming the data files exist where Test_dynamics.cpp expects them
   defaultNetwork.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
   defaultNetwork.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
+  defaultNetwork.autoMapStreetLanes();
 
   FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 42};
 

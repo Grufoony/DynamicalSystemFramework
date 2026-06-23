@@ -930,11 +930,22 @@ namespace dsf::mobility {
     spdlog::debug("There are {} agents left in the list.", m_agents.size());
   }
 
-  void FirstOrderDynamics::prepareNetwork() {
-    m_graph->adjustNodeCapacities();
-    m_graph->autoMapStreetLanes();
-    m_graph->autoAssignRoadPriorities();
-    m_graph->autoInitTrafficLights();
+  void FirstOrderDynamics::prepareNetwork(bool const bAdjustNodeCapacities,
+                                          bool const bAutoMapStreetLanes,
+                                          bool const bAutoAssignRoadPriorities,
+                                          bool const bAutoInitTrafficLights) {
+    if (bAdjustNodeCapacities) {
+      m_graph->adjustNodeCapacities();
+    }
+    if (bAutoMapStreetLanes) {
+      m_graph->autoMapStreetLanes();
+    }
+    if (bAutoAssignRoadPriorities) {
+      m_graph->autoAssignRoadPriorities();
+    }
+    if (bAutoInitTrafficLights) {
+      m_graph->autoInitTrafficLights();
+    }
   }
 
   void FirstOrderDynamics::setErrorProbability(double errorProbability) {

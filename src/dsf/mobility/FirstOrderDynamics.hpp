@@ -174,7 +174,14 @@ namespace dsf::mobility {
     /// - RoadNetwork::autoMapStreetLanes()
     /// - RoadNetwork::autoAssignRoadPriorities()
     /// - RoadNetwork::autoInitTrafficLights()
-    void prepareNetwork();
+    /// @param bAdjustNodeCapacities If true, the nodes' capacities are adjusted using the streets' transport capacities (default is true)
+    /// @param bAutoMapStreetLanes If true, the streets' lanes are automatically mapped using the network's topology (default is false)
+    /// @param bAutoAssignRoadPriorities If true, the streets' priorities are automatically assigned using the network's topology (default is true)
+    /// @param bAutoInitTrafficLights If true, the traffic lights' phases are automatically initialized using the streets' geometry (default is true)
+    void prepareNetwork(bool const bAdjustNodeCapacities = true,
+                        bool const bAutoMapStreetLanes = false,
+                        bool const bAutoAssignRoadPriorities = true,
+                        bool const bAutoInitTrafficLights = true);
     /// @brief Set the error probability
     /// @param errorProbability The error probability
     /// @throw std::invalid_argument If the error probability is not between 0 and 1

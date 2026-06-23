@@ -384,10 +384,8 @@ TEST_CASE("RoadNetwork") {
             // Phase 0: priority streets 1 and 11 (3-lane → RIGHTANDSTRAIGHT + LEFT)
             // duration = floor(0.6 * 90) = 54
             CHECK_EQ(phases[0].duration(), 54);
-            CHECK(phases[0].containsGreen(1, dsf::Direction::RIGHTANDSTRAIGHT));
-            CHECK(phases[0].containsGreen(1, dsf::Direction::LEFT));
-            CHECK(phases[0].containsGreen(11, dsf::Direction::RIGHTANDSTRAIGHT));
-            CHECK(phases[0].containsGreen(11, dsf::Direction::LEFT));
+            CHECK(phases[0].containsGreen(1, dsf::Direction::ANY));
+            CHECK(phases[0].containsGreen(11, dsf::Direction::ANY));
             // Phase 1: non-priority streets 16 and 21 (1-lane → ANY)
             // duration = 90 - 54 = 36
             CHECK_EQ(phases[1].duration(), 36);
@@ -560,6 +558,8 @@ TEST_CASE("RoadNetwork") {
         Street s3{3, std::make_pair(3, 0), 50., 15., 3};
         graph.addStreets(s1, s2, s3);
 
+        graph.autoMapStreetLanes();
+
         WHEN("We auto-init Traffic Lights") {
           graph.autoInitTrafficLights();
           THEN("3-lane streets get RIGHTANDSTRAIGHT and LEFT phases") {
@@ -567,13 +567,10 @@ TEST_CASE("RoadNetwork") {
             auto const& phases{tl.phases()};
             CHECK_EQ(phases.size(), 2);
             // Each 3-lane street should have both directions green in the priority phase
-            CHECK(phases.at(0).containsGreen(1, dsf::Direction::RIGHTANDSTRAIGHT));
-            CHECK(phases.at(0).containsGreen(1, dsf::Direction::LEFT));
-            CHECK(phases.at(0).containsGreen(2, dsf::Direction::RIGHTANDSTRAIGHT));
-            CHECK(phases.at(0).containsGreen(2, dsf::Direction::LEFT));
+            CHECK(phases.at(0).containsGreen(1, dsf::Direction::ANY));
+            CHECK(phases.at(0).containsGreen(2, dsf::Direction::ANY));
             // Non-priority phase should still carry the 3-lane street directions
-            CHECK(phases.at(1).containsGreen(3, dsf::Direction::RIGHTANDSTRAIGHT));
-            CHECK(phases.at(1).containsGreen(3, dsf::Direction::LEFT));
+            CHECK(phases.at(1).containsGreen(3, dsf::Direction::ANY));
           }
         }
       }

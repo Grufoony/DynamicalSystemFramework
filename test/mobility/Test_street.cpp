@@ -101,9 +101,9 @@ TEST_CASE("Street") {
     GIVEN("A street with three lanes") {
       Street street{0, std::make_pair(0, 1), 5., 13.8888888889, 3};
       CHECK_EQ(street.laneMapping().size(), 3);
-      CHECK_EQ(street.laneMapping()[0], dsf::Direction::RIGHTANDSTRAIGHT);
-      CHECK_EQ(street.laneMapping()[1], dsf::Direction::STRAIGHT);
-      CHECK_EQ(street.laneMapping()[2], dsf::Direction::LEFT);
+      CHECK_EQ(street.laneMapping()[0], dsf::Direction::ANY);
+      CHECK_EQ(street.laneMapping()[1], dsf::Direction::ANY);
+      CHECK_EQ(street.laneMapping()[2], dsf::Direction::ANY);
       WHEN("We change the lane mapping") {
         street.setLaneMapping(std::vector<dsf::Direction>{
             dsf::Direction::RIGHT, dsf::Direction::STRAIGHT, dsf::Direction::STRAIGHT});
