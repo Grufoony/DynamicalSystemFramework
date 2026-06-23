@@ -892,6 +892,7 @@ namespace dsf::mobility {
 
   void RoadNetwork::autoAssignRoadPriorities() {
     spdlog::debug("Auto-assigning road priorities...");
+    std::atomic<std::size_t> nAssigned{0}, nNotAssigned{0};
     tbb::parallel_for_each(m_nodes.cbegin(), m_nodes.cend(), [this](auto const& pair) {
       auto const& pNode{pair.second};
       auto const& inNeighbours{pNode->ingoingEdges()};
@@ -909,6 +910,7 @@ namespace dsf::mobility {
         }
       }
       if (types.size() < 2) {
+        ++nNotAssigned;
         return;
       }
       std::vector<Id> priorityRoads;
@@ -930,7 +932,8 @@ namespace dsf::mobility {
       }
 
       if (priorityRoads.size() < 2) {
-        spdlog::warn("{}: unable to auto-assign road priorities", *pNode);
+        spdlog::debug("{}: unable to auto-assign road priorities", *pNode);
+        ++nNotAssigned;
         return;
       }
 
@@ -938,9 +941,14 @@ namespace dsf::mobility {
         auto* pStreet{&this->edge(streetId)};
         pStreet->setPriority();
         spdlog::debug("Setting priority to street {}", pStreet->id());
+        ++nAssigned;
       }
     });
-    spdlog::debug("Done auto-assigning road priorities.");
+    spdlog::info(
+        "Correctly assigned road priorities to {} streets, failed to assign to {} "
+        "streets.",
+        nAssigned,
+        nNotAssigned);
   }
 
   void RoadNetwork::setEdgeWeight(std::string_view const strv_weight,
