@@ -334,6 +334,14 @@ namespace dsf::mobility {
           }
         }
       }
+      if (!dynamicsConfig["mean_travel_distance"].error()) {
+        m_dynamics->setMeanTravelDistance(
+            dynamicsConfig["mean_travel_distance"].get_double().value());
+      }
+      if (!dynamicsConfig["mean_travel_time"].error()) {
+        m_dynamics->setMeanTravelTime(
+            dynamicsConfig["mean_travel_time"].get_double().value());
+      }
     }
     // Connect DB
     {
