@@ -390,8 +390,10 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                                      std::optional<std::time_t> const deltaT) {
+  void TrafficSimulator::m_runDefault(
+      std::vector<std::size_t> const& nAgentsPerTimeStep,
+      std::optional<std::time_t> const deltaT,
+      std::vector<std::size_t> const& nRandomAgentsPerTimeStep) {
     if (deltaT.has_value()) {
       if (m_endTime == 0) {
         spdlog::warn(
@@ -475,6 +477,13 @@ namespace dsf::mobility {
           auto const nAgents = nAgentsPerTimeStep.at(insertionIndex);
           if (nAgents > 0) {
             m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
+          }
+          if (!nRandomAgentsPerTimeStep.empty() &&
+              insertionIndex < nRandomAgentsPerTimeStep.size()) {
+            auto const nRandomAgents = nRandomAgentsPerTimeStep.at(insertionIndex);
+            if (nRandomAgents > 0) {
+              m_dynamics->addAgents(nRandomAgents, AgentInsertionMethod::RANDOM);
+            }
           }
         } else {
           spdlog::warn(
