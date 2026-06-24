@@ -374,6 +374,9 @@ namespace dsf::mobility {
                 : false,
             save_data["agent"].get_bool().has_value()
                 ? save_data["agent"].get_bool().value()
+                : false,
+            save_data["turn_counts"].get_bool().has_value()
+                ? save_data["turn_counts"].get_bool().value()
                 : false);
       }
     }
@@ -479,7 +482,8 @@ namespace dsf::mobility {
       auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
                                                                       m_saveStreetData,
                                                                       m_saveTravelData,
-                                                                      m_saveAgentData}
+                                                                      m_saveAgentData,
+                                                                      m_saveTurnCounts}
                                                     : StepDataRequest{});
 
       if (shouldSave) {
@@ -492,6 +496,7 @@ namespace dsf::mobility {
           m_saveStreetData = false;
           m_saveTravelData = false;
           m_saveAgentData = false;
+          m_saveTurnCounts = false;
         }
       }
       pbar->update();
@@ -558,7 +563,8 @@ namespace dsf::mobility {
       auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
                                                                       m_saveStreetData,
                                                                       m_saveTravelData,
-                                                                      m_saveAgentData}
+                                                                      m_saveAgentData,
+                                                                      m_saveTurnCounts}
                                                     : StepDataRequest{});
 
       if (shouldSave) {
@@ -571,6 +577,7 @@ namespace dsf::mobility {
           m_saveStreetData = false;
           m_saveTravelData = false;
           m_saveAgentData = false;
+          m_saveTurnCounts = false;
         }
       }
       pbar->update();
@@ -609,21 +616,24 @@ namespace dsf::mobility {
                                   bool const saveAverageStats,
                                   bool const saveStreetData,
                                   bool const saveTravelData,
-                                  bool const saveAgentData) {
+                                  bool const saveAgentData,
+                                  bool const saveTurnCounts) {
     m_savingInterval = savingInterval;
     m_saveAverageStats = saveAverageStats;
     m_saveStreetData = saveStreetData;
     m_saveTravelData = saveTravelData;
     m_saveAgentData = saveAgentData;
+    m_saveTurnCounts = saveTurnCounts;
     m_preparePersistence();
     spdlog::info(
         "Data saving configured: interval={}s, avg_stats={}, street_data={}, "
-        "travel_data={}, agent_data={}",
+        "travel_data={}, agent_data={}, turn_counts={}",
         savingInterval,
         saveAverageStats,
         saveStreetData,
         saveTravelData,
-        saveAgentData);
+        saveAgentData,
+        saveTurnCounts);
   }
 
   void TrafficSimulator::setName(std::string_view const name) {
@@ -707,6 +717,10 @@ namespace dsf::mobility {
     if (!this->database()) {
       throw std::runtime_error(
           "No database connected. Call connectDataBase() before saving data.");
+    }
+    if (this->database()->tableExists("road_data")) {
+      spdlog::debug("road_data table already exists in the database. Skipping creation.");
+      return;
     }
     this->database()->exec(
         "CREATE TABLE IF NOT EXISTS road_data ("
@@ -825,6 +839,10 @@ namespace dsf::mobility {
       throw std::runtime_error(
           "No database connected. Call connectDataBase() before saving data.");
     }
+    if (this->database()->tableExists("avg_stats")) {
+      spdlog::debug("avg_stats table already exists in the database. Skipping creation.");
+      return;
+    }
     this->database()->exec(
         "CREATE TABLE IF NOT EXISTS avg_stats ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -923,6 +941,11 @@ namespace dsf::mobility {
       throw std::runtime_error(
           "No database connected. Call connectDataBase() before saving data.");
     }
+    if (this->database()->tableExists("travel_data")) {
+      spdlog::debug(
+          "travel_data table already exists in the database. Skipping creation.");
+      return;
+    }
     this->database()->exec(
         "CREATE TABLE IF NOT EXISTS travel_data ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -990,6 +1013,11 @@ namespace dsf::mobility {
       throw std::runtime_error(
           "No database connected. Call connectDataBase() before saving data.");
     }
+    if (this->database()->tableExists("agent_data")) {
+      spdlog::debug(
+          "agent_data table already exists in the database. Skipping creation.");
+      return;
+    }
     this->database()->exec(
         "CREATE TABLE IF NOT EXISTS agent_data ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -1000,7 +1028,6 @@ namespace dsf::mobility {
         "time_step_out INTEGER NOT NULL)");
     spdlog::info("Initialized agent_data table in the database.");
   }
-
   void TrafficSimulator::m_saveAgentDataSQL(
       const std::int64_t time_step,
       const std::int64_t simulation_id,
@@ -1027,7 +1054,6 @@ namespace dsf::mobility {
       }
     }
   }
-
   void TrafficSimulator::m_saveAgentDataCSV(
       const std::int64_t time_step,
       tbb::concurrent_unordered_map<Id,
@@ -1055,6 +1081,80 @@ namespace dsf::mobility {
       spdlog::error("Failed to write agent data CSV: {}", e.what());
     }
   }
+  void TrafficSimulator::m_initTurnCountsTable() const {
+    if (!this->database()) {
+      throw std::runtime_error(
+          "No database connected. Call connectDataBase() before saving data.");
+    }
+    if (this->database()->tableExists("turn_counts")) {
+      spdlog::debug(
+          "turn_counts table already exists in the database. Skipping creation.");
+      return;
+    }
+    this->database()->exec(
+        "CREATE TABLE IF NOT EXISTS turn_counts ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "simulation_id INTEGER NOT NULL, "
+        "datetime TEXT NOT NULL, "
+        "time_step INTEGER NOT NULL, "
+        "source_edge_id INTEGER NOT NULL, "
+        "target_edge_id INTEGER NOT NULL, "
+        "counts INTEGER NOT NULL)");
+    spdlog::info("Initialized turn_counts table in the database.");
+  }
+  void TrafficSimulator::m_saveTurnCountsSQL(const std::string& datetime,
+                                             const std::int64_t time_step,
+                                             const std::int64_t simulation_id,
+                                             TurnCountsDict turnCountsRecords) const {
+    if (turnCountsRecords.empty()) {
+      spdlog::debug("No turn counts records to save for time step {}.", time_step);
+      return;
+    }
+    SQLite::Statement insertStmt(*this->database(),
+                                 "INSERT INTO turn_counts (datetime, time_step, "
+                                 "simulation_id, source_edge_id, target_edge_id, counts) "
+                                 "VALUES (?, ?, ?, ?, ?, ?)");
+
+    for (auto const& [edgeId, turnCounts] : turnCountsRecords) {
+      for (auto const& [nextEdgeId, count] : turnCounts) {
+        insertStmt.bind(1, datetime);
+        insertStmt.bind(2, time_step);
+        insertStmt.bind(3, simulation_id);
+        insertStmt.bind(4, static_cast<std::int64_t>(edgeId));
+        insertStmt.bind(5, static_cast<std::int64_t>(nextEdgeId));
+        insertStmt.bind(6, static_cast<std::int64_t>(count));
+        insertStmt.exec();
+        insertStmt.reset();
+      }
+    }
+  }
+  void TrafficSimulator::m_saveTurnCountsCSV(const std::string& datetime,
+                                             const std::int64_t time_step,
+                                             TurnCountsDict turnCountsRecords) const {
+    if (turnCountsRecords.empty()) {
+      spdlog::debug("No turn counts records to save for time step {}.", time_step);
+      return;
+    }
+    auto const filename{m_generateCSVfilename("turn_counts")};
+    bool fileExists = std::filesystem::exists(filename);
+
+    try {
+      CSVWriter writer(filename);
+      if (!fileExists) {
+        writer.writeHeader(
+            "datetime", "time_step", "source_edge_id", "target_edge_id", "counts");
+      }
+      for (auto const& [edgeId, turnCounts] : turnCountsRecords) {
+        for (auto const& [nextEdgeId, count] : turnCounts) {
+          writer.writeRow(datetime, time_step, edgeId, nextEdgeId, count);
+        }
+      }
+      spdlog::debug(
+          "Saved turn counts for time step {} to file {}.", time_step, filename);
+    } catch (const std::exception& e) {
+      spdlog::error("Failed to write turn counts CSV: {}", e.what());
+    }
+  }
 
   void TrafficSimulator::m_dumpNetwork() const {
     if (!this->database()) {
@@ -1069,7 +1169,7 @@ namespace dsf::mobility {
     bool edgesTableExists = edgesQuery.executeStep();
     bool nodesTableExists = nodesQuery.executeStep();
     if (edgesTableExists && nodesTableExists) {
-      spdlog::info(
+      spdlog::debug(
           "Edges and nodes tables already exist in the database. Skipping network "
           "dump.");
       return;
@@ -1158,6 +1258,12 @@ namespace dsf::mobility {
     if (m_saveAgentData) {
       m_initAgentDataTable();
     }
+    if (m_saveTurnCounts) {
+      m_initTurnCountsTable();
+      if (m_dynamics->turnCounts().empty()) {
+        m_dynamics->initTurnCounts();
+      }
+    }
     m_dumpSimInfoSQL();
     m_dumpNetwork();
   }
@@ -1189,6 +1295,8 @@ namespace dsf::mobility {
       if (stepData.averageStats.has_value()) {
         m_saveAvgStatsSQL(datetime, timeStep, simulationId, *stepData.averageStats);
       }
+      m_saveTurnCountsSQL(
+          datetime, timeStep, simulationId, std::move(stepData.turnCounts));
       transaction->commit();
       return;
     }
@@ -1205,5 +1313,6 @@ namespace dsf::mobility {
     if (stepData.averageStats.has_value()) {
       m_saveAvgStatsCSV(datetime, timeStep, *stepData.averageStats);
     }
+    m_saveTurnCountsCSV(datetime, timeStep, std::move(stepData.turnCounts));
   }
 }  // namespace dsf::mobility

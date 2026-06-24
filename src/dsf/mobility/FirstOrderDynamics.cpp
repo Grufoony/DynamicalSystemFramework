@@ -1169,7 +1169,9 @@ namespace dsf::mobility {
   }
   void FirstOrderDynamics::initTurnCounts() {
     if (!m_turnCounts.empty()) {
-      throw std::runtime_error("Turn counts have already been initialized.");
+      throw std::runtime_error(
+          std::format("Turn counts have already been initialized (current size: {}).",
+                      m_turnCounts.size()));
     }
     for (auto const& [edgeId, pEdge] : this->graph().edges()) {
       auto const* pTargetNode{&this->graph().node(pEdge->target())};
@@ -1309,8 +1311,16 @@ namespace dsf::mobility {
           }
         });
     if (!emptyItineraries.empty()) {
-      spdlog::warn("Removing {} itineraries with no valid path from the dynamics.",
-                   emptyItineraries.size());
+      auto const strIds = std::accumulate(
+          emptyItineraries.begin(),
+          emptyItineraries.end(),
+          std::string{},
+          [](std::string const& a, Id const& b) {
+            return a.empty() ? std::to_string(b) : a + ", " + std::to_string(b);
+          });
+      spdlog::warn("Removing {} itineraries with no valid path from the dynamics ({}).",
+                   emptyItineraries.size(),
+                   strIds);
       for (auto const& id : emptyItineraries) {
         auto const destination = m_itineraries.at(id)->destination();
         std::erase_if(m_ODs, [destination](auto const& tuple) {
@@ -1321,6 +1331,21 @@ namespace dsf::mobility {
         });
         std::erase_if(m_originNodes, [destination](auto const& tuple) {
           return std::get<0>(tuple) == destination;
+        });
+        for (auto& [origin, destinations] : m_originToDestinations) {
+          std::erase_if(destinations, [destination](auto const& tuple) {
+            return std::get<0>(tuple) == destination;
+          });
+        }
+        // Remove all origins in m_originToDestinations that have no destinations left
+        std::erase_if(m_originToDestinations, [this](auto const& pair) {
+          bool const bErase{pair.second.empty()};
+          if (bErase) {
+            std::erase_if(m_originNodes, [&pair](auto const& tuple) {
+              return std::get<0>(tuple) == pair.first;
+            });
+          }
+          return bErase;
         });
         m_itineraries.erase(id);
       }
@@ -1578,6 +1603,10 @@ namespace dsf::mobility {
         }
         stepData.averageStats = averageStats;
       }
+    }
+    if (dataRequest.saveTurnCounts) {
+      stepData.turnCounts = std::move(m_turnCounts);
+      this->initTurnCounts();
     }
 
     Dynamics<RoadNetwork>::m_evolve();
