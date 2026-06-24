@@ -28,28 +28,7 @@ namespace dsf::mobility {
   }
 
   void Street::m_updateLaneMapping(int const nLanes) {
-    m_laneMapping.clear();
-    switch (nLanes) {
-      case 1:
-        m_laneMapping.emplace_back(Direction::ANY);
-        break;
-      case 2:
-        m_laneMapping.emplace_back(Direction::RIGHTANDSTRAIGHT);
-        m_laneMapping.emplace_back(Direction::LEFT);
-        break;
-      case 3:
-        m_laneMapping.emplace_back(Direction::RIGHTANDSTRAIGHT);
-        m_laneMapping.emplace_back(Direction::STRAIGHT);
-        m_laneMapping.emplace_back(Direction::LEFT);
-        break;
-      default:
-        m_laneMapping.emplace_back(Direction::RIGHT);
-        for (auto i{1}; i < nLanes - 1; ++i) {
-          m_laneMapping.emplace_back(Direction::STRAIGHT);
-        }
-        m_laneMapping.emplace_back(Direction::LEFT);
-        break;
-    }
+    m_laneMapping = std::vector<Direction>(nLanes, Direction::ANY);
   }
   Street::Street(Id id,
                  std::pair<Id, Id> nodePair,

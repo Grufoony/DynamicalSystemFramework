@@ -87,6 +87,8 @@ namespace dsf::mobility {
     /// @brief Auto-initialise traffic light phases from street geometry.
     /// @param mainRoadPercentage Fraction of the cycle time allocated to
     ///        priority streets (default 0.6).
+    /// @param defaultCycleDuration The default cycle duration in ticks (default 90).
+    /// @throws std::invalid_argument If mainRoadPercentage is not in the range (0, 1).
     /// @details For each TrafficLight node that has no phases yet:
     ///   - Nodes with fewer than 3 ingoing edges are downgraded to plain
     ///     Intersection nodes.
@@ -95,12 +97,11 @@ namespace dsf::mobility {
     ///   - Two phases are created:
     ///       Phase 0 (priority streets)    — duration = mainRoadPercentage * DEFAULT_CYCLE
     ///       Phase 1 (non-priority streets) — duration = remaining ticks
-    ///   - Every street is added to its phase with Direction::ANY; for
-    ///     3-lane streets, RIGHTANDSTRAIGHT and LEFT are used instead so
-    ///     that autoMapStreetLanes() can produce correct per-lane mappings.
+    ///   - Every street is added to its phase with Direction::ANY
     ///   - Nodes whose phases have been set manually (via JSON config or
     ///     importTrafficLights()) are skipped.
-    void autoInitTrafficLights(double const mainRoadPercentage = 0.6);
+    void autoInitTrafficLights(double const mainRoadPercentage = 0.6,
+                               dsf::Delay const defaultCycleDuration = 90);
     /// @brief Automatically re-maps street lanes basing on network's topology
     /// @details For example, if one street has the right turn forbidden, then the right lane becomes a straight one
     void autoMapStreetLanes();

@@ -12,9 +12,6 @@
 #include <simdjson.h>
 #include <tbb/parallel_for_each.h>
 
-// Default traffic light cycle duration in seconds
-constexpr dsf::Delay TRAFFICLIGHT_DEFAULT_CYCLE = 90;
-
 static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
     std::to_array<std::string_view>({"id",
                                      "source",
@@ -484,9 +481,12 @@ namespace dsf::mobility {
     });
   }
 
-  void RoadNetwork::autoInitTrafficLights(double const mainRoadPercentage) {
+  void RoadNetwork::autoInitTrafficLights(const double mainRoadPercentage,
+                                          const dsf::Delay defaultCycleDuration) {
     tbb::parallel_for_each(
-        m_nodes.begin(), m_nodes.end(), [this, mainRoadPercentage](auto& pair) {
+        m_nodes.begin(),
+        m_nodes.end(),
+        [this, mainRoadPercentage, defaultCycleDuration](auto& pair) {
           auto& pNode = pair.second;
           if (!pNode->isTrafficLight()) {
             return;
@@ -579,8 +579,8 @@ namespace dsf::mobility {
           }
           if (tl.streetPriorities().empty() && higherNLanes != lowerNLanes) {
             /*************************************************************
-         * 2. Check for street names with same number of lanes
-         * ***********************************************************/
+             * 2. Check for street names with same number of lanes
+             * ***********************************************************/
             for (auto const& [sid, nLan] : nLanes) {
               if (nLan == higherNLanes) {
                 tl.addStreetPriority(sid);
@@ -589,8 +589,8 @@ namespace dsf::mobility {
           }
           if (tl.streetPriorities().empty()) {
             /*************************************************************
-         * 3. Check for streets with opposite angles
-         * ***********************************************************/
+             * 3. Check for streets with opposite angles
+             * ***********************************************************/
             std::vector<std::pair<Id, double>> sortedAngles;
             std::copy(streetAngles.begin(),
                       streetAngles.end(),
@@ -628,16 +628,17 @@ namespace dsf::mobility {
 
           // Build two phases: priority streets (phase 0) and non-priority (phase 1).
           auto const mainGreenTime{
-              static_cast<Delay>(mainRoadPercentage * TRAFFICLIGHT_DEFAULT_CYCLE)};
+              static_cast<Delay>(mainRoadPercentage * defaultCycleDuration)};
           auto const secondaryGreenTime{
-              static_cast<Delay>(TRAFFICLIGHT_DEFAULT_CYCLE - mainGreenTime)};
+              static_cast<Delay>(defaultCycleDuration - mainGreenTime)};
 
           TrafficLightPhase priorityPhase{mainGreenTime};
           TrafficLightPhase nonPriorityPhase{secondaryGreenTime};
 
           std::for_each(
               inNeighbours.begin(), inNeighbours.end(), [&](auto const& edgeId) {
-                auto const streetId{this->edge(edgeId).id()};
+                auto const& rStreet = this->edge(edgeId);
+                auto const streetId{rStreet.id()};
                 auto const nLane{nLanes.at(streetId)};
                 bool const isPriority{tl.streetPriorities().contains(streetId)};
                 auto& targetPhase{isPriority ? priorityPhase : nonPriorityPhase};
@@ -647,21 +648,16 @@ namespace dsf::mobility {
                               isPriority ? "priority" : "non-priority",
                               nLane);
 
-                // 3-lane streets get separate RIGHTANDSTRAIGHT and LEFT entries so
-                // that autoMapStreetLanes() can detect and map each lane correctly.
-                // All other streets use Direction::ANY (simpler, optimiser-friendly).
-                if (nLane == 3) {
-                  targetPhase.addGreen(streetId, dsf::Direction::RIGHTANDSTRAIGHT);
-                  targetPhase.addGreen(streetId, dsf::Direction::LEFT);
-                } else {
-                  targetPhase.addGreen(streetId);  // Direction::ANY
-                }
+                targetPhase.addGreen(streetId);  // Direction::ANY
               });
 
           tl.setPhases({priorityPhase, nonPriorityPhase});
         });
   }
   void RoadNetwork::autoMapStreetLanes() {
+    spdlog::warn(
+        "NOTE: this function is still experimental and may not work correctly on real "
+        "road networks. Use with caution.");
     auto const& nodes = this->nodes();
     std::for_each(nodes.cbegin(), nodes.cend(), [this](auto const& pair) {
       auto const& pNode{pair.second};
