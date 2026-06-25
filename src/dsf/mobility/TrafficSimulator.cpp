@@ -487,9 +487,8 @@ namespace dsf::mobility {
                                                     : StepDataRequest{});
 
       if (shouldSave) {
-        m_pendingStepData.push_back(std::move(stepData));
-        m_flushStepData(std::move(m_pendingStepData.back()));
-        m_pendingStepData.clear();
+        spdlog::debug("Saving step data at time step {}.", currentStep);
+        m_flushStepData(std::move(stepData));
         if (m_savingInterval.value() == 0) {
           m_savingInterval.reset();
           m_saveAverageStats = false;
@@ -568,9 +567,7 @@ namespace dsf::mobility {
                                                     : StepDataRequest{});
 
       if (shouldSave) {
-        m_pendingStepData.push_back(std::move(stepData));
-        m_flushStepData(std::move(m_pendingStepData.back()));
-        m_pendingStepData.clear();
+        m_flushStepData(std::move(stepData));
         if (m_savingInterval.value() == 0) {
           m_savingInterval.reset();
           m_saveAverageStats = false;
@@ -799,6 +796,7 @@ namespace dsf::mobility {
     try {
       CSVWriter writer(filename);
       if (!fileExists) {
+        spdlog::info("Creating new CSV file for street data: {}", filename);
         writer.writeHeader("datetime",
                            "time_step",
                            "street_id",
@@ -901,6 +899,7 @@ namespace dsf::mobility {
     try {
       CSVWriter writer(filename);
       if (!fileExists) {
+        spdlog::info("Creating new CSV file for average stats: {}", filename);
         writer.writeHeader("datetime",
                            "time_step",
                            "n_ghost_agents",
@@ -996,6 +995,7 @@ namespace dsf::mobility {
     try {
       CSVWriter writer(filename);
       if (!fileExists) {
+        spdlog::info("Creating new CSV file for travel data: {}", filename);
         writer.writeHeader("datetime", "time_step", "distance_m", "travel_time_s");
       }
       for (auto const& [distance, time] : travelDTs) {
@@ -1069,6 +1069,7 @@ namespace dsf::mobility {
     try {
       CSVWriter writer(filename);
       if (!fileExists) {
+        spdlog::info("Creating new CSV file for agent data: {}", filename);
         writer.writeHeader("agent_id", "edge_id", "time_step_in", "time_step_out");
       }
       for (auto const& [edge_id, data] : agentDataRecords) {
@@ -1110,6 +1111,9 @@ namespace dsf::mobility {
       spdlog::debug("No turn counts records to save for time step {}.", time_step);
       return;
     }
+    spdlog::trace("Saving {} turn counts records for time step {}.",
+                  turnCountsRecords.size(),
+                  time_step);
     SQLite::Statement insertStmt(*this->database(),
                                  "INSERT INTO turn_counts (datetime, time_step, "
                                  "simulation_id, source_edge_id, target_edge_id, counts) "
@@ -1117,6 +1121,9 @@ namespace dsf::mobility {
 
     for (auto const& [edgeId, turnCounts] : turnCountsRecords) {
       for (auto const& [nextEdgeId, count] : turnCounts) {
+        if (count == 0) {
+          continue;  // Skip inserting records with zero counts to save memory
+        }
         insertStmt.bind(1, datetime);
         insertStmt.bind(2, time_step);
         insertStmt.bind(3, simulation_id);
@@ -1141,6 +1148,7 @@ namespace dsf::mobility {
     try {
       CSVWriter writer(filename);
       if (!fileExists) {
+        spdlog::info("Creating new turn counts CSV file: {}", filename);
         writer.writeHeader(
             "datetime", "time_step", "source_edge_id", "target_edge_id", "counts");
       }
@@ -1243,6 +1251,9 @@ namespace dsf::mobility {
     if (m_saveAgentData) {
       Street::acquireAgentData();
     }
+    if (m_saveTurnCounts && m_dynamics->turnCounts().empty()) {
+      m_dynamics->initTurnCounts();
+    }
     if (m_database == nullptr) {
       return;
     }
@@ -1260,17 +1271,15 @@ namespace dsf::mobility {
     }
     if (m_saveTurnCounts) {
       m_initTurnCountsTable();
-      if (m_dynamics->turnCounts().empty()) {
-        m_dynamics->initTurnCounts();
-      }
     }
     m_dumpSimInfoSQL();
     m_dumpNetwork();
   }
 
-  void TrafficSimulator::m_flushStepData(StepDataResult&& stepData) {
+  void TrafficSimulator::m_flushStepData(StepDataResult stepData) {
     if (!stepData.streetData.has_value() && !stepData.travelData.has_value() &&
-        !stepData.averageStats.has_value() && !stepData.agentData.has_value()) {
+        !stepData.averageStats.has_value() && !stepData.agentData.has_value() &&
+        stepData.turnCounts.empty()) {
       return;
     }
 
@@ -1295,8 +1304,10 @@ namespace dsf::mobility {
       if (stepData.averageStats.has_value()) {
         m_saveAvgStatsSQL(datetime, timeStep, simulationId, *stepData.averageStats);
       }
-      m_saveTurnCountsSQL(
-          datetime, timeStep, simulationId, std::move(stepData.turnCounts));
+      if (!stepData.turnCounts.empty()) {
+        m_saveTurnCountsSQL(
+            datetime, timeStep, simulationId, std::move(stepData.turnCounts));
+      }
       transaction->commit();
       return;
     }
@@ -1313,6 +1324,8 @@ namespace dsf::mobility {
     if (stepData.averageStats.has_value()) {
       m_saveAvgStatsCSV(datetime, timeStep, *stepData.averageStats);
     }
-    m_saveTurnCountsCSV(datetime, timeStep, std::move(stepData.turnCounts));
+    if (!stepData.turnCounts.empty()) {
+      m_saveTurnCountsCSV(datetime, timeStep, std::move(stepData.turnCounts));
+    }
   }
 }  // namespace dsf::mobility

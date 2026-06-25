@@ -36,6 +36,8 @@ namespace {
     out << "id;source;target;length;maxspeed;name;type;nlanes\n";
     out << "0;0;1;13.8888888889;50;edge_0;residential;1\n";
     out << "1;1;0;13.8888888889;50;edge_1;residential;1\n";
+    out << "2;1;2;13.8888888889;50;edge_2;residential;1\n";
+    out << "3;2;1;13.8888888889;50;edge_3;residential;1\n";
   }
 
   int rowCount(SQLite::Database& db, std::string const& tableName) {
@@ -259,8 +261,8 @@ TEST_CASE("TrafficSimulator SQL persistence") {
   simulator.run(std::vector<std::size_t>{1, 0, 0, 0, 0, 0});
 
   SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
-  CHECK(rowCount(db, "edges") == 2);
-  CHECK(rowCount(db, "nodes") == 2);
+  CHECK(rowCount(db, "edges") == 4);
+  CHECK(rowCount(db, "nodes") == 3);
   CHECK(rowCount(db, "road_data") > 0);
   CHECK(rowCount(db, "avg_stats") > 0);
 
@@ -319,4 +321,118 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   std::filesystem::remove(edgesPath);
   std::filesystem::remove(roadCsv);
   std::filesystem::remove(avgCsv);
+}
+
+TEST_CASE("TrafficSimulator SQL turn counts persistence") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  auto const dbPath = makeUniquePath("traffic_simulator_", ".db");
+  writeTinyEdgesCsv(edgesPath);
+  std::filesystem::remove(dbPath);
+
+  TrafficSimulator simulator;
+  spdlog::set_level(spdlog::level::trace);
+  simulator.setName("traffic_simulator_turn_counts_sql_test");
+  simulator.connectDataBase(dbPath.string());
+  simulator.importRoadNetwork(edgesPath.string());
+  REQUIRE(simulator.dynamics() != nullptr);
+  simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
+  // Route agents from node 0 to node 2: they must cross both edges.
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 2, 1.0}});
+  simulator.dynamics()->updatePaths();
+
+  // 4th flag = save turn counts
+  simulator.saveData(1, false, false, false, false, true);
+  simulator.setTimeFrame(0, 10);
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+  // Insert one agent at t=0, then idle.
+  simulator.run(std::vector<std::size_t>{1, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+  spdlog::set_level(spdlog::level::info);
+
+  SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+  spdlog::info("Turn counts table row count: {}", rowCount(db, "turn_counts"));
+  spdlog::info(dbPath.string());
+
+  // Table must exist.
+  CHECK(db.tableExists("turn_counts"));
+  CHECK(rowCount(db, "turn_counts") > 0);
+
+  // At least one turn event: edge 0 → edge 1.
+  // Take all rows with source_edge_id = 0 and target_edge_id = 1, sum counts.
+  {
+    SQLite::Statement q(db,
+                        "SELECT SUM(counts) FROM turn_counts WHERE source_edge_id = 0 "
+                        "AND target_edge_id = 2");
+    REQUIRE(q.executeStep());
+    CHECK(q.getColumn(0).getInt64() == 1);
+  }
+
+  // Every row must reference valid, distinct edge IDs.
+  {
+    SQLite::Statement q(db, "SELECT source_edge_id, target_edge_id FROM turn_counts");
+    while (q.executeStep()) {
+      CHECK_NE(q.getColumn(0).getInt64(), q.getColumn(1).getInt64());
+    }
+  }
+
+  // Counts must be positive.
+  {
+    SQLite::Statement q(db, "SELECT counts FROM turn_counts");
+    while (q.executeStep()) {
+      CHECK(q.getColumn(0).getInt64() > 0);
+    }
+  }
+
+  std::filesystem::remove(edgesPath);
+  std::filesystem::remove(dbPath);
+  std::filesystem::remove(dbPath.string() + "-wal");
+  std::filesystem::remove(dbPath.string() + "-shm");
+}
+
+TEST_CASE("TrafficSimulator CSV turn counts persistence") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.setName("traffic_simulator_turn_counts_csv_test");
+  simulator.importRoadNetwork(edgesPath.string());
+  REQUIRE(simulator.dynamics() != nullptr);
+  simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->updatePaths();
+
+  // 4th flag = save turn counts
+  simulator.saveData(1, false, false, false, false, true);
+  simulator.setTimeFrame(0, 10);
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+  simulator.run(std::vector<std::size_t>{1, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+
+  auto const baseName = std::to_string(static_cast<std::uint64_t>(simulator.id())) +
+                        "_traffic_simulator_turn_counts_csv_test";
+  auto const turnCountsCsv =
+      std::filesystem::current_path() / (baseName + "_turn_counts.csv");
+
+  // The linear network must have generated at least one turn event.
+  REQUIRE(std::filesystem::exists(turnCountsCsv));
+
+  {
+    std::ifstream tcFile(turnCountsCsv);
+    REQUIRE(tcFile.is_open());
+
+    // Header row.
+    std::string header;
+    REQUIRE(std::getline(tcFile, header));
+    CHECK_EQ(header, "datetime;time_step;source_edge_id;target_edge_id;counts");
+
+    // At least one data row must follow.
+    std::string dataRow;
+    REQUIRE(std::getline(tcFile, dataRow));
+    CHECK_FALSE(dataRow.empty());
+
+    // The data row must contain 5 semicolon-separated fields.
+    auto fieldCount = std::count(dataRow.begin(), dataRow.end(), ';');
+    CHECK_EQ(fieldCount, 4);  // 4 delimiters → 5 fields
+  }
+
+  std::filesystem::remove(edgesPath);
+  std::filesystem::remove(turnCountsCsv);
 }

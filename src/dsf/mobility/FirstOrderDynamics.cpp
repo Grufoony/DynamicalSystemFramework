@@ -448,12 +448,13 @@ namespace dsf::mobility {
       spdlog::debug("No valid transitions found for {} at {}", *pAgent, *pNode);
       return std::nullopt;
     }
+    spdlog::debug("Found {} valid transitions for {} at {}",
+                  transitionProbabilities.size(),
+                  *pAgent,
+                  *pNode);
     if (transitionProbabilities.size() == 1) {
       auto const& onlyStreetId = transitionProbabilities.cbegin()->first;
-      spdlog::debug("Only one valid transition for {} at {}: street {}",
-                    *pAgent,
-                    *pNode,
-                    onlyStreetId);
+      spdlog::trace("This transition is to {}", this->graph().edge(onlyStreetId));
       return onlyStreetId;
     }
 
@@ -830,6 +831,10 @@ namespace dsf::mobility {
           }
           if (!m_turnCounts.empty() && pAgent->streetId().has_value()) {
             ++m_turnCounts[*(pAgent->streetId())][nextStreet->id()];
+            spdlog::trace("Incremented turn count for {} -> {}: {}",
+                          *(pAgent->streetId()),
+                          nextStreet->id(),
+                          m_turnCounts[*(pAgent->streetId())][nextStreet->id()]);
           }
           pAgent->setStreetId();
           pAgent->setSpeed(this->m_speedFunction(*nextStreet));
@@ -857,6 +862,10 @@ namespace dsf::mobility {
         if (!(nextStreet->isFull())) {
           if (!m_turnCounts.empty() && pAgentTemp->streetId().has_value()) {
             ++m_turnCounts[*(pAgentTemp->streetId())][nextStreet->id()];
+            spdlog::trace("Incremented turn count for {} -> {}: {}",
+                          *(pAgentTemp->streetId()),
+                          nextStreet->id(),
+                          m_turnCounts[*(pAgentTemp->streetId())][nextStreet->id()]);
           }
           auto pAgent{roundabout.dequeue()};
           pAgent->setStreetId();
@@ -900,7 +909,7 @@ namespace dsf::mobility {
         continue;
       }
       if (!pAgent->nextStreetId().has_value()) {
-        spdlog::debug("No next street id, generating a random one");
+        spdlog::debug("No next street id, generating a new one");
         auto const nextStreetId{this->m_nextStreetId(pAgent, pSourceNode)};
         if (!nextStreetId.has_value()) {
           spdlog::debug(
@@ -1605,8 +1614,8 @@ namespace dsf::mobility {
       }
     }
     if (dataRequest.saveTurnCounts) {
-      stepData.turnCounts = std::move(m_turnCounts);
-      this->initTurnCounts();
+      stepData.turnCounts = m_turnCounts;
+      this->resetTurnCounts();
     }
 
     Dynamics<RoadNetwork>::m_evolve();

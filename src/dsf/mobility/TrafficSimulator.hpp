@@ -38,7 +38,6 @@ namespace dsf::mobility {
     bool m_saveTravelData{false};
     bool m_saveAgentData{false};
     bool m_saveTurnCounts{false};
-    std::deque<StepDataResult> m_pendingStepData;
     std::queue<std::tuple<std::time_t, std::string>> m_dynamicODsUpdate;
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
@@ -215,7 +214,7 @@ namespace dsf::mobility {
                              TurnCountsDict turnCounts) const;
     void m_dumpNetwork() const;
     void m_preparePersistence();
-    void m_flushStepData(StepDataResult&& stepData);
+    void m_flushStepData(StepDataResult stepData);
 
     void m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
                       std::optional<std::time_t> const deltaT = std::nullopt);
