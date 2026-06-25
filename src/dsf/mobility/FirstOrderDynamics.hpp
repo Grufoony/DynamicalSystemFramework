@@ -41,6 +41,8 @@
 static constexpr auto CACHE_FOLDER = "./.dsfcache/";
 
 namespace dsf::mobility {
+  using TurnCountsDict =
+      tbb::concurrent_unordered_map<Id, tbb::concurrent_unordered_map<Id, std::size_t>>;
   /// @brief The method for inserting agents into the network
   enum class AgentInsertionMethod : std::uint8_t {
     RANDOM = 0,  // Agents spawn randomly in the network and travel with no destination
@@ -75,6 +77,7 @@ namespace dsf::mobility {
     bool saveStreetData{false};
     bool saveTravelData{false};
     bool saveAgentData{false};
+    bool saveTurnCounts{false};
   };
   struct StepDataResult {
     std::time_t timeStep{0};
@@ -85,6 +88,7 @@ namespace dsf::mobility {
         Id,
         std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
         agentData;
+    TurnCountsDict turnCounts;
   };
   /// @brief The FirstOrderDynamics class represents the dynamics of the network.
   class FirstOrderDynamics : public Dynamics<RoadNetwork> {
@@ -109,7 +113,7 @@ namespace dsf::mobility {
     bool m_reinsertAgents = false;
 
   protected:
-    std::unordered_map<Id, std::unordered_map<Id, size_t>> m_turnCounts;
+    TurnCountsDict m_turnCounts;
     std::unordered_map<Id, std::array<long, 4>> m_turnMapping;
     tbb::concurrent_unordered_map<Id, std::unordered_map<Direction, double>>
         m_queuesAtTrafficLights;
@@ -403,10 +407,7 @@ namespace dsf::mobility {
     Measurement<double> meanTravelSpeed(bool clearData = false);
     /// @brief Get the turn counts of the agents
     /// @return const std::unordered_map<Id, std::unordered_map<Id, size_t>>& The turn counts. The outer map's key is the street id, the inner map's key is the next street id and the value is the number of counts
-    inline std::unordered_map<Id, std::unordered_map<Id, size_t>> const& turnCounts()
-        const noexcept {
-      return m_turnCounts;
-    };
+    inline TurnCountsDict const& turnCounts() const noexcept { return m_turnCounts; };
     /// @brief Get the normalized turn counts of the agents
     /// @return const std::unordered_map<Id, std::unordered_map<Id, double>>& The normalized turn counts. The outer map's key is the street id, the inner map's key is the next street id and the value is the normalized number of counts
     std::unordered_map<Id, std::unordered_map<Id, double>> const normalizedTurnCounts()

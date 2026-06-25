@@ -37,7 +37,7 @@ namespace dsf::mobility {
     bool m_saveStreetData{false};
     bool m_saveTravelData{false};
     bool m_saveAgentData{false};
-    std::deque<StepDataResult> m_pendingStepData;
+    bool m_saveTurnCounts{false};
     std::queue<std::tuple<std::time_t, std::string>> m_dynamicODsUpdate;
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
@@ -186,9 +186,35 @@ namespace dsf::mobility {
         tbb::concurrent_unordered_map<
             Id,
             std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
+    /// @brief Initialize the turn counts table.
+    /// This table contains the turn counts of the agents. Columns are:
+    /// - id: The entry id (auto-incremented)
+    /// - simulation_id: The simulation id
+    /// - datetime: The datetime of the data entry
+    /// - time_step: The time step of the data entry
+    /// - source_edge_id: The id of the source edge
+    /// - target_edge_id: The id of the target edge
+    /// - counts: The turn counts from the source edge to the target edge
+    void m_initTurnCountsTable() const;
+    /// @brief Save turn counts to the database using a batch insert.
+    /// @param datetime The datetime of the data entry
+    /// @param time_step The time step of the data entry
+    /// @param simulation_id The id of the simulation
+    /// @param turnCounts A map of maps containing the turn counts to be saved, where the key of the outer map is the edge id, the key of the inner map is the next edge id and the value is the number of counts
+    void m_saveTurnCountsSQL(const std::string& datetime,
+                             const std::int64_t time_step,
+                             const std::int64_t simulation_id,
+                             TurnCountsDict turnCounts) const;
+    /// @brief Save turn counts to a CSV file.
+    /// @param datetime The datetime of the data entry
+    /// @param time_step The time step of the data entry
+    /// @param turnCounts A map of maps containing the turn counts to be saved, where the key of the outer map is the edge id, the key of the inner map is the next edge id and the value is the number of counts
+    void m_saveTurnCountsCSV(const std::string& datetime,
+                             const std::int64_t time_step,
+                             TurnCountsDict turnCounts) const;
     void m_dumpNetwork() const;
     void m_preparePersistence();
-    void m_flushStepData(StepDataResult&& stepData);
+    void m_flushStepData(StepDataResult stepData);
 
     void m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
                       std::optional<std::time_t> const deltaT = std::nullopt);
@@ -231,7 +257,8 @@ namespace dsf::mobility {
                   bool const saveAverageStats = false,
                   bool const saveStreetData = false,
                   bool const saveTravelData = false,
-                  bool const saveAgentData = false);
+                  bool const saveAgentData = false,
+                  bool const saveTurnCounts = false);
 
     /// @brief Set the name of the simulation
     /// @param name The name of the simulation

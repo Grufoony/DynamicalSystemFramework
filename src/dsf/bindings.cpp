@@ -1547,6 +1547,7 @@ Returns:
            pybind11::arg("saveStreetData") = false,
            pybind11::arg("saveTravelData") = false,
            pybind11::arg("saveAgentData") = false,
+           pybind11::arg("saveTurnCountsData") = false,
            R"doc(Save simulation data according to the requested options.
 
     Args:
@@ -1555,6 +1556,7 @@ Returns:
       saveStreetData (bool): Save per-street data when True.
       saveTravelData (bool): Save travel statistics when True.
       saveAgentData (bool): Save per-agent traces when True.
+      saveTurnCountsData (bool): Save turn counts when True.
 
     Returns:
       None)doc")
