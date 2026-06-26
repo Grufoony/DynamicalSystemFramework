@@ -60,6 +60,8 @@ namespace dsf::mobility {
     --m_nAgents;
     if (pAgent->isRandom() && !pAgent->hasArrived(this->time_step())) {
       ++m_nKilledAgents;
+    } else {
+      ++m_nArrivedAgents;
     }
     auto const& streetId = pAgent->streetId();
     if (streetId.has_value()) {
@@ -365,14 +367,10 @@ namespace dsf::mobility {
     // Get current street information
     std::optional<Id> previousNodeId = std::nullopt;
     std::set<Id> forbiddenTurns;
-    double speedCurrent{1.0};
-    double lengthCurrent{1.0};
     if (pAgent->streetId().has_value()) {
       auto const* pStreetCurrent{&this->graph().edge(pAgent->streetId().value())};
       previousNodeId = pStreetCurrent->source();
       forbiddenTurns = pStreetCurrent->forbiddenTurns();
-      speedCurrent = pStreetCurrent->maxSpeed();
-      lengthCurrent = pStreetCurrent->length();
     }
 
     // Get path targets for non-random agents
@@ -415,11 +413,8 @@ namespace dsf::mobility {
         }
       }
 
-      // Calculate base probability
-      auto const speedNext{pStreetOut->maxSpeed()};
-      auto const lengthNext{pStreetOut->length()};
-      double probability =
-          std::sqrt((speedCurrent / lengthCurrent) * (speedNext / lengthNext));
+      double probability = 1.0;
+      //std::exp(-0.5 * pStreetOut->maxSpeed() / (this->m_speedFunction(*pStreetOut)));
 
       // Apply error probability for non-random agents
       if (this->m_errorProbability.has_value() && !pathTargets.empty()) {
@@ -755,7 +750,6 @@ namespace dsf::mobility {
         if (bArrived) {
           auto pAgent =
               this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
-          ++m_nArrivedAgents;
           if (m_reinsertAgents) {
             // reset Agent's values
             pAgent->reset(this->time_step());
