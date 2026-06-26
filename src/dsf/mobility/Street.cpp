@@ -96,7 +96,7 @@ namespace dsf::mobility {
     if (nLanes == m_nLanes) {
       return;
     }
-    spdlog::info(
+    spdlog::debug(
         "Changing number of lanes for {} from {} to {}", *this, m_nLanes, nLanes);
     m_capacity = static_cast<int>(m_capacity * static_cast<double>(nLanes) / m_nLanes);
     m_transportCapacity = m_transportCapacity * nLanes / m_nLanes;
