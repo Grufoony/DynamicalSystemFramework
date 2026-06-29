@@ -393,6 +393,13 @@ namespace dsf::mobility {
     double cumulativeProbability = 0.0;
 
     for (const auto outEdgeId : outgoingEdges) {
+      if (forbiddenTurns.contains(outEdgeId)) {
+        spdlog::trace("Forbidden turn from street {} to street {}. Skipping.",
+                      pAgent->streetId().value_or(0),
+                      outEdgeId);
+        continue;
+      }
+
       auto const* pStreetOut{&this->graph().edge(outEdgeId)};
 
       // Check if this is a valid path target for non-random agents
@@ -401,10 +408,6 @@ namespace dsf::mobility {
         bIsPathTarget =
             std::find(pathTargets.cbegin(), pathTargets.cend(), pStreetOut->target()) !=
             pathTargets.cend();
-      }
-
-      if (forbiddenTurns.contains(outEdgeId) && !bIsPathTarget) {
-        continue;
       }
 
       if (!pathTargets.empty()) {
@@ -554,139 +557,102 @@ namespace dsf::mobility {
     }
     auto const& transportCapacity{pStreet->transportCapacity()};
     std::uniform_real_distribution<double> uniformDist{0., 1.};
-    for (auto i = 0; i < std::ceil(transportCapacity); ++i) {
-      if (i == std::ceil(transportCapacity) - 1) {
-        double integral;
-        double fractional = std::modf(transportCapacity, &integral);
-        if (fractional != 0. && uniformDist(this->m_generator) > fractional) {
-          spdlog::trace("Skipping due to fractional capacity {:.2f} < random value",
-                        fractional);
+    for (auto queueIndex = 0; queueIndex < nLanes; ++queueIndex) {
+      if (pStreet->queue(queueIndex).empty()) {
+        continue;
+      }
+      if (uniformDist(this->m_generator) > transportCapacity) {
+        spdlog::trace("Skipping due to transport capacity {} < random {}",
+                      transportCapacity,
+                      uniformDist(this->m_generator));
+        continue;
+      }
+      // Logger::debug("Taking temp agent");
+      auto const& pAgentTemp{pStreet->queue(queueIndex).front()};
+      if (pAgentTemp->freeTime() > this->time_step()) {
+        spdlog::trace("Skipping due to time {} < free time {}",
+                      this->time_step(),
+                      pAgentTemp->freeTime());
+        continue;
+      }
+
+      if (m_timeToleranceFactor.has_value()) {
+        auto const timeDiff{this->time_step() - pAgentTemp->freeTime()};
+        auto const timeTolerance{m_timeToleranceFactor.value() *
+                                 std::ceil(pStreet->length() / pStreet->maxSpeed())};
+        if (timeDiff > timeTolerance) {
+          spdlog::debug(
+              "Time-step {} - {} currently on {} ({} turn - Traffic Light? {}), "
+              "has been still for more than {} seconds ({} seconds). Killing it.",
+              this->time_step(),
+              *pAgentTemp,
+              *pStreet,
+              directionToString.at(pStreet->laneMapping().at(queueIndex)),
+              this->graph().node(pStreet->target()).isTrafficLight(),
+              timeTolerance,
+              timeDiff);
+          // Kill the agent
+          this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
           continue;
         }
       }
-      for (auto queueIndex = 0; queueIndex < nLanes; ++queueIndex) {
-        if (pStreet->queue(queueIndex).empty()) {
-          continue;
-        }
-        // Logger::debug("Taking temp agent");
-        auto const& pAgentTemp{pStreet->queue(queueIndex).front()};
-        if (pAgentTemp->freeTime() > this->time_step()) {
-          spdlog::trace("Skipping due to time {} < free time {}",
-                        this->time_step(),
-                        pAgentTemp->freeTime());
-          continue;
-        }
-
-        if (m_timeToleranceFactor.has_value()) {
-          auto const timeDiff{this->time_step() - pAgentTemp->freeTime()};
-          auto const timeTolerance{m_timeToleranceFactor.value() *
-                                   std::ceil(pStreet->length() / pStreet->maxSpeed())};
-          if (timeDiff > timeTolerance) {
-            spdlog::debug(
-                "Time-step {} - {} currently on {} ({} turn - Traffic Light? {}), "
-                "has been still for more than {} seconds ({} seconds). Killing it.",
-                this->time_step(),
-                *pAgentTemp,
-                *pStreet,
-                directionToString.at(pStreet->laneMapping().at(queueIndex)),
-                this->graph().node(pStreet->target()).isTrafficLight(),
-                timeTolerance,
-                timeDiff);
-            // Kill the agent
-            this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
-            continue;
-          }
-        }
-        pAgentTemp->setSpeed(0.);
-        auto* destinationNode{&this->graph().node(pStreet->target())};
-        if (destinationNode->isFull()) {
-          spdlog::trace("Skipping due to full destination node {}", *destinationNode);
-          continue;
-        }
-        if (destinationNode->isTrafficLight()) {
-          auto& tl = dynamic_cast<TrafficLight&>(*destinationNode);
-          auto const direction{pStreet->laneMapping().at(queueIndex)};
-          if (!tl.isGreen(pStreet->id(), direction)) {
-            spdlog::trace("Skipping due to red light on street {} and direction {}",
-                          pStreet->id(),
-                          directionToString.at(direction));
-            continue;
-          }
-          spdlog::debug("Green light on street {} and direction {}",
+      pAgentTemp->setSpeed(0.);
+      auto* destinationNode{&this->graph().node(pStreet->target())};
+      if (destinationNode->isFull()) {
+        spdlog::trace("Skipping due to full destination node {}", *destinationNode);
+        continue;
+      }
+      if (destinationNode->isTrafficLight()) {
+        auto& tl = dynamic_cast<TrafficLight&>(*destinationNode);
+        auto const direction{pStreet->laneMapping().at(queueIndex)};
+        if (!tl.isGreen(pStreet->id(), direction)) {
+          spdlog::trace("Skipping due to red light on street {} and direction {}",
                         pStreet->id(),
                         directionToString.at(direction));
-        } else if (destinationNode->isIntersection() &&
-                   pAgentTemp->nextStreetId().has_value()) {
-          auto& intersection = static_cast<Intersection&>(*destinationNode);
-          bool bCanPass{true};
-          if (!intersection.streetPriorities().empty()) {
-            spdlog::debug("Checking priorities for street {} -> {}",
-                          pStreet->source(),
-                          pStreet->target());
-            auto const& thisDirection{this->graph()
-                                          .edge(pAgentTemp->nextStreetId().value())
-                                          .turnDirection(pStreet->angle())};
-            if (!intersection.streetPriorities().contains(pStreet->id())) {
-              // I have to check if the agent has right of way
-              auto const& inNeighbours{destinationNode->ingoingEdges()};
-              for (auto const& inEdgeId : inNeighbours) {
-                auto const* pStreetTemp{&this->graph().edge(inEdgeId)};
-                if (pStreetTemp->id() == pStreet->id()) {
-                  continue;
-                }
-                if (pStreetTemp->nExitingAgents() == 0) {
-                  continue;
-                }
-                if (intersection.streetPriorities().contains(pStreetTemp->id())) {
-                  spdlog::debug(
-                      "Skipping agent emission from street {} -> {} due to right of way.",
-                      pStreet->source(),
-                      pStreet->target());
-                  bCanPass = false;
-                  break;
-                } else if (thisDirection >= Direction::LEFT) {
-                  // Check if the agent has right of way using direction
-                  // The problem arises only when you have to turn left
-                  for (auto i{0}; i < pStreetTemp->nLanes(); ++i) {
-                    // check queue is not empty and take the top agent
-                    if (pStreetTemp->queue(i).empty()) {
-                      continue;
-                    }
-                    auto const& pAgentTemp2{pStreetTemp->queue(i).front()};
-                    if (!pAgentTemp2->nextStreetId().has_value()) {
-                      continue;
-                    }
-                    auto const& otherDirection{
-                        this->graph()
-                            .edge(pAgentTemp2->nextStreetId().value())
-                            .turnDirection(this->graph()
-                                               .edge(pAgentTemp2->streetId().value())
-                                               .angle())};
-                    if (otherDirection < Direction::LEFT) {
-                      spdlog::debug(
-                          "Skipping agent emission from street {} -> {} due to right of "
-                          "way with other agents.",
-                          pStreet->source(),
-                          pStreet->target());
-                      bCanPass = false;
-                      break;
-                    }
-                  }
-                }
+          continue;
+        }
+        spdlog::debug("Green light on street {} and direction {}",
+                      pStreet->id(),
+                      directionToString.at(direction));
+      } else if (destinationNode->isIntersection() &&
+                 pAgentTemp->nextStreetId().has_value()) {
+        auto& intersection = static_cast<Intersection&>(*destinationNode);
+        bool bCanPass{true};
+        if (!intersection.streetPriorities().empty()) {
+          spdlog::debug("Checking priorities for street {} -> {}",
+                        pStreet->source(),
+                        pStreet->target());
+          auto const& thisDirection{this->graph()
+                                        .edge(pAgentTemp->nextStreetId().value())
+                                        .turnDirection(pStreet->angle())};
+          if (!intersection.streetPriorities().contains(pStreet->id())) {
+            // I have to check if the agent has right of way
+            auto const& inNeighbours{destinationNode->ingoingEdges()};
+            for (auto const& inEdgeId : inNeighbours) {
+              auto const* pStreetTemp{&this->graph().edge(inEdgeId)};
+              if (pStreetTemp->id() == pStreet->id()) {
+                continue;
               }
-            } else if (thisDirection >= Direction::LEFT) {
-              for (auto const& streetId : intersection.streetPriorities()) {
-                if (streetId == pStreet->id()) {
-                  continue;
-                }
-                auto const* pStreetTemp{&this->graph().edge(streetId)};
+              if (pStreetTemp->nExitingAgents() == 0) {
+                continue;
+              }
+              if (intersection.streetPriorities().contains(pStreetTemp->id())) {
+                spdlog::debug(
+                    "Skipping agent emission from street {} -> {} due to right of way.",
+                    pStreet->source(),
+                    pStreet->target());
+                bCanPass = false;
+                break;
+              } else if (thisDirection >= Direction::LEFT) {
+                // Check if the agent has right of way using direction
+                // The problem arises only when you have to turn left
                 for (auto i{0}; i < pStreetTemp->nLanes(); ++i) {
                   // check queue is not empty and take the top agent
                   if (pStreetTemp->queue(i).empty()) {
                     continue;
                   }
                   auto const& pAgentTemp2{pStreetTemp->queue(i).front()};
-                  if (!pAgentTemp2->streetId().has_value()) {
+                  if (!pAgentTemp2->nextStreetId().has_value()) {
                     continue;
                   }
                   auto const& otherDirection{
@@ -695,7 +661,7 @@ namespace dsf::mobility {
                           .turnDirection(this->graph()
                                              .edge(pAgentTemp2->streetId().value())
                                              .angle())};
-                  if (otherDirection < thisDirection) {
+                  if (otherDirection < Direction::LEFT) {
                     spdlog::debug(
                         "Skipping agent emission from street {} -> {} due to right of "
                         "way with other agents.",
@@ -707,87 +673,117 @@ namespace dsf::mobility {
                 }
               }
             }
-          }
-          if (!bCanPass) {
-            spdlog::debug(
-                "Skipping agent emission from street {} -> {} due to right of way",
-                pStreet->source(),
-                pStreet->target());
-            continue;
-          }
-        }
-        bool bArrived{false};
-        if (!(uniformDist(this->m_generator) <
-              m_passageProbability.value_or(std::numeric_limits<double>::max()))) {
-          if (pAgentTemp->isRandom()) {
-            bArrived = true;
-          } else {
-            spdlog::debug(
-                "Skipping agent emission from street {} -> {} due to passage "
-                "probability",
-                pStreet->source(),
-                pStreet->target());
-            continue;
-          }
-        }
-        if (!pAgentTemp->isRandom()) {
-          if (destinationNode->id() == pAgentTemp->itinerary()->destination()) {
-            bArrived = true;
-            spdlog::debug("Agent {} has arrived at destination node {}",
-                          pAgentTemp->id(),
-                          destinationNode->id());
-          }
-        } else {
-          if (!pAgentTemp->nextStreetId().has_value()) {
-            bArrived = true;
-            spdlog::debug("Random agent {} has arrived at destination node {}",
-                          pAgentTemp->id(),
-                          destinationNode->id());
-          } else if (pAgentTemp->hasArrived(this->time_step())) {
-            bArrived = true;
+          } else if (thisDirection >= Direction::LEFT) {
+            for (auto const& streetId : intersection.streetPriorities()) {
+              if (streetId == pStreet->id()) {
+                continue;
+              }
+              auto const* pStreetTemp{&this->graph().edge(streetId)};
+              for (auto i{0}; i < pStreetTemp->nLanes(); ++i) {
+                // check queue is not empty and take the top agent
+                if (pStreetTemp->queue(i).empty()) {
+                  continue;
+                }
+                auto const& pAgentTemp2{pStreetTemp->queue(i).front()};
+                if (!pAgentTemp2->streetId().has_value()) {
+                  continue;
+                }
+                auto const& otherDirection{
+                    this->graph()
+                        .edge(pAgentTemp2->nextStreetId().value())
+                        .turnDirection(
+                            this->graph().edge(pAgentTemp2->streetId().value()).angle())};
+                if (otherDirection < thisDirection) {
+                  spdlog::debug(
+                      "Skipping agent emission from street {} -> {} due to right of "
+                      "way with other agents.",
+                      pStreet->source(),
+                      pStreet->target());
+                  bCanPass = false;
+                  break;
+                }
+              }
+            }
           }
         }
-        if (bArrived) {
-          auto pAgent =
-              this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
-          if (m_reinsertAgents) {
-            // reset Agent's values
-            pAgent->reset(this->time_step());
-            this->addAgent(std::move(pAgent));
-          }
-          continue;
-        }
-        if (!pAgentTemp->streetId().has_value()) {
-          spdlog::error("{} has no street id", *pAgentTemp);
-        }
-        auto* nextStreet{&this->graph().edge(pAgentTemp->nextStreetId().value())};
-        if (nextStreet->isFull()) {
+        if (!bCanPass) {
           spdlog::debug(
-              "Skipping agent emission from street {} -> {} due to full "
-              "next street: {}",
+              "Skipping agent emission from street {} -> {} due to right of way",
               pStreet->source(),
-              pStreet->target(),
-              *nextStreet);
+              pStreet->target());
           continue;
         }
-        auto pAgent{pStreet->dequeue(queueIndex, this->time_step())};
-        spdlog::debug(
-            "{} at time {} has been dequeued from street {} and enqueued on street {} "
-            "with free time {}.",
-            *pAgent,
-            this->time_step(),
-            pStreet->id(),
-            nextStreet->id(),
-            pAgent->freeTime());
-        assert(destinationNode->id() == nextStreet->source());
-        if (destinationNode->isIntersection()) {
-          auto& intersection = dynamic_cast<Intersection&>(*destinationNode);
-          auto const delta{nextStreet->deltaAngle(pStreet->angle())};
-          intersection.addAgent(delta, std::move(pAgent));
-        } else if (destinationNode->isRoundabout()) {
-          auto& roundabout = dynamic_cast<Roundabout&>(*destinationNode);
-          roundabout.enqueue(std::move(pAgent));
+      }
+      bool bArrived{false};
+      if (!(uniformDist(this->m_generator) <
+            m_passageProbability.value_or(std::numeric_limits<double>::max()))) {
+        if (pAgentTemp->isRandom()) {
+          bArrived = true;
+        } else {
+          spdlog::debug(
+              "Skipping agent emission from street {} -> {} due to passage "
+              "probability",
+              pStreet->source(),
+              pStreet->target());
+          continue;
         }
+      }
+      if (!pAgentTemp->isRandom()) {
+        if (destinationNode->id() == pAgentTemp->itinerary()->destination()) {
+          bArrived = true;
+          spdlog::debug("Agent {} has arrived at destination node {}",
+                        pAgentTemp->id(),
+                        destinationNode->id());
+        }
+      } else {
+        if (!pAgentTemp->nextStreetId().has_value()) {
+          bArrived = true;
+          spdlog::debug("Random agent {} has arrived at destination node {}",
+                        pAgentTemp->id(),
+                        destinationNode->id());
+        } else if (pAgentTemp->hasArrived(this->time_step())) {
+          bArrived = true;
+        }
+      }
+      if (bArrived) {
+        auto pAgent = this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
+        if (m_reinsertAgents) {
+          // reset Agent's values
+          pAgent->reset(this->time_step());
+          this->addAgent(std::move(pAgent));
+        }
+        continue;
+      }
+      if (!pAgentTemp->streetId().has_value()) {
+        spdlog::error("{} has no street id", *pAgentTemp);
+      }
+      auto* nextStreet{&this->graph().edge(pAgentTemp->nextStreetId().value())};
+      if (nextStreet->isFull()) {
+        spdlog::debug(
+            "Skipping agent emission from street {} -> {} due to full "
+            "next street: {}",
+            pStreet->source(),
+            pStreet->target(),
+            *nextStreet);
+        continue;
+      }
+      auto pAgent{pStreet->dequeue(queueIndex, this->time_step())};
+      spdlog::debug(
+          "{} at time {} has been dequeued from street {} and enqueued on street {} "
+          "with free time {}.",
+          *pAgent,
+          this->time_step(),
+          pStreet->id(),
+          nextStreet->id(),
+          pAgent->freeTime());
+      assert(destinationNode->id() == nextStreet->source());
+      if (destinationNode->isIntersection()) {
+        auto& intersection = dynamic_cast<Intersection&>(*destinationNode);
+        auto const delta{nextStreet->deltaAngle(pStreet->angle())};
+        intersection.addAgent(delta, std::move(pAgent));
+      } else if (destinationNode->isRoundabout()) {
+        auto& roundabout = dynamic_cast<Roundabout&>(*destinationNode);
+        roundabout.enqueue(std::move(pAgent));
       }
     }
   }

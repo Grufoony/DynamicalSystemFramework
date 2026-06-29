@@ -68,6 +68,9 @@ namespace dsf::mobility {
         (std::find(colNames.begin(), colNames.end(), "capacity") != colNames.end());
     bool const bHasStatus =
         (std::find(colNames.begin(), colNames.end(), "status") != colNames.end());
+    bool const bHasForbiddenTurns =
+        (std::find(colNames.begin(), colNames.end(), "forbidden_turns") !=
+         colNames.end());
 
     for (auto& row : reader) {
       auto const sourceId = row["source"].get<Id>();
@@ -189,6 +192,31 @@ namespace dsf::mobility {
         } catch (...) {
           spdlog::warn("Invalid status for edge {}. Using default (OPEN).", streetId);
           edge(streetId).setStatus(RoadStatus::OPEN);
+        }
+      }
+      // Parse forbidden_turns field if present
+      if (bHasForbiddenTurns) {
+        // Expect a string of the form [edgeId1, edgeId2, ...]
+        try {
+          auto forbiddenTurnsStr = row["forbidden_turns"].get<std::string>();
+          std::replace(forbiddenTurnsStr.begin(), forbiddenTurnsStr.end(), '[', ' ');
+          std::replace(forbiddenTurnsStr.begin(), forbiddenTurnsStr.end(), ']', ' ');
+          std::replace(forbiddenTurnsStr.begin(), forbiddenTurnsStr.end(), ',', ' ');
+
+          std::set<Id> forbiddenTurnsSet;
+
+          std::stringstream ss(forbiddenTurnsStr);
+          std::string turn;
+          while (ss >> turn) {
+            forbiddenTurnsSet.insert(static_cast<Id>(std::stoull(turn)));
+          }
+          if (!forbiddenTurnsSet.empty()) {
+            edge(streetId).setForbiddenTurns(forbiddenTurnsSet);
+          }
+        } catch (...) {
+          spdlog::error("Invalid forbidden_turns for edge {} ({}).",
+                        streetId,
+                        row["forbidden_turns"].get<std::string>());
         }
       }
 
