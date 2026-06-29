@@ -17,8 +17,8 @@ namespace dsf::mobility {
     inFile.read(reinterpret_cast<char*>(&m_destination), sizeof(Id));
     size_t mapSize;
     inFile.read(reinterpret_cast<char*>(&mapSize), sizeof(size_t));
-    m_path.clear();
-    m_path.reserve(mapSize);
+    m_nodePath.clear();
+    m_nodePath.reserve(mapSize);
     for (size_t i = 0; i < mapSize; ++i) {
       Id key;
       inFile.read(reinterpret_cast<char*>(&key), sizeof(Id));
@@ -26,14 +26,10 @@ namespace dsf::mobility {
       inFile.read(reinterpret_cast<char*>(&vecSize), sizeof(size_t));
       std::vector<Id> vec(vecSize);
       inFile.read(reinterpret_cast<char*>(vec.data()), vecSize * sizeof(Id));
-      m_path.emplace(key, std::move(vec));
+      m_nodePath.emplace(key, std::move(vec));
     }
 
     inFile.close();
-  }
-
-  void Itinerary::setPath(PathCollection pathCollection) {
-    m_path = std::move(pathCollection);
   }
 
   void Itinerary::save(const std::string& fileName) const {
@@ -43,10 +39,10 @@ namespace dsf::mobility {
       throw std::runtime_error("Error opening file \"" + fileName + "\" for writing.");
     }
     outFile.write(reinterpret_cast<const char*>(&m_destination), sizeof(Id));
-    // Save the m_path variable in the file
-    size_t mapSize = m_path.size();
+    // Save the m_nodePath and m_edgePath variables in the file
+    size_t mapSize = m_nodePath.size();
     outFile.write(reinterpret_cast<const char*>(&mapSize), sizeof(size_t));
-    for (auto const& [key, vec] : m_path) {
+    for (auto const& [key, vec] : m_nodePath) {
       outFile.write(reinterpret_cast<const char*>(&key), sizeof(Id));
       size_t vecSize = vec.size();
       outFile.write(reinterpret_cast<const char*>(&vecSize), sizeof(size_t));

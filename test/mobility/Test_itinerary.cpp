@@ -20,8 +20,8 @@ TEST_CASE("Itinerary") {
   SUBCASE("Set and get path") {
     Itinerary itinerary{1, 42};
     PathCollection path = {{1, {2, 3}}, {2, {4}}, {3, {5, 6, 7}}};
-    itinerary.setPath(path);
-    auto const& result = itinerary.path();
+    itinerary.setNodePath(path);
+    auto const& result = itinerary.nodePath();
     CHECK_EQ(result.size(), path.size());
     for (const auto& [k, v] : path) {
       CHECK(result.count(k) == 1);
@@ -31,17 +31,17 @@ TEST_CASE("Itinerary") {
 
   SUBCASE("Save and load itinerary") {
     Itinerary itinerary{7, 99};
-    PathCollection path = {{7, {8, 9}}, {8, {10}}, {9, {11, 12}}};
-    itinerary.setPath(path);
+    PathCollection nodePath = {{7, {8, 9}}, {8, {10}}, {9, {11, 12}}};
+    itinerary.setNodePath(nodePath);
     const std::string filename = "test_itinerary.bin";
     itinerary.save(filename);
 
     Itinerary loaded{7, 0};  // destination will be overwritten by load
     loaded.load(filename);
     CHECK_EQ(loaded.destination(), 99);
-    auto const& loadedPath = loaded.path();
-    CHECK_EQ(loadedPath.size(), path.size());
-    for (const auto& [k, v] : path) {
+    auto const& loadedPath = loaded.nodePath();
+    CHECK_EQ(loadedPath.size(), nodePath.size());
+    for (const auto& [k, v] : nodePath) {
       CHECK(loadedPath.count(k) == 1);
       CHECK(loadedPath.at(k) == v);
     }
@@ -56,13 +56,13 @@ TEST_CASE("Itinerary") {
 
   SUBCASE("Empty path") {
     Itinerary itinerary{123, 456};
-    itinerary.setPath({});
-    CHECK(itinerary.path().empty());
+    itinerary.setNodePath({});
+    CHECK(itinerary.nodePath().empty());
     const std::string filename = "test_empty_path.bin";
     itinerary.save(filename);
     Itinerary loaded{123, 0};
     loaded.load(filename);
-    CHECK(loaded.path().empty());
+    CHECK(loaded.nodePath().empty());
     std::remove(filename.c_str());
   }
 
@@ -75,21 +75,21 @@ TEST_CASE("Itinerary") {
         v.push_back(i * 10 + j);
       path[i] = v;
     }
-    itinerary.setPath(path);
-    CHECK_EQ(itinerary.path().size(), 100);
+    itinerary.setNodePath(path);
+    CHECK_EQ(itinerary.nodePath().size(), 100);
     for (dsf::Id i = 0; i < 100; ++i) {
-      CHECK(itinerary.path().count(i) == 1);
-      CHECK(itinerary.path().at(i).size() == 10);
+      CHECK(itinerary.nodePath().count(i) == 1);
+      CHECK(itinerary.nodePath().at(i).size() == 10);
     }
     const std::string filename = "test_large_path.bin";
     itinerary.save(filename);
     Itinerary loaded{100, 0};
     loaded.load(filename);
-    CHECK_EQ(loaded.path().size(), 100);
+    CHECK_EQ(loaded.nodePath().size(), 100);
     for (dsf::Id i = 0; i < 100; ++i) {
-      CHECK(loaded.path().count(i) == 1);
-      CHECK(loaded.path().at(i).size() == 10);
-      CHECK(loaded.path().at(i) == path[i]);
+      CHECK(loaded.nodePath().count(i) == 1);
+      CHECK(loaded.nodePath().at(i).size() == 10);
+      CHECK(loaded.nodePath().at(i) == path[i]);
     }
     std::remove(filename.c_str());
   }

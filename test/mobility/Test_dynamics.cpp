@@ -625,12 +625,12 @@ TEST_CASE("FirstOrderDynamics") {
             "correctly "
             "formed") {
           CHECK_EQ(dynamics.itineraries().size(), 1);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().size(), 2);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().at(0).size(), 1);
-          CHECK(dynamics.itineraries().at(0)->path().at(0)[0] == 1);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().at(1).size(), 1);
-          CHECK(dynamics.itineraries().at(0)->path().at(1)[0] == 2);
-          CHECK_FALSE(dynamics.itineraries().at(0)->path().at(0)[0] == 2);
+          CHECK_EQ(dynamics.itineraries().at(0)->nodePath().size(), 2);
+          CHECK_EQ(dynamics.itineraries().at(0)->nodePath().at(0).size(), 1);
+          CHECK(dynamics.itineraries().at(0)->nodePath().at(0)[0] == 1);
+          CHECK_EQ(dynamics.itineraries().at(0)->nodePath().at(1).size(), 1);
+          CHECK(dynamics.itineraries().at(0)->nodePath().at(1)[0] == 2);
+          CHECK_FALSE(dynamics.itineraries().at(0)->nodePath().at(0)[0] == 2);
         }
       }
     }
@@ -649,7 +649,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.addItinerary(3, 3);
         dynamics.updatePaths();
         THEN("The itinerary is correct, excluding paths passing in the same node twice") {
-          auto const& path = dynamics.itineraries().at(3)->path();
+          auto const& path = dynamics.itineraries().at(3)->nodePath();
           CHECK_EQ(path.size(), 5);
           CHECK_EQ(path.at(0).size(), 1);
           CHECK(path.at(0)[0] == 1);
@@ -680,7 +680,7 @@ TEST_CASE("FirstOrderDynamics") {
         THEN("The paths are updated and correctly formed") {
           CHECK_EQ(dynamics.itineraries().size(), 4);
           for (auto const& it : dynamics.itineraries()) {
-            auto const& path = it.second->path();
+            auto const& path = it.second->nodePath();
             for (uint16_t i{0}; i < path.size(); ++i) {
               if (i == it.second->destination()) {
                 CHECK_FALSE(path.contains(i));
@@ -705,7 +705,7 @@ TEST_CASE("FirstOrderDynamics") {
       WHEN("We update the paths") {
         dynamics.updatePaths();
         THEN("The path is updated and correctly formed") {
-          auto const& path{dynamics.itineraries().at(0)->path()};
+          auto const& path{dynamics.itineraries().at(0)->nodePath()};
           CHECK_EQ(dynamics.itineraries().size(), 1);
           CHECK_EQ(path.size(), 3);
           CHECK_EQ(path.at(0).size(), 2);
@@ -735,12 +735,12 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.updatePaths();
         THEN("The path is updated and correctly formed") {
           CHECK_EQ(dynamics.itineraries().size(), 1);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().size(), 3);
-          CHECK(dynamics.itineraries().at(0)->path().at(0)[0] == 1);
-          CHECK(dynamics.itineraries().at(0)->path().at(1)[0] == 2);
-          CHECK(dynamics.itineraries().at(0)->path().at(0)[1] == 3);
-          CHECK(dynamics.itineraries().at(0)->path().at(3)[0] == 2);
-          CHECK_FALSE(dynamics.itineraries().at(0)->path().contains(2));
+          CHECK_EQ(dynamics.itineraries().at(0)->nodePath().size(), 3);
+          CHECK(dynamics.itineraries().at(0)->nodePath().at(0)[0] == 1);
+          CHECK(dynamics.itineraries().at(0)->nodePath().at(1)[0] == 2);
+          CHECK(dynamics.itineraries().at(0)->nodePath().at(0)[1] == 3);
+          CHECK(dynamics.itineraries().at(0)->nodePath().at(3)[0] == 2);
+          CHECK_FALSE(dynamics.itineraries().at(0)->nodePath().contains(2));
         }
       }
     }
@@ -763,7 +763,7 @@ TEST_CASE("FirstOrderDynamics") {
       WHEN("We update the paths") {
         dynamics.updatePaths();
         THEN("The custom attribute-based weight drives the selected branch") {
-          auto const& path{dynamics.itineraries().at(0)->path()};
+          auto const& path{dynamics.itineraries().at(0)->nodePath()};
           CHECK_EQ(path.at(0).size(), 1);
           CHECK_EQ(path.at(0)[0], 3);
           CHECK_EQ(path.at(3).size(), 1);
@@ -1010,8 +1010,8 @@ TEST_CASE("FirstOrderDynamics") {
       // node 1 has no outgoing edges. m_nextStreetId will return nullopt and
       // the agent must be killed instead of throwing an exception.
       auto itinerary = std::make_shared<Itinerary>(0, 2);
-      PathCollection path{{0, {1}}, {1, {2}}};
-      itinerary->setPath(path);
+      PathCollection nodePath{{0, {1}}, {1, {2}}};
+      itinerary->setNodePath(nodePath);
       dynamics.addItinerary(itinerary);
       dynamics.addAgent(dynamics.itineraries().at(0), 0);
       WHEN("We evolve the dynamics until the agent reaches the dead-end") {

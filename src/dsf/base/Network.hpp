@@ -126,7 +126,7 @@ namespace dsf {
     /// @details Keeps only transitions that strictly decrease the precomputed
     ///          shortest distance to target. This makes the hop graph acyclic,
     ///          so PathCollection::explode remains finite.
-    PathCollection allPathsTo(Id const targetId) const;
+    std::pair<PathCollection, PathCollection> allPathsTo(Id const targetId) const;
 
     /// @brief Find the shortest path between two nodes using Dijkstra's algorithm
     /// @param sourceId The id of the source node
@@ -339,9 +339,12 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline PathCollection Network<node_t, edge_t>::allPathsTo(Id const targetId) const {
+  inline std::pair<PathCollection, PathCollection> Network<node_t, edge_t>::allPathsTo(
+      Id const targetId) const {
     auto const distToTarget = m_computeDistancesToTarget(targetId);
-    PathCollection result;
+    PathCollection nodeResult;
+    PathCollection edgeResult;
+
     for (auto const& [nodeId, pNode] : m_nodes) {
       if (nodeId == targetId) {
         continue;
@@ -356,6 +359,7 @@ namespace dsf {
       if (m_weightThreshold.has_value()) {
         nodeBudget *= (1.0 + *m_weightThreshold);
       }
+
       std::vector<Id> hops;
       hops.reserve(pNode->outgoingEdges().size());
 
@@ -377,18 +381,73 @@ namespace dsf {
         }
 
         auto const fullPathCost = m_weightFunction(outEdge) + nextDistToTarget;
-        if (fullPathCost <= nodeBudget + 1e-12 &&
-            std::find(hops.begin(), hops.end(), nextNodeId) == hops.end()) {
-          hops.push_back(nextNodeId);
+        if (fullPathCost > nodeBudget + 1e-12) {
+          continue;
+        }
+
+        // --- Lookahead Logic for Forbidden Turns ---
+        std::vector<Id> edgeHops;
+
+        if (nextNodeId != targetId) {
+          // Retrieve the next node to inspect its outgoing edges
+          auto const& pNextNode = m_nodes.at(nextNodeId);
+
+          double nextNodeBudget = nextDistToTarget;
+          if (m_weightThreshold.has_value()) {
+            nextNodeBudget *= (1.0 + *m_weightThreshold);
+          }
+
+          for (auto const& nextEdgeId : pNextNode->outgoingEdges()) {
+            // 1. Turn Restriction Che  ck
+            // (Assumes a member named 'forbiddenTurn'. Change to your exact getter if needed)
+            if (outEdge.forbiddenTurns().contains(nextEdgeId)) {
+              continue;
+            }
+
+            auto const& nextEdge = this->edge(nextEdgeId);
+            if (!nextEdge.isActive()) {
+              continue;
+            }
+
+            auto const nextNextNodeId = nextEdge.target();
+            auto const nextNextDist = distToTarget.at(nextNextNodeId);
+            if (nextNextDist == std::numeric_limits<double>::infinity()) {
+              continue;
+            }
+
+            // 2. Next-hop Acyclicity Check
+            if (nextNextDist + 1e-12 >= nextDistToTarget) {
+              continue;
+            }
+
+            // 3. Next-hop Budget Check
+            auto const nextFullPathCost = m_weightFunction(nextEdge) + nextNextDist;
+            if (nextFullPathCost <= nextNodeBudget + 1e-12) {
+              edgeHops.push_back(nextEdgeId);
+            }
+          }
+        }
+
+        // --- Validation & Insertion ---
+        // A transition is valid if it reaches the destination directly,
+        // OR if it has at least one valid downstream edge remaining after turn restrictions.
+        if (nextNodeId == targetId || !edgeHops.empty()) {
+          if (std::find(hops.begin(), hops.end(), nextNodeId) == hops.end()) {
+            hops.push_back(nextNodeId);
+          }
+          if (!edgeHops.empty()) {
+            edgeResult[outEdgeId] = edgeHops;
+          }
         }
       }
 
       if (!hops.empty()) {
-        result[nodeId] = hops;
+        nodeResult[nodeId] = hops;
       }
     }
 
-    return result;
+    // Return both maps aggregated in a pair
+    return {nodeResult, edgeResult};
   }
 
   template <typename node_t, typename edge_t>

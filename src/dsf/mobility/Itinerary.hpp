@@ -26,7 +26,8 @@ namespace dsf::mobility {
   private:
     Id m_id;
     Id m_destination;
-    PathCollection m_path;
+    PathCollection m_nodePath;
+    PathCollection m_edgePath;
 
   public:
     /// @brief Construct a new Itinerary object
@@ -43,9 +44,23 @@ namespace dsf::mobility {
 
     void load(const std::string& fileName);
 
-    /// @brief Set the itinerary's path
-    /// @param pathCollection A dsf::mobility::PathCollection representing all equivalent paths to the destination
-    void setPath(PathCollection pathCollection);
+    /// @brief Set the itinerary's node path
+    /// @param pathCollection A dsf::mobility::PathCollection representing all equivalent paths to the destination in terms of nodes
+    inline void setNodePath(PathCollection pathCollection) {
+      m_nodePath = std::move(pathCollection);
+    }
+    /// @brief Set the itinerary's edge path
+    /// @param pathCollection A dsf::mobility::PathCollection representing all equivalent paths to the destination in terms of edges
+    inline void setEdgePath(PathCollection pathCollection) {
+      m_edgePath = std::move(pathCollection);
+    }
+    /// @brief Set the itinerary's paths
+    /// @param nodePath A dsf::mobility::PathCollection representing all equivalent paths to the destination in terms of nodes
+    /// @param edgePath A dsf::mobility::PathCollection representing all equivalent paths to the destination in terms of edges
+    inline void setPaths(PathCollection nodePath, PathCollection edgePath) {
+      m_nodePath = std::move(nodePath);
+      m_edgePath = std::move(edgePath);
+    }
 
     /// @brief Get the itinerary's id
     /// @return Id, The itinerary's id
@@ -55,10 +70,15 @@ namespace dsf::mobility {
     inline auto destination() const noexcept { return m_destination; };
     /// @brief Get the itinerary's path
     /// @return PathCollection const&, The itinerary's path
-    inline auto const& path() const noexcept { return m_path; };
+    inline auto const& nodePath() const noexcept { return m_nodePath; };
+    /// @brief Get the itinerary's edge path
+    /// @return PathCollection const&, The itinerary's edge path
+    inline auto const& edgePath() const noexcept { return m_edgePath; };
     /// @brief Check if the itinerary's path is empty
     /// @return true if the itinerary's path is empty, false otherwise
-    inline auto empty() const noexcept { return m_path.empty(); };
+    inline auto empty() const noexcept {
+      return m_nodePath.empty() && m_edgePath.empty();
+    };
     /// @brief Save the itinerary to a binary file
     /// @param fileName The name of the file to save the itinerary to
     void save(const std::string& fileName) const;

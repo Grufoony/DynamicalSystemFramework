@@ -2,6 +2,7 @@
 
 #include "../utility/Typedef.hpp"
 
+#include <format>
 #include <list>
 #include <unordered_map>
 #include <vector>
@@ -18,3 +19,29 @@ namespace dsf {
     std::list<std::vector<Id>> explode(Id const sourceId, Id const targetId) const;
   };
 }  // namespace dsf
+
+template <>
+struct std::formatter<dsf::PathCollection> {
+  constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
+
+  template <typename FormatContext>
+  auto format(dsf::PathCollection const& pathCollection, FormatContext&& ctx) const {
+    std::string result = "{";
+    for (auto const& [key, value] : pathCollection) {
+      result += std::format("{}: [", key);
+      for (std::size_t i = 0; i < value.size(); ++i) {
+        result += std::to_string(value[i]);
+        if (i < value.size() - 1) {
+          result += ", ";
+        }
+      }
+      result += "], ";
+    }
+    if (!pathCollection.empty()) {
+      result.pop_back();  // Remove the last space
+      result.pop_back();  // Remove the last comma
+    }
+    result += "}";
+    return std::format_to(ctx.out(), "{}", result);
+  }
+};

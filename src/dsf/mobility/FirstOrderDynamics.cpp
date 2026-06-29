@@ -84,11 +84,11 @@ namespace dsf::mobility {
         return;
       }
     }
-    auto const oldSize{pItinerary->path().size()};
+    auto const oldSize{pItinerary->nodePath().size()};
 
     auto const path{this->graph().allPathsTo(pItinerary->destination())};
-    pItinerary->setPath(path);
-    auto const newSize{pItinerary->path().size()};
+    pItinerary->setPaths(path.first, path.second);
+    auto const newSize{pItinerary->nodePath().size()};
     if (oldSize > 0 && newSize != oldSize) {
       spdlog::debug("Path for itinerary {} changed size from {} to {}",
                     pItinerary->id(),
@@ -276,7 +276,7 @@ namespace dsf::mobility {
 
       // Check if destination is reachable from source
       auto const& itinerary = itineraryIt->second;
-      if (!itinerary->path().contains(*srcId)) {
+      if (!itinerary->nodePath().contains(*srcId)) {
         spdlog::debug("Destination {} not reachable from source {}. Skipping agent.",
                       *dstId,
                       *srcId);
@@ -349,7 +349,7 @@ namespace dsf::mobility {
       }
       // Check if destination is reachable from origin
       auto const& itinerary = itineraryIt->second;
-      if (!itinerary->path().contains(originId)) {
+      if (!itinerary->nodePath().contains(originId)) {
         spdlog::debug("Destination {} not reachable from origin {}. Skipping agent.",
                       destinationId,
                       originId);
@@ -366,17 +366,17 @@ namespace dsf::mobility {
 
     // Get current street information
     std::optional<Id> previousNodeId = std::nullopt;
-    std::set<Id> forbiddenTurns;
+    std::vector<Id> pathTargets;
+    bool isEdgePath{false};
     if (pAgent->streetId().has_value()) {
       auto const* pStreetCurrent{&this->graph().edge(pAgent->streetId().value())};
       previousNodeId = pStreetCurrent->source();
-      forbiddenTurns = pStreetCurrent->forbiddenTurns();
-    }
-
-    // Get path targets for non-random agents
-    std::vector<Id> pathTargets;
-    if (!pAgent->isRandom()) {
-      auto const& path = pAgent->itinerary()->path();
+      if (!pAgent->isRandom()) {
+        pathTargets = pAgent->itinerary()->edgePath().at(pNode->id());
+        isEdgePath = true;
+      }
+    } else if (!pAgent->isRandom()) {
+      auto const& path = pAgent->itinerary()->nodePath();
       auto const pathIt = path.find(pNode->id());
       if (pathIt == path.cend()) {
         spdlog::debug(
@@ -393,21 +393,20 @@ namespace dsf::mobility {
     double cumulativeProbability = 0.0;
 
     for (const auto outEdgeId : outgoingEdges) {
-      if (forbiddenTurns.contains(outEdgeId)) {
-        spdlog::trace("Forbidden turn from street {} to street {}. Skipping.",
-                      pAgent->streetId().value_or(0),
-                      outEdgeId);
-        continue;
-      }
-
       auto const* pStreetOut{&this->graph().edge(outEdgeId)};
 
       // Check if this is a valid path target for non-random agents
       bool bIsPathTarget = false;
       if (!pathTargets.empty()) {
-        bIsPathTarget =
-            std::find(pathTargets.cbegin(), pathTargets.cend(), pStreetOut->target()) !=
-            pathTargets.cend();
+        if (isEdgePath) {
+          bIsPathTarget =
+              std::find(pathTargets.cbegin(), pathTargets.cend(), pStreetOut->id()) !=
+              pathTargets.cend();
+        } else {
+          bIsPathTarget =
+              std::find(pathTargets.cbegin(), pathTargets.cend(), pStreetOut->target()) !=
+              pathTargets.cend();
+        }
       }
 
       if (!pathTargets.empty()) {
