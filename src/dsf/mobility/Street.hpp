@@ -255,10 +255,20 @@ struct std::formatter<dsf::mobility::Street> {
     laneMappingStr.pop_back();  // Remove the trailing space
     auto const& name =
         street.name().empty() ? std::string() : std::format(" \"{}\"", street.name());
+    std::string forbiddenTurnsStr;
+    if (!street.forbiddenTurns().empty()) {
+      forbiddenTurnsStr = "Forbidden turns: ";
+      for (const auto& turn : street.forbiddenTurns()) {
+        forbiddenTurnsStr += std::format("{} ", turn);
+      }
+      forbiddenTurnsStr.pop_back();  // Remove the trailing space
+    } else {
+      forbiddenTurnsStr = "None";
+    }
     return std::format_to(ctx.out(),
                           "Street(id: {}{}, from {} to {}, length: {} m, max speed: "
                           "{:.2f} m/s, lanes: {}, agents: {}, n enqueued: {}.\n"
-                          "\tLane mapping: {})",
+                          "\tLane mapping: {}\n\tForbidden turns: {})",
                           street.id(),
                           name,
                           street.nodePair().first,
@@ -268,6 +278,7 @@ struct std::formatter<dsf::mobility::Street> {
                           street.nLanes(),
                           street.nAgents(),
                           street.nExitingAgents(),
-                          laneMappingStr);
+                          laneMappingStr,
+                          forbiddenTurnsStr);
   }
 };
