@@ -23,6 +23,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <spdlog/spdlog.h>
 #include <tbb/blocked_range.h>
 #include <tbb/combinable.h>
 #include <tbb/parallel_for.h>
@@ -49,8 +50,14 @@ namespace dsf {
     }
 
   private:
-    std::unordered_map<Id, double> m_computeDistancesToTarget(Id const targetId) const;
-    std::unordered_map<Id, double> m_computeDistancesFromSource(Id const sourceId) const;
+    std::unordered_map<Id, double> m_computeDistancesToTarget(Id const targetNodeId) const;
+    virtual std::unordered_map<Id, double> m_computeEdgeDistancesToTarget(
+        Id const targetEdgeId) const;
+
+    std::unordered_map<Id, double> m_computeDistancesFromSource(
+        Id const sourceNodeId) const;
+    std::unordered_map<Id, double> m_computeEdgeDistancesFromSource(
+        Id const sourceEdgeId) const;
 
   public:
     /// @brief Construct a new empty Network object
@@ -127,6 +134,14 @@ namespace dsf {
     ///          shortest distance to target. This makes the hop graph acyclic,
     ///          so PathCollection::explode remains finite.
     PathCollection allPathsTo(Id const targetId) const;
+    /// @brief Perform a global Dijkstra search to a target edge from all other edges in the graph (like allPathsTo but working on the dual graph)
+    /// @param targetEdgeId The id of the target edge
+    /// @return A map where each key is an edge id and the value is a vector of next hop edge ids toward the target
+    /// @throws std::out_of_range if the target edge does not exist
+    /// @details Keeps only transitions that strictly decrease the precomputed
+    ///          shortest distance to target. This makes the hop graph acyclic,
+    ///          so PathCollection::explode remains finite.
+    virtual PathCollection allEdgePathsTo(Id const targetEdgeId) const;
 
     /// @brief Find the shortest path between two nodes using Dijkstra's algorithm
     /// @param sourceId The id of the source node
@@ -291,6 +306,51 @@ namespace dsf {
 
     return distToTarget;
   }
+  template <typename node_t, typename edge_t>
+    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
+  inline std::unordered_map<Id, double>
+  Network<node_t, edge_t>::m_computeEdgeDistancesToTarget(Id const targetEdgeId) const {
+    std::unordered_map<Id, double> distToTarget;
+    distToTarget.reserve(nEdges());
+    for (auto const& pair : m_edges) {
+      distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
+    }
+
+    std::priority_queue<std::pair<double, Id>,
+                        std::vector<std::pair<double, Id>>,
+                        std::greater<>>
+        pq;
+
+    distToTarget[targetEdgeId] = 0.0;
+    pq.push({0.0, targetEdgeId});
+
+    while (!pq.empty()) {
+      auto const [currentDist, currentEdgeId] = pq.top();
+      pq.pop();
+
+      if (currentDist > distToTarget.at(currentEdgeId)) {
+        continue;
+      }
+
+      for (auto const& inEdgeId :
+           this->node(this->edge(currentEdgeId).source()).ingoingEdges()) {
+        auto const& inEdge = this->edge(inEdgeId);
+        if (!inEdge.isActive() || inEdge.forbiddenTurns().contains(currentEdgeId)) {
+          continue;
+        }
+
+        auto const candidateDistance =
+            currentDist + m_weightFunction(this->edge(currentEdgeId));
+        auto& neighborDist = distToTarget.at(inEdgeId);
+        if (candidateDistance < neighborDist) {
+          neighborDist = candidateDistance;
+          pq.push({candidateDistance, inEdgeId});
+        }
+      }
+    }
+
+    return distToTarget;
+  }
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
@@ -330,6 +390,52 @@ namespace dsf {
         if (candidateDistance < neighborDist) {
           neighborDist = candidateDistance;
           pq.push({candidateDistance, neighborId});
+        }
+      }
+    }
+
+    return distFromSource;
+  }
+
+  template <typename node_t, typename edge_t>
+    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
+  inline std::unordered_map<Id, double>
+  Network<node_t, edge_t>::m_computeEdgeDistancesFromSource(Id const sourceEdgeId) const {
+    std::unordered_map<Id, double> distFromSource;
+    distFromSource.reserve(nEdges());
+    for (auto const& pair : m_edges) {
+      distFromSource.emplace(pair.first, std::numeric_limits<double>::infinity());
+    }
+
+    std::priority_queue<std::pair<double, Id>,
+                        std::vector<std::pair<double, Id>>,
+                        std::greater<>>
+        pq;
+
+    distFromSource[sourceEdgeId] = 0.0;
+    pq.push({0.0, sourceEdgeId});
+
+    while (!pq.empty()) {
+      auto const [currentDist, currentEdgeId] = pq.top();
+      pq.pop();
+
+      if (currentDist > distFromSource.at(currentEdgeId)) {
+        continue;
+      }
+
+      for (auto const& outEdgeId :
+           this->node(this->edge(currentEdgeId).target()).outgoingEdges()) {
+        auto const& outEdge = this->edge(outEdgeId);
+        if (!outEdge.isActive() ||
+            this->edge(currentEdgeId).forbiddenTurns().contains(outEdgeId)) {
+          continue;
+        }
+
+        auto const candidateDistance = currentDist + m_weightFunction(outEdge);
+        auto& neighborDist = distFromSource.at(outEdgeId);
+        if (candidateDistance < neighborDist) {
+          neighborDist = candidateDistance;
+          pq.push({candidateDistance, outEdgeId});
         }
       }
     }
@@ -385,6 +491,66 @@ namespace dsf {
 
       if (!hops.empty()) {
         result[nodeId] = hops;
+      }
+    }
+
+    return result;
+  }
+  template <typename node_t, typename edge_t>
+    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
+  inline PathCollection Network<node_t, edge_t>::allEdgePathsTo(
+      Id const targetEdgeId) const {
+    spdlog::info("Computing all edge paths to target edge {}", targetEdgeId);
+    auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
+    spdlog::info(
+        "Computed distances (size {} / {})", distToTarget.size(), m_edges.size());
+    PathCollection result;
+    for (auto const& [edgeId, pEdge] : m_edges) {
+      if (edgeId == targetEdgeId) {
+        continue;
+      }
+
+      auto const edgeDistToTarget = distToTarget.at(edgeId);
+      if (edgeDistToTarget == std::numeric_limits<double>::infinity()) {
+        spdlog::info(
+            "Edge {} has infinite distance to target edge {}", edgeId, targetEdgeId);
+        continue;
+      }
+
+      double edgeBudget = edgeDistToTarget;
+      if (m_weightThreshold.has_value()) {
+        edgeBudget *= (1.0 + *m_weightThreshold);
+      }
+
+      auto const& outgoingEdges = this->node(pEdge->target()).outgoingEdges();
+      std::vector<Id> hops;
+      hops.reserve(outgoingEdges.size());
+
+      for (auto const& nextEdgeId : outgoingEdges) {
+        auto const& pNextEdge = this->edge(nextEdgeId);
+        if (!pNextEdge.isActive() || pEdge->forbiddenTurns().contains(nextEdgeId)) {
+          continue;
+        }
+
+        auto const nextDistToTarget = distToTarget.at(nextEdgeId);
+        if (nextDistToTarget == std::numeric_limits<double>::infinity()) {
+          continue;
+        }
+
+        // Keep hop transitions acyclic so path expansion remains finite.
+        if (nextDistToTarget + 1e-12 >= edgeDistToTarget) {
+          continue;
+        }
+
+        auto const fullPathCost = m_weightFunction(pNextEdge) + nextDistToTarget;
+        if (fullPathCost <= edgeBudget + 1e-12 &&
+            std::find(hops.begin(), hops.end(), nextEdgeId) == hops.end()) {
+          hops.push_back(nextEdgeId);
+        }
+      }
+
+      if (!hops.empty()) {
+        result[edgeId] = hops;
       }
     }
 
