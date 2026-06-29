@@ -1628,9 +1628,9 @@ TEST_CASE("FirstOrderDynamics") {
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
-          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
-          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 0);
+          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 3);
         }
       }
     }

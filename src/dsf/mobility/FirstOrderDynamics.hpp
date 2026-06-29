@@ -438,6 +438,15 @@ namespace dsf::mobility {
     /// @return Measurement<double> The mean flow of the streets and the standard deviation
     Measurement<double> streetMeanFlow(double threshold, bool above) const;
 
+    /// @brief Get agents stats from this Dynamics as the following tuple: (nAddedAgents, nInsertedAgents, nArrivedAgents, nKilledAgents, nAgents)
+    /// @return std::tuple<std::size_t, std::size_t, std::size_t, std::size_t, std::size_t> The tuple containing the agents stats
+    inline auto agentStats() const noexcept {
+      return std::make_tuple(m_nAddedAgents.load(),
+                             m_nInsertedAgents.load(),
+                             m_nArrivedAgents.load(),
+                             m_nKilledAgents.load(),
+                             m_nAgents.load());
+    }
     /// @brief Print a summary of the dynamics to an output stream
     /// @param os The output stream to write to (default is std::cout)
     /// @details The summary includes:

@@ -139,7 +139,7 @@ CMAKE_ARGS = """
 before-all = "brew install cmake tbb"
 
 [tool.cibuildwheel.macos.environment]
-MACOSX_DEPLOYMENT_TARGET = "15.0"
+MACOSX_DEPLOYMENT_TARGET = "26.0"
 CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_PREFIX_PATH=/opt/homebrew;/usr/local"
 
 # =========================================================

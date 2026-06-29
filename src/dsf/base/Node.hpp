@@ -93,7 +93,7 @@ namespace dsf {
     /// @brief Add an outgoing edge to the node
     /// @param edgeId The edge's id
     /// @throws std::invalid_argument if the edge already exists in the outgoing edges
-    inline void addOutgoingEdge(Id edgeId) {
+    inline void addOutgoingEdge(Id const edgeId) {
       if (std::find(m_outgoingEdges.cbegin(), m_outgoingEdges.cend(), edgeId) !=
           m_outgoingEdges.cend()) {
         throw std::invalid_argument(std::format(

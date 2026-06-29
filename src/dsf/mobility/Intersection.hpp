@@ -112,15 +112,24 @@ struct std::formatter<dsf::mobility::Intersection> {
   template <typename FormatContext>
   auto format(dsf::mobility::Intersection const& intersection,
               FormatContext&& ctx) const {
+    std::string strIngoingEdges, strOutgoingEdges;
+    for (const auto& edgeId : intersection.ingoingEdges()) {
+      strIngoingEdges += std::format("{} ", edgeId);
+    }
+    for (const auto& edgeId : intersection.outgoingEdges()) {
+      strOutgoingEdges += std::format("{} ", edgeId);
+    }
     auto out = std::format_to(
         ctx.out(),
         "Intersection(id: {}, name: {}, capacity: {}, transportCapacity: {}, "
-        "nAgents: {}, coords: ",
+        "nAgents: {}, ingoing edges: {},  outgoing edges: {} coords: ",
         intersection.id(),
         intersection.name(),
         intersection.capacity(),
         intersection.transportCapacity(),
-        intersection.nAgents());
+        intersection.nAgents(),
+        strIngoingEdges,
+        strOutgoingEdges);
     if (intersection.geometry().has_value()) {
       return std::format_to(out, "{})", *intersection.geometry());
     } else {

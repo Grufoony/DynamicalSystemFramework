@@ -334,6 +334,14 @@ namespace dsf::mobility {
           }
         }
       }
+      if (!dynamicsConfig["mean_travel_distance"].error()) {
+        m_dynamics->setMeanTravelDistance(
+            dynamicsConfig["mean_travel_distance"].get_double().value());
+      }
+      if (!dynamicsConfig["mean_travel_time"].error()) {
+        m_dynamics->setMeanTravelTime(
+            dynamicsConfig["mean_travel_time"].get_double().value());
+      }
     }
     // Connect DB
     {
@@ -382,8 +390,10 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                                      std::optional<std::time_t> const deltaT) {
+  void TrafficSimulator::m_runDefault(
+      std::vector<std::size_t> const& nAgentsPerTimeStep,
+      std::optional<std::time_t> const deltaT,
+      std::vector<std::size_t> const& nRandomAgentsPerTimeStep) {
     if (deltaT.has_value()) {
       if (m_endTime == 0) {
         spdlog::warn(
@@ -468,6 +478,13 @@ namespace dsf::mobility {
           if (nAgents > 0) {
             m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
           }
+          if (!nRandomAgentsPerTimeStep.empty() &&
+              insertionIndex < nRandomAgentsPerTimeStep.size()) {
+            auto const nRandomAgents = nRandomAgentsPerTimeStep.at(insertionIndex);
+            if (nRandomAgents > 0) {
+              m_dynamics->addAgents(nRandomAgents, AgentInsertionMethod::RANDOM);
+            }
+          }
         } else {
           spdlog::warn(
               "Current time step {} exceeds the agent insertion schedule. No more "
@@ -500,6 +517,21 @@ namespace dsf::mobility {
       }
       pbar->update();
     }
+    auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
+        m_dynamics->agentStats();
+    spdlog::info(
+        "Simulation completed. Total agents added: {}\n\tInserted: {} "
+        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tRemaining: {} "
+        "({:.2f}%).",
+        nAdded,
+        nInserted,
+        nInserted * 100.0f / nAdded,
+        nArrived,
+        nArrived * 100.0f / nInserted,
+        nKilled,
+        nKilled * 100.0f / nInserted,
+        nRemaining,
+        nRemaining * 100.0f / nInserted);
   }
   void TrafficSimulator::m_runSlowCharge(std::size_t const nInitialAgents,
                                          std::time_t const agentInsertionDeltaT,
