@@ -500,10 +500,8 @@ namespace dsf {
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   inline PathCollection Network<node_t, edge_t>::allEdgePathsTo(
       Id const targetEdgeId) const {
-    spdlog::info("Computing all edge paths to target edge {}", targetEdgeId);
+    spdlog::debug("Computing all edge paths to target edge {}", targetEdgeId);
     auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
-    spdlog::info(
-        "Computed distances (size {} / {})", distToTarget.size(), m_edges.size());
     PathCollection result;
     for (auto const& [edgeId, pEdge] : m_edges) {
       if (edgeId == targetEdgeId) {
@@ -512,8 +510,6 @@ namespace dsf {
 
       auto const edgeDistToTarget = distToTarget.at(edgeId);
       if (edgeDistToTarget == std::numeric_limits<double>::infinity()) {
-        spdlog::info(
-            "Edge {} has infinite distance to target edge {}", edgeId, targetEdgeId);
         continue;
       }
 

@@ -290,6 +290,7 @@ namespace dsf::mobility {
       }
 
       auto const& currentEdge = this->edge(currentEdgeId);
+      auto const nOutgoingEdges = this->node(currentEdge.target()).outgoingEdges().size();
 
       for (auto const& inEdgeId :
            this->node(this->edge(currentEdgeId).source()).ingoingEdges()) {
@@ -300,7 +301,8 @@ namespace dsf::mobility {
 
         auto const& sourceNode = this->node(currentEdge.source());
         // Avoid U-turns on non-roundabout nodes. Roundabouts are allowed to have U-turns.
-        if ((currentEdge.target() == inEdge.source()) && (!sourceNode.isRoundabout())) {
+        if ((currentEdge.target() == inEdge.source()) && (nOutgoingEdges > 1) &&
+            (!sourceNode.isRoundabout())) {
           continue;
         }
 
@@ -399,10 +401,8 @@ namespace dsf::mobility {
   }
 
   inline PathCollection RoadNetwork::allEdgePathsTo(Id const targetEdgeId) const {
-    spdlog::info("Computing all edge paths to target edge {}", targetEdgeId);
+    spdlog::debug("Computing all edge paths to target edge {}", targetEdgeId);
     auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
-    spdlog::info(
-        "Computed distances (size {} / {})", distToTarget.size(), m_edges.size());
     PathCollection result;
     for (auto const& [edgeId, pEdge] : m_edges) {
       if (edgeId == targetEdgeId) {
@@ -411,8 +411,6 @@ namespace dsf::mobility {
 
       auto const edgeDistToTarget = distToTarget.at(edgeId);
       if (edgeDistToTarget == std::numeric_limits<double>::infinity()) {
-        spdlog::info(
-            "Edge {} has infinite distance to target edge {}", edgeId, targetEdgeId);
         continue;
       }
 
@@ -422,6 +420,7 @@ namespace dsf::mobility {
       }
 
       auto const& outgoingEdges = this->node(pEdge->target()).outgoingEdges();
+      auto const nOutgoingEdges = outgoingEdges.size();
       std::vector<Id> hops;
       hops.reserve(outgoingEdges.size());
 
@@ -433,7 +432,8 @@ namespace dsf::mobility {
 
         auto const& targetNode = this->node(pEdge->target());
         // Avoid U-turns on non-roundabout nodes. Roundabouts are allowed to have U-turns.
-        if ((pNextEdge.target() == pEdge->source()) && (!targetNode.isRoundabout())) {
+        if ((pNextEdge.target() == pEdge->source()) && (nOutgoingEdges > 1) &&
+            (!targetNode.isRoundabout())) {
           continue;
         }
 
