@@ -290,22 +290,40 @@ namespace dsf::mobility {
       }
 
       auto const& currentEdge = this->edge(currentEdgeId);
-      auto const nOutgoingEdges = this->node(currentEdge.target()).outgoingEdges().size();
+      // The actual junction where the turn happens is the SOURCE of the current edge in backward search
+      auto const& turningNode = this->node(currentEdge.source());
 
-      for (auto const& inEdgeId :
-           this->node(this->edge(currentEdgeId).source()).ingoingEdges()) {
+      for (auto const& inEdgeId : turningNode.ingoingEdges()) {
         auto const& inEdge = this->edge(inEdgeId);
         if (!inEdge.isActive() || inEdge.forbiddenTurns().contains(currentEdgeId)) {
           continue;
         }
 
-        auto const& sourceNode = this->node(currentEdge.source());
-        // Avoid U-turns on non-roundabout nodes. Roundabouts are allowed to have U-turns.
-        if ((currentEdge.target() == inEdge.source()) && (nOutgoingEdges > 1) &&
-            (!sourceNode.isRoundabout())) {
-          continue;
+        // 1. Detect if this structural pair constitutes a U-turn
+        if ((currentEdge.target() == inEdge.source()) && (!turningNode.isRoundabout())) {
+          // 2. Check if there are any ALTERNATIVE legal moves out of this dead end
+          bool hasAlternativeMove = false;
+          for (auto const& altOutEdgeId : turningNode.outgoingEdges()) {
+            if (altOutEdgeId == currentEdgeId) {
+              continue;  // Ignore the U-turn road itself
+            }
+
+            auto const& altOutEdge = this->edge(altOutEdgeId);
+            if (altOutEdge.isActive() &&
+                !inEdge.forbiddenTurns().contains(altOutEdgeId)) {
+              hasAlternativeMove = true;
+              break;  // An alternative escape route exists!
+            }
+          }
+
+          // 3. If an alternative exists, enforce the restriction.
+          // If NO alternative exists (dead end), we skip this 'continue' and allow the U-turn!
+          if (hasAlternativeMove) {
+            continue;
+          }
         }
 
+        // Standard Dijkstra relaxation continues below...
         auto const candidateDistance = currentDist + m_weightFunction(currentEdge);
         auto& neighborDist = distToTarget.at(inEdgeId);
         if (candidateDistance < neighborDist) {
@@ -419,8 +437,8 @@ namespace dsf::mobility {
         edgeBudget *= (1.0 + *m_weightThreshold);
       }
 
-      auto const& outgoingEdges = this->node(pEdge->target()).outgoingEdges();
-      auto const nOutgoingEdges = outgoingEdges.size();
+      auto const& targetNode = this->node(pEdge->target());
+      auto const& outgoingEdges = targetNode.outgoingEdges();
       std::vector<Id> hops;
       hops.reserve(outgoingEdges.size());
 
@@ -430,11 +448,28 @@ namespace dsf::mobility {
           continue;
         }
 
-        auto const& targetNode = this->node(pEdge->target());
-        // Avoid U-turns on non-roundabout nodes. Roundabouts are allowed to have U-turns.
-        if ((pNextEdge.target() == pEdge->source()) && (nOutgoingEdges > 1) &&
-            (!targetNode.isRoundabout())) {
-          continue;
+        // 1. Detect if this structural pair constitutes a forward U-turn
+        if ((pNextEdge.target() == pEdge->source()) && (!targetNode.isRoundabout())) {
+          // 2. Scan for alternative valid moves out of this intersection
+          bool hasAlternativeMove = false;
+          for (auto const& altNextEdgeId : outgoingEdges) {
+            if (altNextEdgeId == nextEdgeId) {
+              continue;  // Ignore the U-turn road itself
+            }
+
+            auto const& altNextEdge = this->edge(altNextEdgeId);
+            if (altNextEdge.isActive() &&
+                !pEdge->forbiddenTurns().contains(altNextEdgeId)) {
+              hasAlternativeMove = true;
+              break;  // An alternative legal escape route exists!
+            }
+          }
+
+          // 3. If an alternative exists, enforce the restriction.
+          // If no alternative exists (dead end cul-de-sac), we skip the continue and allow the U-turn!
+          if (hasAlternativeMove) {
+            continue;
+          }
         }
 
         auto const nextDistToTarget = distToTarget.at(nextEdgeId);
