@@ -1570,9 +1570,7 @@ TEST_CASE("ShortestPath") {
     pathMap[1] = {3};
     pathMap[2] = {4};
     // No path from 0 to 5
-
-    auto allPaths = pathMap.explode(0, 5);
-    CHECK_EQ(allPaths.size(), 0);
+    CHECK_THROWS(pathMap.explode(0, 5));
   }
 
   SUBCASE("PathCollection::explode - Same Source and Target") {
