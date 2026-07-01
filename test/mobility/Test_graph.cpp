@@ -1401,7 +1401,7 @@ TEST_CASE("ShortestPath") {
   SUBCASE("PathCollection::explode - Complex Multiple Paths") {
     /* Create a more complex network with multiple equivalent paths
           1 -> 3
-        /      \
+        /        \
         0        5
         \      /
           2 -> 4
@@ -1442,17 +1442,28 @@ TEST_CASE("ShortestPath") {
   }
 
   SUBCASE("Threshold - deep alternative paths") {
+    Street s0(999, std::make_pair(999, 0), 1.);
     Street s1(0, std::make_pair(0, 1), 3.);
     Street s2(1, std::make_pair(1, 2), 3.);
     Street s3(2, std::make_pair(2, 4), 3.);
     Street s4(3, std::make_pair(0, 3), 5.);
     Street s5(4, std::make_pair(3, 4), 5.);
+    Street s6(5, std::make_pair(4, 5), 10.);
     RoadNetwork graph{};
-    graph.addStreets(s1, s2, s3, s4, s5);
+    graph.addStreets(s0, s1, s2, s3, s4, s5, s6);
     graph.setEdgeWeight("length", 0.7);
 
     auto const pathMap = graph.allPathsTo(4);
     CHECK_EQ(pathMap.at(0).size(), 2);
+
+    // Verify identical behavior matching edge path selections
+    auto const edgePathMap = graph.allEdgePathsTo(5);
+    REQUIRE(edgePathMap.contains(999));
+    CHECK_EQ(edgePathMap.at(999).size(), 2);
+    CHECK(std::find(edgePathMap.at(999).begin(), edgePathMap.at(999).end(), 0) !=
+          edgePathMap.at(999).end());  // s1 (Edge 0)
+    CHECK(std::find(edgePathMap.at(999).begin(), edgePathMap.at(999).end(), 3) !=
+          edgePathMap.at(999).end());  // s4 (Edge 3)
   }
 
   SUBCASE("Threshold - full path budget without accumulation") {
@@ -1723,8 +1734,8 @@ TEST_CASE("RoadStatus") {
 TEST_CASE("ShortestPath with closed roads") {
   SUBCASE("Closed road forces alternative path") {
     // Create a network: 0 -> 1 -> 2
-    //                   |         ^
-    //                   +-> 3 ----+
+    //                    |         ^
+    //                    +-> 3 ----+
     // Path 0->1->2 has length 200, path 0->3->2 has length 300
     // If we close 0->1, shortest path should go through 3
     RoadNetwork graph{};
@@ -1806,8 +1817,8 @@ TEST_CASE("ShortestPath with closed roads") {
 TEST_CASE("allPathsTo with closed roads") {
   SUBCASE("Closed road excluded from paths") {
     // Create a network: 0 -> 1 -> 2
-    //                   |         ^
-    //                   +-> 3 ----+
+    //                    |         ^
+    //                    +-> 3 ----+
     RoadNetwork graph{};
     graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
     graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
@@ -1818,7 +1829,8 @@ TEST_CASE("allPathsTo with closed roads") {
     Street s12(1, std::make_pair(1, 2), 100.0);
     Street s03(2, std::make_pair(0, 3), 150.0);
     Street s32(3, std::make_pair(3, 2), 150.0);
-    graph.addStreets(s01, s12, s03, s32);
+    Street s24(4, std::make_pair(2, 4), 100.0);
+    graph.addStreets(s01, s12, s03, s32, s24);
     graph.setEdgeWeight("length");
 
     // Close street 0->1
@@ -1836,6 +1848,23 @@ TEST_CASE("allPathsTo with closed roads") {
     REQUIRE(pathMap.contains(1));
     CHECK_EQ(pathMap.at(1).size(), 1);
     CHECK_EQ(pathMap.at(1)[0], 2);
+
+    // Test allEdgePathsTo mirrors this filtering with edge IDs
+    auto edgePathMap = graph.allEdgePathsTo(4);
+
+    CHECK_EQ(edgePathMap.size(), 3);
+
+    REQUIRE(edgePathMap.contains(1));
+    CHECK_EQ(edgePathMap.at(1).size(), 1);
+    CHECK_EQ(edgePathMap.at(1)[0], 4);  // Outgoing s34 (Edge 4)
+
+    REQUIRE(edgePathMap.contains(2));
+    CHECK_EQ(edgePathMap.at(2).size(), 1);
+    CHECK_EQ(edgePathMap.at(2)[0], 3);  // Outgoing s32 (Edge 3)
+
+    REQUIRE(edgePathMap.contains(3));
+    CHECK_EQ(edgePathMap.at(3).size(), 1);
+    CHECK_EQ(edgePathMap.at(3)[0], 4);  // Outgoing s34 (Edge 4)
   }
 
   SUBCASE("All paths blocked to target") {
@@ -1846,18 +1875,19 @@ TEST_CASE("allPathsTo with closed roads") {
 
     Street s01(0, std::make_pair(0, 1), 100.0);
     Street s12(1, std::make_pair(1, 2), 100.0);
-    graph.addStreets(s01, s12);
+    Street s23(2, std::make_pair(2, 3), 100.0);
+    graph.addStreets(s01, s12, s23);
     graph.setEdgeWeight("length");
 
     // Close the only path to node 2
     graph.setStreetStatusById(1, RoadStatus::CLOSED);
 
     auto pathMap = graph.allPathsTo(2);
+    CHECK(pathMap.empty());
 
-    // Node 0 should not have a path to 2
-    CHECK_FALSE(pathMap.contains(0));
-    // Node 1 should not have a path to 2 either
-    CHECK_FALSE(pathMap.contains(1));
+    // Test allEdgePathsTo behaves identically
+    auto edgePathMap = graph.allEdgePathsTo(2);
+    CHECK(edgePathMap.empty());
   }
 
   SUBCASE("Closing road by name affects allPathsTo") {
@@ -1871,7 +1901,8 @@ TEST_CASE("allPathsTo with closed roads") {
     Street s12(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Road");
     Street s03(2, std::make_pair(0, 3), 150.0, 13.8888, 1, "Side Road");
     Street s32(3, std::make_pair(3, 2), 150.0, 13.8888, 1, "Side Road");
-    graph.addStreets(s01, s12, s03, s32);
+    Street s24(4, std::make_pair(2, 4), 100.0, 13.8888, 1, "Unknown Road");
+    graph.addStreets(s01, s12, s03, s32, s24);
     graph.setEdgeWeight("length");
 
     // Close all "Main Road" streets
@@ -1886,6 +1917,19 @@ TEST_CASE("allPathsTo with closed roads") {
 
     // Node 1 should have no path to 2 (since 1->2 is closed)
     CHECK_FALSE(pathMap.contains(1));
+
+    // Test allEdgePathsTo honors the named infrastructure exclusions
+    auto edgePathMap = graph.allEdgePathsTo(4);
+
+    CHECK_EQ(edgePathMap.size(), 2);
+
+    REQUIRE(edgePathMap.contains(2));
+    CHECK_EQ(edgePathMap.at(2).size(), 1);
+    CHECK_EQ(edgePathMap.at(2)[0], 3);  // Outgoing s32 (Edge 3)
+
+    REQUIRE(edgePathMap.contains(3));
+    CHECK_EQ(edgePathMap.at(3).size(), 1);
+    CHECK_EQ(edgePathMap.at(3)[0], 4);  // Outgoing s24 (Edge 4)
   }
 }
 
