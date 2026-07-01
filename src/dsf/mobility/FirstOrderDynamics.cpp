@@ -1126,19 +1126,18 @@ namespace dsf::mobility {
       case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS: {
         spdlog::info("Importing ODs from CSV with CONDITIONAL_RANDOM_ODS method.");
         auto const nEdges{this->graph().nEdges()};
-        auto const nNodes{this->graph().nNodes()};
         tbb::concurrent_unordered_map<Id, PathCollection> allPaths;
-        allPaths.reserve(nNodes);
+        allPaths.reserve(nEdges);
         std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
             conditionalODs;
         conditionalODs.reserve(nEdges);
-        tbb::parallel_for_each(
-            this->graph().nodes().begin(),
-            this->graph().nodes().end(),
-            [&](auto const& nodeId) {
-              auto const pathCollection = this->graph().allPathsTo(nodeId.first);
-              allPaths.emplace(nodeId.first, std::move(pathCollection));
-            });
+        tbb::parallel_for_each(this->graph().edges().begin(),
+                               this->graph().edges().end(),
+                               [&](auto const& [edgeId, pEdge]) {
+                                 auto const pathCollection =
+                                     this->graph().allEdgePathsTo(edgeId);
+                                 allPaths.emplace(edgeId, std::move(pathCollection));
+                               });
         for (auto const& [edgeId, pEdge] : this->graph().edges()) {
           conditionalODs.emplace(
               edgeId, std::make_tuple(0., std::vector<std::tuple<Id, double>>{}));
@@ -1146,6 +1145,7 @@ namespace dsf::mobility {
         spdlog::info("Precomputed all paths to {} edges.", nEdges);
         for (auto const& row : reader) {
           auto const originNodeId = row["origin_id"].get<Id>();
+          auto const possibleOriginEdgeId = this->graph().ingoingEdges(originNodeId);
           auto const originWeight = row["weight"].get<double>();
           // Get destination nodes as id:weight,id:weight,...
           auto const destinationsStr = row["destinations"].get<std::string>();
@@ -1169,21 +1169,25 @@ namespace dsf::mobility {
             }
             auto const destinationNodeId =
                 static_cast<Id>(std::stoul(destinationPair.substr(0, colonPos)));
-            // Take the corresponding best path
+            auto const possibleDestinationEdgeId =
+                this->graph().outgoingEdges(destinationNodeId);
             std::vector<Id> bestPath;
-            try {
-              bestPath = allPaths.at(destinationNodeId)
-                             .explode(originNodeId, destinationNodeId)
-                             .front();
-            } catch (...) {
-              continue;
+            for (auto const sourceEdgeId : possibleOriginEdgeId) {
+              for (auto const targetEdgeId : possibleDestinationEdgeId) {
+                try {
+                  auto const path = allPaths.at(targetEdgeId)
+                                        .explode(sourceEdgeId, targetEdgeId)
+                                        .front();
+                  if (bestPath.empty() || path.size() < bestPath.size()) {
+                    bestPath = std::move(path);
+                  }
+                } catch (...) {
+                  continue;
+                }
+              }
             }
-            auto const sourceEdgeId =
-                this->graph().street(bestPath[0], bestPath[1])->id();
-            auto const targetEdgeId =
-                this->graph()
-                    .street(bestPath[bestPath.size() - 2], bestPath[bestPath.size() - 1])
-                    ->id();
+            auto const sourceEdgeId{bestPath.front()};
+            auto const targetEdgeId{bestPath.back()};
             auto const destinationWeight =
                 std::stod(destinationPair.substr(colonPos + 1));
             auto& [weight, destinations] = conditionalODs.at(sourceEdgeId);
