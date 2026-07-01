@@ -1,5 +1,7 @@
 #include "PathCollection.hpp"
 
+#include <stdexcept>
+
 std::list<std::vector<dsf::Id>> dsf::PathCollection::explode(Id const sourceId,
                                                              Id const targetId) const {
   std::list<std::vector<Id>> paths;
@@ -13,7 +15,8 @@ std::list<std::vector<dsf::Id>> dsf::PathCollection::explode(Id const sourceId,
   // Check if sourceId exists in the map
   auto it = this->find(sourceId);
   if (it == this->end()) {
-    return paths;  // No paths available from this source
+    throw std::runtime_error(
+        std::format("Source {} not found in PathCollection", sourceId));
   }
 
   auto const& nextHops = it->second;

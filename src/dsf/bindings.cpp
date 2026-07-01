@@ -896,6 +896,17 @@ PYBIND11_MODULE(dsf_cpp, m) {
       Returns:
         PathCollection: A collection of paths leading to the target node.)doc")
       .def(
+          "allEdgePathsTo",
+          [](const dsf::mobility::RoadNetwork& self, dsf::Id targetId) {
+            return self.allEdgePathsTo(targetId);
+          },
+          pybind11::arg("targetId"),
+          R"doc(Compute all edge paths leading to a target edge.
+      Args:
+        targetId (int): Target edge id.
+      Returns:
+        PathCollection: A collection of edge paths leading to the target edge.)doc")
+      .def(
           "exportCSV",
           [](const dsf::mobility::RoadNetwork& self, const std::string& outputDir) {
             self.exportCSV(outputDir);

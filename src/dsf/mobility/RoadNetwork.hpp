@@ -44,6 +44,9 @@ namespace dsf::mobility {
   private:
     std::size_t m_capacity = 0;
 
+    std::unordered_map<Id, double> m_computeEdgeDistancesToTarget(
+        Id const targetEdgeId) const final;
+
     /// @brief If every node has coordinates, set the street angles
     /// @details The street angles are set using the node's coordinates.
     void m_setStreetAngles();
@@ -255,10 +258,83 @@ namespace dsf::mobility {
     /// @return std::size_t The maximum agent capacity of the graph
     inline auto capacity() const noexcept { return m_capacity; }
 
+    PathCollection allEdgePathsTo(Id const targetEdgeId) const final;
+
     /// @brief Export the graph's edges and nodes to two CSV files in the specified folder
     /// @param folder The folder to export the files to
     void exportCSV(std::string_view const folder) const;
   };
+
+  inline std::unordered_map<Id, double> RoadNetwork::m_computeEdgeDistancesToTarget(
+      Id const targetEdgeId) const {
+    std::unordered_map<Id, double> distToTarget;
+    distToTarget.reserve(nEdges());
+    for (auto const& pair : m_edges) {
+      distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
+    }
+
+    std::priority_queue<std::pair<double, Id>,
+                        std::vector<std::pair<double, Id>>,
+                        std::greater<>>
+        pq;
+
+    distToTarget[targetEdgeId] = 0.0;
+    pq.push({0.0, targetEdgeId});
+
+    while (!pq.empty()) {
+      auto const [currentDist, currentEdgeId] = pq.top();
+      pq.pop();
+
+      if (currentDist > distToTarget.at(currentEdgeId)) {
+        continue;
+      }
+
+      auto const& currentEdge = this->edge(currentEdgeId);
+      // The actual junction where the turn happens is the SOURCE of the current edge in backward search
+      auto const& turningNode = this->node(currentEdge.source());
+
+      for (auto const& inEdgeId : turningNode.ingoingEdges()) {
+        auto const& inEdge = this->edge(inEdgeId);
+        if (!inEdge.isActive() || inEdge.forbiddenTurns().contains(currentEdgeId)) {
+          continue;
+        }
+
+        // 1. Detect if this structural pair constitutes a U-turn
+        if ((currentEdge.target() == inEdge.source()) && (!turningNode.isRoundabout())) {
+          // 2. Check if there are any ALTERNATIVE legal moves out of this dead end
+          bool hasAlternativeMove = false;
+          for (auto const& altOutEdgeId : turningNode.outgoingEdges()) {
+            if (altOutEdgeId == currentEdgeId) {
+              continue;  // Ignore the U-turn road itself
+            }
+
+            auto const& altOutEdge = this->edge(altOutEdgeId);
+            if (altOutEdge.isActive() &&
+                !inEdge.forbiddenTurns().contains(altOutEdgeId)) {
+              hasAlternativeMove = true;
+              break;  // An alternative escape route exists!
+            }
+          }
+
+          // 3. If an alternative exists, enforce the restriction.
+          // If NO alternative exists (dead end), we skip this 'continue' and allow the U-turn!
+          if (hasAlternativeMove) {
+            continue;
+          }
+        }
+
+        // Standard Dijkstra relaxation continues below...
+        auto const candidateDistance = currentDist + m_weightFunction(currentEdge);
+        auto& neighborDist = distToTarget.at(inEdgeId);
+        if (candidateDistance < neighborDist) {
+          neighborDist = candidateDistance;
+          pq.push({candidateDistance, inEdgeId});
+        }
+      }
+    }
+
+    return distToTarget;
+  }
 
   template <typename... TArgs>
   void RoadNetwork::importEdges(const std::string& fileName, TArgs&&... args) {
@@ -340,6 +416,85 @@ namespace dsf::mobility {
   void RoadNetwork::addStreets(T1&& street, Tn&&... streets) {
     addStreet(std::move(street));
     addStreets(std::forward<Tn>(streets)...);
+  }
+
+  inline PathCollection RoadNetwork::allEdgePathsTo(Id const targetEdgeId) const {
+    spdlog::debug("Computing all edge paths to target edge {}", targetEdgeId);
+    auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
+    PathCollection result;
+    for (auto const& [edgeId, pEdge] : m_edges) {
+      if (edgeId == targetEdgeId) {
+        continue;
+      }
+
+      auto const edgeDistToTarget = distToTarget.at(edgeId);
+      if (edgeDistToTarget == std::numeric_limits<double>::infinity()) {
+        continue;
+      }
+
+      double edgeBudget = edgeDistToTarget;
+      if (m_weightThreshold.has_value()) {
+        edgeBudget *= (1.0 + *m_weightThreshold);
+      }
+
+      auto const& targetNode = this->node(pEdge->target());
+      auto const& outgoingEdges = targetNode.outgoingEdges();
+      std::vector<Id> hops;
+      hops.reserve(outgoingEdges.size());
+
+      for (auto const& nextEdgeId : outgoingEdges) {
+        auto const& pNextEdge = this->edge(nextEdgeId);
+        if (!pNextEdge.isActive() || pEdge->forbiddenTurns().contains(nextEdgeId)) {
+          continue;
+        }
+
+        // 1. Detect if this structural pair constitutes a forward U-turn
+        if ((pNextEdge.target() == pEdge->source()) && (!targetNode.isRoundabout())) {
+          // 2. Scan for alternative valid moves out of this intersection
+          bool hasAlternativeMove = false;
+          for (auto const& altNextEdgeId : outgoingEdges) {
+            if (altNextEdgeId == nextEdgeId) {
+              continue;  // Ignore the U-turn road itself
+            }
+
+            auto const& altNextEdge = this->edge(altNextEdgeId);
+            if (altNextEdge.isActive() &&
+                !pEdge->forbiddenTurns().contains(altNextEdgeId)) {
+              hasAlternativeMove = true;
+              break;  // An alternative legal escape route exists!
+            }
+          }
+
+          // 3. If an alternative exists, enforce the restriction.
+          // If no alternative exists (dead end cul-de-sac), we skip the continue and allow the U-turn!
+          if (hasAlternativeMove) {
+            continue;
+          }
+        }
+
+        auto const nextDistToTarget = distToTarget.at(nextEdgeId);
+        if (nextDistToTarget == std::numeric_limits<double>::infinity()) {
+          continue;
+        }
+
+        // Keep hop transitions acyclic so path expansion remains finite.
+        if (nextDistToTarget + 1e-12 >= edgeDistToTarget) {
+          continue;
+        }
+
+        auto const fullPathCost = m_weightFunction(pNextEdge) + nextDistToTarget;
+        if (fullPathCost <= edgeBudget + 1e-12 &&
+            std::find(hops.begin(), hops.end(), nextEdgeId) == hops.end()) {
+          hops.push_back(nextEdgeId);
+        }
+      }
+
+      if (!hops.empty()) {
+        result[edgeId] = hops;
+      }
+    }
+
+    return result;
   }
 
 };  // namespace dsf::mobility
