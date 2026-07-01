@@ -58,7 +58,7 @@ namespace dsf::mobility {
     inline auto const& path() const noexcept { return m_path; };
     /// @brief Get the itinerary's path size
     /// @return std::size_t, The itinerary's path size
-    inline auto const size() const noexcept { return m_path.size(); };
+    inline auto size() const noexcept { return m_path.size(); };
     /// @brief Check if the itinerary's path is empty
     /// @return true if the itinerary's path is empty, false otherwise
     inline auto empty() const noexcept { return m_path.empty(); };
