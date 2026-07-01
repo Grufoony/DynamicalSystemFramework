@@ -1,5 +1,7 @@
 #include "PathCollection.hpp"
 
+#include <stdexcept>
+
 std::list<std::vector<dsf::Id>> dsf::PathCollection::explode(Id const sourceId,
                                                              Id const targetId) const {
   std::list<std::vector<Id>> paths;

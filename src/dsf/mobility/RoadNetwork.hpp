@@ -258,7 +258,7 @@ namespace dsf::mobility {
     /// @return std::size_t The maximum agent capacity of the graph
     inline auto capacity() const noexcept { return m_capacity; }
 
-    PathCollection allEdgePathsTo(Id const targetId) const final;
+    PathCollection allEdgePathsTo(Id const targetEdgeId) const final;
 
     /// @brief Export the graph's edges and nodes to two CSV files in the specified folder
     /// @param folder The folder to export the files to

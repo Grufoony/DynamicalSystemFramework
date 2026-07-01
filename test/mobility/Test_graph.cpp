@@ -1856,7 +1856,7 @@ TEST_CASE("allPathsTo with closed roads") {
 
     REQUIRE(edgePathMap.contains(1));
     CHECK_EQ(edgePathMap.at(1).size(), 1);
-    CHECK_EQ(edgePathMap.at(1)[0], 4);  // Outgoing s34 (Edge 4)
+    CHECK_EQ(edgePathMap.at(1)[0], 4);  // Outgoing s24 (Edge 4)
 
     REQUIRE(edgePathMap.contains(2));
     CHECK_EQ(edgePathMap.at(2).size(), 1);
@@ -1864,7 +1864,7 @@ TEST_CASE("allPathsTo with closed roads") {
 
     REQUIRE(edgePathMap.contains(3));
     CHECK_EQ(edgePathMap.at(3).size(), 1);
-    CHECK_EQ(edgePathMap.at(3)[0], 4);  // Outgoing s34 (Edge 4)
+    CHECK_EQ(edgePathMap.at(3)[0], 4);  // Outgoing s24 (Edge 4)
   }
 
   SUBCASE("All paths blocked to target") {

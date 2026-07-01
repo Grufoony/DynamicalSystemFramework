@@ -144,7 +144,7 @@ namespace dsf::mobility {
     void m_addAgentsConditionalRandomODs(std::size_t nAgents);
 
     std::optional<Id> m_extractStreet(
-        std::unordered_map<Id, double> const transitionProbabilities,
+        std::unordered_map<Id, double> const& transitionProbabilities,
         double const cumulativeProbability);
 
     std::optional<Id> m_nextRandomStreetId(const std::unique_ptr<Agent>& pAgent,

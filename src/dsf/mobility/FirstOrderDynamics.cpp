@@ -360,7 +360,7 @@ namespace dsf::mobility {
   }
 
   std::optional<Id> FirstOrderDynamics::m_extractStreet(
-      std::unordered_map<Id, double> const transitionProbabilities,
+      std::unordered_map<Id, double> const& transitionProbabilities,
       double const cumulativeProbability) {
     // Select street based on weighted probabilities
     if (transitionProbabilities.empty()) {
