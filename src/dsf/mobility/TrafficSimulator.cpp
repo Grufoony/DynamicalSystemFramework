@@ -522,7 +522,7 @@ namespace dsf::mobility {
     spdlog::info(
         "Simulation completed. Total agents added: {}\n\tInserted: {} "
         "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tRemaining: {} "
-        "({:.2f}%).",
+        "({:.2f}%)\n\tLost in the weekend: {} ({:.2f}%).",
         nAdded,
         nInserted,
         nInserted * 100.0f / nAdded,
@@ -531,7 +531,9 @@ namespace dsf::mobility {
         nKilled,
         nKilled * 100.0f / nInserted,
         nRemaining,
-        nRemaining * 100.0f / nInserted);
+        nRemaining * 100.0f / nInserted,
+        nInserted - (nArrived + nKilled + nRemaining),
+        (nInserted - (nArrived + nKilled + nRemaining)) * 100.0f / nInserted);
   }
   void TrafficSimulator::m_runSlowCharge(std::size_t const nInitialAgents,
                                          std::time_t const agentInsertionDeltaT,
@@ -611,6 +613,23 @@ namespace dsf::mobility {
       }
       pbar->update();
     }
+    auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
+        m_dynamics->agentStats();
+    spdlog::info(
+        "Simulation completed. Total agents added: {}\n\tInserted: {} "
+        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tRemaining: {} "
+        "({:.2f}%)\n\tLost in the weekend: {} ({:.2f}%).",
+        nAdded,
+        nInserted,
+        nInserted * 100.0f / nAdded,
+        nArrived,
+        nArrived * 100.0f / nInserted,
+        nKilled,
+        nKilled * 100.0f / nInserted,
+        nRemaining,
+        nRemaining * 100.0f / nInserted,
+        nInserted - (nArrived + nKilled + nRemaining),
+        (nInserted - (nArrived + nKilled + nRemaining)) * 100.0f / nInserted);
   }
 
   void TrafficSimulator::connectDataBase(std::string_view const dbPath,
