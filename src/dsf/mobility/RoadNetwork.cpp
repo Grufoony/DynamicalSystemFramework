@@ -480,6 +480,30 @@ namespace dsf::mobility {
           spdlog::warn("Invalid priority for edge {}, keeping default", edge_id);
         }
       }
+      // Check if there is a forbidden_turns property
+      if (!edge_properties.at_key("forbidden_turns").error()) {
+        auto const& epForbiddenTurns = edge_properties["forbidden_turns"];
+        if (epForbiddenTurns.is_array()) {
+          std::set<Id> forbiddenTurnsSet;
+          for (auto const& turn : epForbiddenTurns.get_array().value()) {
+            if (turn.is_uint64()) {
+              forbiddenTurnsSet.insert(static_cast<Id>(turn.get_uint64()));
+            } else if (turn.is_int64()) {
+              forbiddenTurnsSet.insert(static_cast<Id>(turn.get_int64()));
+            } else {
+              spdlog::warn("Invalid forbidden turn value for edge {}, skipping this turn",
+                           edge_id);
+            }
+          }
+          if (!forbiddenTurnsSet.empty()) {
+            edge(edge_id).setForbiddenTurns(forbiddenTurnsSet);
+          }
+        } else {
+          spdlog::warn(
+              "Invalid forbidden_turns property for edge {}, expected an array, skipping",
+              edge_id);
+        }
+      }
       // Handle additional attributes
       for (auto const& [attrName, attrValue] : edge_properties.get_object()) {
         if (std::find(EDGE_DEFAULT_ATTRIBUTES.begin(),
