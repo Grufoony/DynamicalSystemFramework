@@ -1131,21 +1131,21 @@ namespace dsf::mobility {
         std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
             conditionalODs;
         conditionalODs.reserve(nEdges);
-        tbb::parallel_for_each(this->graph().edges().begin(),
-                               this->graph().edges().end(),
-                               [&](auto const& [edgeId, pEdge]) {
-                                 auto const pathCollection =
-                                     this->graph().allEdgePathsTo(edgeId);
-                                 allPaths.emplace(edgeId, std::move(pathCollection));
-                               });
+        tbb::parallel_for_each(
+            this->graph().edges().begin(),
+            this->graph().edges().end(),
+            [&](auto const& edgePair) {
+              auto const pathCollection = this->graph().allEdgePathsTo(edgePair.first);
+              allPaths.emplace(edgePair.first, std::move(pathCollection));
+            });
         for (auto const& [edgeId, pEdge] : this->graph().edges()) {
           conditionalODs.emplace(
               edgeId, std::make_tuple(0., std::vector<std::tuple<Id, double>>{}));
         }
-        spdlog::info("Precomputed all paths to {} edges.", nEdges);
         for (auto const& row : reader) {
           auto const originNodeId = row["origin_id"].get<Id>();
-          auto const possibleOriginEdgeId = this->graph().ingoingEdges(originNodeId);
+          auto const possibleOriginEdgeId =
+              this->graph().node(originNodeId).ingoingEdges();
           auto const originWeight = row["weight"].get<double>();
           // Get destination nodes as id:weight,id:weight,...
           auto const destinationsStr = row["destinations"].get<std::string>();
@@ -1170,7 +1170,7 @@ namespace dsf::mobility {
             auto const destinationNodeId =
                 static_cast<Id>(std::stoul(destinationPair.substr(0, colonPos)));
             auto const possibleDestinationEdgeId =
-                this->graph().outgoingEdges(destinationNodeId);
+                this->graph().node(destinationNodeId).outgoingEdges();
             std::vector<Id> bestPath;
             for (auto const sourceEdgeId : possibleOriginEdgeId) {
               for (auto const targetEdgeId : possibleDestinationEdgeId) {
@@ -1186,6 +1186,14 @@ namespace dsf::mobility {
                 }
               }
             }
+            if (bestPath.empty()) {
+              spdlog::debug(
+                  "No path found from origin {} to destination {} in CSV. Skipping this "
+                  "pair.",
+                  originNodeId,
+                  destinationNodeId);
+              continue;
+            }
             auto const sourceEdgeId{bestPath.front()};
             auto const targetEdgeId{bestPath.back()};
             auto const destinationWeight =
@@ -1198,7 +1206,7 @@ namespace dsf::mobility {
         // Erase all conditional ODs with empty destination lists
         for (auto it = conditionalODs.begin(); it != conditionalODs.end();) {
           if (std::get<1>(it->second).empty()) {
-            spdlog::warn(
+            spdlog::debug(
                 "Origin node {} has no valid destinations in CSV. Skipping this origin.",
                 it->first);
             it = conditionalODs.erase(it);
