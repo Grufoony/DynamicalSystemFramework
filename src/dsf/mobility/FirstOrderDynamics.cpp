@@ -23,46 +23,21 @@ namespace dsf::mobility {
     for (auto const& [nodeId, weight] : this->m_destinationNodes) {
       m_itineraries.emplace(nodeId, std::make_shared<Itinerary>(nodeId, nodeId));
     }
-    std::for_each(
-        this->graph().edges().cbegin(),
-        this->graph().edges().cend(),
-        [this](auto const& pair) {
-          auto const& pEdge{pair.second};
-          auto const edgeId{pair.first};
-          // fill turn mapping as [pair.first, [left street Id, straight street Id, right street Id, U self street Id]]
-          m_turnMapping.emplace(edgeId, std::array<long, 4>{-1, -1, -1, -1});
-          // Turn mappings
-          const auto& srcNodeId = pEdge->target();
-          for (auto const& outEdgeId : this->graph().node(srcNodeId).outgoingEdges()) {
-            auto* pStreet{&this->graph().edge(outEdgeId)};
-            auto const previousStreetId = pStreet->id();
-            auto const& delta{pEdge->deltaAngle(pStreet->angle())};
-            if (std::abs(delta) < std::numbers::pi) {
-              if (delta < 0.) {
-                m_turnMapping[edgeId][dsf::Direction::RIGHT] = previousStreetId;  // right
-              } else if (delta > 0.) {
-                m_turnMapping[edgeId][dsf::Direction::LEFT] = previousStreetId;  // left
-              } else {
-                m_turnMapping[edgeId][dsf::Direction::STRAIGHT] =
-                    previousStreetId;  // straight
-              }
-            } else {
-              m_turnMapping[edgeId][dsf::Direction::UTURN] = previousStreetId;  // U
-            }
-          }
-        });
   }
 
-  std::unique_ptr<Agent> FirstOrderDynamics::m_killAgent(std::unique_ptr<Agent> pAgent) {
-    spdlog::trace("Killing agent {}", *pAgent);
+  std::unique_ptr<Agent> FirstOrderDynamics::m_removeAgent(std::unique_ptr<Agent> pAgent,
+                                                           bool const bArrived) {
+    --m_nAgents;
+    if (bArrived) {
+      spdlog::trace("Removing agent {}", *pAgent);
+      ++m_nArrivedAgents;
+    } else {
+      spdlog::trace("Killing agent {}", *pAgent);
+      ++m_nKilledAgents;
+    }
     m_travelDTs.push_back({pAgent->distance(),
                            static_cast<double>(this->time_step() - pAgent->spawnTime())});
-    --m_nAgents;
-    if (pAgent->isRandom() && !pAgent->hasArrived(this->time_step())) {
-      ++m_nKilledAgents;
-    } else {
-      ++m_nArrivedAgents;
-    }
+
     auto const& streetId = pAgent->streetId();
     if (streetId.has_value()) {
       auto* pStreet{&this->graph().edge(streetId.value())};
@@ -546,7 +521,7 @@ namespace dsf::mobility {
           pStreet->enqueue(laneDist(this->m_generator));
           continue;
         }
-        this->m_killAgent(pStreet->dequeueMovingAgent());
+        this->m_removeAgent(pStreet->dequeueMovingAgent(), false);
         continue;
         // Grufoony - 09/03/2026
         // The agent is now killed. The old behavior (throw exception) is kept here:
@@ -630,7 +605,7 @@ namespace dsf::mobility {
               timeTolerance,
               timeDiff);
           // Kill the agent
-          this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
+          this->m_removeAgent(pStreet->dequeue(queueIndex, this->time_step()), false);
           continue;
         }
       }
@@ -784,7 +759,8 @@ namespace dsf::mobility {
         }
       }
       if (bArrived) {
-        auto pAgent = this->m_killAgent(pStreet->dequeue(queueIndex, this->time_step()));
+        auto pAgent =
+            this->m_removeAgent(pStreet->dequeue(queueIndex, this->time_step()), true);
         if (m_reinsertAgents) {
           // reset Agent's values
           pAgent->reset(this->time_step());

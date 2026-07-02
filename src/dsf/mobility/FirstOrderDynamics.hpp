@@ -114,7 +114,6 @@ namespace dsf::mobility {
 
   protected:
     TurnCountsDict m_turnCounts;
-    std::unordered_map<Id, std::array<long, 4>> m_turnMapping;
     tbb::concurrent_unordered_map<Id, std::unordered_map<Direction, double>>
         m_queuesAtTrafficLights;
     tbb::concurrent_vector<std::pair<double, double>> m_travelDTs;
@@ -131,9 +130,11 @@ namespace dsf::mobility {
     bool m_forcePriorities{false};
 
   private:
-    /// @brief Kill an agent
+    /// @brief Kill an agent from the dynamics
     /// @param pAgent A std::unique_ptr to the agent to kill
-    std::unique_ptr<Agent> m_killAgent(std::unique_ptr<Agent> pAgent);
+    /// @param bArrived A boolean indicating whether the agent has arrived at its destination
+    std::unique_ptr<Agent> m_removeAgent(std::unique_ptr<Agent> pAgent,
+                                         bool const bArrived);
     /// @brief Update the path of a single itinerary using Dijsktra's algorithm
     /// @param pItinerary An std::shared_ptr to the itinerary
     void m_updatePath(std::shared_ptr<Itinerary> const& pItinerary);
@@ -418,10 +419,6 @@ namespace dsf::mobility {
     /// @return const std::unordered_map<Id, std::unordered_map<Id, double>>& The normalized turn counts. The outer map's key is the street id, the inner map's key is the next street id and the value is the normalized number of counts
     std::unordered_map<Id, std::unordered_map<Id, double>> const normalizedTurnCounts()
         const noexcept;
-
-    std::unordered_map<Id, std::array<long, 4>> turnMapping() const {
-      return m_turnMapping;
-    }
 
     /// @brief Get the origin counts of the agents
     /// @param bReset If true, the origin counts are cleared (default is true)
