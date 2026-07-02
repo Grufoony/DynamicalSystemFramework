@@ -16,6 +16,8 @@ import numpy as np
 import osmnx as ox
 from shapely.geometry import LineString, Point, Polygon
 
+ox.settings.useful_tags_way.append("turn:lanes")
+
 
 def fetch_cartography(
     place_name: str | None = None,
