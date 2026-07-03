@@ -231,11 +231,13 @@ def process_cartography(
             lanes = data["lanes"]
             if isinstance(lanes, str):
                 lanes = ast.literal_eval(lanes) if lanes.startswith("[") else lanes
-            n = (
-                min([int(x) for x in lanes], default=1)
-                if isinstance(lanes, list)
-                else max(int(lanes), 1)
-            )
+            if isinstance(lanes, list):
+                n = min([int(x) for x in lanes], default=1)
+                if "turn:lanes" in data:
+                    # Empty it
+                    data["turn:lanes"] = ""
+            else:
+                n = max(int(lanes), 1)
             n = max(n, 1)
             oneway = data.get("oneway", False)
             if not (oneway is True or oneway in ("yes", "True")):
@@ -244,6 +246,16 @@ def process_cartography(
             updates["_remove_lanes"] = True
         else:
             updates["nlanes"] = 1
+
+        if "turn:lanes" in data and len(data["turn:lanes"]) > 0:
+            updates["lane_mapping"] = [
+                lane.strip() if len(lane.strip()) > 0 else "any"
+                for lane in data["turn:lanes"]
+                .replace("through", "straight")
+                .replace(";", "-")
+                .split("|")
+            ]
+            updates["_remove_turn:lanes"] = True
 
         if "highway" in data:
             hw = data["highway"]
@@ -276,6 +288,7 @@ def process_cartography(
             "reversed",
             "junction",
             "osmid",
+            "turn:lanes",
         ):
             if attr in data:
                 updates[f"_remove_{attr}"] = True
