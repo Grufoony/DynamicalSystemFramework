@@ -536,37 +536,65 @@ namespace dsf::mobility {
         continue;
       }
       auto const direction{pNextStreet->turnDirection(pStreet->angle())};
-      switch (direction) {
-        case Direction::UTURN:
-        case Direction::LEFT:
-          pStreet->enqueue(nLanes - 1);
-          break;
-        case Direction::RIGHT:
-          pStreet->enqueue(0);
-          break;
-        default:
-          std::vector<double> weights;
-          for (auto const& queue : pStreet->exitQueues()) {
-            weights.push_back(1. / (queue.size() + 1));
-          }
-          // If all weights are the same, make the last 0
-          if (std::all_of(weights.begin(), weights.end(), [&](double w) {
-                return std::abs(w - weights.front()) <
-                       std::numeric_limits<double>::epsilon();
-              })) {
-            weights.back() = 0.;
-            if (nLanes > 2) {
-              weights.front() = 0.;
+      std::vector<size_t> validLanes;
+      auto const& mapping = pStreet->laneMapping();
+      for (size_t laneIndex = 0; laneIndex < mapping.size(); ++laneIndex) {
+        switch (direction) {
+          case Direction::ANY:
+            validLanes.push_back(laneIndex);
+            break;
+          case Direction::UTURN:
+          case Direction::LEFT:
+            if (mapping[laneIndex] == Direction::LEFT ||
+                mapping[laneIndex] == Direction::LEFTANDSTRAIGHT) {
+              validLanes.push_back(laneIndex);
             }
-          }
-          // Normalize the weights
-          auto const sum = std::accumulate(weights.begin(), weights.end(), 0.);
-          for (auto& w : weights) {
-            w /= sum;
-          }
-          std::discrete_distribution<size_t> laneDist{weights.begin(), weights.end()};
-          pStreet->enqueue(laneDist(this->m_generator));
+            break;
+          case Direction::STRAIGHT:
+            if (mapping[laneIndex] == Direction::STRAIGHT ||
+                mapping[laneIndex] == Direction::LEFTANDSTRAIGHT ||
+                mapping[laneIndex] == Direction::RIGHTANDSTRAIGHT) {
+              validLanes.push_back(laneIndex);
+            }
+            break;
+          case Direction::RIGHT:
+            if (mapping[laneIndex] == Direction::RIGHT ||
+                mapping[laneIndex] == Direction::RIGHTANDSTRAIGHT) {
+              validLanes.push_back(laneIndex);
+            }
+            break;
+          default:
+            validLanes.push_back(laneIndex);
+        }
       }
+      std::vector<double> weights;
+      auto itValidLane = validLanes.cbegin();
+      for (std::size_t laneIndex = 0;
+           laneIndex < static_cast<std::size_t>(pStreet->nLanes());
+           ++laneIndex) {
+        if (itValidLane != validLanes.cend() && laneIndex == *itValidLane) {
+          weights.push_back(1. / (pStreet->queue(*itValidLane).size() + 1));
+          ++itValidLane;
+        } else {
+          weights.push_back(0.);
+        }
+      }
+      // If all weights are the same, make the last 0
+      if (std::all_of(weights.begin(), weights.end(), [&](double w) {
+            return std::abs(w - weights.front()) < std::numeric_limits<double>::epsilon();
+          })) {
+        weights.back() = 0.;
+        if (nLanes > 2) {
+          weights.front() = 0.;
+        }
+      }
+      // Normalize the weights
+      auto const sum = std::accumulate(weights.begin(), weights.end(), 0.);
+      for (auto& w : weights) {
+        w /= sum;
+      }
+      std::discrete_distribution<size_t> laneDist{weights.begin(), weights.end()};
+      pStreet->enqueue(laneDist(this->m_generator));
     }
     auto const& transportCapacity{pStreet->transportCapacity()};
     std::uniform_real_distribution<double> uniformDist{0., 1.};
