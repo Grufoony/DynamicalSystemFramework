@@ -26,6 +26,8 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "coilcode",
                                      "priority",
                                      "mobility_class",
+                                     "forbidden_turns",
+                                     "lane_mapping",
                                      "geometry"});
 
 namespace dsf::mobility {
@@ -525,23 +527,26 @@ namespace dsf::mobility {
         }
       }
       // Check if there is a forbidden_turns property
-      if (!edge_properties.at_key("forbidden_turns").error()) {
-        auto const& epForbiddenTurns = edge_properties["forbidden_turns"];
-        if (epForbiddenTurns.is_array()) {
-          std::set<Id> forbiddenTurnsSet;
-          auto const turnsArray = epForbiddenTurns.get_array().value();
-          for (auto const& turn : turnsArray) {
-            if (turn.is_uint64()) {
-              forbiddenTurnsSet.insert(static_cast<Id>(turn.get_uint64()));
-            } else if (turn.is_int64()) {
-              forbiddenTurnsSet.insert(static_cast<Id>(turn.get_int64()));
-            } else {
-              spdlog::warn("Invalid forbidden turn value for edge {}, skipping this turn",
-                           edge_id);
+      auto const forbidden_turns_result = edge_properties.at_key("forbidden_turns");
+      if (!forbidden_turns_result.error() && !forbidden_turns_result.is_null()) {
+        if (forbidden_turns_result.is_array()) {
+          auto const turnsArray = forbidden_turns_result.get_array().value();
+          if (turnsArray.size() > 0) {
+            std::set<Id> forbiddenTurnsSet;
+            for (auto const& turn : turnsArray) {
+              if (turn.is_uint64()) {
+                forbiddenTurnsSet.insert(static_cast<Id>(turn.get_uint64()));
+              } else if (turn.is_int64()) {
+                forbiddenTurnsSet.insert(static_cast<Id>(turn.get_int64()));
+              } else {
+                spdlog::warn(
+                    "Invalid forbidden turn value for edge {}, skipping this turn",
+                    edge_id);
+              }
             }
-          }
-          if (!forbiddenTurnsSet.empty()) {
-            edge(edge_id).setForbiddenTurns(forbiddenTurnsSet);
+            if (!forbiddenTurnsSet.empty()) {
+              edge(edge_id).setForbiddenTurns(forbiddenTurnsSet);
+            }
           }
         } else {
           spdlog::warn(
@@ -550,11 +555,11 @@ namespace dsf::mobility {
         }
       }
       // Handle lane_mapping property
-      if (!edge_properties.at_key("lane_mapping").error()) {
-        auto const& epLaneMapping = edge_properties["lane_mapping"];
-        if (epLaneMapping.is_array()) {
+      auto const lane_mapping_result = edge_properties.at_key("lane_mapping");
+      if (!lane_mapping_result.error() && !lane_mapping_result.is_null()) {
+        if (lane_mapping_result.is_array()) {
           std::vector<Direction> laneMappingVec;
-          auto const laneMappingArray = epLaneMapping.get_array().value();
+          auto const laneMappingArray = lane_mapping_result.get_array().value();
           for (auto const lane : laneMappingArray) {
             if (lane.is_string()) {
               std::string laneStr{lane.get_string().value()};
