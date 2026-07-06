@@ -17,7 +17,8 @@ import numpy as np
 import osmnx as ox
 from shapely.geometry import LineString, Point, Polygon
 
-ox.settings.useful_tags_way.append("turn:lanes")
+if "turn:lanes" not in ox.settings.useful_tags_way:
+    ox.settings.useful_tags_way.append("turn:lanes")
 
 
 def fetch_cartography(
@@ -330,7 +331,7 @@ def process_cartography(
         """Get directional heading accounting for linestring geometry if present."""
         if "geometry" in data:
             coords = list(data["geometry"].coords)
-            # Use last segment for incoming, first segment for outgoing
+            # Use the whole segment for incoming, first segment for outgoing
             p1, p2 = (coords[0], coords[-1]) if is_incoming else (coords[0], coords[1])
         else:
             p1, p2 = (

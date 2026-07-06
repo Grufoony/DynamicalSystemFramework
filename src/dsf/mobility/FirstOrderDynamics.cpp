@@ -947,8 +947,7 @@ namespace dsf::mobility {
           spdlog::debug(
               "No next street found for agent {} at node {}", *pAgent, pSourceNode->id());
           itAgent = m_agents.erase(itAgent);
-          --m_nAgents;
-          --m_nInsertedAgents;
+          auto pAgentRemoved{this->m_removeAgent(std::move(*itAgent), false)};
           continue;
         }
         pAgent->setNextStreetId(nextStreetId.value());

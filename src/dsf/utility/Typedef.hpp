@@ -30,7 +30,7 @@ namespace dsf {
     UTURN = 6  // std::abs(delta) > std::numbers::pi
   };
   constexpr std::array<std::string_view, 7> directionToString{
-      "RIGHT", "STRAIGHT", "LEFT", "UTURN", "RIGHT&STRAIGHT", "LEFT&STRAIGHT", "ANY"};
+      "RIGHT", "RIGHT&STRAIGHT", "STRAIGHT", "ANY", "LEFT&STRAIGHT", "LEFT", "UTURN"};
   enum class TrafficLightOptimization : uint8_t { SINGLE_TAIL = 0, DOUBLE_TAIL = 1 };
   enum train_t : uint8_t {
     BUS = 0,           // Autobus
