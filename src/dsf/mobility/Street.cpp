@@ -67,7 +67,12 @@ namespace dsf::mobility {
   }
 
   void Street::setLaneMapping(std::vector<Direction> const& laneMapping) {
-    assert(laneMapping.size() == static_cast<size_t>(m_nLanes));
+    if (laneMapping.size() != static_cast<size_t>(m_nLanes)) {
+      throw std::invalid_argument(
+          std::format("Lane mapping size ({}) does not match number of lanes ({})",
+                      laneMapping.size(),
+                      m_nLanes));
+    }
     m_laneMapping = laneMapping;
     std::string strLaneMapping;
     std::for_each(

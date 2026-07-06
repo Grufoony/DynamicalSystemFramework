@@ -8,6 +8,7 @@ standardization of attributes.
 """
 
 import ast
+import math
 import re
 import folium
 import geopandas as gpd
@@ -15,6 +16,9 @@ import networkx as nx
 import numpy as np
 import osmnx as ox
 from shapely.geometry import LineString, Point, Polygon
+
+if "turn:lanes" not in ox.settings.useful_tags_way:
+    ox.settings.useful_tags_way.append("turn:lanes")
 
 
 def fetch_cartography(
@@ -75,6 +79,7 @@ def process_cartography(
     consolidate_intersections: bool | float = 10,
     dead_ends: bool = False,
     infer_speeds: bool = False,
+    infer_forbidden_turns: bool = True,
     scc: bool | str = False,
 ) -> tuple[nx.DiGraph, gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
@@ -91,6 +96,7 @@ def process_cartography(
         dead_ends (bool, optional): Whether to preserve dead-end nodes during consolidation. Defaults to False.
         infer_speeds (bool, optional): If True, infers edge speeds via np.nanmedian and
             computes travel times. Defaults to False.
+        infer_forbidden_turns (bool, optional): If True, infers forbidden turns based on lane mapping. Defaults to True.
         scc (bool | str, optional): If True, keeps only the largest strongly connected component of the graph. Defaults to False.
             If "mark", adds a boolean "in_scc" attribute to nodes and edges instead of filtering.
 
@@ -229,11 +235,13 @@ def process_cartography(
             lanes = data["lanes"]
             if isinstance(lanes, str):
                 lanes = ast.literal_eval(lanes) if lanes.startswith("[") else lanes
-            n = (
-                min([int(x) for x in lanes], default=1)
-                if isinstance(lanes, list)
-                else max(int(lanes), 1)
-            )
+            if isinstance(lanes, list):
+                n = min([int(x) for x in lanes], default=1)
+                if "turn:lanes" in data:
+                    # Empty it
+                    data["turn:lanes"] = ""
+            else:
+                n = max(int(lanes), 1)
             n = max(n, 1)
             oneway = data.get("oneway", False)
             if not (oneway is True or oneway in ("yes", "True")):
@@ -242,6 +250,16 @@ def process_cartography(
             updates["_remove_lanes"] = True
         else:
             updates["nlanes"] = 1
+
+        if "turn:lanes" in data and len(data["turn:lanes"]) > 0:
+            updates["lane_mapping"] = [
+                lane.strip() if len(lane.strip()) > 0 else "any"
+                for lane in data["turn:lanes"]
+                .replace("through", "straight")
+                .replace(";", "-")
+                .split("|")
+            ]
+            updates["_remove_turn:lanes"] = True
 
         if "highway" in data:
             hw = data["highway"]
@@ -274,6 +292,7 @@ def process_cartography(
             "reversed",
             "junction",
             "osmid",
+            "turn:lanes",
         ):
             if attr in data:
                 updates[f"_remove_{attr}"] = True
@@ -294,6 +313,81 @@ def process_cartography(
 
     for i, (u, v) in enumerate(sorted(G.edges())):
         G[u][v].update({"id": i, "source": u, "target": v})
+
+    def _get_bearing(p1, p2):
+        """Calculate initial bearing between two lat/lon points."""
+        lon1, lat1 = p1
+        lon2, lat2 = p2
+        dLon = math.radians(lon2 - lon1)
+        lat1 = math.radians(lat1)
+        lat2 = math.radians(lat2)
+        y = math.sin(dLon) * math.cos(lat2)
+        x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(
+            lat2
+        ) * math.cos(dLon)
+        return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+    def _extract_heading(G, u, v, data, is_incoming):
+        """Get directional heading accounting for linestring geometry if present."""
+        if "geometry" in data:
+            coords = list(data["geometry"].coords)
+            # Use the whole segment for incoming, first segment for outgoing
+            p1, p2 = (coords[0], coords[-1]) if is_incoming else (coords[0], coords[1])
+        else:
+            p1, p2 = (
+                (G.nodes[u]["x"], G.nodes[u]["y"]),
+                (G.nodes[v]["x"], G.nodes[v]["y"]),
+            )
+        return _get_bearing(p1, p2)
+
+    if infer_forbidden_turns:
+        for u, v, data in G.edges(data=True):
+            data["forbidden_turns"] = None
+
+            if "lane_mapping" not in data:
+                continue
+
+            mapping_str = " ".join(data["lane_mapping"]).lower()
+            if "any" in mapping_str or "none" in mapping_str:
+                continue  # Allows all directions, skip processing
+
+            # Compile a set of structurally permitted directions
+            permitted = set()
+            if "left" in mapping_str:
+                permitted.add("left")
+            if "right" in mapping_str:
+                permitted.add("right")
+            if "straight" in mapping_str or "through" in mapping_str:
+                permitted.add("straight")
+            if "reverse" in mapping_str or "u_turn" in mapping_str:
+                permitted.add("u_turn")
+
+            if not permitted:
+                continue
+
+            # Calculate angle and classify the outgoing edges
+            in_bearing = _extract_heading(G, u, v, data, is_incoming=True)
+            forbidden_ids = []
+
+            for _, w, out_data in G.out_edges(v, data=True):
+                out_bearing = _extract_heading(G, v, w, out_data, is_incoming=False)
+                turn_angle = (out_bearing - in_bearing) % 360
+
+                # Map physical degrees to semantic turn directions
+                if turn_angle <= 35 or turn_angle >= 325:
+                    turn_type = "straight"
+                elif 35 < turn_angle < 145:
+                    turn_type = "right"
+                elif 145 <= turn_angle <= 215:
+                    turn_type = "u_turn"
+                else:  # 215 to 325
+                    turn_type = "left"
+
+                if turn_type not in permitted:
+                    forbidden_ids.append(out_data["id"])
+
+            if forbidden_ids:
+                data["forbidden_turns"] = forbidden_ids
 
     # --- Standardize node attributes ---
     nodes_to_update = []
@@ -360,6 +454,7 @@ def get_cartography(
     consolidate_intersections: bool | float = 10,
     dead_ends: bool = False,
     infer_speeds: bool = False,
+    infer_forbidden_turns: bool = True,
     custom_filter: str | list[str] | None = None,
     scc: bool | str = False,
 ) -> tuple[nx.DiGraph, gpd.GeoDataFrame, gpd.GeoDataFrame]:
@@ -386,6 +481,7 @@ def get_cartography(
         infer_speeds (bool, optional): Whether to infer edge speeds based on road types. Defaults to False.
             If True, calls ox.routing.add_edge_speeds using np.nanmedian as aggregation function.
             Finally, the "maxspeed" attribute is replaced with the inferred "speed_kph", and the "travel_time" attribute is computed.
+        infer_forbidden_turns (bool, optional): Whether to infer forbidden turns based on lane mapping. Defaults to True.
         custom_filter (str | list[str], optional): A custom OSM filter string or list of strings to apply when retrieving the graph. Defaults to None.
         scc (bool | str, optional): Whether to keep only the largest strongly connected component of the graph. Defaults to False.
             If True, filters the graph to keep only the largest strongly connected component. If "mark", adds a boolean "in_scc" attribute to nodes and edges instead of filtering.
@@ -411,6 +507,7 @@ def get_cartography(
         consolidate_intersections=consolidate_intersections,
         dead_ends=dead_ends,
         infer_speeds=infer_speeds,
+        infer_forbidden_turns=infer_forbidden_turns,
         scc=scc,
     )
 

@@ -26,6 +26,8 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "coilcode",
                                      "priority",
                                      "mobility_class",
+                                     "forbidden_turns",
+                                     "lane_mapping",
                                      "geometry"});
 
 namespace dsf::mobility {
@@ -74,6 +76,8 @@ namespace dsf::mobility {
          colNames.end());
     bool const bHasMobilityClass =
         (std::find(colNames.begin(), colNames.end(), "mobility_class") != colNames.end());
+    bool const bHasLaneMapping =
+        (std::find(colNames.begin(), colNames.end(), "lane_mapping") != colNames.end());
 
     for (auto& row : reader) {
       auto const sourceId = row["source"].get<Id>();
@@ -231,6 +235,48 @@ namespace dsf::mobility {
           spdlog::error("Invalid forbidden_turns for edge {} ({}).",
                         streetId,
                         row["forbidden_turns"].get<std::string>());
+        }
+      }
+      if (bHasLaneMapping) {
+        // Expect a string of the form [straight, left, right, ...]
+        try {
+          auto laneMappingStr = row["lane_mapping"].get<std::string>();
+          std::replace(laneMappingStr.begin(), laneMappingStr.end(), '[', ' ');
+          std::replace(laneMappingStr.begin(), laneMappingStr.end(), ']', ' ');
+          std::replace(laneMappingStr.begin(), laneMappingStr.end(), ',', ' ');
+
+          std::vector<Direction> laneMappingVec;
+          std::stringstream ss(laneMappingStr);
+          std::string lane;
+          while (ss >> lane) {
+            std::transform(lane.begin(), lane.end(), lane.begin(), [](unsigned char c) {
+              return std::tolower(c);
+            });
+            // Check if "straight" is substring of lane
+            if (lane.find("straight") != std::string::npos) {
+              if (lane.find("left") != std::string::npos) {
+                laneMappingVec.push_back(Direction::LEFTANDSTRAIGHT);
+              } else if (lane.find("right") != std::string::npos) {
+                laneMappingVec.push_back(Direction::RIGHTANDSTRAIGHT);
+              } else {
+                laneMappingVec.push_back(Direction::STRAIGHT);
+              }
+            } else if (lane.find("left") != std::string::npos) {
+              laneMappingVec.push_back(Direction::LEFT);
+            } else if (lane.find("right") != std::string::npos) {
+              laneMappingVec.push_back(Direction::RIGHT);
+            } else {
+              laneMappingVec.push_back(Direction::ANY);
+            }
+          }
+          if (!laneMappingVec.empty()) {
+            std::sort(laneMappingVec.begin(), laneMappingVec.end());
+            edge(streetId).setLaneMapping(laneMappingVec);
+          }
+        } catch (...) {
+          spdlog::error("Invalid lane_mapping for edge {} ({}).",
+                        streetId,
+                        row["lane_mapping"].get<std::string>());
         }
       }
 
@@ -478,6 +524,79 @@ namespace dsf::mobility {
           }
         } else {
           spdlog::warn("Invalid priority for edge {}, keeping default", edge_id);
+        }
+      }
+      // Check if there is a forbidden_turns property
+      auto const forbidden_turns_result = edge_properties.at_key("forbidden_turns");
+      if (!forbidden_turns_result.error() && !forbidden_turns_result.is_null()) {
+        if (forbidden_turns_result.is_array()) {
+          auto const turnsArray = forbidden_turns_result.get_array().value();
+          if (turnsArray.size() > 0) {
+            std::set<Id> forbiddenTurnsSet;
+            for (auto const& turn : turnsArray) {
+              if (turn.is_uint64()) {
+                forbiddenTurnsSet.insert(static_cast<Id>(turn.get_uint64()));
+              } else if (turn.is_int64()) {
+                forbiddenTurnsSet.insert(static_cast<Id>(turn.get_int64()));
+              } else {
+                spdlog::warn(
+                    "Invalid forbidden turn value for edge {}, skipping this turn",
+                    edge_id);
+              }
+            }
+            if (!forbiddenTurnsSet.empty()) {
+              edge(edge_id).setForbiddenTurns(forbiddenTurnsSet);
+            }
+          }
+        } else {
+          spdlog::warn(
+              "Invalid forbidden_turns property for edge {}, expected an array, skipping",
+              edge_id);
+        }
+      }
+      // Handle lane_mapping property
+      auto const lane_mapping_result = edge_properties.at_key("lane_mapping");
+      if (!lane_mapping_result.error() && !lane_mapping_result.is_null()) {
+        if (lane_mapping_result.is_array()) {
+          std::vector<Direction> laneMappingVec;
+          auto const laneMappingArray = lane_mapping_result.get_array().value();
+          for (auto const lane : laneMappingArray) {
+            if (lane.is_string()) {
+              std::string laneStr{lane.get_string().value()};
+              std::transform(
+                  laneStr.begin(), laneStr.end(), laneStr.begin(), [](unsigned char c) {
+                    return std::tolower(c);
+                  });
+              if (laneStr.find("straight") != std::string::npos) {
+                if (laneStr.find("left") != std::string::npos) {
+                  laneMappingVec.push_back(Direction::LEFTANDSTRAIGHT);
+                } else if (laneStr.find("right") != std::string::npos) {
+                  laneMappingVec.push_back(Direction::RIGHTANDSTRAIGHT);
+                } else {
+                  laneMappingVec.push_back(Direction::STRAIGHT);
+                }
+              } else if (laneStr.find("left") != std::string::npos) {
+                laneMappingVec.push_back(Direction::LEFT);
+              } else if (laneStr.find("right") != std::string::npos) {
+                laneMappingVec.push_back(Direction::RIGHT);
+              } else {
+                laneMappingVec.push_back(Direction::ANY);
+              }
+            } else {
+              spdlog::warn(
+                  "Invalid lane mapping value for edge {}, expected a string, skipping "
+                  "this lane",
+                  edge_id);
+            }
+          }
+          if (!laneMappingVec.empty()) {
+            std::sort(laneMappingVec.begin(), laneMappingVec.end());
+            edge(edge_id).setLaneMapping(laneMappingVec);
+          }
+        } else {
+          spdlog::warn(
+              "Invalid lane_mapping property for edge {}, expected an array, skipping",
+              edge_id);
         }
       }
       // Handle additional attributes

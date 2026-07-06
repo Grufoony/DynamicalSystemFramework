@@ -21,16 +21,16 @@ namespace dsf {
 
   enum class SpeedFunction : uint8_t { CUSTOM = 0, LINEAR = 1 };
   enum Direction : uint8_t {
-    RIGHT = 0,     // delta < 0
-    STRAIGHT = 1,  // delta == 0
-    LEFT = 2,      // delta > 0
-    UTURN = 3,     // std::abs(delta) > std::numbers::pi
-    RIGHTANDSTRAIGHT = 4,
-    LEFTANDSTRAIGHT = 5,
-    ANY = 6
+    RIGHT = 0,  // delta < 0
+    RIGHTANDSTRAIGHT = 1,
+    STRAIGHT = 2,  // delta == 0
+    ANY = 3,
+    LEFTANDSTRAIGHT = 4,
+    LEFT = 5,  // delta > 0
+    UTURN = 6  // std::abs(delta) > std::numbers::pi
   };
   constexpr std::array<std::string_view, 7> directionToString{
-      "RIGHT", "STRAIGHT", "LEFT", "UTURN", "RIGHT&STRAIGHT", "LEFT&STRAIGHT", "ANY"};
+      "RIGHT", "RIGHT&STRAIGHT", "STRAIGHT", "ANY", "LEFT&STRAIGHT", "LEFT", "UTURN"};
   enum class TrafficLightOptimization : uint8_t { SINGLE_TAIL = 0, DOUBLE_TAIL = 1 };
   enum train_t : uint8_t {
     BUS = 0,           // Autobus
