@@ -78,6 +78,7 @@ def process_cartography(
     consolidate_intersections: bool | float = 10,
     dead_ends: bool = False,
     infer_speeds: bool = False,
+    infer_forbidden_turns: bool = True,
     scc: bool | str = False,
 ) -> tuple[nx.DiGraph, gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
@@ -94,6 +95,7 @@ def process_cartography(
         dead_ends (bool, optional): Whether to preserve dead-end nodes during consolidation. Defaults to False.
         infer_speeds (bool, optional): If True, infers edge speeds via np.nanmedian and
             computes travel times. Defaults to False.
+        infer_forbidden_turns (bool, optional): If True, infers forbidden turns based on lane mapping. Defaults to True.
         scc (bool | str, optional): If True, keeps only the largest strongly connected component of the graph. Defaults to False.
             If "mark", adds a boolean "in_scc" attribute to nodes and edges instead of filtering.
 
@@ -337,53 +339,54 @@ def process_cartography(
             )
         return _get_bearing(p1, p2)
 
-    for u, v, data in G.edges(data=True):
-        data["forbidden_turns"] = None
+    if infer_forbidden_turns:
+        for u, v, data in G.edges(data=True):
+            data["forbidden_turns"] = None
 
-        if "lane_mapping" not in data:
-            continue
+            if "lane_mapping" not in data:
+                continue
 
-        mapping_str = " ".join(data["lane_mapping"]).lower()
-        if "any" in mapping_str or "none" in mapping_str:
-            continue  # Allows all directions, skip processing
+            mapping_str = " ".join(data["lane_mapping"]).lower()
+            if "any" in mapping_str or "none" in mapping_str:
+                continue  # Allows all directions, skip processing
 
-        # Compile a set of structurally permitted directions
-        permitted = set()
-        if "left" in mapping_str:
-            permitted.add("left")
-        if "right" in mapping_str:
-            permitted.add("right")
-        if "straight" in mapping_str or "through" in mapping_str:
-            permitted.add("straight")
-        if "reverse" in mapping_str or "u_turn" in mapping_str:
-            permitted.add("u_turn")
+            # Compile a set of structurally permitted directions
+            permitted = set()
+            if "left" in mapping_str:
+                permitted.add("left")
+            if "right" in mapping_str:
+                permitted.add("right")
+            if "straight" in mapping_str or "through" in mapping_str:
+                permitted.add("straight")
+            if "reverse" in mapping_str or "u_turn" in mapping_str:
+                permitted.add("u_turn")
 
-        if not permitted:
-            continue
+            if not permitted:
+                continue
 
-        # Calculate angle and classify the outgoing edges
-        in_bearing = _extract_heading(G, u, v, data, is_incoming=True)
-        forbidden_ids = []
+            # Calculate angle and classify the outgoing edges
+            in_bearing = _extract_heading(G, u, v, data, is_incoming=True)
+            forbidden_ids = []
 
-        for _, w, out_data in G.out_edges(v, data=True):
-            out_bearing = _extract_heading(G, v, w, out_data, is_incoming=False)
-            turn_angle = (out_bearing - in_bearing) % 360
+            for _, w, out_data in G.out_edges(v, data=True):
+                out_bearing = _extract_heading(G, v, w, out_data, is_incoming=False)
+                turn_angle = (out_bearing - in_bearing) % 360
 
-            # Map physical degrees to semantic turn directions
-            if turn_angle <= 35 or turn_angle >= 325:
-                turn_type = "straight"
-            elif 35 < turn_angle < 145:
-                turn_type = "right"
-            elif 145 <= turn_angle <= 215:
-                turn_type = "u_turn"
-            else:  # 215 to 325
-                turn_type = "left"
+                # Map physical degrees to semantic turn directions
+                if turn_angle <= 35 or turn_angle >= 325:
+                    turn_type = "straight"
+                elif 35 < turn_angle < 145:
+                    turn_type = "right"
+                elif 145 <= turn_angle <= 215:
+                    turn_type = "u_turn"
+                else:  # 215 to 325
+                    turn_type = "left"
 
-            if turn_type not in permitted:
-                forbidden_ids.append(out_data["id"])
+                if turn_type not in permitted:
+                    forbidden_ids.append(out_data["id"])
 
-        if forbidden_ids:
-            data["forbidden_turns"] = forbidden_ids
+            if forbidden_ids:
+                data["forbidden_turns"] = forbidden_ids
 
     # --- Standardize node attributes ---
     nodes_to_update = []
@@ -450,6 +453,7 @@ def get_cartography(
     consolidate_intersections: bool | float = 10,
     dead_ends: bool = False,
     infer_speeds: bool = False,
+    infer_forbidden_turns: bool = True,
     custom_filter: str | list[str] | None = None,
     scc: bool | str = False,
 ) -> tuple[nx.DiGraph, gpd.GeoDataFrame, gpd.GeoDataFrame]:
@@ -476,6 +480,7 @@ def get_cartography(
         infer_speeds (bool, optional): Whether to infer edge speeds based on road types. Defaults to False.
             If True, calls ox.routing.add_edge_speeds using np.nanmedian as aggregation function.
             Finally, the "maxspeed" attribute is replaced with the inferred "speed_kph", and the "travel_time" attribute is computed.
+        infer_forbidden_turns (bool, optional): Whether to infer forbidden turns based on lane mapping. Defaults to True.
         custom_filter (str | list[str], optional): A custom OSM filter string or list of strings to apply when retrieving the graph. Defaults to None.
         scc (bool | str, optional): Whether to keep only the largest strongly connected component of the graph. Defaults to False.
             If True, filters the graph to keep only the largest strongly connected component. If "mark", adds a boolean "in_scc" attribute to nodes and edges instead of filtering.
@@ -501,6 +506,7 @@ def get_cartography(
         consolidate_intersections=consolidate_intersections,
         dead_ends=dead_ends,
         infer_speeds=infer_speeds,
+        infer_forbidden_turns=infer_forbidden_turns,
         scc=scc,
     )
 
