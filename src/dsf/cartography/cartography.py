@@ -17,6 +17,8 @@ import numpy as np
 import osmnx as ox
 from shapely.geometry import LineString, Point, Polygon
 
+from dsf import logging
+
 if "turn:lanes" not in ox.settings.useful_tags_way:
     ox.settings.useful_tags_way.append("turn:lanes")
 
@@ -110,6 +112,10 @@ def process_cartography(
     if consolidate_intersections is True:
         consolidate_intersections = 10  # default tolerance
 
+    if consolidate_intersections is not False and infer_forbidden_turns is True:
+        logging.warn(
+            "infer_forbidden_turns is enabled, but consolidate_intersections is also enabled. This may lead to inaccurate lane mapping and forbidden turn inference."
+        )
     # --- Geometry simplification ---
     G = ox.simplify_graph(G, remove_rings=False)
 
