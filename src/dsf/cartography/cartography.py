@@ -8,6 +8,7 @@ standardization of attributes.
 """
 
 import ast
+import math
 import re
 import folium
 import geopandas as gpd
@@ -309,6 +310,80 @@ def process_cartography(
 
     for i, (u, v) in enumerate(sorted(G.edges())):
         G[u][v].update({"id": i, "source": u, "target": v})
+
+    def _get_bearing(p1, p2):
+        """Calculate initial bearing between two lat/lon points."""
+        lon1, lat1 = p1
+        lon2, lat2 = p2
+        dLon = math.radians(lon2 - lon1)
+        lat1 = math.radians(lat1)
+        lat2 = math.radians(lat2)
+        y = math.sin(dLon) * math.cos(lat2)
+        x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(
+            lat2
+        ) * math.cos(dLon)
+        return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+    def _extract_heading(G, u, v, data, is_incoming):
+        """Get directional heading accounting for linestring geometry if present."""
+        if "geometry" in data:
+            coords = list(data["geometry"].coords)
+            # Use last segment for incoming, first segment for outgoing
+            p1, p2 = (coords[0], coords[-1]) if is_incoming else (coords[0], coords[1])
+        else:
+            p1, p2 = (
+                (G.nodes[u]["x"], G.nodes[u]["y"]),
+                (G.nodes[v]["x"], G.nodes[v]["y"]),
+            )
+        return _get_bearing(p1, p2)
+
+    for u, v, data in G.edges(data=True):
+        data["forbidden_turns"] = None
+
+        if "lane_mapping" not in data:
+            continue
+
+        mapping_str = " ".join(data["lane_mapping"]).lower()
+        if "any" in mapping_str or "none" in mapping_str:
+            continue  # Allows all directions, skip processing
+
+        # Compile a set of structurally permitted directions
+        permitted = set()
+        if "left" in mapping_str:
+            permitted.add("left")
+        if "right" in mapping_str:
+            permitted.add("right")
+        if "straight" in mapping_str or "through" in mapping_str:
+            permitted.add("straight")
+        if "reverse" in mapping_str or "u_turn" in mapping_str:
+            permitted.add("u_turn")
+
+        if not permitted:
+            continue
+
+        # Calculate angle and classify the outgoing edges
+        in_bearing = _extract_heading(G, u, v, data, is_incoming=True)
+        forbidden_ids = []
+
+        for _, w, out_data in G.out_edges(v, data=True):
+            out_bearing = _extract_heading(G, v, w, out_data, is_incoming=False)
+            turn_angle = (out_bearing - in_bearing) % 360
+
+            # Map physical degrees to semantic turn directions
+            if turn_angle <= 35 or turn_angle >= 325:
+                turn_type = "straight"
+            elif 35 < turn_angle < 145:
+                turn_type = "right"
+            elif 145 <= turn_angle <= 215:
+                turn_type = "u_turn"
+            else:  # 215 to 325
+                turn_type = "left"
+
+            if turn_type not in permitted:
+                forbidden_ids.append(out_data["id"])
+
+        if forbidden_ids:
+            data["forbidden_turns"] = forbidden_ids
 
     # --- Standardize node attributes ---
     nodes_to_update = []
