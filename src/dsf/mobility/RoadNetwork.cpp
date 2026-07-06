@@ -25,6 +25,7 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "status",
                                      "coilcode",
                                      "priority",
+                                     "mobility_class",
                                      "geometry"});
 
 namespace dsf::mobility {
@@ -71,6 +72,8 @@ namespace dsf::mobility {
     bool const bHasForbiddenTurns =
         (std::find(colNames.begin(), colNames.end(), "forbidden_turns") !=
          colNames.end());
+    bool const bHasMobilityClass =
+        (std::find(colNames.begin(), colNames.end(), "mobility_class") != colNames.end());
 
     for (auto& row : reader) {
       auto const sourceId = row["source"].get<Id>();
@@ -118,21 +121,21 @@ namespace dsf::mobility {
                        name,
                        polyline));
 
-      if (!strType.empty()) {
+      if (!strType.empty() && !bHasMobilityClass) {
         std::transform(
             strType.begin(), strType.end(), strType.begin(), [](unsigned char c) {
               return std::tolower(c);
             });
         if (strType.find("motorway") != std::string::npos) {
-          edge(streetId).setRoadType(RoadType::HIGHWAY);
+          edge(streetId).setMobilityClass(128u);
         } else if (strType.find("primary") != std::string::npos) {
-          edge(streetId).setRoadType(RoadType::PRIMARY);
+          edge(streetId).setMobilityClass(64u);
         } else if (strType.find("secondary") != std::string::npos) {
-          edge(streetId).setRoadType(RoadType::SECONDARY);
+          edge(streetId).setMobilityClass(32u);
         } else if (strType.find("tertiary") != std::string::npos) {
-          edge(streetId).setRoadType(RoadType::TERTIARY);
+          edge(streetId).setMobilityClass(16u);
         } else if (strType.find("residential") != std::string::npos) {
-          edge(streetId).setRoadType(RoadType::RESIDENTIAL);
+          edge(streetId).setMobilityClass(0u);
         }
       }
 
@@ -192,6 +195,17 @@ namespace dsf::mobility {
         } catch (...) {
           spdlog::warn("Invalid status for edge {}. Using default (OPEN).", streetId);
           edge(streetId).setStatus(RoadStatus::OPEN);
+        }
+      }
+      // Handle mobility_class field if present
+      if (bHasMobilityClass) {
+        try {
+          auto mobilityClassValue = row["mobility_class"].get<std::uint8_t>();
+          edge(streetId).setMobilityClass(mobilityClassValue);
+        } catch (...) {
+          spdlog::warn("Invalid mobility_class for edge {}. Using default (0).",
+                       streetId);
+          edge(streetId).setMobilityClass(0u);
         }
       }
       // Parse forbidden_turns field if present
@@ -408,21 +422,34 @@ namespace dsf::mobility {
                        edge_lanes,
                        name,
                        geometry));
-      if (!strType.empty()) {
+      auto const mobilityClassResult = edge_properties.at_key("mobility_class");
+      if (!mobilityClassResult.error()) {
+        if (mobilityClassResult.is_uint64()) {
+          edge(edge_id).setMobilityClass(
+              static_cast<std::uint8_t>(mobilityClassResult.get_uint64()));
+        } else if (mobilityClassResult.is_int64()) {
+          edge(edge_id).setMobilityClass(
+              static_cast<std::uint8_t>(mobilityClassResult.get_int64()));
+        } else {
+          spdlog::warn("Invalid mobility_class for edge {}, adding default (0u)",
+                       edge_id);
+          edge(edge_id).setMobilityClass(0u);
+        }
+      } else if (!strType.empty()) {
         std::transform(
             strType.begin(), strType.end(), strType.begin(), [](unsigned char c) {
               return std::tolower(c);
             });
         if (strType.find("motorway") != std::string::npos) {
-          edge(edge_id).setRoadType(RoadType::HIGHWAY);
+          edge(edge_id).setMobilityClass(128u);
         } else if (strType.find("primary") != std::string::npos) {
-          edge(edge_id).setRoadType(RoadType::PRIMARY);
+          edge(edge_id).setMobilityClass(64u);
         } else if (strType.find("secondary") != std::string::npos) {
-          edge(edge_id).setRoadType(RoadType::SECONDARY);
+          edge(edge_id).setMobilityClass(32u);
         } else if (strType.find("tertiary") != std::string::npos) {
-          edge(edge_id).setRoadType(RoadType::TERTIARY);
+          edge(edge_id).setMobilityClass(16u);
         } else if (strType.find("residential") != std::string::npos) {
-          edge(edge_id).setRoadType(RoadType::RESIDENTIAL);
+          edge(edge_id).setMobilityClass(0u);
         }
       }
       // Check if there is coilcode property
@@ -923,17 +950,17 @@ namespace dsf::mobility {
         [this, &nAssigned, &nNotAssigned](auto const& pair) {
           auto const& pNode{pair.second};
           auto const& inNeighbours{pNode->ingoingEdges()};
-          // NOTE: std::multimap iterates keys in ascending order of RoadType.
-          // RoadType is defined so that more important roads (e.g., HIGHWAY = 0,
-          // PRIMARY = 1, SECONDARY = 2, ...) have smaller enum values. The logic
+          // NOTE: std::multimap iterates keys in descending order of std::uint8_t.
+          // std::uint8_t is defined so that more important roads (e.g., HIGHWAY = 128u,
+          // PRIMARY = 64u, SECONDARY = 32u, ...) have bigger values. The logic
           // below relies on this ordering to consider higher-priority road types
           // first when selecting streets to mark as priority roads.
-          std::multimap<RoadType, Id> types;
+          std::multimap<std::uint8_t, Id, std::greater<std::uint8_t>> types;
           for (auto const& edgeId : inNeighbours) {
             auto* pStreet{&this->edge(edgeId)};
-            auto const roadType = pStreet->roadType();
-            if (roadType != RoadType::UNKNOWN) {
-              types.emplace(roadType, pStreet->id());
+            auto const mobilityClass = pStreet->mobilityClass();
+            if (mobilityClass != 0u) {
+              types.emplace(mobilityClass, pStreet->id());
             }
           }
           if (types.size() < 2) {
@@ -1368,7 +1395,7 @@ namespace dsf::mobility {
         edgeRow.emplace_back(std::format("{}", pStreet->length()));
         edgeRow.emplace_back(std::format("{}", pStreet->maxSpeed() * 3.6));
         edgeRow.emplace_back(std::format("{}", pStreet->nLanes()));
-        edgeRow.emplace_back(pStreet->strRoadType());
+        edgeRow.emplace_back(std::format("{}", pStreet->mobilityClass()));
         edgeRow.emplace_back(std::format("{}", pStreet->capacity()));
         edgeRow.emplace_back(std::format("{}", pStreet->roadStatus()));
         edgeRow.emplace_back(pStreet->name());
