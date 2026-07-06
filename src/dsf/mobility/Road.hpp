@@ -2,6 +2,7 @@
 
 #include "../base/Edge.hpp"
 
+#include <cstdint>
 #include <format>
 #include <memory>
 #include <optional>
@@ -9,14 +10,6 @@
 #include <string>
 
 namespace dsf::mobility {
-  enum class RoadType : std::uint8_t {
-    HIGHWAY = 0,
-    PRIMARY = 1,
-    SECONDARY = 2,
-    TERTIARY = 3,
-    RESIDENTIAL = 4,
-    UNKNOWN = 255,
-  };
   enum class RoadStatus : std::uint8_t {
     OPEN = 0,
     CLOSED = 1,
@@ -34,7 +27,7 @@ namespace dsf::mobility {
     std::string m_name;
     bool m_hasPriority = false;
     std::set<Id> m_forbiddenTurns;  // Stores the forbidden turns (road ids)
-    RoadType m_roadType = RoadType::UNKNOWN;
+    std::uint8_t m_mobilityClass = 0u;
     RoadStatus m_roadStatus = RoadStatus::OPEN;
 
   public:
@@ -86,8 +79,10 @@ namespace dsf::mobility {
     /// @param forbiddenTurns The set of forbidden turns
     void setForbiddenTurns(std::set<Id> const& forbiddenTurns);
     /// @brief Set the road type
-    /// @param roadType The road type
-    inline void setRoadType(RoadType const roadType) { m_roadType = roadType; }
+    /// @param mobilityClass The road type
+    inline void setMobilityClass(std::uint8_t const mobilityClass) {
+      m_mobilityClass = mobilityClass;
+    }
     /// @brief Set the road status
     /// @param status The road status
     inline void setStatus(RoadStatus const status) { m_roadStatus = status; }
@@ -128,27 +123,10 @@ namespace dsf::mobility {
     /// @details The forbidden turns are the road ids that are not allowed to be used by the agents
     ///          when they are on the road.
     inline auto const& forbiddenTurns() const noexcept { return m_forbiddenTurns; }
-    /// @brief Get the road type
-    /// @return RoadType The road type
-    inline auto roadType() const noexcept { return m_roadType; }
-    /// @brief Get the string representation of the road type
-    /// @return std::string The string representation of the road type
-    constexpr std::string_view strRoadType() const {
-      switch (m_roadType) {
-        case RoadType::HIGHWAY:
-          return "highway";
-        case RoadType::PRIMARY:
-          return "primary";
-        case RoadType::SECONDARY:
-          return "secondary";
-        case RoadType::TERTIARY:
-          return "tertiary";
-        case RoadType::RESIDENTIAL:
-          return "residential";
-        default:
-          return "unknown";
-      }
-    };
+    /// @brief Get the road mobility class
+    /// @return std::uint8_t The mobility class of the road, which is a number between 0 and 255
+    inline auto mobilityClass() const noexcept { return m_mobilityClass; }
+
     /// @brief Get the road status
     /// @return RoadStatus The road status
     inline auto roadStatus() const noexcept { return m_roadStatus; }

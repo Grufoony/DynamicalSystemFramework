@@ -198,20 +198,20 @@ TEST_CASE("RoadNetwork") {
           int nHighways = 0, nPrimary = 0, nSecondary = 0, nTertiary = 0,
               nResidential = 0;
           for (auto const& [_, pEdge] : graph.edges()) {
-            switch (pEdge->roadType()) {
-              case RoadType::HIGHWAY:
+            switch (pEdge->mobilityClass()) {
+              case 128u:
                 ++nHighways;
                 break;
-              case RoadType::PRIMARY:
+              case 64u:
                 ++nPrimary;
                 break;
-              case RoadType::SECONDARY:
+              case 32u:
                 ++nSecondary;
                 break;
-              case RoadType::TERTIARY:
+              case 16u:
                 ++nTertiary;
                 break;
-              case RoadType::RESIDENTIAL:
+              case 8u:
                 ++nResidential;
                 break;
               default:
@@ -340,6 +340,104 @@ TEST_CASE("RoadNetwork") {
           REQUIRE_NOTHROW(graphWithPriority.edge(static_cast<Id>(201)));
           CHECK(graphWithPriority.edge(static_cast<Id>(200)).hasPriority());
           CHECK_FALSE(graphWithPriority.edge(static_cast<Id>(201)).hasPriority());
+          std::filesystem::remove(tmpGeoJsonPath);
+        }
+      }
+      WHEN("We import edges from CSV with mobility_class field") {
+        auto const tmpCsvPath =
+            std::filesystem::temp_directory_path() / "dsf_mobility_class_edges_test.csv";
+        {
+          std::ofstream tmpCsv(tmpCsvPath);
+          REQUIRE(tmpCsv.is_open());
+          tmpCsv << "id;source;target;oneway;length;geometry;travel_time;maxspeed;nlanes;"
+                    "type;name;mobility_class\n";
+          // type says "residential" but mobility_class explicitly overrides it to 128
+          tmpCsv << "300;1;2;False;100.0;LINESTRING (8.0 45.0, 8.1 45.1);12.0;30.0;1;"
+                    "residential;mobility_class_override;128\n";
+          // no override needed here, just a plain explicit value
+          tmpCsv << "301;2;3;False;120.0;LINESTRING (8.1 45.1, 8.2 45.2);14.4;30.0;1;"
+                    "residential;mobility_class_plain;32\n";
+          // invalid value should fall back to default (0)
+          tmpCsv << "302;3;4;False;140.0;LINESTRING (8.2 45.2, 8.3 45.3);16.8;30.0;1;"
+                    "residential;mobility_class_invalid;not_a_number\n";
+        }
+
+        RoadNetwork graphWithMobilityClass;
+        graphWithMobilityClass.importEdges(tmpCsvPath.string());
+
+        THEN("mobility_class is correctly imported from CSV") {
+          REQUIRE_NOTHROW(graphWithMobilityClass.edge(static_cast<Id>(300)));
+          REQUIRE_NOTHROW(graphWithMobilityClass.edge(static_cast<Id>(301)));
+          REQUIRE_NOTHROW(graphWithMobilityClass.edge(static_cast<Id>(302)));
+          CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(300)).mobilityClass(),
+                   128u);
+          CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(301)).mobilityClass(),
+                   32u);
+          CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(302)).mobilityClass(), 0u);
+          std::filesystem::remove(tmpCsvPath);
+        }
+      }
+
+      WHEN("We import edges from GeoJSON with mobility_class field") {
+        auto const tmpGeoJsonPath = std::filesystem::temp_directory_path() /
+                                    "dsf_mobility_class_edges_test.geojson";
+        {
+          std::ofstream tmpGeoJson(tmpGeoJsonPath);
+          REQUIRE(tmpGeoJson.is_open());
+          tmpGeoJson << R"({
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 400,
+        "source": 20,
+        "target": 21,
+        "length": 50.0,
+        "maxspeed": 30.0,
+        "nlanes": 1,
+        "type": "residential",
+        "name": "geo_mobility_class_override",
+        "mobility_class": 64
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[8.0, 45.0], [8.1, 45.1]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 401,
+        "source": 21,
+        "target": 22,
+        "length": 60.0,
+        "maxspeed": 30.0,
+        "nlanes": 1,
+        "type": "motorway",
+        "name": "geo_mobility_class_from_type"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[8.1, 45.1], [8.2, 45.2]]
+      }
+    }
+  ]
+})";
+        }
+
+        RoadNetwork graphWithMobilityClass;
+        graphWithMobilityClass.importEdges(tmpGeoJsonPath.string());
+
+        THEN("mobility_class is correctly imported from GeoJSON") {
+          REQUIRE_NOTHROW(graphWithMobilityClass.edge(static_cast<Id>(400)));
+          REQUIRE_NOTHROW(graphWithMobilityClass.edge(static_cast<Id>(401)));
+          // explicit mobility_class (64) overrides the "residential" type default
+          CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(400)).mobilityClass(),
+                   64u);
+          // no mobility_class given -> falls back to type-based inference ("motorway" -> 128)
+          CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(401)).mobilityClass(),
+                   128u);
           std::filesystem::remove(tmpGeoJsonPath);
         }
       }
@@ -687,15 +785,15 @@ TEST_CASE("RoadNetwork") {
       // Node 1 is the intersection
       // Edge 1: 0 -> 1 (HIGHWAY)
       Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setRoadType(RoadType::HIGHWAY);
+      s1.setMobilityClass(128u);  // HIGHWAY
 
       // Edge 2: 2 -> 1 (HIGHWAY)
       Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setRoadType(RoadType::HIGHWAY);
+      s2.setMobilityClass(128u);  // HIGHWAY
 
       // Edge 3: 3 -> 1 (SECONDARY)
       Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setRoadType(RoadType::SECONDARY);
+      s3.setMobilityClass(32u);  // SECONDARY
 
       graph.addStreets(s1, s2, s3);
 
@@ -712,7 +810,7 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A node with only one incoming edge") {
       RoadNetwork graph{};
       Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setRoadType(RoadType::HIGHWAY);
+      s1.setMobilityClass(128u);  // HIGHWAY
       graph.addStreets(s1);
 
       WHEN("We auto assign road priorities") {
@@ -724,11 +822,11 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A node with 3 incoming edges of the same road type") {
       RoadNetwork graph{};
       Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setRoadType(RoadType::PRIMARY);
+      s1.setMobilityClass(64u);  // PRIMARY
       Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setRoadType(RoadType::PRIMARY);
+      s2.setMobilityClass(64u);  // PRIMARY
       Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setRoadType(RoadType::PRIMARY);
+      s3.setMobilityClass(64u);  // PRIMARY
       graph.addStreets(s1, s2, s3);
 
       WHEN("We auto assign road priorities") {
@@ -762,16 +860,16 @@ TEST_CASE("RoadNetwork") {
       RoadNetwork graph{};
       // 3 HIGHWAY roads (won't match count == 2)
       Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setRoadType(RoadType::HIGHWAY);
+      s1.setMobilityClass(128u);  // HIGHWAY
       Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setRoadType(RoadType::HIGHWAY);
+      s2.setMobilityClass(128u);  // HIGHWAY
       Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setRoadType(RoadType::HIGHWAY);
+      s3.setMobilityClass(128u);  // HIGHWAY
       // 2 SECONDARY roads (will match count == 2)
       Street s4(4, std::make_pair(4, 1), 100., 30., 1);
-      s4.setRoadType(RoadType::SECONDARY);
+      s4.setMobilityClass(32u);  // SECONDARY
       Street s5(5, std::make_pair(5, 1), 100., 30., 1);
-      s5.setRoadType(RoadType::SECONDARY);
+      s5.setMobilityClass(32u);  // SECONDARY
       graph.addStreets(s1, s2, s3, s4, s5);
 
       WHEN("We auto assign road priorities") {
@@ -789,11 +887,11 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A node with exactly 2 PRIMARY and 1 TERTIARY road") {
       RoadNetwork graph{};
       Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setRoadType(RoadType::PRIMARY);
+      s1.setMobilityClass(64u);  // PRIMARY
       Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setRoadType(RoadType::PRIMARY);
+      s2.setMobilityClass(64u);  // PRIMARY
       Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setRoadType(RoadType::TERTIARY);
+      s3.setMobilityClass(16u);  // TERTIARY
       graph.addStreets(s1, s2, s3);
 
       WHEN("We auto assign road priorities") {
@@ -809,13 +907,13 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A node with 1 HIGHWAY, 1 PRIMARY, and 2 RESIDENTIAL roads") {
       RoadNetwork graph{};
       Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setRoadType(RoadType::HIGHWAY);
+      s1.setMobilityClass(128u);  // HIGHWAY
       Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setRoadType(RoadType::PRIMARY);
+      s2.setMobilityClass(64u);  // PRIMARY
       Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setRoadType(RoadType::RESIDENTIAL);
+      s3.setMobilityClass(8u);  // RESIDENTIAL
       Street s4(4, std::make_pair(4, 1), 100., 30., 1);
-      s4.setRoadType(RoadType::RESIDENTIAL);
+      s4.setMobilityClass(8u);  // RESIDENTIAL
       graph.addStreets(s1, s2, s3, s4);
 
       WHEN("We auto assign road priorities") {
@@ -833,18 +931,18 @@ TEST_CASE("RoadNetwork") {
       RoadNetwork graph{};
       // Node 1: 2 HIGHWAY + 1 SECONDARY
       Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setRoadType(RoadType::HIGHWAY);
+      s1.setMobilityClass(128u);  // HIGHWAY
       Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setRoadType(RoadType::HIGHWAY);
+      s2.setMobilityClass(128u);  // HIGHWAY
       Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setRoadType(RoadType::SECONDARY);
+      s3.setMobilityClass(32u);  // SECONDARY
       // Node 5: 2 TERTIARY + 1 RESIDENTIAL
       Street s4(4, std::make_pair(1, 5), 100., 30., 1);
-      s4.setRoadType(RoadType::TERTIARY);
+      s4.setMobilityClass(16u);  // TERTIARY
       Street s5(5, std::make_pair(4, 5), 100., 30., 1);
-      s5.setRoadType(RoadType::TERTIARY);
+      s5.setMobilityClass(16u);  // TERTIARY
       Street s6(6, std::make_pair(6, 5), 100., 30., 1);
-      s6.setRoadType(RoadType::RESIDENTIAL);
+      s6.setMobilityClass(8u);  // RESIDENTIAL
       graph.addStreets(s1, s2, s3, s4, s5, s6);
 
       WHEN("We auto assign road priorities") {
@@ -875,7 +973,7 @@ TEST_CASE("RoadNetwork") {
              "Exported Street",
              dsf::geometry::PolyLine{
                  {dsf::geometry::Point(8.0, 45.0), dsf::geometry::Point(8.1, 45.1)}}};
-    s.setRoadType(RoadType::PRIMARY);
+    s.setMobilityClass(64u);  // PRIMARY
     s.setPriority();
     graph.addStreet(std::move(s));
     graph.addCoil(42, "coil_42");
@@ -898,7 +996,7 @@ TEST_CASE("RoadNetwork") {
     CHECK(edgesCsv.find("id,source,target,length,maxspeed,nlanes,type,capacity,status,"
                         "name,priority,coilcode,geometry") != std::string::npos);
     CHECK(edgesCsv.find("Exported Street") != std::string::npos);
-    CHECK(edgesCsv.find("primary") != std::string::npos);
+    CHECK(edgesCsv.find("64") != std::string::npos);  // PRIMARY
     CHECK(edgesCsv.find("OPEN") != std::string::npos);
     CHECK(edgesCsv.find("coil_42") != std::string::npos);
     CHECK(edgesCsv.find("LINESTRING (") != std::string::npos);
