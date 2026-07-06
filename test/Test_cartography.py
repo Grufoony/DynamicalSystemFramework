@@ -279,5 +279,64 @@ class TestToFoliumMap:
         assert len(default_result._children) == len(edges_result._children)
 
 
+class TestForbiddenTurns:
+    """Tests for lane_mapping and forbidden_turns inference (uses Bologna, which has turn:lanes data)."""
+
+    @pytest.fixture(scope="class")
+    def bologna_cartography(self):
+        """Fetch and process a Bologna cartography known to include turn:lanes tags."""
+        return get_cartography("Bologna, Emilia-Romagna, Italy")
+
+    def test_lane_mapping_column_has_values(self, bologna_cartography):
+        """Test that at least some edges have a non-null lane_mapping."""
+        _, edges, _ = bologna_cartography
+        assert "lane_mapping" in edges.columns
+        assert edges["lane_mapping"].notna().any()
+
+    def test_lane_mapping_entries_are_lists_of_strings(self, bologna_cartography):
+        """Test that lane_mapping entries are well-formed lists of non-empty strings."""
+        _, edges, _ = bologna_cartography
+        lane_mappings = edges["lane_mapping"].dropna()
+        assert len(lane_mappings) > 0
+        for mapping in lane_mappings:
+            assert isinstance(mapping, list)
+            assert len(mapping) > 0
+            for lane in mapping:
+                assert isinstance(lane, str)
+                assert len(lane) > 0
+                # "through" should have been normalized to "straight"
+                assert "through" not in lane
+
+    def test_forbidden_turns_column_has_values(self, bologna_cartography):
+        """Test that at least some edges have inferred forbidden_turns."""
+        _, edges, _ = bologna_cartography
+        assert "forbidden_turns" in edges.columns
+        assert edges["forbidden_turns"].notna().any()
+
+    def test_forbidden_turns_reference_valid_edge_ids(self, bologna_cartography):
+        """Test that forbidden_turns entries are lists of valid, existing edge ids."""
+        _, edges, _ = bologna_cartography
+        valid_ids = set(edges["id"])
+        forbidden = edges["forbidden_turns"].dropna()
+        for entry in forbidden:
+            assert isinstance(entry, list)
+            assert len(entry) > 0
+            for edge_id in entry:
+                assert edge_id in valid_ids
+
+    def test_no_forbidden_turns_without_lane_mapping(self, bologna_cartography):
+        """Edges without a lane_mapping should never have forbidden_turns set."""
+        _, edges, _ = bologna_cartography
+        no_mapping = edges[edges["lane_mapping"].isna()]
+        assert no_mapping["forbidden_turns"].isna().all()
+
+    def test_infer_forbidden_turns_disabled(self):
+        """Test that disabling infer_forbidden_turns skips forbidden_turns computation entirely."""
+        _, edges, _ = get_cartography(
+            "Bologna, Emilia-Romagna, Italy", infer_forbidden_turns=False
+        )
+        assert "forbidden_turns" not in edges.columns
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
