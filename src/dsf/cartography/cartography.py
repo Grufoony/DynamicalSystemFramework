@@ -17,7 +17,6 @@ import numpy as np
 import osmnx as ox
 from shapely.geometry import LineString, Point, Polygon
 
-from dsf import logging
 
 if "turn:lanes" not in ox.settings.useful_tags_way:
     ox.settings.useful_tags_way.append("turn:lanes")
@@ -112,10 +111,12 @@ def process_cartography(
     if consolidate_intersections is True:
         consolidate_intersections = 10  # default tolerance
 
-    if consolidate_intersections is not False and infer_forbidden_turns is True:
-        logging.warn(
-            "infer_forbidden_turns is enabled, but consolidate_intersections is also enabled. This may lead to inaccurate lane mapping and forbidden turn inference."
-        )
+    # if consolidate_intersections is not False and infer_forbidden_turns is True:
+    #     logging.warning(
+    #         "infer_forbidden_turns is enabled, but consolidate_intersections is also enabled. "
+    #         "This may lead to inaccurate lane mapping and forbidden turn inference."
+    #     )
+
     # --- Geometry simplification ---
     G = ox.simplify_graph(G, remove_rings=False)
 
@@ -159,10 +160,51 @@ def process_cartography(
                 data["maxspeed"] = data["speed_kph"]
                 del data["speed_kph"]
 
+    # --- Helper to parse lanes safely during parallel edge aggregation ---
+    def _parse_lanes(lanes_val):
+        if not lanes_val:
+            return 1
+        if isinstance(lanes_val, str):
+            try:
+                lanes_val = (
+                    ast.literal_eval(lanes_val)
+                    if lanes_val.startswith("[")
+                    else lanes_val
+                )
+            except (ValueError, SyntaxError):
+                pass
+        if isinstance(lanes_val, list):
+            valid_lanes = [int(x) for x in lanes_val if str(x).isdigit()]
+            return min(valid_lanes) if valid_lanes else 1
+        if isinstance(lanes_val, (int, float)):
+            return max(int(lanes_val), 1)
+        if isinstance(lanes_val, str) and lanes_val.isdigit():
+            return max(int(lanes_val), 1)
+        return 1
+
+    # --- Resolve Parallel Edges ---
     for u, v in set(G.edges()):
         keys = list(G[u][v].keys())
         if len(keys) <= 1:
             continue
+
+        total_lanes = 0
+        combined_turn_lanes = []
+
+        # 1. Aggregate attributes from all parallel edges
+        for k in keys:
+            edge_data = G[u][v][k]
+
+            # Sum up lanes
+            total_lanes += _parse_lanes(edge_data.get("lanes", 1))
+
+            # Append turn lanes
+            tl_val = edge_data.get("turn:lanes", "")
+            if tl_val:
+                if isinstance(tl_val, list):
+                    combined_turn_lanes.extend([str(x) for x in tl_val if x])
+                else:
+                    combined_turn_lanes.append(str(tl_val))
 
         def _sort_key(k):
             d = G[u][v][k]
@@ -173,7 +215,13 @@ def process_cartography(
             return (osmid if osmid is not None else float("inf"), d.get("length", 0))
 
         preferred_key = min(keys, key=_sort_key)
-        # Swap the preferred edge into key=0 position.
+
+        # 2. Inject aggregated data into the preferred edge before it gets saved
+        G[u][v][preferred_key]["lanes"] = str(total_lanes)
+        if combined_turn_lanes:
+            G[u][v][preferred_key]["turn:lanes"] = "|".join(combined_turn_lanes)
+
+        # 3. Swap the preferred edge into key=0 position
         if preferred_key != 0:
             d0 = G[u][v][0]
             dp = G[u][v][preferred_key]
@@ -193,18 +241,15 @@ def process_cartography(
         def _extract_numeric(item):
             if isinstance(item, (int, float, np.integer, np.floating)):
                 return float(item)
-
             if isinstance(item, str):
                 if item.startswith("[") and item.endswith("]"):
                     try:
                         return _normalize_maxspeed(ast.literal_eval(item))
                     except (ValueError, SyntaxError):
                         return None
-
                 match = re.search(r"-?\d+(?:\.\d+)?", item.replace(",", "."))
                 if match:
                     return float(match.group())
-
             return None
 
         if isinstance(value, str) and value.startswith("[") and value.endswith("]"):
@@ -212,14 +257,12 @@ def process_cartography(
                 value = ast.literal_eval(value)
             except (ValueError, SyntaxError):
                 return value
-
         if isinstance(value, (list, tuple, set)):
             numeric_values = []
             for item in value:
                 numeric = _extract_numeric(item)
                 if numeric is not None:
                     numeric_values.append(numeric)
-
             if numeric_values:
                 maximum = max(numeric_values)
                 return int(maximum) if maximum.is_integer() else maximum
@@ -227,7 +270,6 @@ def process_cartography(
         numeric_value = _extract_numeric(value)
         if numeric_value is not None:
             return int(numeric_value) if numeric_value.is_integer() else numeric_value
-
         return value
 
     edges_to_update = []
@@ -337,15 +379,34 @@ def process_cartography(
         """Get directional heading accounting for linestring geometry if present."""
         if "geometry" in data:
             coords = list(data["geometry"].coords)
-            # Use the whole segment for incoming, first segment for outgoing
-            p1, p2 = (coords[0], coords[-1]) if is_incoming else (coords[0], coords[1])
+
+            # Intersection consolidation creates artificial "hooks" at the ends of geometries.
+            # We slice off the outer points to get the true trajectory, while ensuring
+            # we always retain at least 2 points to calculate a valid bearing.
+            if len(coords) >= 6:
+                working_coords = coords[2:-2]  # Discard first 2 and last 2
+            elif len(coords) >= 4:
+                working_coords = coords[
+                    1:-1
+                ]  # Graceful fallback: discard first 1 and last 1
+            else:
+                working_coords = coords  # Geometry too short to discard points safely
+
+            # Use the whole (sliced) segment for incoming, first (sliced) segment for outgoing
+            if is_incoming:
+                p1, p2 = working_coords[0], working_coords[-1]
+            else:
+                p1, p2 = working_coords[0], working_coords[1]
         else:
+            # Fallback to straight line between nodes if no geometry exists
             p1, p2 = (
                 (G.nodes[u]["x"], G.nodes[u]["y"]),
                 (G.nodes[v]["x"], G.nodes[v]["y"]),
             )
+
         return _get_bearing(p1, p2)
 
+    # --- Forbidden Turns Inference ---
     if infer_forbidden_turns:
         for u, v, data in G.edges(data=True):
             data["forbidden_turns"] = None
