@@ -258,10 +258,18 @@ def process_cartography(
             updates["nlanes"] = 1
 
         if "turn:lanes" in data and len(data["turn:lanes"]) > 0:
+            raw_lanes = data["turn:lanes"]
+
+            # Handle the case where OSMnx returns a list of attributes due to edge merging
+            if isinstance(raw_lanes, list):
+                # Filter out empty strings and join them
+                lanes_str = "|".join([str(x) for x in raw_lanes if x])
+            else:
+                lanes_str = str(raw_lanes)
+
             updates["lane_mapping"] = [
                 lane.strip() if len(lane.strip()) > 0 else "any"
-                for lane in data["turn:lanes"]
-                .replace("through", "straight")
+                for lane in lanes_str.replace("through", "straight")
                 .replace(";", "-")
                 .split("|")
             ]
