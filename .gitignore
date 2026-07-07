@@ -49,8 +49,6 @@ examples/release
 
 test/data/*dsf
 
-
-webapp/data/*
 *egg-info*
 
 # Jupyter Notebook (temporary checks)
