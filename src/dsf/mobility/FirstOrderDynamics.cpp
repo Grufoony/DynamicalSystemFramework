@@ -372,10 +372,12 @@ namespace dsf::mobility {
 
     std::set<Id> forbiddenTurns;
     std::optional<Id> previousNodeId{std::nullopt};
+    std::optional<std::uint8_t> previousMobilityClass{std::nullopt};
     if (pAgent->streetId().has_value()) {
       auto const& streetCurrent{this->graph().edge(pAgent->streetId().value())};
       forbiddenTurns = streetCurrent.forbiddenTurns();
       previousNodeId = streetCurrent.source();
+      previousMobilityClass = streetCurrent.mobilityClass();
     }
 
     for (const auto outEdgeId : outgoingEdges) {
@@ -388,12 +390,19 @@ namespace dsf::mobility {
       auto const& streetOut{this->graph().edge(outEdgeId)};
 
       double probability = 1.0;
+
+      if (!m_mobilityClassTransitionProbabilities.empty() &&
+          previousMobilityClass.has_value()) {
+        probability *= m_mobilityClassTransitionProbabilities.at(*previousMobilityClass)
+                           .at(streetOut.mobilityClass());
+      }
+
       //std::exp(-0.5 * pStreetOut->maxSpeed() / (this->m_speedFunction(*pStreetOut)));
 
       // Handle U-turns
-      if (previousNodeId.has_value() && streetOut.target() == previousNodeId.value()) {
-        continue;
-      }
+      // if (previousNodeId.has_value() && streetOut.target() == previousNodeId.value()) {
+      //   continue;
+      // }
 
       transitionProbabilities.emplace(streetOut.id(), probability);
       cumulativeProbability += probability;

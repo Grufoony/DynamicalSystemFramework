@@ -102,6 +102,8 @@ namespace dsf::mobility {
     // Conditional Origin -> Destinations
     std::unordered_map<Id, std::vector<std::tuple<Id, double>>> m_originToDestinations;
     // ---
+    std::unordered_map<std::uint8_t, std::unordered_map<std::uint8_t, double>>
+        m_mobilityClassTransitionProbabilities;
     tbb::concurrent_unordered_map<Id, std::size_t> m_originCounts;
     tbb::concurrent_unordered_map<Id, std::size_t> m_destinationCounts;
     std::atomic<std::size_t> m_nAgents{0}, m_nAddedAgents{0}, m_nInsertedAgents{0},
@@ -202,6 +204,15 @@ namespace dsf::mobility {
     /// @details The passage probability is the probability of passing through a node
     ///   It is useful in the case of random agents
     void setPassageProbability(double passageProbability);
+    /// @brief Set the mobility class transition probabilities
+    /// @param mobilityClassTransitionProbabilities A map of maps containing the transition probabilities between mobility classes. The outer map's key is the current mobility class, and the inner map's key is the next mobility class. The inner map's value is the transition probability.
+    /// @details The mobility class transition probabilities are used to determine the probability of an agent transitioning from one mobility class to another
+    ///   when choosing the next street. If the map is empty, no transition probabilities are applied, and the agent's mobility class does not change when choosing the next street.
+    inline void setMobilityClassTransitionProbabilities(
+        std::unordered_map<std::uint8_t, std::unordered_map<std::uint8_t, double>> const&
+            mobilityClassTransitionProbabilities) {
+      m_mobilityClassTransitionProbabilities = mobilityClassTransitionProbabilities;
+    }
     /// @brief Set the time tolerance factor for killing stagnant agents.
     ///   An agent will be considered stagnant if it has not moved for timeToleranceFactor * std::ceil(street_length / street_maxSpeed) time units.
     /// @param timeToleranceFactor The time tolerance factor

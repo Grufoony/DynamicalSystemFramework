@@ -1149,6 +1149,16 @@ Returns:
 
       Returns:
         None)doc")
+      .def("setMobilityClassTransitionProbabilities",
+           &dsf::mobility::FirstOrderDynamics::setMobilityClassTransitionProbabilities,
+           pybind11::arg("mobilityClassTransitionProbabilities"),
+           R"doc(Set the mobility class transition probabilities.
+
+      Args:
+        mobilityClassTransitionProbabilities (Mapping[int, Mapping[int, float]]): Transition probabilities between mobility classes.
+
+      Returns:
+        None)doc")
       .def("killStagnantAgents",
            &dsf::mobility::FirstOrderDynamics::killStagnantAgents,
            pybind11::arg("timeToleranceFactor") = 3.,
