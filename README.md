@@ -17,6 +17,8 @@ This rework consists of a full code rewriting, in order to implement more featur
 ## Table of Contents
 - [Installation](#installation)
 - [Installation (from source)](#installation-from-source)
+- [Examples](#examples)
+- [GUI](#gui)
 - [For Developers](#for-developers)
   - [Testing](#testing)
   - [Benchmarking](#benchmarking)
@@ -89,6 +91,15 @@ print(dsf.__version__)
 
 If you encounter issues, ensure that the installation path is in your `PYTHONPATH` environment variable.
 
+## Examples
+Examples in this repository are (slowly) being deprecated. You can build them by adding the cmake flag `-DDSF_EXAMPLES=ON` and you will find the exectuables under the `examples` folder. You can also find some Python examples.
+
+New examples are being updated on [dsf-examples](https://github.com/Grufoony/dsf-examples).
+
+## GUI
+If you need a visualization tool there is one available on [dsf-gui](https://github.com/Grufoony/dsf-gui).
+It is still in alpha stage but is already useful for some purposes.
+
 ## For Developers
 This project as a `pre-commit` configuration.
 To use it properly, please install:
@@ -115,6 +126,7 @@ ctest --test-dir build -j$(nproc) --output-on-failure
 ### Benchmarking
 Some functionalities of the library have been benchmarked in order to assess their efficiency.  
 The benchmarks are performed using [Google Benchmarks](https://github.com/google/benchmark).
+
 To build the benchmarks add the flag `-DDSF_BENCHMARKS=ON` :
 ```shell
 cmake -B build -DDSF_BENCHMARKS=ON
