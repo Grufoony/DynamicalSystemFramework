@@ -1547,7 +1547,7 @@ namespace dsf::mobility {
                 }
                 m_evolveStreet(pStreet);
                 if (bComputeStats) {
-                  auto const& density{pStreet->density() * 1e3};
+                  auto const& density{pStreet->density<false>() * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};
 
                   auto const speedMeasure = pStreet->meanSpeed<true>();
@@ -1828,7 +1828,7 @@ namespace dsf::mobility {
           if (!pSourceNode->isTrafficLight()) {
             continue;
           }
-          density += pStreet->density(true);
+          density += pStreet->density<true>();
           ++n;
         }
         density /= n;
@@ -1953,38 +1953,13 @@ namespace dsf::mobility {
     return tempCounts;
   }
 
-  Measurement<double> FirstOrderDynamics::streetMeanDensity(bool normalized) const {
-    if (this->graph().edges().empty()) {
-      return Measurement<double>();
-    }
-    std::vector<double> densities;
-    densities.reserve(this->graph().nEdges());
-    if (normalized) {
-      for (const auto& [streetId, pStreet] : this->graph().edges()) {
-        densities.push_back(pStreet->density(true));
-      }
-    } else {
-      double sum{0.};
-      for (const auto& [streetId, pStreet] : this->graph().edges()) {
-        densities.push_back(pStreet->density(false) * pStreet->length());
-        sum += pStreet->length();
-      }
-      if (sum == 0) {
-        return Measurement<double>();
-      }
-      auto meanDensity{std::accumulate(densities.begin(), densities.end(), 0.) / sum};
-      return Measurement<double>(meanDensity, 0., densities.size());
-    }
-    return Measurement<double>(densities);
-  }
-
   Measurement<double> FirstOrderDynamics::streetMeanFlow() const {
     std::vector<double> flows;
     flows.reserve(this->graph().nEdges());
     for (const auto& [streetId, pStreet] : this->graph().edges()) {
       auto const speedMeasure = pStreet->meanSpeed<true>();
       if (speedMeasure.is_valid) {
-        flows.push_back(pStreet->density() * speedMeasure.mean);
+        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
       }
     }
     return Measurement<double>(flows);
@@ -1999,10 +1974,10 @@ namespace dsf::mobility {
       if (!speedMeasure.is_valid) {
         continue;
       }
-      if (above && (pStreet->density(true) > threshold)) {
-        flows.push_back(pStreet->density() * speedMeasure.mean);
-      } else if (!above && (pStreet->density(true) < threshold)) {
-        flows.push_back(pStreet->density() * speedMeasure.mean);
+      if (above && (pStreet->density<true>() > threshold)) {
+        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
+      } else if (!above && (pStreet->density<true>() < threshold)) {
+        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
       }
     }
     return Measurement<double>(flows);

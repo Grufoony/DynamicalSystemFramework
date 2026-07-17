@@ -84,10 +84,6 @@ namespace dsf::mobility {
     m_transportCapacity = transportCapacity;
   }
 
-  double Road::density(bool normalized) const noexcept {
-    return normalized ? this->nAgents() / static_cast<double>(this->capacity())
-                      : this->nAgents() / (this->length() * this->nLanes());
-  }
   Direction Road::turnDirection(double const& previousStreetAngle) const {
     auto const deltaAngle{this->deltaAngle(previousStreetAngle)};
     if (std::abs(deltaAngle) >= std::numbers::pi) {

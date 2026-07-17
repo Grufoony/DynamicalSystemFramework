@@ -100,9 +100,10 @@ namespace dsf::mobility {
     /// @return int The road's capacity, in number of agents
     inline auto capacity() const noexcept { return m_capacity; }
     /// @brief Get the road's density in \f$m^{-1}\f$ or in \f$a.u.\f$, if normalized
-    /// @param normalized If true, the road's density is normalized by the road's capacity
-    /// @return double, The road's density
-    double density(bool normalized = false) const noexcept;
+    /// @tparam Normalized If true, the road's density is normalized by the road's capacity
+    /// @return double, The road's density in \f$m^{-1}\f$ or in \f$a.u.\f$, if normalized
+    template <bool Normalized>
+    double density() const noexcept;
     /// @brief Check if the road is full
     /// @return bool, True if the road is full, false otherwise
     inline bool isFull() const final { return this->nAgents() == this->capacity(); }
@@ -143,6 +144,14 @@ namespace dsf::mobility {
 
     virtual std::size_t nAgents() const = 0;
   };
+
+  template <bool Normalized>
+  inline double Road::density() const noexcept {
+    if constexpr (Normalized) {
+      return this->nAgents() / static_cast<double>(this->capacity());
+    }
+    return this->nAgents() / (this->length() * this->nLanes());
+  }
 }  // namespace dsf::mobility
 
 template <>

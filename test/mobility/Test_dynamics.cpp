@@ -77,8 +77,8 @@ TEST_CASE("FirstOrderDynamics") {
         THEN("The mean speed, density, flow and travel time are 0") {
           // CHECK_EQ(dynamics.agentMeanSpeed().mean, 0.);
           // CHECK_EQ(dynamics.agentMeanSpeed().std, 0.);
-          CHECK_EQ(dynamics.streetMeanDensity().mean, 0.);
-          CHECK_EQ(dynamics.streetMeanDensity().std, 0.);
+          CHECK_EQ(dynamics.streetMeanDensity<false>().mean, 0.);
+          CHECK_EQ(dynamics.streetMeanDensity<false>().std, 0.);
           CHECK_EQ(dynamics.streetMeanFlow().mean, 0.);
           CHECK_EQ(dynamics.streetMeanFlow().std, 0.);
           CHECK_EQ(dynamics.meanTravelTime().mean, 0.);
