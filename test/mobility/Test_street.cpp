@@ -51,7 +51,7 @@ TEST_CASE("Street") {
     CHECK_EQ(street.length(), 1.5);
     CHECK_EQ(street.source(), 4);
     CHECK_EQ(street.target(), 5);
-    CHECK_EQ(doctest::Approx(street.density()), 0);
+    CHECK_EQ(doctest::Approx(street.density<false>()), 0);
     CHECK_EQ(street.maxSpeed(), 13.8888888889);
     CHECK_EQ(street.nLanes(), 1);
   }
@@ -69,7 +69,7 @@ TEST_CASE("Street") {
     CHECK_EQ(street.length(), 1.5);
     CHECK_EQ(street.source(), 4);
     CHECK_EQ(street.target(), 5);
-    CHECK_EQ(doctest::Approx(street.density()), 0);
+    CHECK_EQ(doctest::Approx(street.density<false>()), 0);
     CHECK_EQ(street.maxSpeed(), 40.);
     CHECK_EQ(street.nLanes(), 1);
   }
@@ -220,7 +220,7 @@ TEST_CASE("Street") {
     street.enqueue(0);
     street.addAgent(std::make_unique<Agent>(a2), 0);
     street.enqueue(0);
-    CHECK_EQ(doctest::Approx(street.density()), 0.571429);
+    CHECK_EQ(doctest::Approx(street.density<false>()), 0.571429);
     street.addAgent(std::make_unique<Agent>(a3), 0);
     street.enqueue(0);
     street.addAgent(std::make_unique<Agent>(a4), 0);
@@ -229,7 +229,7 @@ TEST_CASE("Street") {
     CHECK(street.queue(0).back());
     CHECK_EQ(street.queue(0).size(), street.capacity());
     CHECK_EQ(street.queue(0).size(), street.capacity());
-    CHECK_EQ(doctest::Approx(street.density()), 1.14286);
+    CHECK_EQ(doctest::Approx(street.density<false>()), 1.14286);
     CHECK(street.isFull());
   }
 

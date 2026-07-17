@@ -429,9 +429,11 @@ namespace dsf::mobility {
     tbb::concurrent_unordered_map<Id, std::size_t> destinationCounts(
         bool const bReset = true) noexcept;
 
-    /// @brief Get the mean density of the streets in \f$m^{-1}\f$
+    /// @brief Get the mean density of the streets in \f$m^{-1}\f$ or \f$a.u.\f$ if Normalized
+    /// @tparam Normalized If true, the density is normalized by the street's capacity
     /// @return Measurement<double> The mean density of the streets and the standard deviation
-    Measurement<double> streetMeanDensity(bool normalized = false) const;
+    template <bool Normalized>
+    Measurement<double> streetMeanDensity() const;
     /// @brief Get the mean flow of the streets in \f$s^{-1}\f$
     /// @return Measurement<double> The mean flow of the streets and the standard deviation
     Measurement<double> streetMeanFlow() const;
@@ -510,11 +512,11 @@ namespace dsf::mobility {
                 std::format("The alpha parameter ({}) must be in [0., 1)", alpha));
           }
           m_speedFunction = [alpha](Street const& pStreet) {
-            return pStreet.maxSpeed() * (1. - alpha * pStreet.density(true));
+            return pStreet.maxSpeed() * (1. - alpha * pStreet.density<true>());
           };
           Street::setEstimatedTravelTimeFunction([alpha](Street const& pStreet) {
             return pStreet.length() /
-                   (pStreet.maxSpeed() * (1. - alpha * pStreet.density(true)));
+                   (pStreet.maxSpeed() * (1. - alpha * pStreet.density<true>()));
           });
           m_speedFunctionDescription = std::format("LINEAR(alpha={})", alpha);
         }
@@ -557,6 +559,32 @@ namespace dsf::mobility {
     requires(std::is_constructible_v<Itinerary, TArgs...>)
   void FirstOrderDynamics::addItinerary(TArgs&&... args) {
     addItinerary(std::make_shared<Itinerary>(std::forward<TArgs>(args)...));
+  }
+
+  template <bool Normalized>
+  inline Measurement<double> FirstOrderDynamics::streetMeanDensity() const {
+    if (this->graph().edges().empty()) {
+      return Measurement<double>();
+    }
+    std::vector<double> densities;
+    densities.reserve(this->graph().nEdges());
+    if constexpr (Normalized) {
+      for (const auto& [streetId, pStreet] : this->graph().edges()) {
+        densities.push_back(pStreet->density<true>());
+      }
+    } else {
+      double sum{0.};
+      for (const auto& [streetId, pStreet] : this->graph().edges()) {
+        densities.push_back(pStreet->density<false>() * pStreet->length());
+        sum += pStreet->length();
+      }
+      if (sum == 0) {
+        return Measurement<double>();
+      }
+      auto meanDensity{std::accumulate(densities.begin(), densities.end(), 0.) / sum};
+      return Measurement<double>(meanDensity, 0., densities.size());
+    }
+    return Measurement<double>(densities);
   }
 
 }  // namespace dsf::mobility

@@ -203,10 +203,16 @@ PYBIND11_MODULE(dsf_cpp, m) {
 
     Returns:
         int: Number of exiting agents.)doc")
-          .def("density",
-               &dsf::mobility::Street::density,
-               pybind11::arg("normalized") = false,
-               R"doc(Get the current density of agents on this street.
+          .def(
+              "density",
+              [&](dsf::mobility::Street const& self, bool normalized) {
+                if (normalized) {
+                  return self.density<true>();
+                }
+                return self.density<false>();
+              },
+              pybind11::arg("normalized") = false,
+              R"doc(Get the current density of agents on this street.
     Args:
         normalized (bool, optional): If true, return density normalized by capacity.
 
@@ -1058,7 +1064,7 @@ Returns:
                 self.setSpeedFunction(
                     dsf::SpeedFunction::CUSTOM,
                     [func_ptr](dsf::mobility::Street const& street) -> double {
-                      return func_ptr(street.maxSpeed(), street.density(true));
+                      return func_ptr(street.maxSpeed(), street.density<true>());
                     });
                 break;
               }
