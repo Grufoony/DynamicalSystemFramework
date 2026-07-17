@@ -215,12 +215,5 @@ namespace dsf::mobility {
     }
     return nAgents;
   }
-  Measurement<double> Street::meanSpeed(bool const bReset) {
-    auto const avgSpeed{Measurement<double>(m_avgSpeeds)};
-    if (bReset) {
-      m_avgSpeeds.clear();
-    }
-    return avgSpeed;
-  }
 
 };  // namespace dsf::mobility

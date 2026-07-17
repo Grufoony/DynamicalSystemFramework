@@ -1550,7 +1550,7 @@ namespace dsf::mobility {
                   auto const& density{pStreet->density() * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};
 
-                  auto const speedMeasure = pStreet->meanSpeed(true);
+                  auto const speedMeasure = pStreet->meanSpeed<true>();
                   if (speedMeasure.is_valid) {
                     auto const speed = speedMeasure.mean * 3.6;  // to kph
                     auto const speed_std = speedMeasure.std * 3.6;
@@ -1982,7 +1982,7 @@ namespace dsf::mobility {
     std::vector<double> flows;
     flows.reserve(this->graph().nEdges());
     for (const auto& [streetId, pStreet] : this->graph().edges()) {
-      auto const speedMeasure = pStreet->meanSpeed();
+      auto const speedMeasure = pStreet->meanSpeed<true>();
       if (speedMeasure.is_valid) {
         flows.push_back(pStreet->density() * speedMeasure.mean);
       }
@@ -1995,7 +1995,7 @@ namespace dsf::mobility {
     std::vector<double> flows;
     flows.reserve(this->graph().nEdges());
     for (const auto& [streetId, pStreet] : this->graph().edges()) {
-      auto const speedMeasure = pStreet->meanSpeed();
+      auto const speedMeasure = pStreet->meanSpeed<true>();
       if (!speedMeasure.is_valid) {
         continue;
       }

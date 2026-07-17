@@ -190,9 +190,10 @@ namespace dsf::mobility {
     double nExitingAgents(Direction direction = Direction::ANY,
                           bool normalizeOnNLanes = false) const;
     /// @brief Get the mean speed of the agents that have passed through the street
-    /// @param bReset If true, the average speed data is reset after the computation
+    /// @tparam Reset If true, the average speed data is reset after the computation
     /// @return Measurement<double> The (mean, std) speed of the agents that have passed through the street
-    Measurement<double> meanSpeed(bool const bReset = true);
+    template <bool Reset>
+    Measurement<double> meanSpeed();
 
     /// @brief Get the street's lane mapping
     /// @return std::vector<Direction> The street's lane mapping
@@ -218,6 +219,15 @@ namespace dsf::mobility {
     /// @return bool True if the street has a coil, false otherwise
     constexpr bool hasCoil() const { return m_counter.has_value(); };
   };
+
+  template <bool Reset>
+  inline Measurement<double> Street::meanSpeed() {
+    Measurement<double> measurement{m_avgSpeeds};
+    if constexpr (Reset) {
+      m_avgSpeeds.clear();
+    }
+    return measurement;
+  }
 }  // namespace dsf::mobility
 
 // Specialization of std::formatter for dsf::Street
