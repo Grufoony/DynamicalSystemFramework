@@ -330,7 +330,7 @@ TEST_CASE("Street with a coil") {
 
       WHEN("No agents have exited") {
         THEN("meanSpeed returns zero mean and std") {
-          auto measurement = street.meanSpeed(false);
+          auto measurement = street.meanSpeed<false>();
           CHECK_EQ(measurement.mean, 0.);
           CHECK_EQ(measurement.std, 0.);
         }
@@ -353,20 +353,20 @@ TEST_CASE("Street with a coil") {
         street.dequeue(0, 5);
 
         THEN("meanSpeed returns correct mean and std without reset") {
-          auto measurement = street.meanSpeed(false);
+          auto measurement = street.meanSpeed<false>();
           CHECK_EQ(measurement.mean, 20.0);
           CHECK_EQ(measurement.std, 0.0);
         }
 
         THEN("meanSpeed data is not cleared when bReset=false") {
-          street.meanSpeed(false);
-          auto measurement = street.meanSpeed(false);
+          street.meanSpeed<false>();
+          auto measurement = street.meanSpeed<false>();
           CHECK_EQ(measurement.mean, 20.0);
         }
 
         THEN("meanSpeed data is cleared when bReset=true") {
-          street.meanSpeed(true);
-          auto measurement = street.meanSpeed(false);
+          street.meanSpeed<true>();
+          auto measurement = street.meanSpeed<false>();
           CHECK_EQ(measurement.mean, 0.0);
           CHECK_EQ(measurement.std, 0.0);
         }
@@ -384,7 +384,7 @@ TEST_CASE("Street with a coil") {
         street.dequeue(0, 5);
 
         THEN("meanSpeed returns correct mean and std") {
-          auto measurement = street.meanSpeed(false);
+          auto measurement = street.meanSpeed<false>();
           CHECK_EQ(measurement.mean, 15.0);  // (10 + 20) / 2
           CHECK_EQ(measurement.std,
                    doctest::Approx(5.0));  // sqrt(((10-15)^2 + (20-15)^2)/2)
