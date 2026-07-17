@@ -91,7 +91,7 @@ static void BM_Street_Density(benchmark::State& state) {
       street.enqueue(0);
   }
   for (auto _ : state) {
-    double d = street.density(false);
+    double d = street.density<false>();
     benchmark::DoNotOptimize(d);
   }
 }
