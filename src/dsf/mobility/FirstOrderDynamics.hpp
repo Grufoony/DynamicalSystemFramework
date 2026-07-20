@@ -131,10 +131,10 @@ namespace dsf::mobility {
 
   private:
     /// @brief Kill an agent from the dynamics
+    /// @tparam Arrived A boolean indicating whether the agent has arrived at its destination
     /// @param pAgent A std::unique_ptr to the agent to kill
-    /// @param bArrived A boolean indicating whether the agent has arrived at its destination
-    std::unique_ptr<Agent> m_removeAgent(std::unique_ptr<Agent> pAgent,
-                                         bool const bArrived);
+    template <bool Arrived>
+    std::unique_ptr<Agent> m_removeAgent(std::unique_ptr<Agent> pAgent);
     /// @brief Update the path of a single itinerary using Dijsktra's algorithm
     /// @param pItinerary An std::shared_ptr to the itinerary
     void m_updatePath(std::shared_ptr<Itinerary> const& pItinerary);
@@ -463,6 +463,32 @@ namespace dsf::mobility {
     /// - Current number of agents in the simulation
     void summary(std::ostream& os = std::cout) const;
   };
+
+  template <bool Arrived>
+  inline std::unique_ptr<Agent> FirstOrderDynamics::m_removeAgent(
+      std::unique_ptr<Agent> pAgent) {
+    --m_nAgents;
+    if constexpr (Arrived) {
+      spdlog::trace("Removing agent {}", *pAgent);
+      ++m_nArrivedAgents;
+    } else {
+      spdlog::trace("Killing agent {}", *pAgent);
+      ++m_nKilledAgents;
+    }
+    m_travelDTs.push_back({pAgent->distance(),
+                           static_cast<double>(this->time_step() - pAgent->spawnTime())});
+
+    auto const& streetId = pAgent->streetId();
+    if (streetId.has_value()) {
+      auto* pStreet{&this->graph().edge(streetId.value())};
+      auto const* pNode{&this->graph().node(pStreet->target())};
+      auto [it, bInserted] = m_destinationCounts.insert({pNode->id(), 1});
+      if (!bInserted) {
+        ++it->second;
+      }
+    }
+    return pAgent;
+  }
 
   template <typename... TArgs>
   void FirstOrderDynamics::setSpeedFunction(SpeedFunction const speedFunction,
