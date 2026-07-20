@@ -165,6 +165,139 @@ TEST_CASE("RoadNetwork") {
       std::filesystem::remove(csvPath);
     }
   }
+  SUBCASE("exportTrafficLights") {
+    GIVEN("A graph object with a two-phase traffic light") {
+      RoadNetwork graph;
+      graph.addNDefaultNodes(4);
+      graph.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
+                       Street{101, std::make_pair(2, 1), 50., 13.8888888889},
+                       Street{102, std::make_pair(3, 1), 50., 13.8888888889});
+
+      graph.makeTrafficLight(1);
+      auto& tl = graph.node<TrafficLight>(1);
+
+      TrafficLightPhase phase0{30};
+      phase0.addGreen(100);  // Direction::ANY
+      TrafficLightPhase phase1{60};
+      phase1.addGreen(101);  // Direction::ANY
+
+      tl.setPhases({phase0, phase1});
+
+      auto const csvPath =
+          std::filesystem::temp_directory_path() / "dsf_export_traffic_lights.csv";
+
+      WHEN("We export the traffic light definition") {
+        graph.exportTrafficLights(csvPath.string());
+
+        THEN(
+            "The CSV contains one row per green street with the right cycle/green "
+            "times") {
+          std::ifstream in{csvPath};
+          REQUIRE(in.is_open());
+
+          std::string header;
+          std::getline(in, header);
+          CHECK_EQ(header, "id;sourceId;cycleTime;greenTime");
+
+          std::unordered_map<Id, std::pair<Delay, Delay>>
+              rows;  // sourceId -> {cycleTime, greenTime}
+          std::string line;
+          std::size_t nRows{0};
+          while (std::getline(in, line)) {
+            if (line.empty())
+              continue;
+            ++nRows;
+            std::istringstream iss{line};
+            std::string strId, strSource, strCycle, strGreen;
+            std::getline(iss, strId, ';');
+            std::getline(iss, strSource, ';');
+            std::getline(iss, strCycle, ';');
+            std::getline(iss, strGreen, '\n');
+
+            CHECK_EQ(static_cast<Id>(std::stoul(strId)), 1);
+            auto const sourceId = static_cast<Id>(std::stoul(strSource));
+            rows[sourceId] = {static_cast<Delay>(std::stoul(strCycle)),
+                              static_cast<Delay>(std::stoul(strGreen))};
+          }
+
+          CHECK_EQ(nRows, 2);
+          REQUIRE(rows.contains(0));
+          REQUIRE(rows.contains(2));
+          CHECK_EQ(rows.at(0).first, 90);   // cycleTime
+          CHECK_EQ(rows.at(0).second, 30);  // greenTime (phase0)
+          CHECK_EQ(rows.at(2).first, 90);
+          CHECK_EQ(rows.at(2).second, 60);  // greenTime (phase1)
+
+          CHECK_FALSE(rows.contains(3));  // street 102 not green in any phase
+        }
+
+        THEN(
+            "The CSV contains one row per green street with the right cycle/green "
+            "times") {
+          std::ifstream in{csvPath};
+          REQUIRE(in.is_open());
+
+          std::string header;
+          std::getline(in, header);
+          CHECK_EQ(header, "id;sourceId;cycleTime;greenTime");
+
+          std::unordered_map<Id, std::pair<Delay, Delay>> rows;
+          std::string line;
+          std::size_t nRows{0};
+          while (std::getline(in, line)) {
+            if (line.empty())
+              continue;
+            ++nRows;
+            std::istringstream iss{line};
+            std::string strId, strSource, strCycle, strGreen;
+            std::getline(iss, strId, ';');
+            std::getline(iss, strSource, ';');
+            std::getline(iss, strCycle, ';');
+            std::getline(iss, strGreen, '\n');
+
+            CHECK_EQ(static_cast<Id>(std::stoul(strId)), 1);
+            auto const sourceId = static_cast<Id>(std::stoul(strSource));
+            rows[sourceId] = {static_cast<Delay>(std::stoul(strCycle)),
+                              static_cast<Delay>(std::stoul(strGreen))};
+          }
+
+          CHECK_EQ(nRows, 2);
+          REQUIRE(rows.contains(0));
+          REQUIRE(rows.contains(2));
+          CHECK_EQ(rows.at(0).first, 90);
+          CHECK_EQ(rows.at(0).second, 30);
+          CHECK_EQ(rows.at(2).first, 90);
+          CHECK_EQ(rows.at(2).second, 60);
+
+          CHECK_FALSE(rows.contains(3));
+        }
+
+        THEN("Re-importing the exported CSV reconstructs an equivalent traffic light") {
+          RoadNetwork roundTrip;
+          roundTrip.addNDefaultNodes(4);
+          roundTrip.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
+                               Street{101, std::make_pair(2, 1), 50., 13.8888888889},
+                               Street{102, std::make_pair(3, 1), 50., 13.8888888889});
+
+          roundTrip.importTrafficLights(csvPath.string());
+          auto& tl2 = roundTrip.node<TrafficLight>(1);
+
+          CHECK_EQ(tl2.phases().size(), 2);
+          CHECK_EQ(tl2.cycleTime(), tl.cycleTime());
+
+          // Only phase 0 is active by default — check its contents directly
+          // rather than assuming both streets are simultaneously green.
+          CHECK(tl2.phases()[0].containsGreen(100, dsf::Direction::ANY));
+          CHECK(tl2.phases()[1].containsGreen(101, dsf::Direction::ANY));
+          CHECK(tl2.isGreen(100, dsf::Direction::ANY));        // active phase
+          CHECK_FALSE(tl2.isGreen(101, dsf::Direction::ANY));  // not active yet
+          CHECK_FALSE(tl2.isGreen(102, dsf::Direction::RIGHT));
+        }
+      }
+
+      std::filesystem::remove(csvPath);
+    }
+  }
 
   SUBCASE("importEdges and importNodeProperties") {
     GIVEN("A graph object") {

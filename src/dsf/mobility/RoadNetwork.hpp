@@ -260,6 +260,8 @@ namespace dsf::mobility {
 
     PathCollection allEdgePathsTo(Id const targetEdgeId) const final;
 
+    void exportTrafficLights(std::string_view const fileName) const;
+
     /// @brief Export the graph's edges and nodes to two CSV files in the specified folder
     /// @param folder The folder to export the files to
     void exportCSV(std::string_view const folder) const;

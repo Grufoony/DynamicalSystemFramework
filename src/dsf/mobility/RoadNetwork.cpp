@@ -1288,6 +1288,48 @@ namespace dsf::mobility {
     }
   }
 
+  void RoadNetwork::exportTrafficLights(std::string_view const fileName) const {
+    std::ofstream file{std::string(fileName)};
+    if (!file.is_open()) {
+      throw std::runtime_error("Error opening file \"" + std::string(fileName) +
+                               "\" for writing.");
+    }
+
+    file << "id;sourceId;cycleTime;greenTime\n";
+
+    for (auto const& [nodeId, pNode] : m_nodes) {
+      if (!pNode->isTrafficLight()) {
+        continue;
+      }
+      auto const& tl = static_cast<TrafficLight const&>(*pNode);
+
+      auto const cycleTime = tl.cycleTime();
+      if (cycleTime == 0) {
+        spdlog::warn("exportTrafficLights: {} has no phases — skipping.", tl);
+        continue;
+      }
+
+      std::unordered_map<Id, Delay> greenTimePerStreet;
+      for (auto const& phase : tl.phases()) {
+        for (auto const& [streetId, dirs] : phase.greenSet()) {
+          greenTimePerStreet[streetId] += phase.duration();
+        }
+      }
+      std::vector<std::pair<Id, Delay>> sortedRows(greenTimePerStreet.begin(),
+                                                   greenTimePerStreet.end());
+      std::sort(sortedRows.begin(), sortedRows.end(), [](auto const& a, auto const& b) {
+        return a.first < b.first;
+      });
+
+      for (auto const& [streetId, greenTime] : sortedRows) {
+        file << std::format(
+            "{};{};{};{}\n", nodeId, edge(streetId).source(), cycleTime, greenTime);
+      }
+    }
+
+    spdlog::debug("exportTrafficLights: wrote traffic light data to \"{}\".", fileName);
+  }
+
   TrafficLight& RoadNetwork::makeTrafficLight(Id const nodeId) {
     auto& pNode = m_nodes.at(nodeId);
     pNode = std::make_unique<TrafficLight>(*pNode);

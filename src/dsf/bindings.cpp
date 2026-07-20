@@ -750,6 +750,13 @@ PYBIND11_MODULE(dsf_cpp, m) {
 
       Args:
         fileName (str): Path to the configuration file.)doc")
+      .def("exportTrafficLights",
+           &dsf::mobility::RoadNetwork::exportTrafficLights,
+           pybind11::arg("fileName"),
+           R"doc(Export traffic light configurations to a file.
+
+      Args:
+        fileName (str): Path to the configuration file.)doc")
       .def(
           "makeRoundabout",
           [](dsf::mobility::RoadNetwork& self, dsf::Id id) -> void {
