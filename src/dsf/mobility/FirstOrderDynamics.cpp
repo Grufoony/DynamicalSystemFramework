@@ -25,31 +25,6 @@ namespace dsf::mobility {
     }
   }
 
-  std::unique_ptr<Agent> FirstOrderDynamics::m_removeAgent(std::unique_ptr<Agent> pAgent,
-                                                           bool const bArrived) {
-    --m_nAgents;
-    if (bArrived) {
-      spdlog::trace("Removing agent {}", *pAgent);
-      ++m_nArrivedAgents;
-    } else {
-      spdlog::trace("Killing agent {}", *pAgent);
-      ++m_nKilledAgents;
-    }
-    m_travelDTs.push_back({pAgent->distance(),
-                           static_cast<double>(this->time_step() - pAgent->spawnTime())});
-
-    auto const& streetId = pAgent->streetId();
-    if (streetId.has_value()) {
-      auto* pStreet{&this->graph().edge(streetId.value())};
-      auto const* pNode{&this->graph().node(pStreet->target())};
-      auto [it, bInserted] = m_destinationCounts.insert({pNode->id(), 1});
-      if (!bInserted) {
-        ++it->second;
-      }
-    }
-    return pAgent;
-  }
-
   void FirstOrderDynamics::m_updatePath(std::shared_ptr<Itinerary> const& pItinerary) {
     if (m_bCacheEnabled) {
       auto const& file = std::format("{}{}.ity", CACHE_FOLDER, pItinerary->id());
@@ -521,7 +496,7 @@ namespace dsf::mobility {
           pStreet->enqueue(laneDist(this->m_generator));
           continue;
         }
-        this->m_removeAgent(pStreet->dequeueMovingAgent(), false);
+        this->m_removeAgent<false>(pStreet->dequeueMovingAgent());
         continue;
         // Grufoony - 09/03/2026
         // The agent is now killed. The old behavior (throw exception) is kept here:
@@ -633,7 +608,7 @@ namespace dsf::mobility {
               timeTolerance,
               timeDiff);
           // Kill the agent
-          this->m_removeAgent(pStreet->dequeue(queueIndex, this->time_step()), false);
+          this->m_removeAgent<false>(pStreet->dequeue(queueIndex, this->time_step()));
           continue;
         }
       }
@@ -788,7 +763,7 @@ namespace dsf::mobility {
       }
       if (bArrived) {
         auto pAgent =
-            this->m_removeAgent(pStreet->dequeue(queueIndex, this->time_step()), true);
+            this->m_removeAgent<true>(pStreet->dequeue(queueIndex, this->time_step()));
         if (m_reinsertAgents) {
           // reset Agent's values
           pAgent->reset(this->time_step());
@@ -947,7 +922,7 @@ namespace dsf::mobility {
           spdlog::debug(
               "No next street found for agent {} at node {}", *pAgent, pSourceNode->id());
           itAgent = m_agents.erase(itAgent);
-          auto pAgentRemoved{this->m_removeAgent(std::move(*itAgent), false)};
+          auto pAgentRemoved{this->m_removeAgent<false>(std::move(*itAgent))};
           continue;
         }
         pAgent->setNextStreetId(nextStreetId.value());
