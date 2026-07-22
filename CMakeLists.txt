@@ -128,6 +128,8 @@ if(BUILD_PYTHON_BINDINGS)
   set(SPDLOG_BUILD_PIC
       ON
       CACHE BOOL "Build position-independent code for spdlog" FORCE)
+  set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 FetchContent_Declare(
   spdlog
