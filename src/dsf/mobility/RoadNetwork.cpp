@@ -274,9 +274,9 @@ namespace dsf::mobility {
             edge(streetId).setLaneMapping(laneMappingVec);
           }
         } catch (...) {
-          spdlog::error("Invalid lane_mapping for edge {} ({}).",
-                        streetId,
-                        row["lane_mapping"].get<std::string>());
+          spdlog::warn("Invalid lane_mapping ({}) for {}.",
+                       row["lane_mapping"].get<std::string>(),
+                       edge(streetId));
         }
       }
 

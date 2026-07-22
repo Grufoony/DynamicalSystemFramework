@@ -218,8 +218,7 @@ namespace dsf::mobility {
 
     void m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
                       std::optional<std::time_t> const deltaT = std::nullopt,
-                      std::vector<std::size_t> const& nRandomAgentsPerTimeStep =
-                          std::vector<std::size_t>());
+                      double const percentRandomAgents = 0.0);
     void m_runSlowCharge(std::size_t const nInitialAgents,
                          std::time_t const agentInsertionDeltaT,
                          std::time_t const checkDeltaT,
@@ -284,14 +283,13 @@ namespace dsf::mobility {
     /// @brief Run the simulation until the configured end time.
     inline void run(std::vector<std::size_t> const& nAgentsPerTimeStep,
                     std::optional<std::time_t> const deltaT = std::nullopt,
-                    std::vector<std::size_t> const& nRandomAgentsPerTimeStep =
-                        std::vector<std::size_t>()) {
+                    double const percentageRandomAgents = 0.0) {
       if (m_dynamics == nullptr) {
         throw std::runtime_error(
             "Cannot run the simulation without imported road network dynamics.");
       }
       m_dynamics->prepareNetwork();
-      m_runDefault(nAgentsPerTimeStep, deltaT, nRandomAgentsPerTimeStep);
+      m_runDefault(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
     }
 
     inline void run(std::size_t const nInitialAgents,

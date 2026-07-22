@@ -390,10 +390,9 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::m_runDefault(
-      std::vector<std::size_t> const& nAgentsPerTimeStep,
-      std::optional<std::time_t> const deltaT,
-      std::vector<std::size_t> const& nRandomAgentsPerTimeStep) {
+  void TrafficSimulator::m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
+                                      std::optional<std::time_t> const deltaT,
+                                      double const percentRandomAgents) {
     if (deltaT.has_value()) {
       if (m_endTime == 0) {
         spdlog::warn(
@@ -411,19 +410,19 @@ namespace dsf::mobility {
     }
 
     auto totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
+    auto const nInsertions{nAgentsPerTimeStep.size()};
 
     if (agentInsertionDeltaT == 0) {
       if (m_endTime > m_initTime) {
-        agentInsertionDeltaT =
-            totalTimeSteps / static_cast<std::time_t>(nAgentsPerTimeStep.size());
-        if (totalTimeSteps % nAgentsPerTimeStep.size() != 0) {
+        agentInsertionDeltaT = totalTimeSteps / static_cast<std::time_t>(nInsertions);
+        if (totalTimeSteps % nInsertions != 0) {
           spdlog::warn(
               "Total simulation time ({} seconds) is not perfectly divisible by the "
               "number of agent insertion steps ({}). The last agent insertion step "
               "will occur at time {} instead of the end time {}.",
               totalTimeSteps,
-              nAgentsPerTimeStep.size(),
-              m_timeToStr(m_initTime + agentInsertionDeltaT * nAgentsPerTimeStep.size()),
+              nInsertions,
+              m_timeToStr(m_initTime + agentInsertionDeltaT * nInsertions),
               m_timeToStr(m_endTime));
         }
       }
@@ -432,8 +431,8 @@ namespace dsf::mobility {
       }
     }
     if (m_endTime == 0) {
-      m_endTime = m_initTime + static_cast<std::time_t>(agentInsertionDeltaT *
-                                                        nAgentsPerTimeStep.size());
+      m_endTime =
+          m_initTime + static_cast<std::time_t>(agentInsertionDeltaT * nInsertions);
       totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
     }
 
@@ -473,17 +472,14 @@ namespace dsf::mobility {
       if (currentStep % agentInsertionDeltaT == 0) {
         auto const insertionIndex =
             static_cast<std::size_t>(currentStep / agentInsertionDeltaT);
-        if (insertionIndex < nAgentsPerTimeStep.size()) {
+        if (insertionIndex < nInsertions) {
           auto const nAgents = nAgentsPerTimeStep.at(insertionIndex);
           if (nAgents > 0) {
-            m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
-          }
-          if (!nRandomAgentsPerTimeStep.empty() &&
-              insertionIndex < nRandomAgentsPerTimeStep.size()) {
-            auto const nRandomAgents = nRandomAgentsPerTimeStep.at(insertionIndex);
-            if (nRandomAgents > 0) {
-              m_dynamics->addAgents(nRandomAgents, AgentInsertionMethod::RANDOM);
-            }
+            auto const nRandomAgents =
+                static_cast<std::size_t>(std::round(nAgents * percentRandomAgents));
+            auto const nODAgents = nAgents - nRandomAgents;
+            m_dynamics->addAgents(nODAgents, m_agentInsertionMethod);
+            m_dynamics->addAgents(nRandomAgents, AgentInsertionMethod::RANDOM);
           }
         } else {
           spdlog::warn(
@@ -521,8 +517,8 @@ namespace dsf::mobility {
         m_dynamics->agentStats();
     spdlog::info(
         "Simulation completed. Total agents added: {}\n\tInserted: {} "
-        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tRemaining: {} "
-        "({:.2f}%)\n\tLost in the weekend: {} ({:.2f}%).",
+        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tGhosts: {} "
+        "({:.2f}%)\n\tRemaining: {} ({:.2f}%).",
         nAdded,
         nInserted,
         nInserted * 100.0f / nAdded,
@@ -617,8 +613,8 @@ namespace dsf::mobility {
         m_dynamics->agentStats();
     spdlog::info(
         "Simulation completed. Total agents added: {}\n\tInserted: {} "
-        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tRemaining: {} "
-        "({:.2f}%)\n\tLost in the weekend: {} ({:.2f}%).",
+        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tGhosts: {} "
+        "({:.2f}%)\n\tRemaining: {} ({:.2f}%).",
         nAdded,
         nInserted,
         nInserted * 100.0f / nAdded,
