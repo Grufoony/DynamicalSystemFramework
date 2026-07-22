@@ -272,6 +272,7 @@ namespace dsf::mobility {
       }
       auto const originNodeId{this->graph().edge(originId).source()};
       this->addAgent(itineraryIt->second, originNodeId);
+      m_agents.back()->setNextStreetId(originId);
     }
   }
 
@@ -1128,20 +1129,21 @@ namespace dsf::mobility {
         auto const nEdges{this->graph().nEdges()};
         tbb::concurrent_unordered_map<Id, PathCollection> allPaths;
         allPaths.reserve(nEdges);
-        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
+        tbb::concurrent_unordered_map<
+            Id,
+            std::tuple<double, std::vector<std::tuple<Id, double>>>>
             conditionalODs;
         conditionalODs.reserve(nEdges);
         tbb::parallel_for_each(
             this->graph().edges().begin(),
             this->graph().edges().end(),
             [&](auto const& edgePair) {
-              auto const pathCollection = this->graph().allEdgePathsTo(edgePair.first);
+              auto pathCollection = this->graph().allEdgePathsTo(edgePair.first);
               allPaths.emplace(edgePair.first, std::move(pathCollection));
+              conditionalODs.emplace(
+                  edgePair.first,
+                  std::make_tuple(0., std::vector<std::tuple<Id, double>>{}));
             });
-        for (auto const& [edgeId, pEdge] : this->graph().edges()) {
-          conditionalODs.emplace(
-              edgeId, std::make_tuple(0., std::vector<std::tuple<Id, double>>{}));
-        }
         for (auto const& row : reader) {
           auto const originNodeId = row["origin_id"].get<Id>();
           auto const possibleOriginEdgeId =
@@ -1204,19 +1206,23 @@ namespace dsf::mobility {
           }
         }
         // Erase all conditional ODs with empty destination lists
-        for (auto it = conditionalODs.begin(); it != conditionalODs.end();) {
-          if (std::get<1>(it->second).empty()) {
+        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
+            filteredConditionalODs;
+        filteredConditionalODs.reserve(conditionalODs.size());
+        for (auto [id, tuple] : conditionalODs) {
+          if (std::get<1>(tuple).empty()) {
             spdlog::debug(
                 "Origin node {} has no valid destinations in CSV. Skipping this origin.",
-                it->first);
-            it = conditionalODs.erase(it);
+                id);
           } else {
             // Divide weights by the size of destination
-            std::get<0>(it->second) /= std::get<1>(it->second).size();
-            ++it;
+            filteredConditionalODs.emplace(
+                id,
+                std::make_tuple(std::get<0>(tuple) / std::get<1>(tuple).size(),
+                                std::get<1>(tuple)));
           }
         }
-        this->setConditionalODs(std::move(conditionalODs));
+        this->setConditionalODs(std::move(filteredConditionalODs));
         break;
       }
       default:
