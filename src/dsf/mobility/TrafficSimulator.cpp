@@ -476,7 +476,7 @@ namespace dsf::mobility {
           auto const nAgents = nAgentsPerTimeStep.at(insertionIndex);
           if (nAgents > 0) {
             auto const nRandomAgents =
-                static_cast<std::size_t>(std::round(nAgents * percentRandomAgents));
+                static_cast<std::size_t>(std::floor(nAgents * percentRandomAgents));
             auto const nODAgents = nAgents - nRandomAgents;
             m_dynamics->addAgents(nODAgents, m_agentInsertionMethod);
             m_dynamics->addAgents(nRandomAgents, AgentInsertionMethod::RANDOM);
