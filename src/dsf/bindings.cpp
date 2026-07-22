@@ -1632,12 +1632,12 @@ Returns:
           [](dsf::mobility::TrafficSimulator& self,
              std::vector<std::size_t> nAgentsPerTimeStep,
              std::optional<std::time_t> deltaT,
-             std::vector<std::size_t> nRandomAgentsPerTimeStep) {
-            self.run(nAgentsPerTimeStep, deltaT, nRandomAgentsPerTimeStep);
+             double const percentageRandomAgents) {
+            self.run(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
           },
           pybind11::arg("nAgentsPerTimeStep"),
           pybind11::arg("deltaT") = std::nullopt,
-          pybind11::arg("nRandomAgentsPerTimeStep") = std::vector<std::size_t>(),
+          pybind11::arg("percentageRandomAgents") = 0.0,
           R"doc(Run the simulation in default mode.
 
       Args:
@@ -1645,7 +1645,7 @@ Returns:
           deltaT: Optional interval in seconds between agent insertions. If omitted,
                   the interval is inferred from the configured start/end times and the
                   length of nAgentsPerTimeStep.
-          nRandomAgentsPerTimeStep: Optional number of random agents to insert at each step.
+          percentageRandomAgents: Optional percentage of random agents to insert at each step.
       )doc")
       .def(
           "run",
