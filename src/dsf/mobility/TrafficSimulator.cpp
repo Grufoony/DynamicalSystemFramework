@@ -517,8 +517,8 @@ namespace dsf::mobility {
         m_dynamics->agentStats();
     spdlog::info(
         "Simulation completed. Total agents added: {}\n\tInserted: {} "
-        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tRemaining: {} "
-        "({:.2f}%)\n\tLost in the weekend: {} ({:.2f}%).",
+        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tGhosts: {} "
+        "({:.2f}%)\n\tRemaining: {} ({:.2f}%).",
         nAdded,
         nInserted,
         nInserted * 100.0f / nAdded,
@@ -613,8 +613,8 @@ namespace dsf::mobility {
         m_dynamics->agentStats();
     spdlog::info(
         "Simulation completed. Total agents added: {}\n\tInserted: {} "
-        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tRemaining: {} "
-        "({:.2f}%)\n\tLost in the weekend: {} ({:.2f}%).",
+        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tGhosts: {} "
+        "({:.2f}%)\n\tRemaining: {} ({:.2f}%).",
         nAdded,
         nInserted,
         nInserted * 100.0f / nAdded,
