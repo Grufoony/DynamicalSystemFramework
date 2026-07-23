@@ -1558,7 +1558,7 @@ TEST_CASE("FirstOrderDynamics") {
 
       WHEN("We add multiple random agents and evolve the system") {
         // spdlog::set_level(spdlog::level::debug);
-        dynamics.addAgents(6, AgentInsertionMethod::RANDOM);
+        dynamics.addAgents(6, AgentInsertionMethod::RANDOM_WEIGHTED_ORIGIN);
         CHECK_EQ(dynamics.nAgents(), 6);
         // Evolve to get agents onto street 0
         dynamics.evolve();
@@ -1608,7 +1608,7 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.setOriginNodes({{0, 1.0}});
 
       WHEN("We add multiple random agents and evolve the system") {
-        dynamics.addAgents(6, AgentInsertionMethod::RANDOM);
+        dynamics.addAgents(6, AgentInsertionMethod::RANDOM_WEIGHTED_ORIGIN);
         CHECK_EQ(dynamics.nAgents(), 6);
         // Evolve to get agents onto street 0
         dynamics.evolve();
@@ -1629,8 +1629,8 @@ TEST_CASE("FirstOrderDynamics") {
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
-          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 3);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 2);
         }
       }
     }
@@ -1736,13 +1736,6 @@ TEST_CASE("RoadDynamics Configuration") {
 
     dynamics.setMeanTravelDistance(1000.0);
 
-    // Set origin nodes
-    std::unordered_map<Id, double> origins;
-    for (const auto& [id, node] : defaultNetwork.nodes()) {
-      origins[id] = 1.0;
-    }
-    dynamics.setOriginNodes(origins);
-
     dynamics.addAgents(10, AgentInsertionMethod::RANDOM);
 
     const auto& agents = dynamics.agents();
@@ -1755,12 +1748,6 @@ TEST_CASE("RoadDynamics Configuration") {
 
   SUBCASE("setMeanTravelTime") {
     dynamics.setMeanTravelTime(3600);
-
-    std::unordered_map<Id, double> origins;
-    for (const auto& [id, node] : defaultNetwork.nodes()) {
-      origins[id] = 1.0;
-    }
-    dynamics.setOriginNodes(origins);
 
     dynamics.addAgents(10, AgentInsertionMethod::RANDOM);
 

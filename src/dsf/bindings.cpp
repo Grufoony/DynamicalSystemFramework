@@ -29,6 +29,8 @@ PYBIND11_MODULE(dsf_cpp, m) {
   pybind11::enum_<dsf::mobility::AgentInsertionMethod>(mobility, "AgentInsertionMethod")
       .value("ODS", dsf::mobility::AgentInsertionMethod::ODS)
       .value("RANDOM", dsf::mobility::AgentInsertionMethod::RANDOM)
+      .value("RANDOM_WEIGHTED_ORIGIN",
+             dsf::mobility::AgentInsertionMethod::RANDOM_WEIGHTED_ORIGIN)
       .value("RANDOM_ODS", dsf::mobility::AgentInsertionMethod::RANDOM_ODS)
       .value("CONDITIONAL_RANDOM_ODS",
              dsf::mobility::AgentInsertionMethod::CONDITIONAL_RANDOM_ODS)
