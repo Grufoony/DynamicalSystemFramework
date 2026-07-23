@@ -469,7 +469,7 @@ namespace dsf::mobility {
         // throw std::runtime_error(std::format(
         //     "No next street found for agent {} at node {}", *pAgent, pStreet->target()));
       }
-      auto const* pNextStreet{&this->graph().edge(nextStreetId.value())};
+      auto const* pNextStreet{&this->graph().edge(*nextStreetId)};
       pAgent->setNextStreetId(pNextStreet->id());
       if (nLanes == 1) {
         pStreet->enqueue(0);
@@ -604,7 +604,7 @@ namespace dsf::mobility {
                         pStreet->source(),
                         pStreet->target());
           auto const& thisDirection{this->graph()
-                                        .edge(pAgentTemp->nextStreetId().value())
+                                        .edge(*(pAgentTemp->nextStreetId()))
                                         .turnDirection(pStreet->angle())};
           if (!intersection.streetPriorities().contains(pStreet->id())) {
             // I have to check if the agent has right of way
@@ -1350,7 +1350,7 @@ namespace dsf::mobility {
     if (optItineraryId.has_value() && !this->itineraries().contains(*optItineraryId)) {
       throw std::invalid_argument(
           std::format("No itineraries available. Cannot add agents with itinerary id {}",
-                      optItineraryId.value()));
+                      *optItineraryId));
     }
     bool const bRandomItinerary{!optItineraryId.has_value() &&
                                 !this->itineraries().empty()};
@@ -1459,8 +1459,8 @@ namespace dsf::mobility {
 
     spdlog::debug("Init evolve at time {}", this->time_step());
     // move the first agent of each street queue, if possible, putting it in the next node
-    bool const bUpdateData = m_dataUpdatePeriod.has_value() &&
-                             this->time_step() % m_dataUpdatePeriod.value() == 0;
+    bool const bUpdateData =
+        m_dataUpdatePeriod.has_value() && this->time_step() % *m_dataUpdatePeriod == 0;
     auto const numNodes{this->graph().nNodes()};
     auto const numEdges{this->graph().nEdges()};
 
