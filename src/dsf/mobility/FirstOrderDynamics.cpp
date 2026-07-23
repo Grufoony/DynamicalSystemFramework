@@ -50,41 +50,6 @@ namespace dsf::mobility {
       spdlog::debug("Saved path in cache for itinerary {}", pItinerary->id());
     }
   }
-  void FirstOrderDynamics::m_addAgentsRandom(std::size_t nAgents) {
-    m_nAddedAgents += nAgents;
-    std::uniform_real_distribution<double> uniformDist{0., 1.};
-    std::exponential_distribution<double> distDist{1. /
-                                                   m_meanTravelDistance.value_or(1.)};
-    std::exponential_distribution<double> timeDist{1. / m_meanTravelTime.value_or(1.)};
-    auto const bUniformSpawn{m_originNodes.empty()};
-    if (m_originNodes.size() == 1) {
-      auto [originId, weight] = m_originNodes.at(0);
-      this->addAgents(nAgents, nullptr, originId);
-      return;
-    }
-    while (nAgents--) {
-      if (bUniformSpawn) {
-        this->addAgent();
-      } else {
-        auto randValue{uniformDist(this->m_generator)};
-        for (auto const& [origin, weight] : m_originNodes) {
-          if (randValue < weight) {
-            this->addAgent(nullptr, origin);
-            break;
-          }
-          randValue -= weight;
-        }
-      }
-      if (m_meanTravelDistance.has_value()) {
-        auto const& pAgent{this->m_agents.back()};
-        pAgent->setMaxDistance(distDist(this->m_generator));
-      }
-      if (m_meanTravelTime.has_value()) {
-        auto const& pAgent{this->m_agents.back()};
-        pAgent->setMaxTime(timeDist(this->m_generator));
-      }
-    }
-  }
   void FirstOrderDynamics::m_addAgentsODs(std::size_t nAgents) {
     if (m_ODs.empty()) {
       throw std::runtime_error(
@@ -504,7 +469,7 @@ namespace dsf::mobility {
         // throw std::runtime_error(std::format(
         //     "No next street found for agent {} at node {}", *pAgent, pStreet->target()));
       }
-      auto const* pNextStreet{&this->graph().edge(nextStreetId.value())};
+      auto const* pNextStreet{&this->graph().edge(*nextStreetId)};
       pAgent->setNextStreetId(pNextStreet->id());
       if (nLanes == 1) {
         pStreet->enqueue(0);
@@ -639,7 +604,7 @@ namespace dsf::mobility {
                         pStreet->source(),
                         pStreet->target());
           auto const& thisDirection{this->graph()
-                                        .edge(pAgentTemp->nextStreetId().value())
+                                        .edge(*(pAgentTemp->nextStreetId()))
                                         .turnDirection(pStreet->angle())};
           if (!intersection.streetPriorities().contains(pStreet->id())) {
             // I have to check if the agent has right of way
@@ -1385,7 +1350,7 @@ namespace dsf::mobility {
     if (optItineraryId.has_value() && !this->itineraries().contains(*optItineraryId)) {
       throw std::invalid_argument(
           std::format("No itineraries available. Cannot add agents with itinerary id {}",
-                      optItineraryId.value()));
+                      *optItineraryId));
     }
     bool const bRandomItinerary{!optItineraryId.has_value() &&
                                 !this->itineraries().empty()};
@@ -1446,7 +1411,10 @@ namespace dsf::mobility {
                                      AgentInsertionMethod const mode) {
     switch (mode) {
       case AgentInsertionMethod::RANDOM:
-        this->m_addAgentsRandom(nAgents);
+        this->m_addAgentsRandom<true>(nAgents);
+        break;
+      case AgentInsertionMethod::RANDOM_WEIGHTED_ORIGIN:
+        this->m_addAgentsRandom<false>(nAgents);
         break;
       case AgentInsertionMethod::ODS:
         this->m_addAgentsODs(nAgents);
@@ -1463,7 +1431,8 @@ namespace dsf::mobility {
       default:
         throw std::runtime_error(
             "Cannot add agents without a valid insertion methods. Possible values are "
-            "\"RANDOM\", \"ODS\", \"RANDOM_ODS\" and \"UNIFORM\"");
+            "\"RANDOM\", \"RANDOM_WEIGHTED_ORIGIN\", \"ODS\", \"RANDOM_ODS\" and "
+            "\"UNIFORM\"");
     }
   }
 
@@ -1490,8 +1459,8 @@ namespace dsf::mobility {
 
     spdlog::debug("Init evolve at time {}", this->time_step());
     // move the first agent of each street queue, if possible, putting it in the next node
-    bool const bUpdateData = m_dataUpdatePeriod.has_value() &&
-                             this->time_step() % m_dataUpdatePeriod.value() == 0;
+    bool const bUpdateData =
+        m_dataUpdatePeriod.has_value() && this->time_step() % *m_dataUpdatePeriod == 0;
     auto const numNodes{this->graph().nNodes()};
     auto const numEdges{this->graph().nEdges()};
 

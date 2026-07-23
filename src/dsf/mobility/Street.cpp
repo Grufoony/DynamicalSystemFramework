@@ -106,9 +106,7 @@ namespace dsf::mobility {
     m_capacity = static_cast<int>(m_capacity * static_cast<double>(nLanes) / m_nLanes);
     m_transportCapacity = m_transportCapacity * nLanes / m_nLanes;
     m_nLanes = nLanes;
-    if (speedFactor.has_value()) {
-      m_maxSpeed = m_maxSpeed * speedFactor.value();
-    }
+    m_maxSpeed = m_maxSpeed * speedFactor.value_or(1.0);
     m_exitQueues.resize(m_nLanes);
     m_updateLaneMapping(m_nLanes);
   }

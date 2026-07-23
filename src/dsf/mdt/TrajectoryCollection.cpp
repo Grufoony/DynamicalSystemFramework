@@ -132,7 +132,7 @@ namespace dsf::mdt {
           if (!min_duration_min.has_value()) {
             return true;
           }
-          return cluster.duration() < min_duration_min.value() * SECONDS_IN_MINUTE;
+          return cluster.duration() < (*min_duration_min) * SECONDS_IN_MINUTE;
         };
 
     tbb::parallel_for_each(
