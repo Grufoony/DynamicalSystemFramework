@@ -273,6 +273,8 @@ def process_cartography(
                 .replace(";", "-")
                 .split("|")
             ]
+            # set "nlanes" as len of lane_mapping
+            updates["nlanes"] = len(updates["lane_mapping"])
             updates["_remove_turn:lanes"] = True
 
         if "highway" in data:
