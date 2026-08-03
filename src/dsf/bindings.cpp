@@ -8,6 +8,7 @@
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/string_view.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/unordered_map.h>
 #include <nanobind/stl/unordered_set.h>
 #include <nanobind/stl/variant.h>
@@ -988,11 +989,16 @@ NB_MODULE(dsf_cpp, m) {
             return items;
           },
           "Get all items (node id, next hops) in the collection")
-      .def("explode",
-           &dsf::PathCollection::explode,
-           nb::arg("sourceId"),
-           nb::arg("targetId"),
-           R"doc(Build a path from a source node to a target node.
+      .def(
+          "explode",
+          [](const dsf::PathCollection& pc, dsf::Id source, dsf::Id target) {
+            auto result = pc.explode(source, target);
+
+            return std::vector<std::vector<dsf::Id>>(result.begin(), result.end());
+          },
+          nb::arg("sourceId"),
+          nb::arg("targetId"),
+          R"doc(Build a path from a source node to a target node.
 
 Args:
     sourceId (int): Starting node id.
