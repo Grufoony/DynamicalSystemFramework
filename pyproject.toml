@@ -3,13 +3,13 @@ requires = [
     "setuptools>=77.0.0",
     "wheel",
     "cmake>=3.16",
-    "pybind11-stubgen>=2.5"
+    "nanobind"
 ]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsf-suite"
-description = "DSF C++ core with Python bindings via pybind11"
+description = "DSF C++ core with Python bindings via nanobind"
 
 readme = { file = "README.md", content-type = "text/markdown" }
 
@@ -136,7 +136,7 @@ CMAKE_ARGS = """
 
 [tool.cibuildwheel.macos]
 
-before-all = "brew install cmake tbb"
+before-all = "brew install cmake tbb fmt spdlog"
 
 [tool.cibuildwheel.macos.environment]
 MACOSX_DEPLOYMENT_TARGET = "26.0"

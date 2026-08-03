@@ -169,7 +169,6 @@ if(NOT TBB_FOUND)
     endif()
 endif()
 # Get SQLiteCpp
-# Disable cppcheck on Windows to avoid issues with missing cppcheck installation
 if(WIN32)
   set(SQLITECPP_RUN_CPPCHECK
       OFF
@@ -211,35 +210,34 @@ install(
   NAMESPACE dsf::
   DESTINATION lib/cmake/dsf)
 
-# Optional Python bindings - only build if requested
 if(BUILD_PYTHON_BINDINGS)
   include(FetchContent)
 
-  # Get pybind11
+  # Fetch nanobind
   FetchContent_Declare(
-    pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG v3.0.3)
-  FetchContent_GetProperties(pybind11)
-  if(NOT pybind11_POPULATED)
-    FetchContent_MakeAvailable(pybind11)
+    nanobind
+    GIT_REPOSITORY https://github.com/wjakob/nanobind.git
+    GIT_TAG v2.13.0)
+  FetchContent_GetProperties(nanobind)
+  if(NOT nanobind_POPULATED)
+    FetchContent_MakeAvailable(nanobind)
   endif()
 
-  # Add the Python binding module
-  pybind11_add_module(dsf_python_module src/dsf/bindings.cpp)
+  find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+
+  # Add the Python binding module using nanobind
+  nanobind_add_module(dsf_python_module src/dsf/bindings.cpp)
 
   # Ensure the Python module name has no 'lib' prefix on Unix systems
   set_target_properties(dsf_python_module PROPERTIES OUTPUT_NAME "dsf_cpp")
 
-  # Link the pybind11 module with your static library and pybind11
+  # Link the nanobind module with static library and dependencies
   target_link_libraries(
-    dsf_python_module PRIVATE dsf pybind11::headers TBB::tbb
-                              spdlog::spdlog)
+    dsf_python_module PRIVATE dsf TBB::tbb spdlog::spdlog)
   target_compile_definitions(dsf_python_module PRIVATE SPDLOG_USE_STD_FORMAT)
 
   target_include_directories(dsf_python_module
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-
 endif()
 
 # Tests
@@ -248,7 +246,6 @@ if(DSF_TESTS)
   include(CTest)
   enable_testing()
 
-  # Get Doctest library
   FetchContent_Declare(
     doctest
     GIT_REPOSITORY https://github.com/doctest/doctest.git
@@ -266,8 +263,6 @@ if(DSF_TESTS)
       ${testname} SYSTEM PRIVATE ${doctest_SOURCE_DIR}/doctest)
     target_compile_definitions(${testname} PRIVATE SPDLOG_USE_STD_FORMAT)
     target_link_libraries(${testname} PRIVATE dsf TBB::tbb simdjson::simdjson spdlog::spdlog)
-    # Put test binaries under build/tests so they are easy to find. Use
-    # per-config output dirs to play nicely with multi-config generators.
     set_target_properties(
       ${testname}
       PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
@@ -277,8 +272,6 @@ if(DSF_TESTS)
                  RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO
                  ${CMAKE_BINARY_DIR}/tests)
 
-    # Register the test using the full target file so CTest invokes the correct
-    # executable regardless of output directory or generator.
     add_test(NAME ${testname} COMMAND $<TARGET_FILE:${testname}>)
   endmacro()
 

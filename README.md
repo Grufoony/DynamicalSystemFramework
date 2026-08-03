@@ -68,7 +68,7 @@ cmake --install build
 ```
 
 ## Installation (Python)
-If you want to use the library from Python, you can build the Python bindings using [pybind11](https://github.com/pybind/pybind11). Make sure you have tbb installed:
+If you want to use the library from Python, you can build the Python bindings using [nanobind](https://github.com/wjakob/nanobind). Make sure you have tbb installed:
 ```shell
 sudo apt install libtbb-dev
 ```
