@@ -1,7 +1,7 @@
 """
 Setup script for DSF Python bindings
 This script uses setuptools to build the C++ core of DSF with Python bindings
-using pybind11 and CMake.
+using nanobind and CMake.
 It extracts the version from the C++ header file and configures the build
 process accordingly.
 """
@@ -68,39 +68,39 @@ class CMakeBuild(build_ext):
 
     def _generate_stubs(self, extdir: Path) -> None:
         """
-        Run pybind11-stubgen with the freshly built extension on sys.path.
-        Stubs land next to the .so so they're picked up by the wheel.
+        Run nanobind.stubgen with the freshly built extension on sys.path.
+        Stubs land next to the compiled extension so they're picked up by the wheel.
         """
         env = os.environ.copy()
-        # Prepend extdir so the newly built dsf_cpp.so is importable
+        # Prepend extdir so the newly built dsf_cpp module is importable
         env["PYTHONPATH"] = str(extdir) + os.pathsep + env.get("PYTHONPATH", "")
+
+        out_stub = extdir / "dsf_cpp.pyi"
 
         result = subprocess.run(
             [
                 sys.executable,
                 "-m",
-                "pybind11_stubgen",
+                "nanobind.stubgen",
+                "-m",
                 "dsf_cpp",
-                "--output-dir",
-                str(extdir),
-                "--ignore-all-errors",  # don't break the build on stub warnings
+                "-o",
+                str(out_stub),
             ],
             env=env,
         )
 
         if result.returncode != 0:
             print(
-                "WARNING: pybind11-stubgen exited with errors — "
+                "WARNING: nanobind.stubgen exited with errors — "
                 "stubs may be incomplete but the wheel will still be built."
             )
         else:
-            # pybind11-stubgen outputs to extdir/dsf_cpp.pyi
-            stub = extdir / "dsf_cpp.pyi"
-            if stub.exists():
-                print(f"Stubs generated: {stub}")
+            if out_stub.exists():
+                print(f"Stubs generated: {out_stub}")
             else:
                 print(
-                    f"WARNING: pybind11-stubgen succeeded but did not create {stub}; stubs may be missing from the wheel."
+                    f"WARNING: nanobind.stubgen succeeded but did not create {out_stub}; stubs may be missing from the wheel."
                 )
 
     def run(self):
