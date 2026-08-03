@@ -1189,7 +1189,7 @@ namespace dsf::mobility {
               }
             }
             if (bestPath.empty()) {
-              spdlog::debug(
+              spdlog::warn(
                   "No path found from origin {} to destination {} in CSV. Skipping this "
                   "pair.",
                   originNodeId,
