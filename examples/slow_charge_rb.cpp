@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
   dynamics->setSeed(SEED);
   {
     std::vector<dsf::Id> destinations;
-    for (auto const& edgePair : dynamics->graph().nodes()) {
+    for (auto const& edgePair : dynamics->graph().edges()) {
       auto const& node{dynamics->graph().node(edgePair.second->target())};
       if (node.outgoingEdges().size() < 4) {
         destinations.push_back(edgePair.first);

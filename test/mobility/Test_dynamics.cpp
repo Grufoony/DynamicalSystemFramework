@@ -255,6 +255,18 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.updatePaths();
         dynamics.addAgents(3, AgentInsertionMethod::RANDOM_ODS);
         THEN("The agents are correctly set") {
+#ifdef __APPLE__
+          CHECK_EQ(dynamics.nAgents(), 3);
+          CHECK_EQ(dynamics.agents().at(0)->itinerary()->destination(),
+                   graph.node(107).ingoingEdges().front());
+          CHECK_EQ(dynamics.agents().at(0)->srcNodeId().value(), 118);
+          CHECK_EQ(dynamics.agents().at(1)->itinerary()->destination(),
+                   graph.node(14).ingoingEdges().front());
+          CHECK_EQ(dynamics.agents().at(1)->srcNodeId().value(), 1);
+          CHECK_EQ(dynamics.agents().at(2)->itinerary()->destination(),
+                   graph.node(14).ingoingEdges().front());
+          CHECK_EQ(dynamics.agents().at(2)->srcNodeId().value(), 118);
+#else
           CHECK_EQ(dynamics.nAgents(), 3);
           CHECK_EQ(dynamics.agents().at(0)->itinerary()->destination(),
                    graph.node(107).ingoingEdges().front());
@@ -265,6 +277,7 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.agents().at(2)->itinerary()->destination(),
                    graph.node(14).ingoingEdges().front());
           CHECK_EQ(dynamics.agents().at(2)->srcNodeId().value(), 118);
+#endif
         }
       }
     }
@@ -826,7 +839,6 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(path.size(), 5);
           CHECK_EQ(path.at(5).size(), 1);
           CHECK_EQ(path.at(5)[0], 2);
-          ;
           CHECK_EQ(path.at(0).size(), 1);
           CHECK_EQ(path.at(0)[0], 1);
           CHECK_EQ(path.at(1).size(), 1);

@@ -323,14 +323,18 @@ namespace dsf::mobility {
                   require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
                       .get_string()
                       .value());
+          bool bEdges = true;
+          if (!importODsFromCSVConfig["edges"].error()) {
+            bEdges = importODsFromCSVConfig["edges"].get_bool().value();
+          }
           if (!importODsFromCSVConfig["separator"].error()) {
             auto const sep =
                 require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
                     .get_string()
                     .value()[0];
-            m_dynamics->importODsFromCSV(odsFile.string(), sep);
+            m_dynamics->importODsFromCSV(odsFile.string(), sep, bEdges);
           } else {
-            m_dynamics->importODsFromCSV(odsFile.string());
+            m_dynamics->importODsFromCSV(odsFile.string(), ';', bEdges);
           }
         }
       }

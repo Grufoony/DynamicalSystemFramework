@@ -1263,9 +1263,13 @@ Returns:
           "importODsFromCSV",
           [](dsf::mobility::FirstOrderDynamics& self,
              const std::string& fileName,
-             char separator = ';') { self.importODsFromCSV(fileName, separator); },
+             const char separator = ';',
+             const bool edges = true) {
+            self.importODsFromCSV(fileName, separator, edges);
+          },
           nb::arg("fileName"),
           nb::arg("separator") = ';',
+          nb::arg("edges") = true,
           "Import origin-destination pairs from a CSV file.\n\n"
           "Supports two CSV formats:\n"
           "1. RANDOM_ODS: columns (node_id, type, weight) where type is 'O' (origin) or "
@@ -1273,7 +1277,11 @@ Returns:
           "2. ODS: columns (origin_id, destination_id, weight) for explicit OD pairs\n\n"
           "Args:\n"
           "    fileName (str): Path to the CSV file\n"
-          "    separator (str): CSV delimiter character (default is ';')")
+          "    separator (str): CSV delimiter character (default is ';')"
+          "    edges (bool): If True, interpret ids as edge ids; if False, as node "
+          "ids\n\n"
+          "Returns:\n"
+          "    None")
       .def("initTurnCounts",
            &dsf::mobility::FirstOrderDynamics::initTurnCounts,
            R"doc(Initialize turn count tracking data structures.
