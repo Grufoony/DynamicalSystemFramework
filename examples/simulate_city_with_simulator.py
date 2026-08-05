@@ -64,17 +64,17 @@ if __name__ == "__main__":
 
     to_folium_map(G).save(f"{args.city}_{args.country}_map.html")
 
-    nodes = G.nodes(data=False)
+    edges = G.edges(data=False)
     # Extract 10% random node ids as origins and destinations for the traffic simulation
     origin_ids = np.random.choice(
-        list(nodes), size=int(0.05 * len(nodes)), replace=False
+        list(edges), size=int(0.05 * len(edges)), replace=False
     )
     destination_ids = np.random.choice(
-        list(nodes), size=int(0.05 * len(nodes)), replace=False
+        list(edges), size=int(0.05 * len(edges)), replace=False
     )
 
-    origins = {node_id: 1 for node_id in origin_ids}
-    destinations = {node_id: 1 for node_id in destination_ids}
+    origins = {edge_id: 1 for edge_id in origin_ids}
+    destinations = {edge_id: 1 for edge_id in destination_ids}
 
     logging.info("Creating road network and dynamics model...")
 
@@ -87,8 +87,8 @@ if __name__ == "__main__":
     simulator.updatePaths(300, False)
 
     simulator.dynamics().setSeed(args.seed)
-    simulator.dynamics().setOriginNodes(origins)
-    simulator.dynamics().setDestinationNodes(destinations)
+    simulator.dynamics().setOrigins(origins)
+    simulator.dynamics().setDestinations(destinations)
     simulator.dynamics().killStagnantAgents(40.0)
 
     simulator.run(np.random.randint(0, 50, size=8640), 10)

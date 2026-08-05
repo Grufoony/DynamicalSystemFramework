@@ -65,17 +65,17 @@ if __name__ == "__main__":
 
     # Keep only strong connected components
     G = G.subgraph(max(nx.strongly_connected_components(G), key=len)).copy()
-    nodes = G.nodes(data=False)
-    # Extract 10% random node ids as origins and destinations for the traffic simulation
+    edges = G.edges(data=False)
+    # Extract 10% random edge ids as origins and destinations for the traffic simulation
     origin_ids = np.random.choice(
-        list(nodes), size=int(0.05 * len(nodes)), replace=False
+        list(edges), size=int(0.05 * len(edges)), replace=False
     )
     destination_ids = np.random.choice(
-        list(nodes), size=int(0.05 * len(nodes)), replace=False
+        list(edges), size=int(0.05 * len(edges)), replace=False
     )
 
-    origins = {node_id: 1 for node_id in origin_ids}
-    destinations = {node_id: 1 for node_id in destination_ids}
+    origins = {edge_id: 1 for edge_id in origin_ids}
+    destinations = {edge_id: 1 for edge_id in destination_ids}
 
     del df_edges, df_nodes, G
 
@@ -111,8 +111,8 @@ if __name__ == "__main__":
     dynamics.connectDataBase(f"{args.city}_{args.country}.db")
     dynamics.saveData(300, True, True, True)
 
-    dynamics.setOriginNodes(origins)
-    dynamics.setDestinationNodes(destinations)
+    dynamics.setOrigins(origins)
+    dynamics.setDestinations(destinations)
 
     # Simulate traffic for 24 hours with a time step of 10 seconds
     for time_step in trange(86400):
