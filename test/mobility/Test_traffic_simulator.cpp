@@ -337,7 +337,7 @@ TEST_CASE("TrafficSimulator SQL turn counts persistence") {
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   // Route agents from node 0 to node 2: they must cross both edges.
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 2, 1.0}});
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
   simulator.dynamics()->updatePaths();
 
   // 4th flag = save turn counts
