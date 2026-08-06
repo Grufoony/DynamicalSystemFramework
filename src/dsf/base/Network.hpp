@@ -35,7 +35,7 @@ namespace dsf {
   class Network {
   protected:
     std::flat_map<Id, std::unique_ptr<node_t>> m_nodes;
-    std::unordered_map<Id, std::unique_ptr<edge_t>> m_edges;
+    std::flat_map<Id, std::unique_ptr<edge_t>> m_edges;
 
     std::function<double(edge_t const&)> m_weightFunction =
         []([[maybe_unused]] edge_t const& edge) {
@@ -833,7 +833,7 @@ namespace dsf {
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   void Network<node_t, edge_t>::computeEdgeBetweennessCentralities() {
     // Initialise all edge BC values to 0.
-    for (auto& [edgeId, pEdge] : m_edges) {
+    for (auto const& pEdge : m_edges.values()) {
       pEdge->setAttribute("betweennessCentrality", 0.0);
     }
 
@@ -947,7 +947,7 @@ namespace dsf {
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   void Network<node_t, edge_t>::computeEdgeKBetweennessCentralities(std::size_t const K) {
-    for (auto& [eId, pEdge] : m_edges) {
+    for (auto const& pEdge : m_edges.values()) {
       pEdge->setAttribute("betweennessCentrality", 0.0);
     }
 
@@ -969,7 +969,7 @@ namespace dsf {
       // values; apply the same norm as the K>1 path below.
       auto const norm = static_cast<double>((N_NODES - 1) * (N_NODES - 2));
       if (norm > 0.0) {
-        for (auto& [_, pEdge] : m_edges) {
+        for (auto const& pEdge : m_edges.values()) {
           auto const bc =
               pEdge->template getAttribute<double>("betweennessCentrality").value_or(0.0);
           pEdge->setAttribute("betweennessCentrality", bc / norm);
@@ -1248,7 +1248,7 @@ namespace dsf {
     // Normalise by (N-1)·(N-2).
     auto const norm = static_cast<double>((N_NODES - 1) * (N_NODES - 2));
     if (norm > 0.0) {
-      for (auto& [_, pEdge] : m_edges) {
+      for (auto const& pEdge : m_edges.values()) {
         auto const bc =
             pEdge->template getAttribute<double>("betweennessCentrality").value_or(0.0);
         pEdge->setAttribute("betweennessCentrality", bc / norm);

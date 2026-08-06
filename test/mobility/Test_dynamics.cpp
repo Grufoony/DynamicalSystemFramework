@@ -197,9 +197,9 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.addItinerary(2, 2);
       dynamics.addItinerary(1, 1);
       WHEN("We add many agents") {
-        // Logger::setLogLevel(dsf::log_level_t::DEBUG);
+        spdlog::set_level(spdlog::level::trace);
         dynamics.addAgentsUniformly(3);
-        // Logger::setLogLevel(dsf::log_level_t::INFO);
+        spdlog::set_level(spdlog::level::info);
         THEN(
             "The number of agents is 3, the destination and the street is the "
             "same as "
@@ -213,12 +213,12 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.graph().edge(166).nAgents(), 1);
           CHECK_EQ(dynamics.graph().edge(166).movingAgents().top()->itinerary()->id(), 1);
 #else
-          CHECK_EQ(dynamics.graph().edge(13).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(13).movingAgents().top()->itinerary()->id(), 2);
-          CHECK_EQ(dynamics.graph().edge(370).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(370).movingAgents().top()->itinerary()->id(), 1);
-          CHECK_EQ(dynamics.graph().edge(404).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(404).movingAgents().top()->itinerary()->id(), 2);
+          CHECK_EQ(dynamics.graph().edge(136).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(136).movingAgents().top()->itinerary()->id(), 2);
+          CHECK_EQ(dynamics.graph().edge(395).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(395).movingAgents().top()->itinerary()->id(), 2);
+          CHECK_EQ(dynamics.graph().edge(361).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(361).movingAgents().top()->itinerary()->id(), 1);
 #endif
         }
       }

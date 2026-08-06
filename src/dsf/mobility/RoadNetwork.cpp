@@ -321,7 +321,6 @@ namespace dsf::mobility {
         }
       }
     }
-    this->m_edges.rehash(0);
   }
   void RoadNetwork::m_csvNodePropertiesImporter(const std::string& fileName,
                                                 const char separator) {
@@ -630,7 +629,6 @@ namespace dsf::mobility {
         }
       }
     }
-    this->m_edges.rehash(0);
   }
 
   RoadNetwork::RoadNetwork() { this->setEdgeWeight("traveltime"); }
