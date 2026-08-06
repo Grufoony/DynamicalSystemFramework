@@ -1175,61 +1175,60 @@ Returns:
     Returns:
       None)doc")
       .def(
-          "setDestinationNodes",
+          "setDestinations",
           [](dsf::mobility::FirstOrderDynamics& self,
              const std::vector<dsf::Id>& destinationNodes) {
-            self.setDestinationNodes(destinationNodes);
+            self.setDestinations(destinationNodes);
           },
-          nb::arg("destinationNodes"),
-          R"doc(Set the destination nodes using a list of node ids.
+          nb::arg("destinations"),
+          R"doc(Set the destinations using a list of ids.
 
 Args:
-    destinationNodes (Sequence[int]): Destination node ids.
+    destinations (Sequence[int]): Destination ids.
 
 Returns:
     None)doc")
       .def(
-          "setOriginNodes",
+          "setOrigins",
           [](dsf::mobility::FirstOrderDynamics& self,
              const std::unordered_map<dsf::Id, double>& originNodes) {
-            self.setOriginNodes(originNodes);
+            self.setOrigins(originNodes);
           },
           nb::arg("originNodes") = std::unordered_map<dsf::Id, double>(),
-          R"doc(Set weighted origin nodes from a mapping of node ids to weights.
+          R"doc(Set weighted origins from a mapping of ids to weights.
 
 Args:
-    originNodes (Mapping[int, float], optional): Origin nodes and weights.
+    origins (Mapping[int, float], optional): Origins and weights.
 
 Returns:
     None)doc")
       .def(
-          "setOriginNodes",
+          "setOrigins",
           [](dsf::mobility::FirstOrderDynamics& self, nb::ndarray<dsf::Id> originNodes) {
             auto* ptr = static_cast<dsf::Id*>(originNodes.data());
             std::unordered_map<dsf::Id, double> nodeWeights;
             for (size_t i = 0; i < originNodes.size(); ++i) {
               nodeWeights[ptr[i]] = 1.0;
             }
-            self.setOriginNodes(nodeWeights);
+            self.setOrigins(nodeWeights);
           },
           nb::arg("originNodes"),
           R"doc(Set origin nodes from a numpy array of node ids.
 
 Args:
-    originNodes (array[int]): Node ids to use as origins.
+    origins (array[int]): ids to use as origins.
 
 Returns:
     None)doc")
       .def(
-          "setDestinationNodes",
-          [](dsf::mobility::FirstOrderDynamics& self,
-             nb::ndarray<dsf::Id> destinationNodes) {
-            auto* ptr = static_cast<dsf::Id*>(destinationNodes.data());
-            std::vector<dsf::Id> nodes(ptr, ptr + destinationNodes.size());
-            self.setDestinationNodes(nodes);
+          "setDestinations",
+          [](dsf::mobility::FirstOrderDynamics& self, nb::ndarray<dsf::Id> destinations) {
+            auto* ptr = static_cast<dsf::Id*>(destinations.data());
+            std::vector<dsf::Id> ids(ptr, ptr + destinations.size());
+            self.setDestinations(ids);
           },
-          nb::arg("destinationNodes"),
-          R"doc(Set destination nodes from a numpy array of node ids.
+          nb::arg("destinations"),
+          R"doc(Set destinations from a numpy array of node ids.
 
 Args:
     destinationNodes (array[int]): Node ids to use as destinations.
@@ -1237,16 +1236,16 @@ Args:
 Returns:
     None)doc")
       .def(
-          "setDestinationNodes",
+          "setDestinations",
           [](dsf::mobility::FirstOrderDynamics& self,
-             const std::unordered_map<dsf::Id, double>& destinationNodes) {
-            self.setDestinationNodes(destinationNodes);
+             const std::unordered_map<dsf::Id, double>& destinations) {
+            self.setDestinations(destinations);
           },
-          nb::arg("destinationNodes"),
-          R"doc(Set weighted destination nodes from a mapping of node ids to weights.
+          nb::arg("destinations"),
+          R"doc(Set weighted destination from a mapping of ids to weights.
 
       Args:
-        destinationNodes (Mapping[int, float]): Destination nodes and weights.
+        destinations (Mapping[int, float]): Destinations and weights.
 
       Returns:
         None)doc")
@@ -1264,9 +1263,13 @@ Returns:
           "importODsFromCSV",
           [](dsf::mobility::FirstOrderDynamics& self,
              const std::string& fileName,
-             char separator = ';') { self.importODsFromCSV(fileName, separator); },
+             const char separator = ';',
+             const bool edges = true) {
+            self.importODsFromCSV(fileName, separator, edges);
+          },
           nb::arg("fileName"),
           nb::arg("separator") = ';',
+          nb::arg("edges") = true,
           "Import origin-destination pairs from a CSV file.\n\n"
           "Supports two CSV formats:\n"
           "1. RANDOM_ODS: columns (node_id, type, weight) where type is 'O' (origin) or "
@@ -1274,7 +1277,11 @@ Returns:
           "2. ODS: columns (origin_id, destination_id, weight) for explicit OD pairs\n\n"
           "Args:\n"
           "    fileName (str): Path to the CSV file\n"
-          "    separator (str): CSV delimiter character (default is ';')")
+          "    separator (str): CSV delimiter character (default is ';')"
+          "    edges (bool): If True, interpret ids as edge ids; if False, as node "
+          "ids\n\n"
+          "Returns:\n"
+          "    None")
       .def("initTurnCounts",
            &dsf::mobility::FirstOrderDynamics::initTurnCounts,
            R"doc(Initialize turn count tracking data structures.

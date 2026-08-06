@@ -88,14 +88,15 @@ int main(int argc, char** argv) {
   auto* dynamics = simulator.dynamics();
   dynamics->setSeed(SEED);
   {
-    std::vector<dsf::Id> destinationNodes;
-    for (auto const& [nodeId, pNode] : dynamics->graph().nodes()) {
-      if (pNode->outgoingEdges().size() < 4) {
-        destinationNodes.push_back(nodeId);
+    std::vector<dsf::Id> destinations;
+    for (auto const& edgePair : dynamics->graph().edges()) {
+      auto const& node{dynamics->graph().node(edgePair.second->target())};
+      if (node.outgoingEdges().size() < 4) {
+        destinations.push_back(edgePair.first);
       }
     }
-    dynamics->setDestinationNodes(destinationNodes);
-    std::cout << "Number of exits: " << destinationNodes.size() << '\n';
+    dynamics->setDestinations(destinations);
+    std::cout << "Number of exits: " << destinations.size() << '\n';
   }
   dynamics->updatePaths();
 

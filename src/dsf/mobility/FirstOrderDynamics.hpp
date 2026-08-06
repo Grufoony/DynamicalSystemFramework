@@ -97,8 +97,8 @@ namespace dsf::mobility {
     std::vector<Id> m_nodeIndices;
     std::vector<std::unique_ptr<Agent>> m_agents;
     std::unordered_map<Id, std::shared_ptr<Itinerary>> m_itineraries;
-    std::vector<std::tuple<Id, double>> m_originNodes;
-    std::vector<std::tuple<Id, double>> m_destinationNodes;
+    std::vector<std::tuple<Id, double>> m_origins;
+    std::vector<std::tuple<Id, double>> m_destinations;
     std::vector<std::tuple<Id, Id, double>> m_ODs;
     std::vector<double> m_ODCumulativeWeights;
     // Conditional Origin -> Destinations
@@ -173,6 +173,12 @@ namespace dsf::mobility {
 
     void m_trafficlightSingleTailOptimizer(double const beta,
                                            std::optional<std::ofstream>& logStream);
+
+    void m_importNodeODsFromCSV(std::string_view const fileName,
+                                char const separator = ';');
+
+    void m_importEdgeODsFromCSV(std::string_view const fileName,
+                                char const separator = ';');
 
   public:
     /// @brief Construct a new FirstOrderDynamics object
@@ -266,16 +272,15 @@ namespace dsf::mobility {
     inline void setReinsertAgents(bool const reinsertAgents) noexcept {
       m_reinsertAgents = reinsertAgents;
     }
-    /// @brief Set the origin nodes. If the provided map is empty, the origin nodes are set using the streets' stationary weights.
-    /// NOTE: the default stationary weights are 1.0 so, if not set, this is equivalent to setting uniform weights.
-    /// @param originNodes The origin nodes
-    void setOriginNodes(std::unordered_map<Id, double> const& originNodes = {});
-    /// @brief Set the destination nodes
-    /// @param destinationNodes The destination nodes
-    void setDestinationNodes(std::unordered_map<Id, double> const& destinationNodes);
-    /// @brief Set the destination nodes
-    /// @param destinationNodes The destination nodes (as an initializer list)
-    void setDestinationNodes(std::initializer_list<Id> destinationNodes);
+    /// @brief Set the origins
+    /// @param origins The origin nodes
+    void setOrigins(std::unordered_map<Id, double> const& origins = {});
+    /// @brief Set the destinations
+    /// @param destinations The destinations
+    void setDestinations(std::unordered_map<Id, double> const& destinations);
+    /// @brief Set the destinations
+    /// @param destinations The destinations (as an initializer list)
+    void setDestinations(std::initializer_list<Id> destinations);
     /// @brief Set the origin-destination pairs with their associated weights
     /// @param ODs A vector of tuples (origin node id, destination node id, weight)
     void setODs(std::vector<std::tuple<Id, Id, double>> const& ODs);
@@ -285,17 +290,19 @@ namespace dsf::mobility {
         std::unordered_map<Id,
                            std::tuple<double, std::vector<std::tuple<Id, double>>>> const&
             originToDestinations);
-    /// @brief Set the destination nodes
-    /// @param destinationNodes A container of destination nodes ids
+    /// @brief Set the destinations
+    /// @param destinations A container of destination ids
     /// @details The container must have a value_type convertible to Id and begin() and end() methods
     template <typename TContainer>
       requires(std::is_convertible_v<typename TContainer::value_type, Id>)
-    void setDestinationNodes(TContainer const& destinationNodes);
+    void setDestinations(TContainer const& destinationNodes);
     /// @brief Import origin-destination pairs from a CSV file. Possibilities are:
     /// - origin_id;destination_id;weight (for AgentInsertionMethod::ODS)
     /// - node_id;type;weight (for AgentInsertionMethod::RANDOM_ODS, where type is either "O" or "D")
     /// - origin_id;weight;destinations (for AgentInsertionMethod::CONDITIONAL_RANDOM_ODS, where destinations is a comma-separated list of destination_id:weight pairs)
-    void importODsFromCSV(std::string_view const fileName, char const separator = ';');
+    void importODsFromCSV(std::string_view const fileName,
+                          char const separator = ';',
+                          bool const bEdges = true);
 
     /// @brief Initialize the turn counts map
     /// @throws std::runtime_error if the turn counts map is already initialized
@@ -316,14 +323,18 @@ namespace dsf::mobility {
     /// @brief Add an agent to the simulation
     /// @param agent std::unique_ptr to the agent
     void addAgent(std::unique_ptr<Agent> agent);
+    /// @brief Add an agent to the simulation
+    /// @param trip std::vector of std::shared_ptr to the itineraries
+    /// @param optSrcStreetId std::optional<Id> representing the source street id. If not provided, the source street will be selected randomly.
+    void addAgent(std::vector<std::shared_ptr<Itinerary>> const& trip,
+                  std::optional<Id> optSrcStreetId = std::nullopt);
+    /// @brief Add an agent to the simulation
+    /// @param pItinerary std::shared_ptr to the itinerary
+    /// @details If pItinerary is nullptr, the agent will be added without an itinerary
+    /// @param optSrcStreetId std::optional<Id> representing the source street id. If not provided, the source street will be selected randomly.
+    void addAgent(std::shared_ptr<Itinerary> pItinerary = nullptr,
+                  std::optional<Id> optSrcStreetId = std::nullopt);
 
-    template <typename... TArgs>
-      requires(std::is_constructible_v<Agent, Id, std::time_t, TArgs...>)
-    void addAgent(TArgs&&... args);
-
-    template <typename... TArgs>
-      requires(std::is_constructible_v<Agent, Id, std::time_t, TArgs...>)
-    void addAgents(std::size_t const nAgents, TArgs&&... args);
     /// @brief Add agents to the simulation
     /// @param nAgents The number of agents to add
     /// @param mode The method to use for adding the agents.Possible values are:
@@ -373,24 +384,16 @@ namespace dsf::mobility {
     inline auto const& itineraries() const noexcept { return m_itineraries; }
     /// @brief Get the origin nodes of the graph
     /// @return std::vector<std::tuple<Id, double>> const& The origin nodes of the graph
-    inline std::vector<std::tuple<Id, double>> const& originNodes() const noexcept {
-      return m_originNodes;
-    }
+    inline auto const& origins() const noexcept { return m_origins; }
     /// @brief Get the origin nodes of the graph
     /// @return std::vector<std::tuple<Id, double>>& The origin nodes of the graph
-    inline std::vector<std::tuple<Id, double>>& originNodes() noexcept {
-      return m_originNodes;
-    }
+    inline auto& origins() noexcept { return m_origins; }
     /// @brief Get the destination nodes of the graph
     /// @return std::vector<std::tuple<Id, double>> const& The destination nodes of the graph
-    inline std::vector<std::tuple<Id, double>> const& destinationNodes() const noexcept {
-      return m_destinationNodes;
-    }
+    inline auto const& destinations() const noexcept { return m_destinations; }
     /// @brief Get the destination nodes of the graph
     /// @return std::vector<std::tuple<Id, double>>>& The destination nodes of the graph
-    inline std::vector<std::tuple<Id, double>>& destinationNodes() noexcept {
-      return m_destinationNodes;
-    }
+    inline auto& destinations() noexcept { return m_destinations; }
     /// @brief Get the agents
     /// @return const std::unordered_map<Id, Agent<Id>>&, The agents
     inline const std::vector<std::unique_ptr<Agent>>& agents() const noexcept {
@@ -481,11 +484,10 @@ namespace dsf::mobility {
     m_travelDTs.push_back({pAgent->distance(),
                            static_cast<double>(this->time_step() - pAgent->spawnTime())});
 
-    auto const& streetId = pAgent->streetId();
-    if (streetId.has_value()) {
-      auto* pStreet{&this->graph().edge(streetId.value())};
-      auto const* pNode{&this->graph().node(pStreet->target())};
-      auto [it, bInserted] = m_destinationCounts.insert({pNode->id(), 1});
+    auto const optNextStreetId = pAgent->nextStreetId();
+    if (optNextStreetId.has_value()) {
+      spdlog::trace("Incrementing destination count for street {}", *optNextStreetId);
+      auto [it, bInserted] = m_destinationCounts.insert({*optNextStreetId, 1});
       if (!bInserted) {
         ++it->second;
       }
@@ -571,13 +573,13 @@ namespace dsf::mobility {
       }
     } else {
       std::uniform_real_distribution<double> uniformDist{0., 1.};
-      if (m_originNodes.empty()) {
+      if (m_origins.empty()) {
         throw std::runtime_error(
             "FirstOrderDynamics::m_addAgentsRandom: No origin nodes set");
       }
       while (nAgents--) {
         auto randValue{uniformDist(this->m_generator)};
-        for (auto const& [origin, weight] : m_originNodes) {
+        for (auto const& [origin, weight] : m_origins) {
           if (randValue < weight) {
             this->addAgent(nullptr, origin);
             break;
@@ -596,33 +598,18 @@ namespace dsf::mobility {
 
   template <typename TContainer>
     requires(std::is_convertible_v<typename TContainer::value_type, Id>)
-  void FirstOrderDynamics::setDestinationNodes(TContainer const& destinationNodes) {
+  void FirstOrderDynamics::setDestinations(TContainer const& destinations) {
     m_itineraries.clear();
-    auto const numNodes{destinationNodes.size()};
-    m_destinationNodes.clear();
-    m_destinationNodes.reserve(numNodes);
-    std::for_each(destinationNodes.begin(),
-                  destinationNodes.end(),
-                  [this, &numNodes](auto const& nodeId) -> void {
-                    this->m_destinationNodes.push_back({nodeId, 1. / numNodes});
-                    this->addItinerary(nodeId, nodeId);
+    auto const N{destinations.size()};
+    m_destinations.clear();
+    m_destinations.reserve(N);
+    double const UNIFORM_WEIGHT{1. / N};
+    std::for_each(destinations.begin(),
+                  destinations.end(),
+                  [this, UNIFORM_WEIGHT](auto const& id) -> void {
+                    this->m_destinations.push_back({id, UNIFORM_WEIGHT});
+                    this->addItinerary(id, id);
                   });
-  }
-
-  template <typename... TArgs>
-    requires(std::is_constructible_v<Agent, Id, std::time_t, TArgs...>)
-  void FirstOrderDynamics::addAgent(TArgs&&... args) {
-    addAgent(std::make_unique<Agent>(
-        this->m_nInsertedAgents, this->time_step(), std::forward<TArgs>(args)...));
-  }
-
-  template <typename... TArgs>
-    requires(std::is_constructible_v<Agent, Id, std::time_t, TArgs...>)
-  void FirstOrderDynamics::addAgents(std::size_t const nAgents, TArgs&&... args) {
-    for (size_t i{0}; i < nAgents; ++i) {
-      addAgent(std::make_unique<Agent>(
-          this->m_nInsertedAgents, this->time_step(), std::forward<TArgs>(args)...));
-    }
   }
 
   template <typename... TArgs>

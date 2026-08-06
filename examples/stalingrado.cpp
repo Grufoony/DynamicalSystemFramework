@@ -53,6 +53,7 @@ int main() {
   Street s12{7, std::make_pair(1, 2), 118., 13.9, 2};
   Street s23{13, std::make_pair(2, 3), 222., 13.9, 2};
   Street s34{19, std::make_pair(3, 4), 651., 13.9, 2};
+  Street s45{25, std::make_pair(4, 5), 2281., 13.9, 2};
   // Viale Aldo Moro
   graph.addNode<TrafficLight>(1);
   auto& tl1 = graph.node<TrafficLight>(1);
@@ -74,17 +75,17 @@ int main() {
   tl4.addPhase(TrafficLightPhase{81, {{s34.id(), {dsf::Direction::ANY}}}});
   tl4.addPhase(TrafficLightPhase{50});
 
-  graph.addStreets(s01, s12, s23, s34);
+  graph.addStreets(s01, s12, s23, s34, s45);
   graph.adjustNodeCapacities();
   graph.addCoil(19);
   auto& coil = graph.edge(19);
 
   // Create the dynamics
   FirstOrderDynamics dynamics{std::move(graph), false, 69};
-  dynamics.addItinerary(4, 4);
+  dynamics.addItinerary(25, 25);
   dynamics.updatePaths();
 
-  auto pItinerary = dynamics.itineraries().at(4);
+  auto pItinerary = dynamics.itineraries().at(25);
 
   // lauch progress bar
   thread_t t([MAX_TIME]() {
@@ -107,7 +108,9 @@ int main() {
         ofs << progress << ';' << coil.counts() << std::endl;
         coil.resetCounter();
       }
-      dynamics.addAgents(*it, pItinerary, 0);
+      for (std::size_t i{0}; i < *it; ++i) {
+        dynamics.addAgent(pItinerary, 1);
+      }
     }
     dynamics.evolve();
     ++progress;

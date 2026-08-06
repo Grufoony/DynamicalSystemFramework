@@ -20,8 +20,309 @@ namespace dsf::mobility {
     for (auto const& [nodeId, pNode] : this->graph().nodes()) {
       m_nodeIndices.push_back(nodeId);
     }
-    for (auto const& [nodeId, weight] : this->m_destinationNodes) {
+    for (auto const& [nodeId, weight] : this->m_destinations) {
       m_itineraries.emplace(nodeId, std::make_shared<Itinerary>(nodeId, nodeId));
+    }
+  }
+
+  void FirstOrderDynamics::m_importNodeODsFromCSV(std::string_view const fileName,
+                                                  char const separator) {
+    if (!std::filesystem::exists(fileName)) {
+      throw std::invalid_argument(std::format("File {} does not exist", fileName));
+    }
+    csv::CSVFormat format;
+    format.delimiter(separator);
+    csv::CSVReader reader(fileName, format);
+
+    auto const& colNames = reader.get_col_names();
+
+    AgentInsertionMethod csvtype{AgentInsertionMethod::RANDOM};
+    for (auto const& colName : colNames) {
+      if (colName == "id") {
+        csvtype = AgentInsertionMethod::RANDOM_ODS;
+        break;
+      } else if (colName == "destination_id") {
+        csvtype = AgentInsertionMethod::ODS;
+        break;
+      } else if (colName == "destinations") {
+        csvtype = AgentInsertionMethod::CONDITIONAL_RANDOM_ODS;
+        break;
+      }
+    }
+
+    switch (csvtype) {
+      case AgentInsertionMethod::RANDOM_ODS: {
+        bool bCompatFormat{false};
+        for (auto const& colName : colNames) {
+          if (colName == "o_prob" || colName == "d_prob") {
+            bCompatFormat = true;
+            break;
+          }
+        }
+        std::unordered_map<Id, double> origins;
+        std::unordered_map<Id, double> destinations;
+        if (bCompatFormat) {
+          spdlog::info("Importing ODs from CSV with RANDOM_ODS method (compat format).");
+          for (auto const& row : reader) {
+            auto const nodeId = row["id"].get<Id>();
+            auto const oId = this->graph().node(nodeId).outgoingEdges().front();
+            auto const dId = this->graph().node(nodeId).ingoingEdges().front();
+            // try to get o_prob as double
+            try {
+              auto oProb = row["o_prob"].get<double>();
+              origins.emplace(oId, oProb);
+            } catch (...) {
+              // Do nothing, the node will be skipped as origin
+            }
+            try {
+              auto dProb = row["d_prob"].get<double>();
+              destinations.emplace(dId, dProb);
+            } catch (...) {
+              // Do nothing, the node will be skipped as destination
+            }
+          }
+        } else {
+          spdlog::info(
+              "Importing ODs from CSV with RANDOM_ODS method (extended format).");
+          for (auto const& row : reader) {
+            auto const nodeId = row["id"].get<Id>();
+            auto const oId = this->graph().node(nodeId).outgoingEdges().front();
+            auto const dId = this->graph().node(nodeId).ingoingEdges().front();
+            auto const type = row["type"].get<std::string>();
+            auto const weight = row["weight"].get<double>();
+            if (type == "O") {
+              origins[oId] = weight;
+            } else if (type == "D") {
+              destinations[dId] = weight;
+            } else {
+              spdlog::warn("Unknown type '{}' for node {} in CSV. Skipping this row.",
+                           type,
+                           nodeId);
+            }
+          }
+        }
+        spdlog::info("Imported {} origin nodes and {} destination nodes from CSV.",
+                     origins.size(),
+                     destinations.size());
+        this->setOrigins(std::move(origins));
+        this->setDestinations(std::move(destinations));
+        break;
+      }
+      case AgentInsertionMethod::ODS: {
+        throw std::runtime_error(
+            "Importing ODs from CSV with ODS method is not implemented yet.");
+      }
+      case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS: {
+        spdlog::info("Importing ODs from CSV with CONDITIONAL_RANDOM_ODS method.");
+        auto const nEdges{this->graph().nEdges()};
+        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
+            conditionalODs;
+        conditionalODs.reserve(nEdges);
+        std::for_each(this->graph().edges().begin(),
+                      this->graph().edges().end(),
+                      [&](auto const& edgePair) {
+                        conditionalODs.emplace(
+                            edgePair.first,
+                            std::make_tuple(0., std::vector<std::tuple<Id, double>>{}));
+                      });
+        for (auto const& row : reader) {
+          auto const originNodeId = row["origin_id"].get<Id>();
+          auto const originEdgeId =
+              this->graph().node(originNodeId).outgoingEdges().front();
+          auto const originWeight = row["weight"].get<double>();
+          // Get destination nodes as id:weight,id:weight,...
+          auto const destinationsStr = row["destinations"].get<std::string>();
+          if (destinationsStr.empty()) {
+            spdlog::warn("Empty destinations for origin {} in CSV. Skipping this row.",
+                         originNodeId);
+            continue;
+          }
+          std::istringstream ss(destinationsStr);
+          std::string destinationPair;
+
+          while (std::getline(ss, destinationPair, ',')) {
+            auto const colonPos = destinationPair.find(':');
+            if (colonPos == std::string::npos) {
+              spdlog::warn(
+                  "Invalid destination pair '{}' for origin {} in CSV. Skipping this "
+                  "pair.",
+                  destinationPair,
+                  originNodeId);
+              continue;
+            }
+            auto const destinationNodeId =
+                static_cast<Id>(std::stoul(destinationPair.substr(0, colonPos)));
+            auto const destinationEdgeId =
+                this->graph().node(destinationNodeId).ingoingEdges().front();
+            auto const destinationWeight =
+                std::stod(destinationPair.substr(colonPos + 1));
+            auto& [weight, destinations] = conditionalODs.at(originEdgeId);
+            weight += originWeight;
+            destinations.emplace_back(destinationEdgeId, destinationWeight);
+          }
+        }
+        // Erase all conditional ODs with empty destination lists
+        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
+            filteredConditionalODs;
+        filteredConditionalODs.reserve(conditionalODs.size());
+        for (auto [id, tuple] : conditionalODs) {
+          if (std::get<1>(tuple).empty()) {
+            spdlog::debug(
+                "Origin node {} has no valid destinations in CSV. Skipping this origin.",
+                id);
+          } else {
+            // Divide weights by the size of destination
+            filteredConditionalODs.emplace(
+                id,
+                std::make_tuple(std::get<0>(tuple) / std::get<1>(tuple).size(),
+                                std::get<1>(tuple)));
+          }
+        }
+        this->setConditionalODs(std::move(filteredConditionalODs));
+        break;
+      }
+      default:
+        throw std::runtime_error(
+            "Could not determine the CSV type based on column names. Expected columns: "
+            "'id' for RANDOM_ODS or 'origin_id' and 'destination_id' for "
+            "RANDOM_OD_PAIRS.");
+    }
+  }
+
+  void FirstOrderDynamics::m_importEdgeODsFromCSV(std::string_view const fileName,
+                                                  char const separator) {
+    if (!std::filesystem::exists(fileName)) {
+      throw std::invalid_argument(std::format("File {} does not exist", fileName));
+    }
+    csv::CSVFormat format;
+    format.delimiter(separator);
+    csv::CSVReader reader(fileName, format);
+
+    auto const& colNames = reader.get_col_names();
+
+    AgentInsertionMethod csvtype{AgentInsertionMethod::RANDOM};
+    for (auto const& colName : colNames) {
+      if (colName == "id") {
+        csvtype = AgentInsertionMethod::RANDOM_ODS;
+        break;
+      } else if (colName == "destination_id") {
+        csvtype = AgentInsertionMethod::ODS;
+        break;
+      } else if (colName == "destinations") {
+        csvtype = AgentInsertionMethod::CONDITIONAL_RANDOM_ODS;
+        break;
+      }
+    }
+
+    switch (csvtype) {
+      case AgentInsertionMethod::RANDOM_ODS: {
+        bool bCompatFormat{false};
+        for (auto const& colName : colNames) {
+          if (colName == "o_prob" || colName == "d_prob") {
+            bCompatFormat = true;
+            break;
+          }
+        }
+        std::unordered_map<Id, double> origins;
+        std::unordered_map<Id, double> destinations;
+        if (bCompatFormat) {
+          spdlog::info("Importing ODs from CSV with RANDOM_ODS method (compat format).");
+          for (auto const& row : reader) {
+            auto const id = row["id"].get<Id>();
+            // try to get o_prob as double
+            try {
+              auto oProb = row["o_prob"].get<double>();
+              origins.emplace(id, oProb);
+            } catch (...) {
+              // Do nothing, the node will be skipped as origin
+            }
+            try {
+              auto dProb = row["d_prob"].get<double>();
+              destinations.emplace(id, dProb);
+            } catch (...) {
+              // Do nothing, the node will be skipped as destination
+            }
+          }
+        } else {
+          spdlog::info(
+              "Importing ODs from CSV with RANDOM_ODS method (extended format).");
+          for (auto const& row : reader) {
+            auto const id = row["id"].get<Id>();
+            auto const type = row["type"].get<std::string>();
+            auto const weight = row["weight"].get<double>();
+            if (type == "O") {
+              origins[id] = weight;
+            } else if (type == "D") {
+              destinations[id] = weight;
+            } else {
+              spdlog::warn(
+                  "Unknown type '{}' for node {} in CSV. Skipping this row.", type, id);
+            }
+          }
+        }
+        spdlog::info("Imported {} origin nodes and {} destination nodes from CSV.",
+                     origins.size(),
+                     destinations.size());
+        this->setOrigins(std::move(origins));
+        this->setDestinations(std::move(destinations));
+        break;
+      }
+      case AgentInsertionMethod::ODS: {
+        spdlog::info("Importing ODs from CSV with RANDOM_OD_PAIRS method.");
+        std::vector<std::tuple<Id, Id, double>> ODs;
+        for (auto const& row : reader) {
+          auto const originId = row["origin_id"].get<Id>();
+          auto const destinationId = row["destination_id"].get<Id>();
+          auto const weight = row["weight"].get<double>();
+          ODs.emplace_back(originId, destinationId, weight);
+        }
+        this->setODs(std::move(ODs));
+        break;
+      }
+      case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS: {
+        spdlog::info("Importing ODs from CSV with CONDITIONAL_RANDOM_ODS method.");
+        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
+            conditionalODs;
+        for (auto const& row : reader) {
+          auto const originId = row["origin_id"].get<Id>();
+          auto const weight = row["weight"].get<double>();
+          // Get destination nodes as id:weight,id:weight,...
+          auto const destinationsStr = row["destinations"].get<std::string>();
+          if (destinationsStr.empty()) {
+            spdlog::warn("Empty destinations for origin {} in CSV. Skipping this row.",
+                         originId);
+            continue;
+          }
+          conditionalODs[originId] =
+              std::make_tuple(weight, std::vector<std::tuple<Id, double>>());
+          std::istringstream ss(destinationsStr);
+          std::string destinationPair;
+          while (std::getline(ss, destinationPair, ',')) {
+            auto const colonPos = destinationPair.find(':');
+            if (colonPos == std::string::npos) {
+              spdlog::warn(
+                  "Invalid destination pair '{}' for origin {} in CSV. Skipping this "
+                  "pair.",
+                  destinationPair,
+                  originId);
+              continue;
+            }
+            auto const destinationId =
+                static_cast<Id>(std::stoul(destinationPair.substr(0, colonPos)));
+            auto const destinationWeight =
+                std::stod(destinationPair.substr(colonPos + 1));
+            std::get<1>(conditionalODs.at(originId))
+                .emplace_back(destinationId, destinationWeight);
+          }
+        }
+        this->setConditionalODs(std::move(conditionalODs));
+        break;
+      }
+      default:
+        throw std::runtime_error(
+            "Could not determine the CSV type based on column names. Expected columns: "
+            "'id' for RANDOM_ODS or 'origin_id' and 'destination_id' for "
+            "RANDOM_OD_PAIRS.");
     }
   }
 
@@ -36,15 +337,13 @@ namespace dsf::mobility {
     }
     auto const oldSize{pItinerary->path().size()};
 
-    auto const path{this->graph().allPathsTo(pItinerary->destination())};
+    auto const path{this->graph().allEdgePathsTo(pItinerary->destination())};
     pItinerary->setPath(path);
     auto const newSize{pItinerary->path().size()};
-    if (oldSize > 0 && newSize != oldSize) {
-      spdlog::debug("Path for itinerary {} changed size from {} to {}",
-                    pItinerary->id(),
-                    oldSize,
-                    newSize);
-    }
+    spdlog::debug("Updated path for itinerary {}: old size = {}, new size = {}",
+                  pItinerary->id(),
+                  oldSize,
+                  newSize);
     if (m_bCacheEnabled) {
       pItinerary->save(std::format("{}{}.ity", CACHE_FOLDER, pItinerary->id()));
       spdlog::debug("Saved path in cache for itinerary {}", pItinerary->id());
@@ -72,7 +371,9 @@ namespace dsf::mobility {
         spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
         return;
       }
-      this->addAgents(nAgents, itineraryIt->second, originId);
+      for (std::size_t i = 0; i < nAgents; ++i) {
+        this->addAgent(itineraryIt->second, originId);
+      }
       return;
     }
     if (m_ODCumulativeWeights.size() != m_ODs.size()) {
@@ -119,17 +420,17 @@ namespace dsf::mobility {
       m_agents.clear();
       m_nAgents -= nStagnantAgents;
     }
-    auto const& nSources{m_originNodes.size()};
-    auto const& nDestinations{m_destinationNodes.size()};
+    auto const& nSources{m_origins.size()};
+    auto const& nDestinations{m_destinations.size()};
     spdlog::debug("Init addAgentsRandomly for {} agents from {} nodes to {} nodes.",
                   nAgents,
                   nSources,
                   nDestinations);
     if (nSources == 1 && nDestinations == 1 &&
-        std::get<Id>(m_originNodes.at(0)) == std::get<Id>(m_destinationNodes.at(0))) {
+        std::get<Id>(m_origins.at(0)) == std::get<Id>(m_destinations.at(0))) {
       throw std::invalid_argument(
           std::format("The only source node {} is also the only destination node.",
-                      std::get<Id>(m_originNodes.at(0))));
+                      std::get<Id>(m_origins.at(0))));
     }
     std::uniform_int_distribution<size_t> nodeDist{
         0, static_cast<size_t>(this->graph().nNodes() - 1)};
@@ -140,10 +441,10 @@ namespace dsf::mobility {
 
       // Select source using weighted random selection
       if (nSources == 1) {
-        srcId = std::get<Id>(m_originNodes.at(0));
+        srcId = std::get<Id>(m_origins.at(0));
       } else {
         auto randValue = uniformDist(this->m_generator);
-        for (const auto& [id, weight] : m_originNodes) {
+        for (const auto& [id, weight] : m_origins) {
           if (randValue < weight) {
             srcId = id;
             break;
@@ -154,10 +455,10 @@ namespace dsf::mobility {
 
       // Select destination using weighted random selection
       if (nDestinations == 1) {
-        dstId = std::get<Id>(m_destinationNodes.at(0));
+        dstId = std::get<Id>(m_destinations.at(0));
       } else {
         auto randValue = uniformDist(this->m_generator);
-        for (const auto& [id, weight] : m_destinationNodes) {
+        for (const auto& [id, weight] : m_destinations) {
           if (randValue < weight) {
             dstId = id;
             break;
@@ -212,10 +513,9 @@ namespace dsf::mobility {
       m_agents.clear();
       m_nAgents -= nStagnantAgents;
     }
-    if (m_originNodes.empty()) {
+    if (m_origins.empty()) {
       throw std::runtime_error(
-          "FirstOrderDynamics::m_addAgentsConditionalRandomODs: Origin nodes must be "
-          "set");
+          "FirstOrderDynamics::m_addAgentsConditionalRandomODs: Origins must be set");
     }
     std::uniform_real_distribution<double> uniformDist{0., 1.};
     spdlog::debug("Adding {} agents at time {}.", nAgents, this->time_step());
@@ -223,8 +523,8 @@ namespace dsf::mobility {
       // Select origin using weighted random selection
       auto randValue = uniformDist(this->m_generator);
       Id originId{
-          std::get<0>(m_originNodes.back())};  // fallback to last for numerical stability
-      for (const auto& [id, weight] : m_originNodes) {
+          std::get<0>(m_origins.back())};  // fallback to last for numerical stability
+      for (const auto& [id, weight] : m_origins) {
         if (randValue < weight) {
           originId = id;
           break;
@@ -312,8 +612,9 @@ namespace dsf::mobility {
 
     std::set<Id> forbiddenTurns;
     std::optional<Id> previousNodeId{std::nullopt};
-    if (pAgent->streetId().has_value()) {
-      auto const& streetCurrent{this->graph().edge(pAgent->streetId().value())};
+    auto const currentStreetIdOpt{pAgent->streetId()};
+    if (currentStreetIdOpt.has_value()) {
+      auto const& streetCurrent{this->graph().edge(*currentStreetIdOpt)};
       forbiddenTurns = streetCurrent.forbiddenTurns();
       previousNodeId = streetCurrent.source();
     }
@@ -331,7 +632,7 @@ namespace dsf::mobility {
       //std::exp(-0.5 * pStreetOut->maxSpeed() / (this->m_speedFunction(*pStreetOut)));
 
       // Handle U-turns
-      if (previousNodeId.has_value() && streetOut.target() == previousNodeId.value()) {
+      if ((previousNodeId.has_value()) && (streetOut.target() == *previousNodeId)) {
         continue;
       }
 
@@ -356,23 +657,25 @@ namespace dsf::mobility {
     // Get current street information
     std::optional<Id> previousNodeId = std::nullopt;
     std::set<Id> forbiddenTurns;
-    if (pAgent->streetId().has_value()) {
-      auto const* pStreetCurrent{&this->graph().edge(pAgent->streetId().value())};
+    std::vector<Id> pathTargets;
+    auto const currentStreetIdOpt{pAgent->streetId()};
+
+    if (currentStreetIdOpt.has_value()) {
+      auto const* pStreetCurrent{&this->graph().edge(*currentStreetIdOpt)};
       previousNodeId = pStreetCurrent->source();
       forbiddenTurns = pStreetCurrent->forbiddenTurns();
-    }
 
-    // Get path targets for non-random agents
-    std::vector<Id> pathTargets;
-    auto const& path = pAgent->itinerary()->path();
-    auto const pathIt = path.find(pNode->id());
-    if (pathIt == path.cend()) {
-      spdlog::debug("No itinerary path entry for {} at node {}. Returning no transition.",
-                    *pAgent,
-                    pNode->id());
-      return std::nullopt;
+      // Get path targets for non-random agents
+      auto const& path = pAgent->itinerary()->path();
+      auto const pathIt = path.find(pStreetCurrent->id());
+      if (pathIt == path.cend()) {
+        spdlog::debug("No itinerary path entry for {} at {}. Returning no transition.",
+                      *pAgent,
+                      *pStreetCurrent);
+        return std::nullopt;
+      }
+      pathTargets = pathIt->second;
     }
-    pathTargets = pathIt->second;
 
     // Calculate transition probabilities for all valid outgoing edges
     std::unordered_map<Id, double> transitionProbabilities;
@@ -391,7 +694,7 @@ namespace dsf::mobility {
       // Check if this is a valid path target for non-random agents
       bool bIsPathTarget = false;
       bIsPathTarget =
-          std::find(pathTargets.cbegin(), pathTargets.cend(), streetOut.target()) !=
+          std::find(pathTargets.cbegin(), pathTargets.cend(), streetOut.id()) !=
           pathTargets.cend();
 
       if (!this->m_errorProbability.has_value() && !bIsPathTarget) {
@@ -405,13 +708,13 @@ namespace dsf::mobility {
       if (this->m_errorProbability.has_value()) {
         probability *=
             (bIsPathTarget
-                 ? (1. - this->m_errorProbability.value())
-                 : this->m_errorProbability.value() /
+                 ? (1. - *m_errorProbability)
+                 : *m_errorProbability /
                        static_cast<double>(outgoingEdges.size() - pathTargets.size()));
       }
 
       // Handle U-turns
-      if (previousNodeId.has_value() && streetOut.target() == previousNodeId.value()) {
+      if ((previousNodeId.has_value()) && streetOut.target() == *previousNodeId) {
         if (pNode->isRoundabout()) {
           probability *= m_uturnPenaltyFactor;  // Penalize U-turns in roundabouts
         } else if (!bIsPathTarget) {
@@ -437,10 +740,12 @@ namespace dsf::mobility {
       pAgent->setSpeed(0.);
       bool bArrived{false};
       if (!pAgent->isRandom()) {
-        if (pAgent->itinerary()->destination() == pStreet->target()) {
+        if (this->graph().edge(pAgent->itinerary()->destination()).source() ==
+            pStreet->target()) {
           pAgent->updateItinerary();
         }
-        if (pAgent->itinerary()->destination() == pStreet->target()) {
+        if (this->graph().edge(pAgent->itinerary()->destination()).source() ==
+            pStreet->target()) {
           bArrived = true;
         }
       }
@@ -559,7 +864,7 @@ namespace dsf::mobility {
 
       if (m_timeToleranceFactor.has_value()) {
         auto const timeDiff{this->time_step() - pAgentTemp->freeTime()};
-        auto const timeTolerance{m_timeToleranceFactor.value() *
+        auto const timeTolerance{*m_timeToleranceFactor *
                                  std::ceil(pStreet->length() / pStreet->maxSpeed())};
         if (timeDiff > timeTolerance) {
           spdlog::debug(
@@ -633,15 +938,15 @@ namespace dsf::mobility {
                     continue;
                   }
                   auto const& pAgentTemp2{pStreetTemp->queue(i).front()};
-                  if (!pAgentTemp2->nextStreetId().has_value()) {
+                  auto const streetIdOpt2{pAgentTemp2->streetId()};
+                  auto const nextStreetIdOpt2{pAgentTemp2->nextStreetId()};
+                  if (!nextStreetIdOpt2.has_value() || !streetIdOpt2.has_value()) {
                     continue;
                   }
                   auto const& otherDirection{
                       this->graph()
-                          .edge(pAgentTemp2->nextStreetId().value())
-                          .turnDirection(this->graph()
-                                             .edge(pAgentTemp2->streetId().value())
-                                             .angle())};
+                          .edge(*nextStreetIdOpt2)
+                          .turnDirection(this->graph().edge(*streetIdOpt2).angle())};
                   if (otherDirection < Direction::LEFT) {
                     spdlog::debug(
                         "Skipping agent emission from street {} -> {} due to right of "
@@ -666,14 +971,15 @@ namespace dsf::mobility {
                   continue;
                 }
                 auto const& pAgentTemp2{pStreetTemp->queue(i).front()};
-                if (!pAgentTemp2->streetId().has_value()) {
+                auto const streetIdOpt2{pAgentTemp2->streetId()};
+                auto const nextStreetIdOpt2{pAgentTemp2->nextStreetId()};
+                if (!streetIdOpt2.has_value() || !nextStreetIdOpt2.has_value()) {
                   continue;
                 }
                 auto const& otherDirection{
                     this->graph()
-                        .edge(pAgentTemp2->nextStreetId().value())
-                        .turnDirection(
-                            this->graph().edge(pAgentTemp2->streetId().value()).angle())};
+                        .edge(*nextStreetIdOpt2)
+                        .turnDirection(this->graph().edge(*streetIdOpt2).angle())};
                 if (otherDirection < thisDirection) {
                   spdlog::debug(
                       "Skipping agent emission from street {} -> {} due to right of "
@@ -710,8 +1016,10 @@ namespace dsf::mobility {
         }
       }
       if (!pAgentTemp->isRandom()) {
-        if (destinationNode->id() == pAgentTemp->itinerary()->destination()) {
+        auto const& dstStreet{this->graph().edge(pAgentTemp->itinerary()->destination())};
+        if (destinationNode->id() == dstStreet.source()) {
           bArrived = true;
+          pAgentTemp->setNextStreetId(dstStreet.id());
           spdlog::debug("Agent {} has arrived at destination node {}",
                         pAgentTemp->id(),
                         destinationNode->id());
@@ -737,9 +1045,12 @@ namespace dsf::mobility {
         continue;
       }
       if (!pAgentTemp->streetId().has_value()) {
-        spdlog::error("{} has no street id", *pAgentTemp);
+        throw std::runtime_error(
+            std::format("Agent {} has no current street ID at node {}. Cannot proceed.",
+                        pAgentTemp->id(),
+                        destinationNode->id()));
       }
-      auto* nextStreet{&this->graph().edge(pAgentTemp->nextStreetId().value())};
+      auto* nextStreet{&this->graph().edge(*(pAgentTemp->nextStreetId()))};
       if (nextStreet->isFull()) {
         spdlog::debug(
             "Skipping agent emission from street {} -> {} due to full "
@@ -791,7 +1102,11 @@ namespace dsf::mobility {
         }
         for (auto it{intersection.agents().begin()}; it != intersection.agents().end();) {
           auto& pAgent{it->second};
-          auto* nextStreet{&this->graph().edge(pAgent->nextStreetId().value())};
+          if (!pAgent->nextStreetId().has_value()) {
+            throw std::runtime_error(std::format(
+                "{} has no next street ID at {}. Cannot proceed.", *pAgent, *pNode));
+          }
+          auto* nextStreet{&this->graph().edge(*(pAgent->nextStreetId()))};
           if (nextStreet->isFull()) {
             spdlog::debug("Next street is full: {}", *nextStreet);
             if (m_forcePriorities) {
@@ -830,7 +1145,13 @@ namespace dsf::mobility {
           return;
         }
         auto const& pAgentTemp{roundabout.agents().front()};
-        auto* nextStreet{&this->graph().edge(pAgentTemp->nextStreetId().value())};
+        if (!pAgentTemp->nextStreetId().has_value()) {
+          throw std::runtime_error(std::format(
+              "Agent {} has no next street ID at roundabout {}. Cannot proceed.",
+              *pAgentTemp,
+              *pNode));
+        }
+        auto* nextStreet{&this->graph().edge(*(pAgentTemp->nextStreetId()))};
         if (!(nextStreet->isFull())) {
           if (!m_turnCounts.empty() && pAgentTemp->streetId().has_value()) {
             ++m_turnCounts[*(pAgentTemp->streetId())][nextStreet->id()];
@@ -890,10 +1211,10 @@ namespace dsf::mobility {
           itAgent = m_agents.erase(itAgent);
           continue;
         }
-        pAgent->setNextStreetId(nextStreetId.value());
+        pAgent->setNextStreetId(*nextStreetId);
       }
-      // spdlog::debug("Checking next street {}", pAgent->nextStreetId().value());
-      auto* nextStreet{&this->graph().edge(pAgent->nextStreetId().value())};
+      spdlog::debug("Checking next street for {}", *pAgent);
+      auto* nextStreet{&this->graph().edge(*(pAgent->nextStreetId()))};
       if (nextStreet->isFull()) {
         ++itAgent;
         spdlog::debug("Skipping {} due to full input {}", *pAgent, *nextStreet);
@@ -951,20 +1272,19 @@ namespace dsf::mobility {
     }
     m_timeToleranceFactor = timeToleranceFactor;
   }
-  void FirstOrderDynamics::setOriginNodes(
-      std::unordered_map<Id, double> const& originNodes) {
-    m_originNodes.clear();
-    m_originNodes.reserve(originNodes.size());
-    if (originNodes.empty()) {
+  void FirstOrderDynamics::setOrigins(std::unordered_map<Id, double> const& origins) {
+    m_origins.clear();
+    m_origins.reserve(origins.size());
+    if (origins.empty()) {
       // If no origin nodes are provided, try to set origin nodes basing on streets' stationary weights
-      auto const nEdges{this->graph().nEdges()};
-      for (auto const& [edgeId, pEdge] : this->graph().edges()) {
-        m_originNodes.push_back({pEdge->source(), 1. / nEdges});
+      auto const UNIFORM_WEIGHT{1. / this->graph().nEdges()};
+      for (auto const& edgePair : this->graph().edges()) {
+        m_origins.push_back({edgePair.first, UNIFORM_WEIGHT});
       }
       return;
     }
     auto const sumWeights = std::accumulate(
-        originNodes.begin(), originNodes.end(), 0., [](double sum, auto const& pair) {
+        origins.begin(), origins.end(), 0., [](double sum, auto const& pair) {
           return sum + pair.second;
         });
     if (sumWeights <= 0.) {
@@ -972,25 +1292,24 @@ namespace dsf::mobility {
           std::format("The sum of the weights ({}) must be positive", sumWeights));
     }
     if (sumWeights == 1.) {
-      std::copy(
-          originNodes.begin(), originNodes.end(), std::back_inserter(m_originNodes));
+      std::copy(origins.begin(), origins.end(), std::back_inserter(m_origins));
       return;
     }
-    std::transform(originNodes.begin(),
-                   originNodes.end(),
-                   std::back_inserter(m_originNodes),
+    std::transform(origins.begin(),
+                   origins.end(),
+                   std::back_inserter(m_origins),
                    [sumWeights](auto const& pair) -> std::pair<Id, double> {
                      return {pair.first, pair.second / sumWeights};
                    });
   }
-  void FirstOrderDynamics::setDestinationNodes(
-      std::unordered_map<Id, double> const& destinationNodes) {
+  void FirstOrderDynamics::setDestinations(
+      std::unordered_map<Id, double> const& destinations) {
     m_itineraries.clear();
-    m_destinationNodes.clear();
-    m_destinationNodes.reserve(destinationNodes.size());
-    auto sumWeights{0.};
-    std::for_each(destinationNodes.begin(),
-                  destinationNodes.end(),
+    m_destinations.clear();
+    m_destinations.reserve(destinations.size());
+    double sumWeights{0.};
+    std::for_each(destinations.begin(),
+                  destinations.end(),
                   [this, &sumWeights](auto const& pair) -> void {
                     sumWeights += pair.second;
                     this->addItinerary(pair.first, pair.first);
@@ -1000,154 +1319,26 @@ namespace dsf::mobility {
           std::format("The sum of the weights ({}) must be positive", sumWeights));
     }
     if (sumWeights == 1.) {
-      std::copy(destinationNodes.begin(),
-                destinationNodes.end(),
-                std::back_inserter(m_destinationNodes));
+      std::copy(
+          destinations.begin(), destinations.end(), std::back_inserter(m_destinations));
       return;
     }
-    std::transform(destinationNodes.begin(),
-                   destinationNodes.end(),
-                   std::back_inserter(m_destinationNodes),
+    std::transform(destinations.begin(),
+                   destinations.end(),
+                   std::back_inserter(m_destinations),
                    [sumWeights](auto const& pair) -> std::pair<Id, double> {
                      return {pair.first, pair.second / sumWeights};
                    });
   }
   void FirstOrderDynamics::importODsFromCSV(std::string_view const fileName,
-                                            char const separator) {
-    if (!std::filesystem::exists(fileName)) {
-      throw std::invalid_argument(std::format("File {} does not exist", fileName));
+                                            char const separator,
+                                            bool const bEdges) {
+    if (bEdges) {
+      this->m_importEdgeODsFromCSV(fileName, separator);
+    } else {
+      this->m_importNodeODsFromCSV(fileName, separator);
     }
-    csv::CSVFormat format;
-    format.delimiter(separator);
-    csv::CSVReader reader(fileName, format);
-
-    auto const& colNames = reader.get_col_names();
-
-    AgentInsertionMethod csvtype{AgentInsertionMethod::RANDOM};
-    for (auto const& colName : colNames) {
-      if (colName == "node_id") {
-        csvtype = AgentInsertionMethod::RANDOM_ODS;
-        break;
-      } else if (colName == "destination_id") {
-        csvtype = AgentInsertionMethod::ODS;
-        break;
-      } else if (colName == "destinations") {
-        csvtype = AgentInsertionMethod::CONDITIONAL_RANDOM_ODS;
-        break;
-      }
-    }
-
-    switch (csvtype) {
-      case AgentInsertionMethod::RANDOM_ODS: {
-        bool bCompatFormat{false};
-        for (auto const& colName : colNames) {
-          if (colName == "o_prob" || colName == "d_prob") {
-            bCompatFormat = true;
-            break;
-          }
-        }
-        std::unordered_map<Id, double> originNodes;
-        std::unordered_map<Id, double> destinationNodes;
-        if (bCompatFormat) {
-          spdlog::info("Importing ODs from CSV with RANDOM_ODS method (compat format).");
-          for (auto const& row : reader) {
-            auto const nodeId = row["node_id"].get<Id>();
-            // try to get o_prob as double
-            try {
-              auto oProb = row["o_prob"].get<double>();
-              originNodes.emplace(nodeId, oProb);
-            } catch (...) {
-              // Do nothing, the node will be skipped as origin
-            }
-            try {
-              auto dProb = row["d_prob"].get<double>();
-              destinationNodes.emplace(nodeId, dProb);
-            } catch (...) {
-              // Do nothing, the node will be skipped as destination
-            }
-          }
-        } else {
-          spdlog::info(
-              "Importing ODs from CSV with RANDOM_ODS method (extended format).");
-          for (auto const& row : reader) {
-            auto const nodeId = row["node_id"].get<Id>();
-            auto const type = row["type"].get<std::string>();
-            auto const weight = row["weight"].get<double>();
-            if (type == "O") {
-              originNodes[nodeId] = weight;
-            } else if (type == "D") {
-              destinationNodes[nodeId] = weight;
-            } else {
-              spdlog::warn("Unknown type '{}' for node {} in CSV. Skipping this row.",
-                           type,
-                           nodeId);
-            }
-          }
-        }
-        spdlog::info("Imported {} origin nodes and {} destination nodes from CSV.",
-                     originNodes.size(),
-                     destinationNodes.size());
-        this->setOriginNodes(std::move(originNodes));
-        this->setDestinationNodes(std::move(destinationNodes));
-        break;
-      }
-      case AgentInsertionMethod::ODS: {
-        spdlog::info("Importing ODs from CSV with RANDOM_OD_PAIRS method.");
-        std::vector<std::tuple<Id, Id, double>> ODs;
-        for (auto const& row : reader) {
-          auto const originId = row["origin_id"].get<Id>();
-          auto const destinationId = row["destination_id"].get<Id>();
-          auto const weight = row["weight"].get<double>();
-          ODs.emplace_back(originId, destinationId, weight);
-        }
-        this->setODs(std::move(ODs));
-        break;
-      }
-      case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS: {
-        spdlog::info("Importing ODs from CSV with CONDITIONAL_RANDOM_ODS method.");
-        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
-            conditionalODs;
-        for (auto const& row : reader) {
-          auto const originId = row["origin_id"].get<Id>();
-          auto const weight = row["weight"].get<double>();
-          // Get destination nodes as id:weight,id:weight,...
-          auto const destinationsStr = row["destinations"].get<std::string>();
-          if (destinationsStr.empty()) {
-            spdlog::warn("Empty destinations for origin {} in CSV. Skipping this row.",
-                         originId);
-            continue;
-          }
-          conditionalODs[originId] =
-              std::make_tuple(weight, std::vector<std::tuple<Id, double>>());
-          std::istringstream ss(destinationsStr);
-          std::string destinationPair;
-          while (std::getline(ss, destinationPair, ',')) {
-            auto const colonPos = destinationPair.find(':');
-            if (colonPos == std::string::npos) {
-              spdlog::warn(
-                  "Invalid destination pair '{}' for origin {} in CSV. Skipping this "
-                  "pair.",
-                  destinationPair,
-                  originId);
-              continue;
-            }
-            auto const destinationId =
-                static_cast<Id>(std::stoul(destinationPair.substr(0, colonPos)));
-            auto const destinationWeight =
-                std::stod(destinationPair.substr(colonPos + 1));
-            std::get<1>(conditionalODs.at(originId))
-                .emplace_back(destinationId, destinationWeight);
-          }
-        }
-        this->setConditionalODs(std::move(conditionalODs));
-        break;
-      }
-      default:
-        throw std::runtime_error(
-            "Could not determine the CSV type based on column names. Expected columns: "
-            "'node_id' for RANDOM_ODS or 'origin_id' and 'destination_id' for "
-            "RANDOM_OD_PAIRS.");
-    }
+    spdlog::info("Finished importing ODs from CSV.");
   }
   void FirstOrderDynamics::initTurnCounts() {
     if (!m_turnCounts.empty()) {
@@ -1194,17 +1385,17 @@ namespace dsf::mobility {
         saveAgentData);
   }
 
-  void FirstOrderDynamics::setDestinationNodes(
-      std::initializer_list<Id> destinationNodes) {
+  void FirstOrderDynamics::setDestinations(std::initializer_list<Id> destinations) {
     m_itineraries.clear();
-    auto const numNodes{destinationNodes.size()};
-    m_destinationNodes.clear();
-    m_destinationNodes.reserve(numNodes);
-    std::for_each(destinationNodes.begin(),
-                  destinationNodes.end(),
-                  [this, &numNodes](auto const& nodeId) -> void {
-                    this->m_destinationNodes.push_back({nodeId, 1. / numNodes});
-                    this->addItinerary(nodeId, nodeId);
+    auto const N{destinations.size()};
+    m_destinations.clear();
+    m_destinations.reserve(N);
+    double const UNIFORM_WEIGHT{1. / N};
+    std::for_each(destinations.begin(),
+                  destinations.end(),
+                  [this, UNIFORM_WEIGHT](auto const& id) -> void {
+                    this->m_destinations.push_back({id, UNIFORM_WEIGHT});
+                    this->addItinerary(id, id);
                   });
   }
   void FirstOrderDynamics::setODs(std::vector<std::tuple<Id, Id, double>> const& ODs) {
@@ -1266,7 +1457,7 @@ namespace dsf::mobility {
                                                          weight / sumDestinationWeights);
       }
     }
-    this->setOriginNodes(std::move(originWeights));
+    this->setOrigins(std::move(originWeights));
   }
 
   void FirstOrderDynamics::updatePaths() {
@@ -1308,10 +1499,10 @@ namespace dsf::mobility {
         std::erase_if(m_ODs, [destination](auto const& tuple) {
           return std::get<1>(tuple) == destination;
         });
-        std::erase_if(m_destinationNodes, [destination](auto const& tuple) {
+        std::erase_if(m_destinations, [destination](auto const& tuple) {
           return std::get<0>(tuple) == destination;
         });
-        std::erase_if(m_originNodes, [destination](auto const& tuple) {
+        std::erase_if(m_origins, [destination](auto const& tuple) {
           return std::get<0>(tuple) == destination;
         });
         for (auto& [origin, destinations] : m_originToDestinations) {
@@ -1323,7 +1514,7 @@ namespace dsf::mobility {
         std::erase_if(m_originToDestinations, [this](auto const& pair) {
           bool const bErase{pair.second.empty()};
           if (bErase) {
-            std::erase_if(m_originNodes, [&pair](auto const& tuple) {
+            std::erase_if(m_origins, [&pair](auto const& tuple) {
               return std::get<0>(tuple) == pair.first;
             });
           }
@@ -1382,9 +1573,9 @@ namespace dsf::mobility {
         streetIt = this->graph().edges().begin();
       }
       auto const& street{streetIt->second};
-      this->addAgent(pItinerary, street->source());
+      this->addAgent(pItinerary, streetIt->first);
       auto& pAgent{this->m_agents.back()};
-      pAgent->setStreetId(street->id());
+      pAgent->setStreetId();
       pAgent->setSpeed(this->m_speedFunction(*streetIt->second));
       pAgent->setFreeTime(this->time_step() +
                           std::ceil(street->length() / pAgent->speed()));
@@ -1393,18 +1584,47 @@ namespace dsf::mobility {
     }
   }
 
+  void FirstOrderDynamics::addAgent(std::vector<std::shared_ptr<Itinerary>> const& trip,
+                                    std::optional<Id> optSrcStreetId) {
+    if (!optSrcStreetId.has_value()) {
+      addAgent(std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), trip));
+      return;
+    }
+    auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
+    auto pAgent = std::make_unique<Agent>(
+        m_nInsertedAgents, this->time_step(), trip, srcStreet.source());
+    pAgent->setNextStreetId(srcStreet.id());
+    addAgent(std::move(pAgent));
+  }
+
+  void FirstOrderDynamics::addAgent(std::shared_ptr<Itinerary> pItinerary,
+                                    std::optional<Id> optSrcStreetId) {
+    if (!optSrcStreetId.has_value()) {
+      addAgent(std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), pItinerary));
+      return;
+    }
+    auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
+    auto pAgent = std::make_unique<Agent>(
+        m_nInsertedAgents, this->time_step(), pItinerary, srcStreet.source());
+    pAgent->setNextStreetId(srcStreet.id());
+    addAgent(std::move(pAgent));
+  }
+
   void FirstOrderDynamics::addAgent(std::unique_ptr<Agent> pAgent) {
     m_agents.push_back(std::move(pAgent));
+    if (m_nAddedAgents == m_nInsertedAgents) {
+      ++m_nAddedAgents;
+    }
     ++m_nAgents;
     ++m_nInsertedAgents;
-    spdlog::trace("Added {}", *m_agents.back());
-    auto const& optNodeId{m_agents.back()->srcNodeId()};
-    if (optNodeId.has_value()) {
-      auto [it, bInserted] = m_originCounts.insert({*optNodeId, 1});
+    auto const& optNextStreetId{m_agents.back()->nextStreetId()};
+    if (optNextStreetId.has_value()) {
+      auto [it, bInserted] = m_originCounts.insert({*optNextStreetId, 1});
       if (!bInserted) {
         ++it->second;
       }
     }
+    spdlog::trace("Added {}", *m_agents.back());
   }
 
   void FirstOrderDynamics::addAgents(std::size_t const nAgents,
@@ -1463,7 +1683,7 @@ namespace dsf::mobility {
         m_dataUpdatePeriod.has_value() && this->time_step() % *m_dataUpdatePeriod == 0;
     auto const numNodes{this->graph().nNodes()};
     auto const numEdges{this->graph().nEdges()};
-
+    spdlog::debug("Init evolving streets at time {}", this->time_step());
     const auto grainSize = std::max<std::size_t>(1, numNodes / (n_threads * 8));
     this->m_taskArena.execute([&] {
       tbb::parallel_for(
@@ -1536,7 +1756,7 @@ namespace dsf::mobility {
           },
           tbb::auto_partitioner{});
     });
-    spdlog::debug("Pre-nodes");
+    spdlog::debug("Init evolving nodes at time {}", this->time_step());
     // Move transport capacity agents from each node
     this->m_taskArena.execute([&] {
       tbb::parallel_for(
@@ -1553,6 +1773,7 @@ namespace dsf::mobility {
           },
           tbb::auto_partitioner{});
     });
+    spdlog::debug("Init evolving agents at time {}", this->time_step());
     this->m_evolveAgents();
 
     if (bComputeStats) {

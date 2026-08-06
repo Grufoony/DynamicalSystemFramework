@@ -271,6 +271,10 @@ namespace dsf::mobility {
           }
           if (!laneMappingVec.empty()) {
             std::sort(laneMappingVec.begin(), laneMappingVec.end());
+            auto& e = edge(streetId);
+            if (e.nLanes() != static_cast<int>(laneMappingVec.size())) {
+              e.changeNLanes(static_cast<int>(laneMappingVec.size()));
+            }
             edge(streetId).setLaneMapping(laneMappingVec);
           }
         } catch (...) {
