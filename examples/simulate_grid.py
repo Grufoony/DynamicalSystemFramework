@@ -11,12 +11,10 @@ import logging
 
 from dsf.cartography import create_manhattan_cartography
 from dsf.mobility import (
-    RoadNetwork,
-    Dynamics,
+    TrafficSimulator,
     AgentInsertionMethod,
 )
 
-from tqdm import trange
 from numba import cfunc, float64
 import numpy as np
 
@@ -70,47 +68,26 @@ if __name__ == "__main__":
 
     logging.info("Creating road network and dynamics model...")
 
-    # Create a road network from the cartography
-    road_network = RoadNetwork()
-    road_network.importEdges(f"grid_{args.dim}_edges.csv", ";")
-    road_network.importNodeProperties(f"grid_{args.dim}_nodes.csv", ";")
-    # Adjust network parameters
-    road_network.adjustNodeCapacities()
-    road_network.autoMapStreetLanes()
-    road_network.autoAssignRoadPriorities()
-    road_network.autoInitTrafficLights()
-    road_network.describe()
-
+    simulator = TrafficSimulator()
+    simulator.importRoadNetwork(
+        f"grid_{args.dim}_edges.csv", f"grid_{args.dim}_nodes.csv"
+    )
     # Generate a random vector of integer values for vehicle input
     # We want values to have a 10s entry for a whole day
     vehicle_input = np.random.normal(args.amp, args.amp * 0.1, size=8640)
     vehicle_input = np.clip(vehicle_input, 0, None).astype(int)
 
-    # Create a dynamics model for the road network
-    dynamics = Dynamics(road_network, seed=args.seed)
-    # To use a custom speed function, you must pass the pointer to the compiled function using the address attribute
-    # dynamics.setSpeedFunction(SpeedFunction.CUSTOM, custom_speed.address)
-    # Get epoch time of today at midnight
-    epoch_time = int(
-        datetime.combine(datetime.today(), datetime.min.time()).timestamp()
-    )
+    EPOCH = int(datetime.combine(datetime.today(), datetime.min.time()).timestamp())
 
-    dynamics.setMeanTravelDistance(10e3)  # Set mean travel distance to 10 km
-    dynamics.killStagnantAgents(40.0)
-    dynamics.setInitTime(epoch_time)
-    dynamics.connectDataBase(f"grid_{args.dim}.db")
-    dynamics.saveData(300, True, True, True)
+    simulator.setTimeFrame(EPOCH)
+    simulator.saveData(300, True, True, True)
+    simulator.updatePaths(300, False)
 
-    # Simulate traffic for 24 hours with a time step of 1 seconds
-    for time_step in trange(86400):
-        # Update paths every 5 minutes (300 seconds)
-        if time_step % 300 == 0:
-            dynamics.updatePaths()
-        # Add agents every 10 seconds
-        if time_step % 10 == 0:
-            dynamics.addAgents(
-                vehicle_input[time_step // 10], AgentInsertionMethod.RANDOM
-            )
-        dynamics.evolve()
+    simulator.dynamics().setSeed(args.seed)
+    simulator.dynamics().killStagnantAgents(40.0)
+    simulator.dynamics().setMeanTravelDistance(
+        10e3
+    )  # Set mean travel distance to 10 km
+    simulator.setAgentInsertionMethod(AgentInsertionMethod.RANDOM)
 
-    dynamics.summary()
+    simulator.run(vehicle_input, 10)
