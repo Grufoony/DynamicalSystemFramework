@@ -17,9 +17,6 @@ namespace dsf::mobility {
       }
       spdlog::info("Cache enabled (default folder is {})", CACHE_FOLDER);
     }
-    for (auto const& [nodeId, pNode] : this->graph().nodes()) {
-      m_nodeIndices.push_back(nodeId);
-    }
     for (auto const& [nodeId, weight] : this->m_destinations) {
       m_itineraries.emplace(nodeId, std::make_shared<Itinerary>(nodeId, nodeId));
     }
@@ -1685,12 +1682,13 @@ namespace dsf::mobility {
     auto const numEdges{this->graph().nEdges()};
     spdlog::debug("Init evolving streets at time {}", this->time_step());
     const auto grainSize = std::max<std::size_t>(1, numNodes / (n_threads * 8));
+    auto const& nodes{this->graph().nodes().values()};
     this->m_taskArena.execute([&] {
       tbb::parallel_for(
           tbb::blocked_range<std::size_t>(0, numNodes, grainSize),
           [&](const tbb::blocked_range<std::size_t>& range) {
             for (std::size_t i = range.begin(); i != range.end(); ++i) {
-              auto* pNode = &this->graph().node(m_nodeIndices[i]);
+              auto* pNode = (nodes.begin() + i)->get();
               for (auto const& inEdgeId : pNode->ingoingEdges()) {
                 auto* pStreet{&this->graph().edge(inEdgeId)};
                 if (bUpdateData && pNode->isTrafficLight()) {
@@ -1763,7 +1761,7 @@ namespace dsf::mobility {
           tbb::blocked_range<size_t>(0, numNodes, grainSize),
           [&](const tbb::blocked_range<size_t>& range) {
             for (size_t i = range.begin(); i != range.end(); ++i) {
-              auto* pNode = &this->graph().node(m_nodeIndices[i]);
+              auto* pNode = (nodes.begin() + i)->get();
               m_evolveNode(pNode);
               if (pNode->isTrafficLight()) {
                 auto& tl = dynamic_cast<TrafficLight&>(*pNode);

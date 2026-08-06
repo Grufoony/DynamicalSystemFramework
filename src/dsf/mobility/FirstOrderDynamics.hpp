@@ -94,7 +94,6 @@ namespace dsf::mobility {
   };
   /// @brief The FirstOrderDynamics class represents the dynamics of the network.
   class FirstOrderDynamics : public Dynamics<RoadNetwork> {
-    std::vector<Id> m_nodeIndices;
     std::vector<std::unique_ptr<Agent>> m_agents;
     std::unordered_map<Id, std::shared_ptr<Itinerary>> m_itineraries;
     std::vector<std::tuple<Id, double>> m_origins;
