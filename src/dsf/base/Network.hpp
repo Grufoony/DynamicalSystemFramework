@@ -8,6 +8,7 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <flat_map>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -33,7 +34,7 @@ namespace dsf {
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   class Network {
   protected:
-    std::unordered_map<Id, std::unique_ptr<node_t>> m_nodes;
+    std::flat_map<Id, std::unique_ptr<node_t>> m_nodes;
     std::unordered_map<Id, std::unique_ptr<edge_t>> m_edges;
 
     std::function<double(edge_t const&)> m_weightFunction =
@@ -716,7 +717,7 @@ namespace dsf {
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   void Network<node_t, edge_t>::computeBetweennessCentralities() {
-    for (auto& [nodeId, pNode] : m_nodes) {
+    for (auto const& pNode : m_nodes.values()) {
       pNode->setAttribute("betweennessCentrality", 0.0);
     }
 
