@@ -4,10 +4,10 @@
 #include "../geometry/PolyLine.hpp"
 #include "../utility/Typedef.hpp"
 
+#include <flat_map>
 #include <format>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -19,9 +19,8 @@ namespace dsf {
     Id m_id;
     std::pair<Id, Id> m_nodePair;
     double m_angle;
-    std::unordered_map<
-        std::string,
-        std::variant<std::monostate, bool, std::int64_t, double, std::string>>
+    std::flat_map<std::string,
+                  std::variant<std::monostate, bool, std::int64_t, double, std::string>>
         m_attributes;
 
     void m_setAngle(geometry::Point srcNodeCoordinates,
@@ -70,7 +69,7 @@ namespace dsf {
     /// @return double The edge's angle, in radians
     inline auto angle() const { return m_angle; }
     /// @brief Get the edge's attributes
-    /// @return std::unordered_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> The edge's attributes, where the key is the attribute's name and the value is the attribute's value
+    /// @return std::flat_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> The edge's attributes, where the key is the attribute's name and the value is the attribute's value
     inline auto const& attributes() const { return m_attributes; }
     /// @brief Get an attribute of the edge by name
     /// @tparam T The expected type of the attribute's value

@@ -10,6 +10,7 @@
 #include "../utility/queue.hpp"
 #include "../utility/Typedef.hpp"
 
+#include <flat_map>
 #include <functional>
 #include <utility>
 #include <stdexcept>
@@ -18,7 +19,6 @@
 #include <format>
 #include <cassert>
 #include <string>
-#include <unordered_map>
 #include <variant>
 
 namespace dsf {
@@ -30,9 +30,8 @@ namespace dsf {
     std::string m_name;
     std::vector<Id> m_ingoingEdges;
     std::vector<Id> m_outgoingEdges;
-    std::unordered_map<
-        std::string,
-        std::variant<std::monostate, bool, std::int64_t, double, std::string>>
+    std::flat_map<std::string,
+                  std::variant<std::monostate, bool, std::int64_t, double, std::string>>
         m_attributes;
 
   public:
