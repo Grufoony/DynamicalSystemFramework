@@ -94,6 +94,20 @@ static void BM_RoadNetwork_AllPathsTo(benchmark::State& state) {
     ++itNode;
   }
 }
+static void BM_RoadNetwork_AllEdgePathsTo(benchmark::State& state) {
+  dsf::mobility::RoadNetwork network;
+  network.setEdgeWeight("length");
+  network.importEdges((DATA_FOLDER / "forlì_edges.csv").string());
+  network.importNodeProperties((DATA_FOLDER / "forlì_nodes.csv").string());
+  auto itEdge = network.edges().cbegin();
+  for (auto _ : state) {
+    auto paths = network.allEdgePathsTo(itEdge->first);
+    ++itEdge;
+    if (itEdge == network.edges().cend()) {
+      itEdge = network.edges().cbegin();
+    }
+  }
+}
 static void BM_RoadNetwork_ShortestPath(benchmark::State& state) {
   dsf::mobility::RoadNetwork network;
   network.setEdgeWeight("length");
@@ -121,5 +135,6 @@ BENCHMARK(BM_RoadNetwork_NodeRandomAccess);
 BENCHMARK(BM_RoadNetwork_EdgeRandomAccess);
 BENCHMARK(BM_RoadNetwork_ShortestPath);
 BENCHMARK(BM_RoadNetwork_AllPathsTo);
+BENCHMARK(BM_RoadNetwork_AllEdgePathsTo);
 
 BENCHMARK_MAIN();
