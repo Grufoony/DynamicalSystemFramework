@@ -57,6 +57,32 @@ static void BM_RoadNetwork_EdgesLooping(benchmark::State& state) {
     }
   }
 }
+static void BM_RoadNetwork_NodeRandomAccess(benchmark::State& state) {
+  dsf::mobility::RoadNetwork network;
+  network.importEdges((DATA_FOLDER / "forlì_edges.csv").string());
+  network.importNodeProperties((DATA_FOLDER / "forlì_nodes.csv").string());
+  auto itNode = network.nodes().cbegin();
+  for (auto _ : state) {
+    benchmark::DoNotOptimize(network.node(itNode->first));
+    ++itNode;
+    if (itNode == network.nodes().cend()) {
+      itNode = network.nodes().cbegin();
+    }
+  }
+}
+static void BM_RoadNetwork_EdgeRandomAccess(benchmark::State& state) {
+  dsf::mobility::RoadNetwork network;
+  network.importEdges((DATA_FOLDER / "forlì_edges.csv").string());
+  network.importNodeProperties((DATA_FOLDER / "forlì_nodes.csv").string());
+  auto itEdge = network.edges().cbegin();
+  for (auto _ : state) {
+    benchmark::DoNotOptimize(network.edge(itEdge->first));
+    ++itEdge;
+    if (itEdge == network.edges().cend()) {
+      itEdge = network.edges().cbegin();
+    }
+  }
+}
 static void BM_RoadNetwork_AllPathsTo(benchmark::State& state) {
   dsf::mobility::RoadNetwork network;
   network.setEdgeWeight("length");
@@ -66,6 +92,20 @@ static void BM_RoadNetwork_AllPathsTo(benchmark::State& state) {
   for (auto _ : state) {
     auto paths = network.allPathsTo(itNode->first);
     ++itNode;
+  }
+}
+static void BM_RoadNetwork_AllEdgePathsTo(benchmark::State& state) {
+  dsf::mobility::RoadNetwork network;
+  network.setEdgeWeight("length");
+  network.importEdges((DATA_FOLDER / "forlì_edges.csv").string());
+  network.importNodeProperties((DATA_FOLDER / "forlì_nodes.csv").string());
+  auto itEdge = network.edges().cbegin();
+  for (auto _ : state) {
+    auto paths = network.allEdgePathsTo(itEdge->first);
+    ++itEdge;
+    if (itEdge == network.edges().cend()) {
+      itEdge = network.edges().cbegin();
+    }
   }
 }
 static void BM_RoadNetwork_ShortestPath(benchmark::State& state) {
@@ -91,7 +131,10 @@ BENCHMARK(BM_RoadNetwork_CSVImport);
 BENCHMARK(BM_RoadNetwork_GeoJSONImport);
 BENCHMARK(BM_RoadNetwork_NodesLooping);
 BENCHMARK(BM_RoadNetwork_EdgesLooping);
+BENCHMARK(BM_RoadNetwork_NodeRandomAccess);
+BENCHMARK(BM_RoadNetwork_EdgeRandomAccess);
 BENCHMARK(BM_RoadNetwork_ShortestPath);
 BENCHMARK(BM_RoadNetwork_AllPathsTo);
+BENCHMARK(BM_RoadNetwork_AllEdgePathsTo);
 
 BENCHMARK_MAIN();
