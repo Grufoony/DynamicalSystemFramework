@@ -271,8 +271,8 @@ namespace dsf::mobility {
       Id const targetEdgeId) const {
     std::unordered_map<Id, double> distToTarget;
     distToTarget.reserve(nEdges());
-    for (auto const& pair : m_edges) {
-      distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
+    for (auto const edgeId : m_edges.keys()) {
+      distToTarget.emplace(edgeId, std::numeric_limits<double>::infinity());
     }
 
     std::priority_queue<std::pair<double, Id>,
@@ -424,7 +424,8 @@ namespace dsf::mobility {
     spdlog::debug("Computing all edge paths to target edge {}", targetEdgeId);
     auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
     PathCollection result;
-    for (auto const& [edgeId, pEdge] : m_edges) {
+    for (auto const& pEdge : m_edges.values()) {
+      auto const edgeId{pEdge->id()};
       if (edgeId == targetEdgeId) {
         continue;
       }

@@ -313,8 +313,8 @@ namespace dsf {
   Network<node_t, edge_t>::m_computeEdgeDistancesToTarget(Id const targetEdgeId) const {
     std::unordered_map<Id, double> distToTarget;
     distToTarget.reserve(nEdges());
-    for (auto const& pair : m_edges) {
-      distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
+    for (auto const& edge_id : m_edges.keys()) {
+      distToTarget.emplace(edge_id, std::numeric_limits<double>::infinity());
     }
 
     std::priority_queue<std::pair<double, Id>,
@@ -404,8 +404,8 @@ namespace dsf {
   Network<node_t, edge_t>::m_computeEdgeDistancesFromSource(Id const sourceEdgeId) const {
     std::unordered_map<Id, double> distFromSource;
     distFromSource.reserve(nEdges());
-    for (auto const& pair : m_edges) {
-      distFromSource.emplace(pair.first, std::numeric_limits<double>::infinity());
+    for (auto const& edge_id : m_edges.keys()) {
+      distFromSource.emplace(edge_id, std::numeric_limits<double>::infinity());
     }
 
     std::priority_queue<std::pair<double, Id>,
@@ -561,13 +561,28 @@ namespace dsf {
     if (sourceId == targetId) {
       return PathCollection{};
     }
-    if (!this->nodes().contains(sourceId)) {
-      throw std::out_of_range(
-          std::format("Source node with id {} does not exist in the graph", sourceId));
-    }
-    if (!this->nodes().contains(targetId)) {
-      throw std::out_of_range(
-          std::format("Target node with id {} does not exist in the graph", targetId));
+    {
+      bool bSourceFound = false;
+      bool bTargetFound = false;
+      for (auto const nodeId : m_nodes.keys()) {
+        if (nodeId == sourceId) {
+          bSourceFound = true;
+        }
+        if (nodeId == targetId) {
+          bTargetFound = true;
+        }
+        if (bSourceFound && bTargetFound) {
+          break;
+        }
+      }
+      if (!bSourceFound) {
+        throw std::out_of_range(
+            std::format("Source node with id {} does not exist in the graph", sourceId));
+      }
+      if (!bTargetFound) {
+        throw std::out_of_range(
+            std::format("Target node with id {} does not exist in the graph", targetId));
+      }
     }
 
     auto const distToTarget = m_computeDistancesToTarget(targetId);
@@ -726,8 +741,8 @@ namespace dsf {
     // Build an indexed list of source node ids so TBB can address them by integer.
     std::vector<Id> sourceIds;
     sourceIds.reserve(N_NODES);
-    for (auto const& [id, _] : m_nodes) {
-      sourceIds.push_back(id);
+    for (auto const nodeId : m_nodes.keys()) {
+      sourceIds.push_back(nodeId);
     }
 
     // Each TBB thread accumulates its own BC increments; we merge afterwards.
@@ -746,8 +761,8 @@ namespace dsf {
 
       std::unordered_map<Id, PathDataHelper> pathData;
       pathData.reserve(N_NODES);
-      for (auto const& [nId, _] : m_nodes) {
-        pathData.emplace(nId, PathDataHelper{});
+      for (auto const nodeId : m_nodes.keys()) {
+        pathData.emplace(nodeId, PathDataHelper{});
       }
       // Initialise source node data.
       {
@@ -841,8 +856,8 @@ namespace dsf {
 
     std::vector<Id> sourceIds;
     sourceIds.reserve(N_NODES);
-    for (auto const& [id, _] : m_nodes) {
-      sourceIds.push_back(id);
+    for (auto const nodeId : m_nodes.keys()) {
+      sourceIds.push_back(nodeId);
     }
 
     // Each TBB thread accumulates its own edge BC increments.
@@ -861,8 +876,8 @@ namespace dsf {
 
       std::unordered_map<Id, PathDataHelper> pathData;
       pathData.reserve(N_NODES);
-      for (auto const& [nId, _] : m_nodes) {
-        pathData.emplace(nId, PathDataHelper{});
+      for (auto const nodeId : m_nodes.keys()) {
+        pathData.emplace(nodeId, PathDataHelper{});
       }
       // Initialise source node data.
       {
@@ -981,8 +996,8 @@ namespace dsf {
     // K > 1: Yen's algorithm, parallelised over source nodes.
     std::vector<Id> nodeIds;
     nodeIds.reserve(N_NODES);
-    for (auto const& [id, _] : m_nodes) {
-      nodeIds.push_back(id);
+    for (auto const nodeId : m_nodes.keys()) {
+      nodeIds.push_back(nodeId);
     }
 
     std::unordered_map<Id, size_t> nodeIndex;

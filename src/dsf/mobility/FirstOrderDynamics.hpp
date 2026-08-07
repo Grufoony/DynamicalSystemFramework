@@ -14,6 +14,7 @@
 #include <cmath>
 #include <concepts>
 #include <exception>
+#include <flat_map>
 #include <format>
 #include <fstream>
 #include <iomanip>
@@ -95,7 +96,7 @@ namespace dsf::mobility {
   /// @brief The FirstOrderDynamics class represents the dynamics of the network.
   class FirstOrderDynamics : public Dynamics<RoadNetwork> {
     std::vector<std::unique_ptr<Agent>> m_agents;
-    std::unordered_map<Id, std::shared_ptr<Itinerary>> m_itineraries;
+    std::flat_map<Id, std::shared_ptr<Itinerary>> m_itineraries;
     std::vector<std::tuple<Id, double>> m_origins;
     std::vector<std::tuple<Id, double>> m_destinations;
     std::vector<std::tuple<Id, Id, double>> m_ODs;
@@ -379,7 +380,7 @@ namespace dsf::mobility {
         double const threshold = 1.3);
 
     /// @brief Get the itineraries
-    /// @return const std::unordered_map<Id, Itinerary>&, The itineraries
+    /// @return const std::flat_map<Id, Itinerary>&, The itineraries
     inline auto const& itineraries() const noexcept { return m_itineraries; }
     /// @brief Get the origin nodes of the graph
     /// @return std::vector<std::tuple<Id, double>> const& The origin nodes of the graph

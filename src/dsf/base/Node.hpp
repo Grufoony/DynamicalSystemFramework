@@ -128,7 +128,7 @@ namespace dsf {
     /// @return std::vector<Id> A vector of the node's outgoing edge ids
     inline auto const& outgoingEdges() const noexcept { return m_outgoingEdges; }
     /// @brief Get the node's attributes
-    /// @return std::unordered_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> A map of the node's attributes, where the key is the attribute's name and the value is the attribute's value
+    /// @return std::flat_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> A map of the node's attributes, where the key is the attribute's name and the value is the attribute's value
     inline auto const& attributes() const noexcept { return m_attributes; }
     /// @brief Get a specific attribute of the node
     /// @tparam T The type of the attribute's value
