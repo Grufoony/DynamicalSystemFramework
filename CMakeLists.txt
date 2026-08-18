@@ -109,7 +109,7 @@ set(CSV_BUILD_PROGRAMS
 FetchContent_Declare(
   csv-parser
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser
-  GIT_TAG 5.2.0)
+  GIT_TAG 5.3.0)
 FetchContent_GetProperties(csv-parser)
 if(NOT csv-parser_POPULATED)
   FetchContent_MakeAvailable(csv-parser)
@@ -143,7 +143,7 @@ endif()
 FetchContent_Declare(
   simdjson
   GIT_REPOSITORY https://github.com/simdjson/simdjson
-  GIT_TAG v4.6.1)
+  GIT_TAG v4.6.7)
 FetchContent_GetProperties(simdjson)
 if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
@@ -217,7 +217,7 @@ if(BUILD_PYTHON_BINDINGS)
   FetchContent_Declare(
     nanobind
     GIT_REPOSITORY https://github.com/wjakob/nanobind.git
-    GIT_TAG v2.13.0)
+    GIT_TAG v2.15.0)
   FetchContent_GetProperties(nanobind)
   if(NOT nanobind_POPULATED)
     FetchContent_MakeAvailable(nanobind)
