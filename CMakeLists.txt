@@ -143,7 +143,7 @@ endif()
 FetchContent_Declare(
   simdjson
   GIT_REPOSITORY https://github.com/simdjson/simdjson
-  GIT_TAG v4.6.7)
+  GIT_TAG v4.6.8)
 FetchContent_GetProperties(simdjson)
 if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
