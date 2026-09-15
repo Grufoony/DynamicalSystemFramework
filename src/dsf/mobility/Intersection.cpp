@@ -1,5 +1,6 @@
 #include "Intersection.hpp"
 
+#include <limits>
 #include <stdexcept>
 
 namespace dsf::mobility {
@@ -22,10 +23,18 @@ namespace dsf::mobility {
   }
 
   void Intersection::addAgent(std::unique_ptr<Agent> pAgent) {
-    int lastKey{0};
-    if (!m_agents.empty()) {
-      lastKey = m_agents.rbegin()->first + 1;
+    if (isFull()) {
+      throw std::runtime_error(std::format("{} is full.", *this));
     }
-    addAgent(static_cast<double>(lastKey), std::move(pAgent));
+    int16_t lastKey{0};
+    if (!m_agents.empty()) {
+      lastKey = m_agents.rbegin()->first;
+      if (lastKey == std::numeric_limits<int16_t>::max()) {
+        throw std::runtime_error(std::format(
+            "{} cannot order any further agent: the queue key saturated.", *this));
+      }
+      ++lastKey;
+    }
+    m_agents.emplace(lastKey, std::move(pAgent));
   }
 }  // namespace dsf::mobility
