@@ -46,16 +46,15 @@ namespace dsf::mdt {
     m_centroid = dsf::geometry::Point(compute_median(xs), compute_median(ys));
   }
 
-  void PointsCluster::addActivityPoint(ActivityPoint const& activityPoint) noexcept {
+  void PointsCluster::addActivityPoint(ActivityPoint const& activityPoint) {
     m_points.emplace_back(activityPoint);
     m_bSorted = false;
     m_centroid.reset();
   }
-  void PointsCluster::addPoint(std::time_t timestamp,
-                               dsf::geometry::Point const& point) noexcept {
+  void PointsCluster::addPoint(std::time_t timestamp, dsf::geometry::Point const& point) {
     this->addActivityPoint(ActivityPoint{timestamp, point});
   }
-  void PointsCluster::sort() const noexcept {
+  void PointsCluster::sort() const {
     if (m_bSorted) {
       return;
     }

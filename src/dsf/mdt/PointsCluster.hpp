@@ -16,7 +16,7 @@ namespace dsf::mdt {
   private:
     mutable std::vector<ActivityPoint> m_points;
     mutable std::optional<dsf::geometry::Point> m_centroid;
-    mutable bool m_bSorted;
+    mutable bool m_bSorted{true};
     /// @brief Update the centroid of the cluster based on current activity points.
     /// The centroid is computed as the median of the x and y coordinates of the points.
     /// @throws std::runtime_error if the cluster is empty.
@@ -34,13 +34,13 @@ namespace dsf::mdt {
     PointsCluster& operator=(PointsCluster const& other) = default;
     /// @brief Add an activity point to the cluster.
     /// @param activityPoint The activity point to add.
-    void addActivityPoint(ActivityPoint const& activityPoint) noexcept;
+    void addActivityPoint(ActivityPoint const& activityPoint);
     /// @brief Add a point with timestamp to the cluster.
     /// @param timestamp The timestamp of the activity point.
     /// @param point The geometric point of the activity point.
-    void addPoint(std::time_t timestamp, dsf::geometry::Point const& point) noexcept;
+    void addPoint(std::time_t timestamp, dsf::geometry::Point const& point);
     /// @brief Sort the activity points in the cluster by timestamp.
-    void sort() const noexcept;
+    void sort() const;
     /// @brief Compute and return the centroid of the cluster.
     /// @return The centroid point of the cluster.
     dsf::geometry::Point centroid() const;
