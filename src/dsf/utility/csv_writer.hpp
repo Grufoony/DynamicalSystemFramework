@@ -4,6 +4,10 @@
 /// @details    This file wraps the csv-parser writer with the conventions dsf uses for
 ///             its CSV artifacts, so that every component writing one agrees on the
 ///             separator and on how the output stream is opened.
+///
+/// @note       Internal header: it is excluded from the install because it exposes
+///             csv-parser, which dsf links as a build-only private dependency. Include
+///             it from dsf implementation files only, never from an installed header.
 
 #pragma once
 

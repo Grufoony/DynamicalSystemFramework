@@ -201,8 +201,10 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
 
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/src/
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/include)
+install(
+  DIRECTORY ${PROJECT_SOURCE_DIR}/src/
+  DESTINATION ${CMAKE_INSTALL_PREFIX}/include
+  REGEX "dsf/utility/csv_writer\\.hpp$" EXCLUDE)
 
 install(
   EXPORT dsfConfig
