@@ -468,7 +468,10 @@ TEST_CASE("TrafficSimulator CSV turn counts persistence") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  // Route agents from edge 0 to edge 3 so that they actually turn (0 -> 2). With
+  // destination edge 1 the agent arrives at that edge's source node and is removed
+  // without ever turning, so no turn event would be recorded at all.
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
   simulator.dynamics()->updatePaths();
 
   // 4th flag = save turn counts
