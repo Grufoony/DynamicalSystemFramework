@@ -67,7 +67,7 @@ namespace dsf::mobility {
     m_distance += distance;
   }
   void Agent::updateItinerary() {
-    if (m_itineraryIdx < m_trip.size() - 1) {
+    if (!m_trip.empty() && m_itineraryIdx < m_trip.size() - 1) {
       ++m_itineraryIdx;
     }
   }
@@ -75,6 +75,9 @@ namespace dsf::mobility {
     m_spawnTime = spawnTime;
     m_freeTime = 0;
     m_streetId = std::nullopt;
+    // NOTE: m_nextStreetId is deliberately preserved. FirstOrderDynamics'
+    // reinsertion path (m_reinsertAgents) relies on it to know where to put the
+    // agent back; clearing it here makes m_evolveAgents kill the agent instead.
     m_speed = 0.;
     m_distance = 0.;
     m_itineraryIdx = 0;
