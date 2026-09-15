@@ -112,14 +112,10 @@ namespace dsf::mdt {
           (currentCluster.lastTimestamp() + currentCluster.firstTimestamp()) * 0.5;
       auto const previous_time =
           (previousCluster.lastTimestamp() + previousCluster.firstTimestamp()) * 0.5;
-      if (current_time < previous_time) {
-        // Should never happen if data is clean
-        throw std::runtime_error(
-            "Timestamps are not in increasing order within the trajectory.");
-      }
-      if (current_time == previous_time) {
+      if (current_time <= previous_time) {
         spdlog::debug(
-            "Non-increasing timestamps detected. Skipping speed check for these points.");
+            "Non-increasing cluster midpoints detected. Skipping the speed check for "
+            "these clusters.");
         return true;
       }
       auto const speed_kph =
@@ -217,13 +213,14 @@ namespace dsf::mdt {
         if (!bShouldSplit) {
           bShouldSplit = !check_min_duration(currentCluster);
         }
-        // If constraint violated (max speed or min duration) - finalize current trajectory and start a new one
+        // If a constraint is violated, finalise the current trajectory and start a
+        // fresh one. The next iteration adds points[i]; re-adding currentCluster here
+        // would duplicate it across the two segments.
         if (bShouldSplit && !newTrajectory.empty()) {
           if (newTrajectory.size() >= min_points_per_trajectory) {
             trajectories.emplace_back(std::move(newTrajectory));
           }
           newTrajectory = Trajectory();
-          newTrajectory.addCluster(currentCluster);
         }
       }
       if (newTrajectory.size() >= min_points_per_trajectory) {
