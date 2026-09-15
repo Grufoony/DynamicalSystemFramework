@@ -10,6 +10,7 @@
 #include "../utility/queue.hpp"
 #include "../utility/Typedef.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <utility>
 #include <stdexcept>

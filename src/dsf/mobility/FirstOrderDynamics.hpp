@@ -579,13 +579,16 @@ namespace dsf::mobility {
       }
       while (nAgents--) {
         auto randValue{uniformDist(this->m_generator)};
+        // Fall back to the last origin
+        Id selectedOrigin{std::get<0>(m_origins.back())};
         for (auto const& [origin, weight] : m_origins) {
           if (randValue < weight) {
-            this->addAgent(nullptr, origin);
+            selectedOrigin = origin;
             break;
           }
           randValue -= weight;
         }
+        this->addAgent(nullptr, selectedOrigin);
         if (m_meanTravelDistance.has_value()) {
           this->m_agents.back()->setMaxDistance(distDist(this->m_generator));
         }
@@ -602,6 +605,9 @@ namespace dsf::mobility {
     m_itineraries.clear();
     auto const N{destinations.size()};
     m_destinations.clear();
+    if (N == 0) {
+      return;
+    }
     m_destinations.reserve(N);
     double const UNIFORM_WEIGHT{1. / N};
     std::for_each(destinations.begin(),

@@ -432,18 +432,19 @@ namespace dsf::mobility {
           std::format("The only source node {} is also the only destination node.",
                       std::get<Id>(m_origins.at(0))));
     }
-    std::uniform_int_distribution<size_t> nodeDist{
-        0, static_cast<size_t>(this->graph().nNodes() - 1)};
     std::uniform_real_distribution<double> uniformDist{0., 1.};
     spdlog::debug("Adding {} agents at time {}.", nAgents, this->time_step());
     while (nAgents--) {
       std::optional<Id> srcId{std::nullopt}, dstId{std::nullopt};
 
-      // Select source using weighted random selection
+      // Select source using weighted random selection. Origins and destinations are
+      // street ids, so the fallback must stay within them: picking a random *node*
+      // here would hand a node id to addAgent's source-street parameter.
       if (nSources == 1) {
         srcId = std::get<Id>(m_origins.at(0));
       } else {
         auto randValue = uniformDist(this->m_generator);
+        srcId = std::get<Id>(m_origins.back());
         for (const auto& [id, weight] : m_origins) {
           if (randValue < weight) {
             srcId = id;
@@ -458,6 +459,7 @@ namespace dsf::mobility {
         dstId = std::get<Id>(m_destinations.at(0));
       } else {
         auto randValue = uniformDist(this->m_generator);
+        dstId = std::get<Id>(m_destinations.back());
         for (const auto& [id, weight] : m_destinations) {
           if (randValue < weight) {
             dstId = id;
@@ -465,18 +467,6 @@ namespace dsf::mobility {
           }
           randValue -= weight;
         }
-      }
-
-      // Fallback to random nodes if selection failed
-      if (!srcId.has_value()) {
-        auto nodeIt{this->graph().nodes().begin()};
-        std::advance(nodeIt, nodeDist(this->m_generator));
-        srcId = nodeIt->first;
-      }
-      if (!dstId.has_value()) {
-        auto nodeIt{this->graph().nodes().begin()};
-        std::advance(nodeIt, nodeDist(this->m_generator));
-        dstId = nodeIt->first;
       }
 
       // Find the itinerary with the given destination
@@ -826,6 +816,19 @@ namespace dsf::mobility {
           weights.push_back(0.);
         }
       }
+      if (validLanes.empty()) {
+        // No lane of this street serves the required direction: fall back to a
+        // uniform choice rather than normalising an all-zero weight vector.
+        spdlog::debug(
+            "No lane on street {} maps direction {}; falling back to a uniform lane "
+            "choice.",
+            pStreet->id(),
+            directionToString.at(static_cast<std::size_t>(direction)));
+        std::uniform_int_distribution<size_t> fallbackDist{
+            0, static_cast<size_t>(nLanes - 1)};
+        pStreet->enqueue(fallbackDist(this->m_generator));
+        continue;
+      }
       // If all weights are the same, make the last 0
       if (std::all_of(weights.begin(), weights.end(), [&](double w) {
             return std::abs(w - weights.front()) < std::numeric_limits<double>::epsilon();
@@ -837,6 +840,12 @@ namespace dsf::mobility {
       }
       // Normalize the weights
       auto const sum = std::accumulate(weights.begin(), weights.end(), 0.);
+      if (!(sum > 0.)) {
+        std::uniform_int_distribution<size_t> fallbackDist{
+            0, static_cast<size_t>(nLanes - 1)};
+        pStreet->enqueue(fallbackDist(this->m_generator));
+        continue;
+      }
       for (auto& w : weights) {
         w /= sum;
       }
@@ -1082,6 +1091,13 @@ namespace dsf::mobility {
       } else if (destinationNode->isRoundabout()) {
         auto& roundabout = dynamic_cast<Roundabout&>(*destinationNode);
         roundabout.enqueue(std::move(pAgent));
+      } else {
+        spdlog::warn(
+            "{} cannot host agents (it is neither an intersection nor a roundabout). "
+            "Killing the agent coming from street {}.",
+            *destinationNode,
+            pStreet->id());
+        this->m_removeAgent<false>(std::move(pAgent));
       }
     }
   }
@@ -1236,6 +1252,13 @@ namespace dsf::mobility {
       } else if (pSourceNode->isRoundabout()) {
         auto& roundabout = dynamic_cast<Roundabout&>(*pSourceNode);
         roundabout.enqueue(std::move(pAgent));
+      } else {
+        spdlog::warn(
+            "{} cannot host agents (it is neither an intersection nor a roundabout). "
+            "Killing agent {}.",
+            *pSourceNode,
+            pAgent->id());
+        this->m_removeAgent<false>(std::move(pAgent));
       }
       itAgent = m_agents.erase(itAgent);
     }
@@ -1286,6 +1309,11 @@ namespace dsf::mobility {
     m_origins.reserve(origins.size());
     if (origins.empty()) {
       // If no origin nodes are provided, try to set origin nodes basing on streets' stationary weights
+      if (this->graph().nEdges() == 0) {
+        throw std::runtime_error(
+            "FirstOrderDynamics::setOrigins: no origins given and the graph has no "
+            "edges to fall back on.");
+      }
       auto const UNIFORM_WEIGHT{1. / this->graph().nEdges()};
       for (auto const& edgePair : this->graph().edges()) {
         m_origins.push_back({edgePair.first, UNIFORM_WEIGHT});
@@ -1398,6 +1426,9 @@ namespace dsf::mobility {
     m_itineraries.clear();
     auto const N{destinations.size()};
     m_destinations.clear();
+    if (N == 0) {
+      return;
+    }
     m_destinations.reserve(N);
     double const UNIFORM_WEIGHT{1. / N};
     std::for_each(destinations.begin(),
@@ -1555,6 +1586,9 @@ namespace dsf::mobility {
     bool const bRandomItinerary{!optItineraryId.has_value() &&
                                 !this->itineraries().empty()};
     std::shared_ptr<Itinerary> pItinerary;
+    if (optItineraryId.has_value()) {
+      pItinerary = this->itineraries().at(*optItineraryId);
+    }
     std::uniform_int_distribution<std::size_t> itineraryDist{
         0, this->itineraries().size() - 1};
     std::uniform_int_distribution<std::size_t> streetDist{0, this->graph().nEdges() - 1};
@@ -1714,8 +1748,17 @@ namespace dsf::mobility {
                       }
                     }
                   }
-                  for (auto& [direction, value] : m_queuesAtTrafficLights.at(inEdgeId)) {
-                    value += pStreet->nExitingAgents(direction, true);
+                  auto const itQueues{m_queuesAtTrafficLights.find(inEdgeId)};
+                  if (itQueues == m_queuesAtTrafficLights.end()) {
+                    spdlog::debug(
+                        "Street {} is green in no phase of traffic light {}: skipping "
+                        "queue-data collection for it.",
+                        inEdgeId,
+                        pNode->id());
+                  } else {
+                    for (auto& [direction, value] : itQueues->second) {
+                      value += pStreet->nExitingAgents(direction, true);
+                    }
                   }
                 }
                 m_evolveStreet(pStreet);
@@ -1809,12 +1852,14 @@ namespace dsf::mobility {
               std::sqrt(std::max(0.0,
                                  std_speed.load() / averageStats.nValidEdges -
                                      averageStats.meanSpeed * averageStats.meanSpeed));
+          averageStats.meanTravelTime = mean_traveltime.load() / averageStats.nValidEdges;
+        }
+        if (edgeCount > 0.) {
           averageStats.meanDensity = mean_density.load() / edgeCount;
           averageStats.stdDensity = std::sqrt(
               std::max(0.0,
                        std_density.load() / edgeCount -
                            averageStats.meanDensity * averageStats.meanDensity));
-          averageStats.meanTravelTime = mean_traveltime.load() / averageStats.nValidEdges;
           averageStats.meanQueueLength = mean_queue_length.load() / edgeCount;
         }
         stepData.averageStats = averageStats;
@@ -2004,6 +2049,9 @@ namespace dsf::mobility {
           }
           density += pStreet->density<true>();
           ++n;
+        }
+        if (n == 0.) {
+          continue;
         }
         density /= n;
         densities[nodeId] = density;
