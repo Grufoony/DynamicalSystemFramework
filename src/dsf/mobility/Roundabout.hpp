@@ -50,7 +50,7 @@ namespace dsf::mobility {
     }
     /// @brief Returns true if the node is full
     /// @return bool True if the node is full
-    bool isFull() const override { return m_agents.size() == this->capacity(); }
+    bool isFull() const override { return m_agents.size() >= this->capacity(); }
     /// @brief Returns true if the node is a roundabout
     /// @return bool True if the node is a roundabout
     constexpr bool isRoundabout() const noexcept final { return true; }
