@@ -849,11 +849,14 @@ namespace dsf::mobility {
       if (pStreet->queue(queueIndex).empty()) {
         continue;
       }
-      if (uniformDist(this->m_generator) > transportCapacity) {
-        spdlog::trace("Skipping due to transport capacity {} < random {}",
-                      transportCapacity,
-                      uniformDist(this->m_generator));
-        continue;
+      {
+        auto const rndValue{uniformDist(this->m_generator)};
+        if (rndValue > transportCapacity) {
+          spdlog::trace("Skipping due to transport capacity {} < random {}",
+                        transportCapacity,
+                        rndValue);
+          continue;
+        }
       }
       // Logger::debug("Taking temp agent");
       auto const& pAgentTemp{pStreet->queue(queueIndex).front()};
