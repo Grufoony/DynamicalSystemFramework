@@ -734,7 +734,9 @@ namespace dsf::mobility {
     // Enqueue moving agents if their free time is up
     while (!pStreet->movingAgents().empty()) {
       auto const& pAgent{pStreet->movingAgents().top()};
-      if (pAgent->freeTime() < this->time_step()) {
+      // movingAgents is a min-heap on free time: as soon as the earliest agent is still
+      // travelling the street, none of the others can be done either.
+      if (pAgent->freeTime() > this->time_step()) {
         break;
       }
       pAgent->setSpeed(0.);
@@ -1221,6 +1223,10 @@ namespace dsf::mobility {
         continue;
       }
       // spdlog::debug("Adding agent on the source node");
+      // The agent enters the simulation only now: re-stamp its spawn time so that the
+      // time it spent queued in m_agents, waiting for a free slot, is not counted as
+      // travel time.
+      pAgent->setSpawnTime(this->time_step());
       if (pSourceNode->isIntersection()) {
         auto& intersection = dynamic_cast<Intersection&>(*pSourceNode);
         intersection.addAgent(0., std::move(pAgent));

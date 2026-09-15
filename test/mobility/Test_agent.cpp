@@ -60,6 +60,13 @@ TEST_CASE("Agent methods") {
     CHECK(agent.srcNodeId().has_value());
     CHECK_EQ(agent.srcNodeId().value(), 99);
   }
+  SUBCASE("setSpawnTime and spawnTime") {
+    CHECK_EQ(agent.spawnTime(), 0);
+    // The dynamics re-stamps the spawn time when the agent is actually inserted into
+    // the network, so that the wait in the pending list is not billed as travel time.
+    agent.setSpawnTime(42);
+    CHECK_EQ(agent.spawnTime(), 42);
+  }
   SUBCASE("setNextStreetId and nextStreetId") {
     agent.setNextStreetId(123);
     CHECK(agent.nextStreetId().has_value());
