@@ -674,7 +674,7 @@ namespace dsf::mobility {
             return;
           }
           auto const& inNeighbours = pNode->ingoingEdges();
-          std::map<Id, int, std::greater<int>> capacities;
+          std::map<Id, std::size_t, std::greater<Id>> capacities;
           std::unordered_map<Id, double> streetAngles;
           std::unordered_map<Id, double> maxSpeeds;
           std::unordered_map<Id, int> nLanes;
@@ -724,8 +724,8 @@ namespace dsf::mobility {
             std::unordered_map<std::string, int> counts;
             for (auto const& [streetId, name] : streetNames) {
               if (name.empty()) {
-                // Ignore empty names
-                return;
+                // Ignore empty names, but keep initialising the other streets.
+                continue;
               }
               if (!counts.contains(name)) {
                 counts[name] = 1;
@@ -776,14 +776,12 @@ namespace dsf::mobility {
             std::sort(sortedAngles.begin(),
                       sortedAngles.end(),
                       [](auto const& a, auto const& b) { return a.second < b.second; });
-            streetAngles.clear();
-            for (auto const& [streetId, angle] : sortedAngles) {
-              streetAngles.emplace(streetId, angle);
-            }
 
-            auto const& streetId = streetAngles.begin()->first;
-            auto const& angle = streetAngles.begin()->second;
-            for (auto const& [streetId2, angle2] : streetAngles) {
+            // Iterate the *sorted* sequence: streetAngles is unordered, so its
+            // begin() would hand back an arbitrary street.
+            auto const& streetId = sortedAngles.front().first;
+            auto const& angle = sortedAngles.front().second;
+            for (auto const& [streetId2, angle2] : sortedAngles) {
               if (std::abs(angle - angle2) > 0.75 * std::numbers::pi) {
                 tl.addStreetPriority(streetId);
                 tl.addStreetPriority(streetId2);
@@ -791,17 +789,32 @@ namespace dsf::mobility {
               }
             }
           }
-          if (tl.streetPriorities().empty() || tl.streetPriorities().size() != 2) {
+          if (tl.streetPriorities().size() != 2) {
             spdlog::warn("Failed to auto-init Traffic Light {} - going random",
                          pNode->id());
-            // Assign first and third keys of capacity map
-            auto it = capacities.begin();
-            auto const& firstKey = it->first;
-            ++it;
-            ++it;
-            auto const& thirdKey = it->first;
-            tl.addStreetPriority(firstKey);
-            tl.addStreetPriority(thirdKey);
+            // Fall back to the first and third ingoing streets by capacity.
+            if (capacities.size() < 3) {
+              spdlog::warn(
+                  "Traffic Light {} has only {} distinct ingoing streets - downgrading "
+                  "to a plain intersection.",
+                  pNode->id(),
+                  capacities.size());
+              pNode = std::make_unique<Intersection>(*pNode);
+              return;
+            }
+            std::vector<Id> byCapacity;
+            byCapacity.reserve(capacities.size());
+            for (auto const& [streetId, capacity] : capacities) {
+              byCapacity.push_back(streetId);
+            }
+            std::sort(byCapacity.begin(),
+                      byCapacity.end(),
+                      [&capacities](Id const a, Id const b) {
+                        return capacities.at(a) > capacities.at(b);
+                      });
+            tl.setStreetPriorities({});
+            tl.addStreetPriority(byCapacity[0]);
+            tl.addStreetPriority(byCapacity[2]);
           }
 
           // Build two phases: priority streets (phase 0) and non-priority (phase 1).
@@ -1041,16 +1054,25 @@ namespace dsf::mobility {
                 //     pInStreet->target(),
                 //     nLanes,
                 //     allowedTurns.size()));
-                assert(allowedTurns.size() == static_cast<size_t>(nLanes));
+                if (allowedTurns.size() != static_cast<size_t>(nLanes)) {
+                  spdlog::warn(
+                      "Street {} -> {} has {} lanes but {} allowed turns: truncating the "
+                      "lane mapping to the lane count.",
+                      pInStreet->source(),
+                      pInStreet->target(),
+                      nLanes,
+                      allowedTurns.size());
+                }
                 // Logger::info(
                 //     std::format("Street {}->{} with {} lanes and {} allowed turns",
                 //                 pInStreet->source(),
                 //                 pInStreet->target(),
                 //                 nLanes,
                 //                 allowedTurns.size()));
-                std::vector<Direction> newMapping(nLanes);
+                std::vector<Direction> newMapping(nLanes, Direction::ANY);
                 auto it{allowedTurns.cbegin()};
-                for (size_t i{0}; i < allowedTurns.size(); ++i, ++it) {
+                for (size_t i{0}; i < newMapping.size() && it != allowedTurns.cend();
+                     ++i, ++it) {
                   newMapping[i] = *it;
                 }
                 // If the last one is RIGHTANDSTRAIGHT, move it in front
@@ -1181,7 +1203,7 @@ namespace dsf::mobility {
         auto* pStreet{&this->edge(edgeId)};
         value += pStreet->nLanes() * pStreet->transportCapacity();
       }
-      pNode->setCapacity(value);
+      pNode->setCapacity(static_cast<std::size_t>(value));
       value = 0.;
       for (auto const& edgeId : pNode->outgoingEdges()) {
         auto* pStreet{&this->edge(edgeId)};
@@ -1189,7 +1211,11 @@ namespace dsf::mobility {
       }
       pNode->setTransportCapacity(value == 0. ? 1. : value);
       if (pNode->capacity() == 0) {
-        pNode->setCapacity(value);
+        // Falling back to the outgoing sum, and ultimately to 1: a zero capacity makes
+        // isFull() permanently true (the node would never accept an agent) and turns
+        // density() into a division by zero.
+        pNode->setCapacity(value > 0. ? static_cast<std::size_t>(value)
+                                      : static_cast<std::size_t>(1));
       }
     }
   }
@@ -1280,6 +1306,17 @@ namespace dsf::mobility {
         }
       }
 
+      if (secondaryGreenTime == 0) {
+        // Every street shares the full cycle: a zero-duration second phase would be
+        // rejected by setPhases(), so emit the single phase instead.
+        spdlog::debug(
+            "importTrafficLights: node {} has a single {}-tick phase covering the whole "
+            "cycle.",
+            nodeId,
+            firstGreenTime);
+        tl.setPhases({phase0});
+        continue;
+      }
       tl.setPhases({phase0, phase1});
       spdlog::debug(
           "importTrafficLights: node {} → phase0 ({} ticks, {} streets) + "
@@ -1412,6 +1449,7 @@ namespace dsf::mobility {
     } catch (const std::out_of_range&) {
       throw std::out_of_range(std::format("Street with id {} not found", streetId));
     }
+    m_updateMaxAgentCapacity();
   }
   void RoadNetwork::changeStreetNLanesByName(std::string const& streetName,
                                              int const nLanes,
@@ -1427,6 +1465,7 @@ namespace dsf::mobility {
             ++nAffectedRoads;
           }
         });
+    m_updateMaxAgentCapacity();
     spdlog::info(
         "Changed number of lanes to {} for {} streets with name containing "
         "\"{}\"",
@@ -1442,6 +1481,7 @@ namespace dsf::mobility {
     } catch (const std::out_of_range&) {
       throw std::out_of_range(std::format("Street with id {} not found", streetId));
     }
+    m_updateMaxAgentCapacity();
   }
   void RoadNetwork::changeStreetCapacityByName(std::string const& streetName,
                                                double const factor) {
@@ -1456,6 +1496,7 @@ namespace dsf::mobility {
                       ++nAffectedRoads;
                     }
                   });
+    m_updateMaxAgentCapacity();
     spdlog::info(
         "Changed capacity by factor {} to {} streets with name containing \"{}\"",
         factor,
