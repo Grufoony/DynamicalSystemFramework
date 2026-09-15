@@ -32,6 +32,7 @@ namespace dsf::mobility {
         m_distance{0.} {}
 
   void Agent::setSrcNodeId(Id srcNodeId) { m_srcNodeId = srcNodeId; }
+  void Agent::setSpawnTime(std::time_t const& spawnTime) { m_spawnTime = spawnTime; }
   void Agent::setStreetId(std::optional<Id> streetId) {
     if (!streetId.has_value()) {
       if (!m_nextStreetId.has_value()) {

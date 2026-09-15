@@ -1064,18 +1064,24 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve();
         dynamics.evolve();
         THEN("The agent goes first into node 2") {
-          CHECK_FALSE(dynamics.graph().edge(1).queue(0).empty());
-          auto const& pAgent{dynamics.graph().edge(1).queue(0).front()};
+          // The agent is still crossing street 1: it sits in the moving pool, not in
+          // the exit queue, and street 0 is the only one it has fully travelled.
+          CHECK(dynamics.graph().edge(1).queue(0).empty());
+          CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(), 0);
+          CHECK_EQ(dynamics.graph().edge(1).nMovingAgents(), 1);
+          auto const& pAgent{dynamics.graph().edge(1).movingAgents().top()};
           CHECK_EQ(pAgent->streetId().value(), 1);
-          CHECK_EQ(pAgent->distance(), 60.);
+          CHECK_EQ(pAgent->distance(), 30.);
         }
         dynamics.evolve();
         dynamics.evolve();
         THEN("The agent goes then to node 1") {
-          CHECK_FALSE(dynamics.graph().edge(2).queue(0).empty());
-          auto const& pAgent{dynamics.graph().edge(2).queue(0).front()};
+          CHECK(dynamics.graph().edge(2).queue(0).empty());
+          CHECK_EQ(dynamics.graph().edge(2).nExitingAgents(), 0);
+          CHECK_EQ(dynamics.graph().edge(2).nMovingAgents(), 1);
+          auto const& pAgent{dynamics.graph().edge(2).movingAgents().top()};
           CHECK_EQ(pAgent->streetId().value(), 2);
-          CHECK_EQ(pAgent->distance(), 90.);
+          CHECK_EQ(pAgent->distance(), 60.);
         }
         dynamics.evolve();
         THEN("The agent reaches the destination") {
@@ -1132,11 +1138,30 @@ TEST_CASE("FirstOrderDynamics") {
             } else {
               CHECK_EQ(network.edge(7).nAgents(), 1);
             }
+            if (i < 2) {
+              // Still crossing street 1: moving, not waiting at the light.
+              CHECK_EQ(network.edge(1).nMovingAgents(), 1);
+              CHECK_EQ(network.edge(1).nExitingAgents(), 0);
+              CHECK_EQ(network.edge(1).movingAgents().top()->distance(), 0.);
+            }
             if (i == 2) {
+              // The agent has reached the end of street 1 and is now genuinely
+              // queued at the red light.
+              CHECK_EQ(network.edge(1).nMovingAgents(), 0);
+              CHECK_EQ(network.edge(1).nExitingAgents(), 1);
               CHECK_EQ(network.edge(1).queue(0).front()->distance(), 30.);
             }
+            if (i > 2) {
+              // Crossing street 7: street 7 is not travelled yet.
+              CHECK_EQ(network.edge(7).nMovingAgents(), 1);
+              CHECK_EQ(network.edge(7).movingAgents().top()->distance(), 30.);
+            }
           }
-          CHECK_EQ(network.edge(7).queue(0).front()->distance(), 60.);
+          while (dynamics.nAgents() > 0) {
+            dynamics.evolve();
+          }
+          // Streets 1 and 7; street 8 is the destination edge and is never entered.
+          CHECK_EQ(dynamics.meanTravelDistance().mean, 60.);
         }
       }
     }
@@ -1303,8 +1328,16 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
         }
         dynamics.evolve();  // Counter 2
+        THEN("They are still crossing the street, not queued at the light") {
+          CHECK_EQ(dynamics.graph().edge(1).nMovingAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(), 0);
+        }
         dynamics.evolve();  // Counter 3
+        dynamics.evolve();  // Counter 4
         THEN("The agents are still") {
+          // Both agents have now reached the stop line and the light is red for
+          // street 1 (phase 2, ticks 3-5), so both sit in the exit queue.
+          CHECK_EQ(dynamics.graph().edge(1).nMovingAgents(), 0);
           CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(), 2);
           CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::ANY, true),
                    doctest::Approx(0.666667));
@@ -1312,7 +1345,6 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::STRAIGHT), 1);
           CHECK_EQ(dynamics.graph().edge(1).nExitingAgents(Direction::LEFT), 1);
         }
-        dynamics.evolve();  // Counter 4
         dynamics.evolve();  // Counter 5
         dynamics.evolve();  // Counter 0
         THEN("The agent 0 passes and agent 1 waits") {
@@ -1517,6 +1549,98 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
+  SUBCASE("Moving agents are not counted as queued") {
+    GIVEN("A long street and a single free-flowing agent") {
+      // 300 m at 13.888... m/s => the agent needs 22 time-steps to cross street 0.
+      Street s0{0, std::make_pair(0, 1), 300., 15.};
+      Street s1{1, std::make_pair(1, 2), 300., 15.};
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      graph2.addStreets(s0, s1);
+      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+      dynamics.addItinerary(1, 1);
+      dynamics.updatePaths();
+      dynamics.addAgent(dynamics.itineraries().at(1), 0);
+      WHEN("The agent travels the street at free-flow speed") {
+        dynamics.evolve();  // the agent leaves the pending list
+        dynamics.evolve();  // the agent is put on street 0
+        auto const& street{dynamics.graph().edge(0)};
+        REQUIRE_EQ(street.nMovingAgents(), 1);
+        auto const freeTime{street.movingAgents().top()->freeTime()};
+        REQUIRE_GT(freeTime, dynamics.time_step());
+        THEN(
+            "It counts as moving - not as queued - until it reaches the end of the "
+            "street") {
+          while (dynamics.time_step() < freeTime) {
+            // A vehicle in free flow must never show up in the exit queue, otherwise
+            // mean_queue_length and the traffic-light optimizer read standing queues
+            // where there is none.
+            CHECK_EQ(street.nExitingAgents(), 0);
+            CHECK_EQ(street.nMovingAgents(), 1);
+            CHECK_EQ(street.nAgents(), 1);
+            dynamics.evolve();
+          }
+        }
+      }
+    }
+  }
+  SUBCASE("Travel time excludes the wait before insertion") {
+    GIVEN("A network whose origin street only has room for one vehicle") {
+      // Capacity is ceil(length * nLanes / meanVehicleLength) = 1 for a 5 m street,
+      // so the second agent cannot enter the network right away.
+      Street s0{0, std::make_pair(0, 1), 5., 15.};
+      Street s1{1, std::make_pair(1, 2), 30., 15.};
+      Street s2{2, std::make_pair(2, 3), 30., 15.};
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      graph2.addStreets(s0, s1, s2);
+      REQUIRE_EQ(graph2.edge(0).capacity(), 1);
+      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+      dynamics.addItinerary(2, 2);
+      dynamics.updatePaths();
+      WHEN("Two agents are added at once on the same origin street") {
+        dynamics.addAgent(dynamics.itineraries().at(2), 0);
+        dynamics.addAgent(dynamics.itineraries().at(2), 0);
+        REQUIRE_EQ(dynamics.agents().size(), 2);
+        dynamics.evolve();
+        THEN("The second one is still waiting in the pending list") {
+          CHECK_EQ(dynamics.agents().size(), 1);
+          CHECK_EQ(dynamics.agents().front()->spawnTime(), 0);
+        }
+        while (!dynamics.agents().empty()) {
+          dynamics.evolve();
+        }
+        // It was created at t = 0 but only got a slot at t = 2; one more step to go
+        // from the source node onto the origin street.
+        REQUIRE_EQ(dynamics.time_step(), 3);
+        dynamics.evolve();
+        THEN("Its spawn time is re-stamped to the step it actually entered") {
+          REQUIRE_EQ(
+              dynamics.graph().edge(0).nAgents() + dynamics.graph().edge(1).nAgents(), 2);
+          auto& originStreet{dynamics.graph().edge(0)};
+          REQUIRE_EQ(originStreet.nMovingAgents(), 1);
+          CHECK_EQ(originStreet.movingAgents().top()->spawnTime(), 2);
+        }
+        while (dynamics.nAgents() > 0) {
+          dynamics.evolve();
+        }
+        THEN("Both agents report the same travel time and distance") {
+          // Same route, same conditions: the queueing before insertion must not leak
+          // into the measured travel time.
+          auto const time{dynamics.meanTravelTime(false)};
+          auto const distance{dynamics.meanTravelDistance(false)};
+          CHECK_EQ(time.n, 2);
+          CHECK_EQ(time.mean, 4.);
+          CHECK_EQ(time.std, doctest::Approx(0.));
+          // Street 2 is the destination edge and is never entered.
+          CHECK_EQ(distance.mean, 35.);
+          CHECK_EQ(distance.std, doctest::Approx(0.));
+        }
+      }
+    }
+  }
   SUBCASE("Intersection right of way") {
     GIVEN("A dynamics object with five nodes and eight streets") {
       RoadNetwork graph2;
@@ -1654,8 +1778,12 @@ TEST_CASE("FirstOrderDynamics") {
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 4);
-          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
+          // Both exits are equally likely, so the 6 agents split evenly. The exact
+          // split is seed-dependent; the invariant is that nobody is lost.
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 3);
+          CHECK_EQ(
+              dynamics.graph().edge(1).nAgents() + dynamics.graph().edge(2).nAgents(), 6);
         }
       }
     }

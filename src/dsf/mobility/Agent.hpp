@@ -62,6 +62,13 @@ namespace dsf::mobility {
     /// @brief Set the id of the source node of the agent
     /// @param srcNodeId The id of the source node
     void setSrcNodeId(Id srcNodeId);
+    /// @brief Set the agent's spawn time
+    /// @param spawnTime The time-step at which the agent enters the simulation
+    /// @details The spawn time is stamped when the agent is created, but an agent may
+    /// sit in the dynamics' pending list for an arbitrary number of time-steps before a
+    /// free slot on its source node/street becomes available. Re-stamping it on actual
+    /// insertion keeps the measured travel time the time spent *in* the network.
+    void setSpawnTime(std::time_t const& spawnTime);
     /// @brief Set the street occupied by the agent
     /// @param streetId The id of the street currently occupied by the agent
     void setStreetId(std::optional<Id> streetId = std::nullopt);
