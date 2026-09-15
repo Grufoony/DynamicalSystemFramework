@@ -1,7 +1,7 @@
 #include "TrafficSimulator.hpp"
+#include "../utility/csv_writer.hpp"
 #include "../utility/progress_bar.hpp"
 
-#include <csv.hpp>
 #include <simdjson.h>
 #include <spdlog/spdlog.h>
 
@@ -12,65 +12,6 @@
 #include <stdexcept>
 
 namespace dsf::mobility {
-  /// @brief Simple CSV writer for batch data persistence
-  class CSVWriter {
-  private:
-    std::ofstream m_file;
-    char m_separator;
-    bool m_headerWritten = false;
-
-  public:
-    /// @brief Construct a CSV writer and open the file
-    /// @param filename The output file path
-    /// @param separator The field separator character
-    CSVWriter(std::string_view const filename, char separator = ';')
-        : m_separator(separator) {
-      m_file.open(std::string(filename), std::ios::app);
-      if (!m_file.is_open()) {
-        throw std::runtime_error(
-            std::format("Failed to open CSV file for writing: {}", filename));
-      }
-      m_headerWritten = std::filesystem::file_size(filename) > 0;
-    }
-
-    /// @brief Write header row
-    template <typename... Args>
-    void writeHeader(Args&&... headers) {
-      if (m_headerWritten)
-        return;
-      writeRow(std::forward<Args>(headers)...);
-      m_headerWritten = true;
-    }
-
-    /// @brief Write a data row
-    template <typename... Args>
-    void writeRow(Args&&... fields) {
-      bool first = true;
-      (..., ([this, &first](auto const& field) {
-         if (!first)
-           m_file << m_separator;
-         if constexpr (std::is_same_v<std::decay_t<decltype(field)>, std::nullopt_t>) {
-           // Write nothing for nullopt
-         } else {
-           m_file << field;
-         }
-         first = false;
-       }(fields)));
-      m_file << "\n";
-    }
-
-    /// @brief Flush and close the file
-    void close() {
-      if (m_file.is_open()) {
-        m_file.flush();
-        m_file.close();
-      }
-    }
-
-    /// @brief Destructor automatically closes the file
-    ~CSVWriter() { close(); }
-  };
-
   void TrafficSimulator::m_createId() {
     // Take the current time and set id as YYYYMMDDHHMMSS
     auto const now = std::chrono::system_clock::now();
@@ -845,36 +786,37 @@ namespace dsf::mobility {
     bool fileExists = std::filesystem::exists(filename);
 
     try {
-      CSVWriter writer(filename);
+      auto stream{utility::openCSVFile(filename)};
+      utility::CSVRowWriter writer{stream};
       if (!fileExists) {
         spdlog::info("Creating new CSV file for street data: {}", filename);
-        writer.writeHeader("datetime",
-                           "time_step",
-                           "street_id",
-                           "coil",
-                           "density_vpk",
-                           "avg_speed_kph",
-                           "std_speed_kph",
-                           "n_observations",
-                           "counts",
-                           "queue_length");
+        writer.write_row("datetime",
+                         "time_step",
+                         "street_id",
+                         "coil",
+                         "density_vpk",
+                         "avg_speed_kph",
+                         "std_speed_kph",
+                         "n_observations",
+                         "counts",
+                         "queue_length");
       }
       for (auto const& [streetId, record] : streetDataRecords) {
         auto avgSpeed =
             record.avgSpeed.has_value() ? std::format("{}", record.avgSpeed.value()) : "";
         auto stdSpeed =
             record.avgSpeed.has_value() ? std::format("{}", record.stdSpeed.value()) : "";
-        writer.writeRow(
+        writer.write_row(
             datetime,
             time_step,
             streetId,
             record.coilName.has_value() ? record.coilName.value() : "",
-            record.density,
+            std::format("{}", record.density),
             avgSpeed,
             stdSpeed,
             record.nObservations.value_or(0),
             record.counts.has_value() ? std::to_string(record.counts.value()) : "",
-            record.queueLength);
+            std::format("{}", record.queueLength));
       }
       spdlog::debug(
           "Saved street data for time step {} to file {}.", time_step, filename);
@@ -948,19 +890,20 @@ namespace dsf::mobility {
     bool fileExists = std::filesystem::exists(filename);
 
     try {
-      CSVWriter writer(filename);
+      auto stream{utility::openCSVFile(filename)};
+      utility::CSVRowWriter writer{stream};
       if (!fileExists) {
         spdlog::info("Creating new CSV file for average stats: {}", filename);
-        writer.writeHeader("datetime",
-                           "time_step",
-                           "n_ghost_agents",
-                           "n_agents",
-                           "mean_speed_kph",
-                           "std_speed_kph",
-                           "mean_density_vpk",
-                           "std_density_vpk",
-                           "mean_travel_time_s",
-                           "mean_queue_length");
+        writer.write_row("datetime",
+                         "time_step",
+                         "n_ghost_agents",
+                         "n_agents",
+                         "mean_speed_kph",
+                         "std_speed_kph",
+                         "mean_density_vpk",
+                         "std_density_vpk",
+                         "mean_travel_time_s",
+                         "mean_queue_length");
       }
       auto meanSpeed =
           averageStats.nValidEdges > 0 ? std::format("{}", averageStats.meanSpeed) : "";
@@ -969,16 +912,16 @@ namespace dsf::mobility {
       auto meanTravelTime = averageStats.nValidEdges > 0
                                 ? std::format("{}", averageStats.meanTravelTime)
                                 : "";
-      writer.writeRow(datetime,
-                      time_step,
-                      m_dynamics->ghostAgents(),
-                      m_dynamics->nAgents(),
-                      meanSpeed,
-                      stdSpeed,
-                      averageStats.meanDensity,
-                      averageStats.stdDensity,
-                      meanTravelTime,
-                      averageStats.meanQueueLength);
+      writer.write_row(datetime,
+                       time_step,
+                       m_dynamics->ghostAgents(),
+                       m_dynamics->nAgents(),
+                       meanSpeed,
+                       stdSpeed,
+                       std::format("{}", averageStats.meanDensity),
+                       std::format("{}", averageStats.stdDensity),
+                       meanTravelTime,
+                       std::format("{}", averageStats.meanQueueLength));
       spdlog::debug(
           "Saved average stats for time step {} to file {}.", time_step, filename);
     } catch (const std::exception& e) {
@@ -1044,13 +987,15 @@ namespace dsf::mobility {
     bool fileExists = std::filesystem::exists(filename);
 
     try {
-      CSVWriter writer(filename);
+      auto stream{utility::openCSVFile(filename)};
+      utility::CSVRowWriter writer{stream};
       if (!fileExists) {
         spdlog::info("Creating new CSV file for travel data: {}", filename);
-        writer.writeHeader("datetime", "time_step", "distance_m", "travel_time_s");
+        writer.write_row("datetime", "time_step", "distance_m", "travel_time_s");
       }
       for (auto const& [distance, time] : travelDTs) {
-        writer.writeRow(datetime, time_step, distance, time);
+        writer.write_row(
+            datetime, time_step, std::format("{}", distance), std::format("{}", time));
       }
       spdlog::debug(
           "Saved travel data for time step {} to file {}.", time_step, filename);
@@ -1118,14 +1063,15 @@ namespace dsf::mobility {
     bool fileExists = std::filesystem::exists(filename);
 
     try {
-      CSVWriter writer(filename);
+      auto stream{utility::openCSVFile(filename)};
+      utility::CSVRowWriter writer{stream};
       if (!fileExists) {
         spdlog::info("Creating new CSV file for agent data: {}", filename);
-        writer.writeHeader("agent_id", "edge_id", "time_step_in", "time_step_out");
+        writer.write_row("agent_id", "edge_id", "time_step_in", "time_step_out");
       }
       for (auto const& [edge_id, data] : agentDataRecords) {
         for (auto const& [agent_id, ts_in, ts_out] : data) {
-          writer.writeRow(agent_id, edge_id, ts_in, ts_out);
+          writer.write_row(agent_id, edge_id, ts_in, ts_out);
         }
       }
       spdlog::debug("Saved agent data for time step {} to file {}.", time_step, filename);
@@ -1197,15 +1143,16 @@ namespace dsf::mobility {
     bool fileExists = std::filesystem::exists(filename);
 
     try {
-      CSVWriter writer(filename);
+      auto stream{utility::openCSVFile(filename)};
+      utility::CSVRowWriter writer{stream};
       if (!fileExists) {
         spdlog::info("Creating new turn counts CSV file: {}", filename);
-        writer.writeHeader(
+        writer.write_row(
             "datetime", "time_step", "source_edge_id", "target_edge_id", "counts");
       }
       for (auto const& [edgeId, turnCounts] : turnCountsRecords) {
         for (auto const& [nextEdgeId, count] : turnCounts) {
-          writer.writeRow(datetime, time_step, edgeId, nextEdgeId, count);
+          writer.write_row(datetime, time_step, edgeId, nextEdgeId, count);
         }
       }
       spdlog::debug(

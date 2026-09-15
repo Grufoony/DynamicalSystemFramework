@@ -1,6 +1,7 @@
 #include "dsf/mobility/TrafficSimulator.hpp"
 
 #include <SQLiteCpp/SQLiteCpp.h>
+#include <csv.hpp>
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
@@ -321,6 +322,76 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   std::filesystem::remove(edgesPath);
   std::filesystem::remove(roadCsv);
   std::filesystem::remove(avgCsv);
+}
+
+TEST_CASE("TrafficSimulator CSV writer semantics") {
+  // The CSV artifacts are written with csv::DelimWriter over an appended stream, so
+  // two properties matter: the header must be written once for the whole run, and a
+  // field holding the separator must be escaped instead of corrupting the row.
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.setName("traffic_simulator_writer_test");
+  simulator.importRoadNetwork(edgesPath.string());
+  REQUIRE(simulator.dynamics() != nullptr);
+  simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->updatePaths();
+  simulator.dynamics()->graph().edge(0).enableCounter("coil;with;separators");
+
+  // Saving every step means several appends to the same file.
+  simulator.saveData(1, false, true, false, false);
+  simulator.setTimeFrame(0, 6);
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+  simulator.run(std::vector<std::size_t>{1, 0, 0, 0, 0, 0});
+
+  auto const baseName = std::to_string(static_cast<std::uint64_t>(simulator.id())) +
+                        "_traffic_simulator_writer_test";
+  auto const roadCsv = std::filesystem::current_path() / (baseName + "_road_data.csv");
+  REQUIRE(std::filesystem::exists(roadCsv));
+
+  std::string const expectedHeader{
+      "datetime;time_step;street_id;coil;density_vpk;avg_speed_kph;std_speed_kph;"
+      "n_observations;counts;queue_length"};
+
+  SUBCASE("The header is written exactly once for the whole run") {
+    std::ifstream file(roadCsv);
+    REQUIRE(file.is_open());
+    std::size_t nHeaders{0}, nLines{0};
+    std::string line;
+    while (std::getline(file, line)) {
+      if (line == expectedHeader) {
+        ++nHeaders;
+      }
+      ++nLines;
+    }
+    CHECK_EQ(nHeaders, 1);
+    // One header plus at least one flush of the four streets.
+    CHECK_GT(nLines, 4);
+  }
+
+  SUBCASE("A field containing the separator is quoted and round-trips") {
+    csv::CSVFormat format;
+    format.delimiter(';');
+    csv::CSVReader reader(roadCsv.string(), format);
+    std::size_t nCoilRows{0};
+    for (auto const& row : reader) {
+      // Escaping is what keeps the row parseable: without it the coil name would
+      // spill into the neighbouring columns.
+      REQUIRE_EQ(row.size(), 10);
+      auto const coil = row["coil"].get<std::string>();
+      if (!coil.empty()) {
+        CHECK_EQ(coil, "coil;with;separators");
+        CHECK_EQ(row["street_id"].get<Id>(), 0);
+        ++nCoilRows;
+      }
+    }
+    CHECK_GT(nCoilRows, 0);
+  }
+
+  std::filesystem::remove(edgesPath);
+  std::filesystem::remove(roadCsv);
 }
 
 TEST_CASE("TrafficSimulator SQL turn counts persistence") {

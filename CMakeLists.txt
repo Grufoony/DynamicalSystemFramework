@@ -262,7 +262,8 @@ if(DSF_TESTS)
     target_include_directories(
       ${testname} SYSTEM PRIVATE ${doctest_SOURCE_DIR}/doctest)
     target_compile_definitions(${testname} PRIVATE SPDLOG_USE_STD_FORMAT)
-    target_link_libraries(${testname} PRIVATE dsf TBB::tbb simdjson::simdjson spdlog::spdlog)
+    target_link_libraries(${testname} PRIVATE dsf TBB::tbb simdjson::simdjson
+                                              spdlog::spdlog csv)
     set_target_properties(
       ${testname}
       PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
