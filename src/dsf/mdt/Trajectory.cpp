@@ -97,7 +97,7 @@ namespace dsf::mdt {
     }
   }
 
-  void Trajectory::sort() noexcept {
+  void Trajectory::sort() {
     if (m_bSorted) {
       return;
     }

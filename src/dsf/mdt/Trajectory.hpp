@@ -14,7 +14,7 @@ namespace dsf::mdt {
   class Trajectory {
   private:
     std::vector<dsf::mdt::PointsCluster> m_points;
-    bool m_bSorted;
+    bool m_bSorted{true};
 
   public:
     Trajectory() = default;
@@ -34,7 +34,7 @@ namespace dsf::mdt {
     /// @param max_speed_kph The max allowed speed (in km/h) to consider a cluster as a stop point.
     void filter(double const cluster_radius_km, double const max_speed_kph);
     /// @brief Sort the trajectory points by timestamp.
-    void sort() noexcept;
+    void sort();
     /// @brief Get the number of points in the trajectory.
     /// @return The size of the trajectory.
     inline std::size_t size() const noexcept { return m_points.size(); }
