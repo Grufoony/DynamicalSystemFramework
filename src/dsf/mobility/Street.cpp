@@ -105,8 +105,19 @@ namespace dsf::mobility {
         "Changing number of lanes for {} from {} to {}", *this, m_nLanes, nLanes);
     m_capacity = static_cast<int>(m_capacity * static_cast<double>(nLanes) / m_nLanes);
     m_transportCapacity = m_transportCapacity * nLanes / m_nLanes;
+    auto const previousNLanes = m_nLanes;
     m_nLanes = nLanes;
     m_maxSpeed = m_maxSpeed * speedFactor.value_or(1.0);
+    if (nLanes < previousNLanes) {
+      // Resizing down would destroy the agents queued in the removed lanes without
+      // anyone noticing. Move them to the last surviving lane instead.
+      auto& survivingQueue{m_exitQueues[static_cast<std::size_t>(nLanes) - 1]};
+      for (auto i{static_cast<std::size_t>(nLanes)}; i < m_exitQueues.size(); ++i) {
+        while (!m_exitQueues[i].empty()) {
+          survivingQueue.push(m_exitQueues[i].extract_front());
+        }
+      }
+    }
     m_exitQueues.resize(m_nLanes);
     m_updateLaneMapping(m_nLanes);
   }
@@ -156,9 +167,16 @@ namespace dsf::mobility {
     assert(!m_exitQueues[index].empty());
     auto pAgent{m_exitQueues[index].extract_front()};
     // Keep track of average speed
-    auto const insertionTime{m_agentsInsertionTimes[pAgent->id()]};
-    m_avgSpeeds.push_back(m_length / (currentTime - insertionTime));
-    m_agentsInsertionTimes.erase(pAgent->id());
+    auto const itInsertion{m_agentsInsertionTimes.find(pAgent->id())};
+    auto const insertionTime{
+        itInsertion == m_agentsInsertionTimes.cend() ? currentTime : itInsertion->second};
+    // An agent leaving in the same time-step it entered would divide by zero.
+    if (currentTime > insertionTime) {
+      m_avgSpeeds.push_back(m_length / (currentTime - insertionTime));
+    }
+    if (itInsertion != m_agentsInsertionTimes.cend()) {
+      m_agentsInsertionTimes.erase(itInsertion);
+    }
     if (m_agentData.has_value()) {
       m_agentData->operator[](m_id).emplace_back(
           pAgent->id(), insertionTime, currentTime);
@@ -188,6 +206,7 @@ namespace dsf::mobility {
         ++n;
       } else if (m_laneMapping[i] == direction) {
         nAgents += m_exitQueues[i].size();
+        ++n;
       } else if (m_laneMapping[i] == Direction::RIGHTANDSTRAIGHT &&
                  (direction == Direction::RIGHT || direction == Direction::STRAIGHT)) {
         nAgents += m_exitQueues[i].size();
@@ -208,8 +227,8 @@ namespace dsf::mobility {
         ++n;
       }
     }
-    if (normalizeOnNLanes) {
-      n > 1 ? nAgents /= n : nAgents;
+    if (normalizeOnNLanes && n > 1) {
+      nAgents /= n;
     }
     return nAgents;
   }

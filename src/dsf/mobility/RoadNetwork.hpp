@@ -111,7 +111,7 @@ namespace dsf::mobility {
     /// @brief Automatically assigns road priorities at intersections, basing on road types
     void autoAssignRoadPriorities();
     /// @brief Set the edge weight function based on a string identifier
-    /// @param strv_weight The string identifier of the weight function. Supported values are "travelTime", "length" and any custom attribute name.
+    /// @param strv_weight The string identifier of the weight function. Supported values are "traveltime", "length" and any custom attribute name.
     /// @param threshold An optional threshold to apply to the weight function. The effective weight will be weight * (1 + threshold). This can be used to increase the weight of certain paths and thus make them less likely to be chosen by agents when using a weight-based path update strategy.
     void setEdgeWeight(std::string_view const strv_weight,
                        std::optional<double> const threshold = std::nullopt) final;

@@ -89,7 +89,7 @@ namespace dsf::mobility {
     }
     /// @brief Returns true if the node is full
     /// @return bool True if the node is full
-    inline bool isFull() const override { return this->nAgents() == this->capacity(); }
+    inline bool isFull() const override { return this->nAgents() >= this->capacity(); }
 
     /// @brief Get the node's street priorities
     /// @details This function returns a std::set containing the node's street priorities.

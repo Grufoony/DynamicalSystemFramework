@@ -12,6 +12,46 @@
 #include <stdexcept>
 
 namespace dsf::mobility {
+  namespace {
+    /// @brief Percentage of @p value over @p total, or 0 when @p total is 0.
+    double percentOf(std::size_t const value, std::size_t const total) {
+      return total == 0 ? 0.
+                        : static_cast<double>(value) * 100. / static_cast<double>(total);
+    }
+  }  // namespace
+
+  void TrafficSimulator::m_logRunSummary(std::size_t const nAdded,
+                                         std::size_t const nInserted,
+                                         std::size_t const nArrived,
+                                         std::size_t const nKilled,
+                                         std::size_t const nRemaining) const {
+    // These counters need not add up: the ghost-clearing paths in FirstOrderDynamics
+    // decrement the live count without bumping the killed count. Do the subtraction in
+    // a signed type so an imbalance shows up as a negative number instead of wrapping
+    // around to ~1.8e19.
+    auto const accounted = static_cast<std::int64_t>(nArrived) +
+                           static_cast<std::int64_t>(nKilled) +
+                           static_cast<std::int64_t>(nRemaining);
+    auto const nGhosts = static_cast<std::int64_t>(nInserted) - accounted;
+    spdlog::info(
+        "Simulation completed. Total agents added: {}\n\tInserted: {} "
+        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tGhosts: {} "
+        "({:.2f}%)\n\tRemaining: {} ({:.2f}%).",
+        nAdded,
+        nInserted,
+        percentOf(nInserted, nAdded),
+        nArrived,
+        percentOf(nArrived, nInserted),
+        nKilled,
+        percentOf(nKilled, nInserted),
+        nGhosts,
+        nInserted == 0
+            ? 0.
+            : static_cast<double>(nGhosts) * 100. / static_cast<double>(nInserted),
+        nRemaining,
+        percentOf(nRemaining, nInserted));
+  }
+
   void TrafficSimulator::m_createId() {
     // Take the current time and set id as YYYYMMDDHHMMSS
     auto const now = std::chrono::system_clock::now();
@@ -339,13 +379,22 @@ namespace dsf::mobility {
                                       std::optional<std::time_t> const deltaT,
                                       double const percentRandomAgents) {
     if (deltaT.has_value()) {
-      if (m_endTime == 0) {
-        spdlog::warn(
-            "Delta time for agent insertion is set to {} seconds, but no end time is "
-            "currently set. The end time will be ignored for agent insertion timing.",
-            deltaT.value());
+      if (deltaT.value() <= 0) {
+        throw std::invalid_argument(std::format(
+            "Agent insertion delta time ({}) must be positive.", deltaT.value()));
       }
-      m_endTime = m_initTime + nAgentsPerTimeStep.size() * deltaT.value();
+      auto const scheduleEndTime = static_cast<std::time_t>(
+          m_initTime + nAgentsPerTimeStep.size() * deltaT.value());
+      if (m_endTime != 0 && m_endTime != scheduleEndTime) {
+        spdlog::warn(
+            "The configured end time ({}) does not match the agent insertion schedule "
+            "({} insertions every {} seconds). Using the schedule's end time ({}).",
+            m_timeToStr(m_endTime),
+            nAgentsPerTimeStep.size(),
+            deltaT.value(),
+            m_timeToStr(scheduleEndTime));
+      }
+      m_endTime = scheduleEndTime;
     }
     std::time_t agentInsertionDeltaT = deltaT.value_or(0);
 
@@ -354,13 +403,19 @@ namespace dsf::mobility {
           "Cannot run the simulation without an agent insertion schedule.");
     }
 
+    if (m_endTime != 0 && m_endTime < m_initTime) {
+      throw std::runtime_error(std::format(
+          "End time ({}) precedes the initial time ({}); the simulation would not run.",
+          m_timeToStr(m_endTime),
+          m_timeToStr(m_initTime)));
+    }
     auto totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
     auto const nInsertions{nAgentsPerTimeStep.size()};
 
     if (agentInsertionDeltaT == 0) {
       if (m_endTime > m_initTime) {
         agentInsertionDeltaT = totalTimeSteps / static_cast<std::time_t>(nInsertions);
-        if (totalTimeSteps % nInsertions != 0) {
+        if (totalTimeSteps % static_cast<std::time_t>(nInsertions) != 0) {
           spdlog::warn(
               "Total simulation time ({} seconds) is not perfectly divisible by the "
               "number of agent insertion steps ({}). The last agent insertion step "
@@ -460,21 +515,7 @@ namespace dsf::mobility {
     }
     auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
         m_dynamics->agentStats();
-    spdlog::info(
-        "Simulation completed. Total agents added: {}\n\tInserted: {} "
-        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tGhosts: {} "
-        "({:.2f}%)\n\tRemaining: {} ({:.2f}%).",
-        nAdded,
-        nInserted,
-        nInserted * 100.0f / nAdded,
-        nArrived,
-        nArrived * 100.0f / nInserted,
-        nKilled,
-        nKilled * 100.0f / nInserted,
-        nRemaining,
-        nRemaining * 100.0f / nInserted,
-        nInserted - (nArrived + nKilled + nRemaining),
-        (nInserted - (nArrived + nKilled + nRemaining)) * 100.0f / nInserted);
+    m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
   }
   void TrafficSimulator::m_runSlowCharge(std::size_t const nInitialAgents,
                                          std::time_t const agentInsertionDeltaT,
@@ -483,6 +524,14 @@ namespace dsf::mobility {
     if (m_endTime < m_initTime) {
       throw std::runtime_error(
           "End time must be greater than or equal to initial time for the simulation.");
+    }
+    if (agentInsertionDeltaT <= 0) {
+      throw std::invalid_argument(std::format(
+          "Agent insertion delta time ({}) must be positive.", agentInsertionDeltaT));
+    }
+    if (checkDeltaT <= 0) {
+      throw std::invalid_argument(
+          std::format("Check delta time ({}) must be positive.", checkDeltaT));
     }
     auto const totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
 
@@ -556,21 +605,7 @@ namespace dsf::mobility {
     }
     auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
         m_dynamics->agentStats();
-    spdlog::info(
-        "Simulation completed. Total agents added: {}\n\tInserted: {} "
-        "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tGhosts: {} "
-        "({:.2f}%)\n\tRemaining: {} ({:.2f}%).",
-        nAdded,
-        nInserted,
-        nInserted * 100.0f / nAdded,
-        nArrived,
-        nArrived * 100.0f / nInserted,
-        nKilled,
-        nKilled * 100.0f / nInserted,
-        nRemaining,
-        nRemaining * 100.0f / nInserted,
-        nInserted - (nArrived + nKilled + nRemaining),
-        (nInserted - (nArrived + nKilled + nRemaining)) * 100.0f / nInserted);
+    m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
   }
 
   void TrafficSimulator::connectDataBase(std::string_view const dbPath,
@@ -805,7 +840,7 @@ namespace dsf::mobility {
         auto avgSpeed =
             record.avgSpeed.has_value() ? std::format("{}", record.avgSpeed.value()) : "";
         auto stdSpeed =
-            record.avgSpeed.has_value() ? std::format("{}", record.stdSpeed.value()) : "";
+            record.stdSpeed.has_value() ? std::format("{}", record.stdSpeed.value()) : "";
         writer.write_row(
             datetime,
             time_step,
@@ -1152,6 +1187,9 @@ namespace dsf::mobility {
       }
       for (auto const& [edgeId, turnCounts] : turnCountsRecords) {
         for (auto const& [nextEdgeId, count] : turnCounts) {
+          if (count == 0) {
+            continue;  // Match the SQL writer, which also skips empty turns.
+          }
           writer.write_row(datetime, time_step, edgeId, nextEdgeId, count);
         }
       }
@@ -1174,9 +1212,9 @@ namespace dsf::mobility {
         "SELECT name FROM sqlite_master WHERE type='table' AND name='nodes';");
     bool edgesTableExists = edgesQuery.executeStep();
     bool nodesTableExists = nodesQuery.executeStep();
-    if (edgesTableExists && nodesTableExists) {
+    if (edgesTableExists || nodesTableExists) {
       spdlog::debug(
-          "Edges and nodes tables already exist in the database. Skipping network "
+          "Edges and/or nodes tables already exist in the database. Skipping network "
           "dump.");
       return;
     }

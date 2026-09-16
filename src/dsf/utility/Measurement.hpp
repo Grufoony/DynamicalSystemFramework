@@ -34,7 +34,8 @@ namespace dsf {
         x2_mean += value * value;
       });
       mean = x_mean / n;
-      std = std::sqrt(x2_mean / n - mean * mean);
+      auto const variance = x2_mean / n - mean * mean;
+      std = variance > static_cast<T>(0) ? std::sqrt(variance) : static_cast<T>(0);
     }
   };
 }  // namespace dsf

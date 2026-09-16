@@ -106,7 +106,7 @@ namespace dsf::mobility {
     double density() const noexcept;
     /// @brief Check if the road is full
     /// @return bool, True if the road is full, false otherwise
-    inline bool isFull() const final { return this->nAgents() == this->capacity(); }
+    inline bool isFull() const final { return this->nAgents() >= this->capacity(); }
     /// @brief Check if the road is active (i.e., open)
     /// @return bool, True if the road is active, false otherwise
     inline bool isActive() const final { return m_roadStatus == RoadStatus::OPEN; }

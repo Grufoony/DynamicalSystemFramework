@@ -212,6 +212,11 @@ namespace dsf::mobility {
     void m_saveTurnCountsCSV(const std::string& datetime,
                              const std::int64_t time_step,
                              TurnCountsDict turnCounts) const;
+    void m_logRunSummary(std::size_t const nAdded,
+                         std::size_t const nInserted,
+                         std::size_t const nArrived,
+                         std::size_t const nKilled,
+                         std::size_t const nRemaining) const;
     void m_dumpNetwork() const;
     void m_preparePersistence();
     void m_flushStepData(StepDataResult stepData);
