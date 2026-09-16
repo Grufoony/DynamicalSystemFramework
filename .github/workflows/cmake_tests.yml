@@ -24,11 +24,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt update
-          sudo apt install -y lcov gcovr build-essential cmake libtbb-dev
+          sudo apt install -y lcov gcovr build-essential cmake libtbb-dev libboost-dev
 
       - name: Install dependencies on macOS
         if: matrix.os == 'macos-latest'
-        run: brew install tbb
+        run: brew install tbb boost
 
       - name: Install dependencies on Windows (vcpkg)
         if: matrix.os == 'windows-latest'
@@ -37,7 +37,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git vcpkg
           cd vcpkg
           .\bootstrap-vcpkg.bat
-          .\vcpkg install tbb:x64-windows
+          .\vcpkg install tbb:x64-windows boost-geometry:x64-windows
           echo "VCPKG_ROOT=$env:GITHUB_WORKSPACE\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKG_INSTALLED=$env:GITHUB_WORKSPACE\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
 

@@ -1,46 +1,62 @@
 #include "Point.hpp"
 
-#include <cmath>
-#include <numbers>
-#include <sstream>
+#include <boost/geometry/io/wkt/read.hpp>
+#include <boost/geometry/strategies/spherical/distance_haversine.hpp>
+
+#include <cstdlib>
+#include <format>
 #include <stdexcept>
 
 namespace dsf::geometry {
-  Point::Point(const std::string& strPoint, const std::string& format) {
-    if (format == "WKT") {
-      auto start = strPoint.find('(');
-      auto end = strPoint.find(')');
-      if (start == std::string::npos || end == std::string::npos || end <= start) {
-        throw std::invalid_argument("Invalid WKT POINT format: " + strPoint);
+  namespace detail {
+    std::size_t countWktCoordinates(std::string const& wkt) {
+      auto const open = wkt.find('(');
+      auto const close = wkt.rfind(')');
+      if (open == std::string::npos || close == std::string::npos || close <= open) {
+        return 0u;
       }
-      std::string coordStr = strPoint.substr(start + 1, end - start - 1);
-      std::istringstream coordStream(coordStr);
-      double x, y;
-      if (!(coordStream >> x >> y)) {
-        throw std::invalid_argument("Malformed WKT POINT coordinates: " + strPoint);
+      std::size_t count{0u};
+      char const* cursor = wkt.c_str() + open + 1;
+      char const* const bodyEnd = wkt.c_str() + close;
+      while (cursor < bodyEnd) {
+        char* next{};
+        std::strtod(cursor, &next);
+        if (next == cursor) {
+          // Not the start of a number: skip this separator character.
+          ++cursor;
+          continue;
+        }
+        ++count;
+        cursor = next;
       }
-      m_x = x;
-      m_y = y;
-    } else {
-      throw std::invalid_argument("Unsupported format: " + format);
+      return count;
     }
+  }  // namespace detail
+
+  Point pointFromWkt(std::string const& wkt) {
+    Point point;
+    try {
+      boost::geometry::read_wkt(wkt, point);
+    } catch (boost::geometry::exception const& e) {
+      // read_wkt throws read_wkt_exception, which derives from std::exception but
+      // not from std::invalid_argument. Translate it to keep the exception contract
+      // this function has always documented.
+      throw std::invalid_argument(
+          std::format("Invalid WKT POINT '{}': {}", wkt, e.what()));
+    }
+    if (auto const nCoordinates = detail::countWktCoordinates(wkt); nCoordinates != 2u) {
+      throw std::invalid_argument(std::format(
+          "Invalid WKT POINT '{}': expected 2 coordinates, found {}", wkt, nCoordinates));
+    }
+    return point;
   }
 
-  double haversine_km(dsf::geometry::Point const& p1,
-                      dsf::geometry::Point const& p2) noexcept {
-    constexpr double EARTH_RADIUS_KM = 6371.0;  // Earth radius in kilometers
-    constexpr double DEG_TO_RAD = std::numbers::pi / 180.0;
-
-    double const lat1 = p1.y() * DEG_TO_RAD;
-    double const lat2 = p2.y() * DEG_TO_RAD;
-    double const dLat = lat2 - lat1;
-    double const dLon = (p2.x() - p1.x()) * DEG_TO_RAD;
-
-    double const a =
-        std::sin(dLat * 0.5) * std::sin(dLat * 0.5) +
-        std::cos(lat1) * std::cos(lat2) * std::sin(dLon * 0.5) * std::sin(dLon * 0.5);
-    double const c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
-
-    return EARTH_RADIUS_KM * c;
+  double haversine_km(Point const& p1, Point const& p2) noexcept {
+    constexpr double EARTH_RADIUS_KM = 6371.0;
+    // Invoke the strategy directly rather than going through boost::geometry::distance:
+    // that skips the umbrella-strategy dispatch, and the result comes back in whatever
+    // units the radius was given in, i.e. kilometres.
+    return boost::geometry::strategy::distance::haversine<double>(EARTH_RADIUS_KM)
+        .apply(p1, p2);
   }
 }  // namespace dsf::geometry

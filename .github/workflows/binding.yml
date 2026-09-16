@@ -34,12 +34,12 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+        sudo apt install -y cmake build-essential doxygen libtbb-dev libboost-dev
 
     - name: Install system dependencies (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        brew install cmake doxygen tbb
+        brew install cmake doxygen tbb boost
 
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
@@ -49,7 +49,7 @@ jobs:
         git clone https://github.com/microsoft/vcpkg.git vcpkg
         cd vcpkg
         .\bootstrap-vcpkg.bat
-        .\vcpkg install tbb:x64-windows
+        .\vcpkg install tbb:x64-windows boost-geometry:x64-windows
         echo "CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
         echo "VCPKG_TARGET_TRIPLET=x64-windows" >> $env:GITHUB_ENV
 
@@ -190,7 +190,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt update
-        sudo apt install -y cmake build-essential doxygen libtbb-dev
+        sudo apt install -y cmake build-essential doxygen libtbb-dev libboost-dev
 
     - name: Install development dependencies
       run: |
