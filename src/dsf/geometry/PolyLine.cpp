@@ -1,39 +1,31 @@
 #include "PolyLine.hpp"
 
-#include <algorithm>
-#include <sstream>
+#include <boost/geometry/io/wkt/read.hpp>
+
+#include <format>
 #include <stdexcept>
 
 namespace dsf::geometry {
-  PolyLine::PolyLine(const std::string& strLine, const std::string& format) {
-    if (format == "WKT") {
-      auto start = strLine.find('(');
-      auto end = strLine.find(')');
-      if (start == std::string::npos || end == std::string::npos || end <= start) {
-        throw std::invalid_argument("Invalid WKT LINESTRING format: " + strLine);
-      }
-      std::string coordsStr = strLine.substr(start + 1, end - start - 1);
-      std::istringstream coordsStream(coordsStr);
-      // Count the number of ',' to estimate points
-      std::size_t nPoints = std::count(coordsStr.begin(), coordsStr.end(), ',') + 1;
-      this->reserve(nPoints);
-      std::string pointStr;
-      while (std::getline(coordsStream, pointStr, ',')) {
-        std::istringstream pointStream(pointStr);
-        double x, y;
-        std::string extra;
-        if (!(pointStream >> x >> y)) {
-          throw std::invalid_argument("Malformed WKT LINESTRING point: " + pointStr);
-        }
-        // Should not be any extra tokens after two numbers
-        if (pointStream >> extra) {
-          throw std::invalid_argument("Too many values in WKT LINESTRING point: " +
-                                      pointStr);
-        }
-        this->push_back(Point{x, y});
-      }
-    } else {
-      throw std::invalid_argument("Unsupported PolyLine format: " + format);
+  PolyLine polyLineFromWkt(std::string const& wkt) {
+    PolyLine polyline;
+    try {
+      boost::geometry::read_wkt(wkt, polyline);
+    } catch (boost::geometry::exception const& e) {
+      // See pointFromWkt: translate read_wkt_exception to preserve the documented
+      // std::invalid_argument contract.
+      throw std::invalid_argument(
+          std::format("Invalid WKT LINESTRING '{}': {}", wkt, e.what()));
     }
+    if (auto const nCoordinates = detail::countWktCoordinates(wkt);
+        nCoordinates != 2u * polyline.size()) {
+      throw std::invalid_argument(
+          std::format("Invalid WKT LINESTRING '{}': expected {} coordinates for {} "
+                      "points, found {}",
+                      wkt,
+                      2u * polyline.size(),
+                      polyline.size(),
+                      nCoordinates));
+    }
+    return polyline;
   }
 }  // namespace dsf::geometry

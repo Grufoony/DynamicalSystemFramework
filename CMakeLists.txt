@@ -182,6 +182,20 @@ FetchContent_GetProperties(SQLiteCpp)
 if(NOT SQLiteCpp_POPULATED)
   FetchContent_MakeAvailable(SQLiteCpp)
 endif()
+find_package(Boost QUIET CONFIG)
+
+if(NOT TARGET Boost::headers)
+    find_path(Boost_INCLUDE_DIR NAMES boost/geometry.hpp)
+
+    if(Boost_INCLUDE_DIR)
+        add_library(Boost::headers INTERFACE IMPORTED)
+        set_target_properties(Boost::headers PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${Boost_INCLUDE_DIR}"
+        )
+    else()
+        message(FATAL_ERROR "Boost.Geometry not found. Install libboost-dev (Debian), boost (Homebrew) or boost-geometry (vcpkg)")
+    endif()
+endif()
 
 add_library(dsf STATIC ${SOURCES})
 target_compile_definitions(dsf PRIVATE SPDLOG_USE_STD_FORMAT)
@@ -190,7 +204,7 @@ target_include_directories(
              $<INSTALL_INTERFACE:include>)
 
 # Link other libraries
-target_link_libraries(dsf PUBLIC TBB::tbb SQLiteCpp 
+target_link_libraries(dsf PUBLIC TBB::tbb SQLiteCpp $<BUILD_INTERFACE:Boost::headers>
                           PRIVATE $<BUILD_INTERFACE:simdjson::simdjson> spdlog::spdlog $<BUILD_INTERFACE:csv>)
 
 # Install dsf library

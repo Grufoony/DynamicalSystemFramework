@@ -33,7 +33,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y libtbb-dev
+        sudo apt install -y libtbb-dev libboost-dev
 
     - name: Build C++
       run: |

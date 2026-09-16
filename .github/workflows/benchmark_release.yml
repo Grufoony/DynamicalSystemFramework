@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential cmake libtbb-dev
+          sudo apt install -y build-essential cmake libtbb-dev libboost-dev
 
       - name: Build in Release mode with benchmarks
         working-directory: ${{ github.workspace }}
