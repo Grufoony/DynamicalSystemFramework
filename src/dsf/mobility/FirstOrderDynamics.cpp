@@ -1474,7 +1474,7 @@ namespace dsf::mobility {
           continue;
         }
         if (this->graph().edge(dstStreetId).target() == srcStreet.source()) {
-          spdlog::warn(
+          spdlog::debug(
               "Transition matrix: the transition from street {} to street {} is a "
               "U-turn, which random agents cannot take. Its probability will be "
               "redistributed among the other transitions of street {}.",
