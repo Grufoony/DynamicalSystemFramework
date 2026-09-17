@@ -676,6 +676,21 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK(dynamics.transitionMatrix().empty());
         }
       }
+      WHEN("We set a row whose U-turn weight can be redistributed") {
+        // Street 3 (1 -> 0) is the U-turn of street 2 (0 -> 1); its weight must be
+        // redistributed proportionally onto streets 4 and 6 rather than turning into
+        // extra END probability.
+        dynamics.setTransitionMatrix({{2, {{3, 0.2}, {4, 0.4}, {6, 0.4}}}});
+        THEN(
+            "The U-turn weight is spread over the other transitions and END is "
+            "unchanged") {
+          auto const& matrix = dynamics.transitionMatrix();
+          REQUIRE(matrix.contains(2));
+          CHECK_FALSE(matrix.at(2).contains(3));
+          CHECK_EQ(matrix.at(2).at(4), doctest::Approx(0.5));
+          CHECK_EQ(matrix.at(2).at(6), doctest::Approx(0.5));
+        }
+      }
     }
     GIVEN("A dynamics object with agents starting on street 2") {
       FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};

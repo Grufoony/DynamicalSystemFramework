@@ -1437,6 +1437,7 @@ namespace dsf::mobility {
       std::unordered_map<Id, double> validatedRow;
       validatedRow.reserve(row.size());
       double sumWeights{0.};
+      double uTurnWeight{0.};
       for (auto const& [dstStreetId, weight] : row) {
         if (weight < 0.) {
           throw std::invalid_argument(std::format(
@@ -1475,13 +1476,36 @@ namespace dsf::mobility {
         if (this->graph().edge(dstStreetId).target() == srcStreet.source()) {
           spdlog::warn(
               "Transition matrix: the transition from street {} to street {} is a "
-              "U-turn, which random agents cannot take. Ignoring this transition.",
+              "U-turn, which random agents cannot take. Its probability will be "
+              "redistributed among the other transitions of street {}.",
               srcStreetId,
-              dstStreetId);
+              dstStreetId,
+              srcStreetId);
+          uTurnWeight += weight;
           continue;
         }
         sumWeights += weight;
         validatedRow.emplace(dstStreetId, weight);
+      }
+      if (uTurnWeight > 0.) {
+        if (validatedRow.empty()) {
+          spdlog::warn(
+              "Transition matrix: street {} has no other usable transition to "
+              "redistribute the U-turn probability onto. It will be dropped.",
+              srcStreetId);
+        } else if (sumWeights > 0.) {
+          double const scale{(sumWeights + uTurnWeight) / sumWeights};
+          for (auto& [dstStreetId, weight] : validatedRow) {
+            weight *= scale;
+          }
+          sumWeights += uTurnWeight;
+        } else {
+          double const share{uTurnWeight / static_cast<double>(validatedRow.size())};
+          for (auto& [dstStreetId, weight] : validatedRow) {
+            weight = share;
+          }
+          sumWeights = uTurnWeight;
+        }
       }
       if (sumWeights > 1. + TOLERANCE) {
         throw std::invalid_argument(std::format(

@@ -320,8 +320,14 @@ namespace dsf::mobility {
     ///   probability that the agent ends its trip at that junction (i.e. the "END" probability),
     ///   which is inferred at runtime and must not be part of the given matrix.
     ///   Streets which are not a key of the matrix keep the default uniform behaviour.
-    ///   Entries which cannot be used (unknown streets, non-adjacent transitions, forbidden turns
-    ///   and U-turns) are dropped and reported as warnings.
+    ///   Entries which cannot be used (unknown streets, non-adjacent transitions and forbidden
+    ///   turns) are dropped and reported as warnings, which reduces the row's total probability
+    ///   and thus increases the END probability accordingly.
+    ///   U-turn entries are handled differently: since random agents can never take a U-turn,
+    ///   their probability is instead redistributed proportionally among the other entries of
+    ///   the same row, so that the END probability is unaffected by U-turn weights. If a row
+    ///   only contains U-turn entries, there is nothing to redistribute onto and the probability
+    ///   is dropped (reported as a warning) like any other unusable entry.
     /// @throws std::invalid_argument If a probability is negative or if a row sums up to more than 1
     void setTransitionMatrix(
         std::unordered_map<Id, std::unordered_map<Id, double>> const& transitionMatrix);
