@@ -691,6 +691,27 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(matrix.at(2).at(6), doctest::Approx(0.5));
         }
       }
+      WHEN("We set a row whose forbidden-turn weight can be redistributed") {
+        // Forbid the turn from street 2 onto street 6; its weight must be
+        // redistributed onto street 4 rather than turning into extra END probability.
+        dynamics.graph().edge(2).addForbiddenTurn(6);
+        dynamics.setTransitionMatrix({{2, {{6, 0.2}, {4, 0.8}}}});
+        THEN(
+            "The forbidden-turn weight is spread over the other transitions and END "
+            "is unchanged") {
+          auto const& matrix = dynamics.transitionMatrix();
+          REQUIRE(matrix.contains(2));
+          CHECK_FALSE(matrix.at(2).contains(6));
+          CHECK_EQ(matrix.at(2).at(4), doctest::Approx(1.));
+        }
+      }
+      WHEN("We set a row containing only a forbidden turn") {
+        dynamics.graph().edge(2).addForbiddenTurn(6);
+        dynamics.setTransitionMatrix({{2, {{6, 1.}}}});
+        THEN("The row is dropped, falling back to the uniform behaviour") {
+          CHECK(dynamics.transitionMatrix().empty());
+        }
+      }
     }
     GIVEN("A dynamics object with agents starting on street 2") {
       FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};

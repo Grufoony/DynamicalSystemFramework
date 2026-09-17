@@ -1437,7 +1437,7 @@ namespace dsf::mobility {
       std::unordered_map<Id, double> validatedRow;
       validatedRow.reserve(row.size());
       double sumWeights{0.};
-      double uTurnWeight{0.};
+      double redistributableWeight{0.};
       for (auto const& [dstStreetId, weight] : row) {
         if (weight < 0.) {
           throw std::invalid_argument(std::format(
@@ -1466,11 +1466,14 @@ namespace dsf::mobility {
           continue;
         }
         if (srcStreet.forbiddenTurns().contains(dstStreetId)) {
-          spdlog::warn(
-              "Transition matrix: the turn from street {} to street {} is forbidden. "
-              "Ignoring this transition.",
+          spdlog::debug(
+              "Transition matrix: the turn from street {} to street {} is forbidden, "
+              "which random agents cannot take. Its probability will be redistributed "
+              "among the other transitions of street {}.",
               srcStreetId,
-              dstStreetId);
+              dstStreetId,
+              srcStreetId);
+          redistributableWeight += weight;
           continue;
         }
         if (this->graph().edge(dstStreetId).target() == srcStreet.source()) {
@@ -1481,30 +1484,32 @@ namespace dsf::mobility {
               srcStreetId,
               dstStreetId,
               srcStreetId);
-          uTurnWeight += weight;
+          redistributableWeight += weight;
           continue;
         }
         sumWeights += weight;
         validatedRow.emplace(dstStreetId, weight);
       }
-      if (uTurnWeight > 0.) {
+      if (redistributableWeight > 0.) {
         if (validatedRow.empty()) {
           spdlog::warn(
               "Transition matrix: street {} has no other usable transition to "
-              "redistribute the U-turn probability onto. It will be dropped.",
+              "redistribute the forbidden-turn/U-turn probability onto. It will be "
+              "dropped.",
               srcStreetId);
         } else if (sumWeights > 0.) {
-          double const scale{(sumWeights + uTurnWeight) / sumWeights};
+          double const scale{(sumWeights + redistributableWeight) / sumWeights};
           for (auto& [dstStreetId, weight] : validatedRow) {
             weight *= scale;
           }
-          sumWeights += uTurnWeight;
+          sumWeights += redistributableWeight;
         } else {
-          double const share{uTurnWeight / static_cast<double>(validatedRow.size())};
+          double const share{redistributableWeight /
+                             static_cast<double>(validatedRow.size())};
           for (auto& [dstStreetId, weight] : validatedRow) {
             weight = share;
           }
-          sumWeights = uTurnWeight;
+          sumWeights = redistributableWeight;
         }
       }
       if (sumWeights > 1. + TOLERANCE) {
