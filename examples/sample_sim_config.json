@@ -28,5 +28,8 @@
     "error_probability": 0.05,
     "kill_stagnant_agents": 40.0,
     "agent_insertion_method": "RANDOM",
+    "importTransitionMatrixFromJSON": {
+      "file": "transition_matrix.json"
+    }
   }
 }

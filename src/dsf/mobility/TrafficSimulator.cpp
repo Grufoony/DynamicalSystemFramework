@@ -319,6 +319,18 @@ namespace dsf::mobility {
           }
         }
       }
+      if (!dynamicsConfig["importTransitionMatrixFromJSON"].error()) {
+        auto const importTransitionMatrixConfig =
+            dynamicsConfig["importTransitionMatrixFromJSON"];
+        auto const transitionMatrixFile =
+            input_folder /
+            std::filesystem::path(require_field(importTransitionMatrixConfig,
+                                                "importTransitionMatrixFromJSON",
+                                                "file")
+                                      .get_string()
+                                      .value());
+        m_dynamics->importTransitionMatrixFromJSON(transitionMatrixFile.string());
+      }
       if (!dynamicsConfig["mean_travel_distance"].error()) {
         m_dynamics->setMeanTravelDistance(
             dynamicsConfig["mean_travel_distance"].get_double().value());

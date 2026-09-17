@@ -106,6 +106,7 @@ namespace dsf::mobility {
     // ---
     tbb::concurrent_unordered_map<Id, std::size_t> m_originCounts;
     tbb::concurrent_unordered_map<Id, std::size_t> m_destinationCounts;
+    std::unordered_map<Id, std::unordered_map<Id, double>> m_transitionMatrix;
     std::atomic<std::size_t> m_nAgents{0}, m_nAddedAgents{0}, m_nInsertedAgents{0},
         m_nKilledAgents{0}, m_nArrivedAgents{0};
     std::function<double(Street const&)> m_speedFunction;
@@ -147,9 +148,17 @@ namespace dsf::mobility {
     void m_addAgentsRandomODs(std::size_t nAgents);
     void m_addAgentsConditionalRandomODs(std::size_t nAgents);
 
+    /// @brief Extract a street from the given transition probabilities
+    /// @param transitionProbabilities A map of candidate street ids to their (unnormalized) weights
+    /// @param cumulativeProbability The sum of the weights in transitionProbabilities
+    /// @param bAllowTermination If true, the weights are interpreted as probabilities in [0, 1] and
+    ///   the missing mass (1 - cumulativeProbability) is the probability of ending the trip, in which
+    ///   case std::nullopt is returned
+    /// @return std::optional<Id> The id of the selected street, or std::nullopt if no street was selected
     std::optional<Id> m_extractStreet(
         std::unordered_map<Id, double> const& transitionProbabilities,
-        double const cumulativeProbability);
+        double const cumulativeProbability,
+        bool const bAllowTermination = false);
 
     std::optional<Id> m_nextRandomStreetId(const std::unique_ptr<Agent>& pAgent,
                                            RoadJunction const* pNode);
@@ -303,6 +312,36 @@ namespace dsf::mobility {
     void importODsFromCSV(std::string_view const fileName,
                           char const separator = ';',
                           bool const bEdges = true);
+    /// @brief Set the transition matrix used to route random agents
+    /// @param transitionMatrix The transition matrix, i.e. a map whose outer key is the current
+    ///   street id, whose inner keys are the candidate next street ids and whose values are the
+    ///   corresponding probabilities
+    /// @details The probabilities of each row must sum up to at most 1: the missing mass is the
+    ///   probability that the agent ends its trip at that junction (i.e. the "END" probability),
+    ///   which is inferred at runtime and must not be part of the given matrix.
+    ///   Streets which are not a key of the matrix keep the default uniform behaviour.
+    ///   Entries which cannot be used (unknown streets, non-adjacent transitions, forbidden turns
+    ///   and U-turns) are dropped and reported as warnings.
+    /// @throws std::invalid_argument If a probability is negative or if a row sums up to more than 1
+    void setTransitionMatrix(
+        std::unordered_map<Id, std::unordered_map<Id, double>> const& transitionMatrix);
+    /// @brief Import the transition matrix used to route random agents from a JSON file
+    /// @param fileName The path of the JSON file
+    /// @details The file must contain an object whose keys are the current street ids and whose
+    ///   values are objects mapping the candidate next street ids to their probabilities, e.g.:
+    ///   @code
+    ///   {
+    ///     "1042": { "1043": 0.6, "1055": 0.2, "END": 0.2 },
+    ///     "1043": { "1080": 1.0 }
+    ///   }
+    ///   @endcode
+    ///   The special "END" key is accepted for readability but ignored: the probability of ending
+    ///   the trip is always inferred at runtime as one minus the sum of the other probabilities.
+    ///   The imported matrix is then passed to setTransitionMatrix, which validates it.
+    /// @throws std::runtime_error If the file cannot be parsed or has an invalid structure
+    /// @throws std::invalid_argument If a key is not a valid street id, if a probability is
+    ///   negative or if a row sums up to more than 1
+    void importTransitionMatrixFromJSON(std::string_view const fileName);
 
     /// @brief Initialize the turn counts map
     /// @throws std::runtime_error if the turn counts map is already initialized
@@ -394,6 +433,11 @@ namespace dsf::mobility {
     /// @brief Get the destination nodes of the graph
     /// @return std::vector<std::tuple<Id, double>>>& The destination nodes of the graph
     inline auto& destinations() noexcept { return m_destinations; }
+    /// @brief Get the transition matrix used to route random agents
+    /// @return std::unordered_map<Id, std::unordered_map<Id, double>> const& The transition matrix.
+    ///   The outer key is the current street id, the inner key is the next street id and the value
+    ///   is the transition probability. It is empty if no transition matrix has been set.
+    inline auto const& transitionMatrix() const noexcept { return m_transitionMatrix; }
     /// @brief Get the agents
     /// @return const std::unordered_map<Id, Agent<Id>>&, The agents
     inline const std::vector<std::unique_ptr<Agent>>& agents() const noexcept {
