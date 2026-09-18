@@ -567,43 +567,6 @@ namespace dsf::mobility {
     }
   }
 
-  std::optional<Id> FirstOrderDynamics::m_extractStreet(
-      std::unordered_map<Id, double> const& transitionProbabilities,
-      double const cumulativeProbability,
-      bool const bAllowTermination) {
-    // Select street based on weighted probabilities
-    if (transitionProbabilities.empty()) {
-      return std::nullopt;
-    }
-    if (!bAllowTermination && transitionProbabilities.size() == 1) {
-      auto const& onlyStreetId = transitionProbabilities.cbegin()->first;
-      spdlog::trace("This transition is to {}", this->graph().edge(onlyStreetId));
-      return onlyStreetId;
-    }
-
-    // When termination is allowed the weights are probabilities in [0, 1] and the missing
-    // mass (1 - cumulativeProbability) is the probability of ending the trip here.
-    std::uniform_real_distribution<double> uniformDist{
-        0., bAllowTermination ? 1. : cumulativeProbability};
-    auto const randValue = uniformDist(this->m_generator);
-    Id fallbackStreetId{transitionProbabilities.cbegin()->first};
-    double accumulated = 0.0;
-    for (const auto& [targetStreetId, probability] : transitionProbabilities) {
-      accumulated += probability;
-      fallbackStreetId = targetStreetId;
-      if (randValue < accumulated) {
-        return targetStreetId;
-      }
-    }
-    if (bAllowTermination) {
-      spdlog::trace("Transition matrix ends the trip (random value {} >= {})",
-                    randValue,
-                    cumulativeProbability);
-      return std::nullopt;
-    }
-    return fallbackStreetId;
-  }
-
   std::optional<Id> FirstOrderDynamics::m_nextRandomStreetId(
       const std::unique_ptr<Agent>& pAgent, RoadJunction const* pNode) {
     spdlog::trace("Computing m_nextRandomStreetId for {}", *pAgent);
@@ -644,7 +607,6 @@ namespace dsf::mobility {
         }
 
         double probability = 1.0;
-        //std::exp(-0.5 * pStreetOut->maxSpeed() / (this->m_speedFunction(*pStreetOut)));
         if (bUseMatrix) {
           auto const itWeight{itRow->second.find(streetOut.id())};
           if (itWeight == itRow->second.cend()) {
@@ -663,7 +625,7 @@ namespace dsf::mobility {
     if (bUseMatrix && transitionProbabilities.empty()) {
       // Every street listed for this row has been filtered out: fall back to the uniform
       // behaviour rather than terminating every agent passing by.
-      spdlog::trace(
+      spdlog::debug(
           "No usable transition-matrix entry for street {} at {}. Falling back to a "
           "uniform choice.",
           *currentStreetIdOpt,
@@ -675,7 +637,10 @@ namespace dsf::mobility {
                   transitionProbabilities.size(),
                   *pAgent,
                   *pNode);
-    return m_extractStreet(transitionProbabilities, cumulativeProbability, bUseMatrix);
+    if (bUseMatrix) {
+      return m_extractStreet<true>(transitionProbabilities, cumulativeProbability);
+    }
+    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
   }
 
   std::optional<Id> FirstOrderDynamics::m_nextStreetId(
@@ -758,7 +723,7 @@ namespace dsf::mobility {
       cumulativeProbability += probability;
     }
 
-    return m_extractStreet(transitionProbabilities, cumulativeProbability);
+    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
   }
 
   void FirstOrderDynamics::m_evolveStreet(Street* pStreet) {
@@ -1576,11 +1541,6 @@ namespace dsf::mobility {
       auto const srcStreetId{parseId(srcKey)};
       std::unordered_map<Id, double> row;
       for (auto const& [dstKey, weightElement] : rowObject) {
-        // The "END" probability is never stored: it is inferred at runtime as one minus
-        // the sum of the other probabilities.
-        if (dstKey == "END") {
-          continue;
-        }
         double weight;
         if (weightElement.get_double().get(weight)) {
           throw std::runtime_error(std::format(

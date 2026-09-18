@@ -138,8 +138,7 @@ def test_dynamics_transition_matrix_rejects_rows_summing_above_one(dynamics):
 
 def test_dynamics_import_transition_matrix_from_json(dynamics, tmp_path):
     matrix_path = tmp_path / "transition_matrix.json"
-    # "END" is accepted but never stored: it is inferred at runtime
-    matrix_path.write_text('{"2": {"4": 0.6, "6": 0.2, "END": 0.2}}', encoding="utf-8")
+    matrix_path.write_text('{"2": {"4": 0.6, "6": 0.2}}', encoding="utf-8")
 
     dynamics.importTransitionMatrixFromJSON(str(matrix_path))
 

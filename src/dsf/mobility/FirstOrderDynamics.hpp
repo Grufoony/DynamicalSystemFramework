@@ -149,16 +149,16 @@ namespace dsf::mobility {
     void m_addAgentsConditionalRandomODs(std::size_t nAgents);
 
     /// @brief Extract a street from the given transition probabilities
+    /// @tparam AllowTermination A boolean indicating whether the agent is allowed to terminate its trip
     /// @param transitionProbabilities A map of candidate street ids to their (unnormalized) weights
     /// @param cumulativeProbability The sum of the weights in transitionProbabilities
-    /// @param bAllowTermination If true, the weights are interpreted as probabilities in [0, 1] and
     ///   the missing mass (1 - cumulativeProbability) is the probability of ending the trip, in which
     ///   case std::nullopt is returned
     /// @return std::optional<Id> The id of the selected street, or std::nullopt if no street was selected
+    template <bool AllowTermination>
     std::optional<Id> m_extractStreet(
         std::unordered_map<Id, double> const& transitionProbabilities,
-        double const cumulativeProbability,
-        bool const bAllowTermination = false);
+        double const cumulativeProbability);
 
     std::optional<Id> m_nextRandomStreetId(const std::unique_ptr<Agent>& pAgent,
                                            RoadJunction const* pNode);
@@ -317,16 +317,16 @@ namespace dsf::mobility {
     ///   street id, whose inner keys are the candidate next street ids and whose values are the
     ///   corresponding probabilities
     /// @details The probabilities of each row must sum up to at most 1: the missing mass is the
-    ///   probability that the agent ends its trip at that junction (i.e. the "END" probability),
+    ///   probability that the agent ends its trip at that junction,
     ///   which is inferred at runtime and must not be part of the given matrix.
     ///   Streets which are not a key of the matrix keep the default uniform behaviour.
     ///   Entries which cannot be used because the destination street is unknown or is not an
     ///   outgoing edge of the source street's target node are dropped and reported as warnings,
-    ///   which reduces the row's total probability and thus increases the END probability
+    ///   which reduces the row's total probability and thus increases the end probability
     ///   accordingly.
     ///   Forbidden turns and U-turns are handled differently: since random agents can never
     ///   take them, their probability is instead redistributed proportionally among the other
-    ///   entries of the same row, so that the END probability is unaffected by their weights.
+    ///   entries of the same row, so that the end probability is unaffected by their weights.
     ///   If a row only contains forbidden-turn and/or U-turn entries, there is nothing to
     ///   redistribute onto and the probability is dropped (reported as a warning) like any
     ///   other unusable entry.
@@ -339,11 +339,11 @@ namespace dsf::mobility {
     ///   values are objects mapping the candidate next street ids to their probabilities, e.g.:
     ///   @code
     ///   {
-    ///     "1042": { "1043": 0.6, "1055": 0.2, "END": 0.2 },
+    ///     "1042": { "1043": 0.6, "1055": 0.2 },
     ///     "1043": { "1080": 1.0 }
     ///   }
     ///   @endcode
-    ///   The special "END" key is accepted for readability but ignored: the probability of ending
+    ///   Rows are not required to sum to 1: the probability of ending
     ///   the trip is always inferred at runtime as one minus the sum of the other probabilities.
     ///   The imported matrix is then passed to setTransitionMatrix, which validates it.
     /// @throws std::runtime_error If the file cannot be parsed or has an invalid structure
@@ -545,6 +545,43 @@ namespace dsf::mobility {
       }
     }
     return pAgent;
+  }
+
+  template <bool AllowTermination>
+  std::optional<Id> FirstOrderDynamics::m_extractStreet(
+      std::unordered_map<Id, double> const& transitionProbabilities,
+      double const cumulativeProbability) {
+    // Select street based on weighted probabilities
+    if (transitionProbabilities.empty()) {
+      return std::nullopt;
+    }
+    if (!AllowTermination && transitionProbabilities.size() == 1) {
+      auto const& onlyStreetId = transitionProbabilities.cbegin()->first;
+      spdlog::trace("This transition is to {}", this->graph().edge(onlyStreetId));
+      return onlyStreetId;
+    }
+
+    // When termination is allowed the weights are probabilities in [0, 1] and the missing
+    // mass (1 - cumulativeProbability) is the probability of ending the trip here.
+    std::uniform_real_distribution<double> uniformDist{
+        0., AllowTermination ? 1. : cumulativeProbability};
+    auto const randValue = uniformDist(this->m_generator);
+    Id fallbackStreetId{transitionProbabilities.cbegin()->first};
+    double accumulated = 0.0;
+    for (const auto& [targetStreetId, probability] : transitionProbabilities) {
+      accumulated += probability;
+      fallbackStreetId = targetStreetId;
+      if (randValue < accumulated) {
+        return targetStreetId;
+      }
+    }
+    if (AllowTermination) {
+      spdlog::trace("Transition matrix ends the trip (random value {} >= {})",
+                    randValue,
+                    cumulativeProbability);
+      return std::nullopt;
+    }
+    return fallbackStreetId;
   }
 
   template <typename... TArgs>

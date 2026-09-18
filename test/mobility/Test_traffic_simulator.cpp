@@ -155,7 +155,7 @@ TEST_CASE("TrafficSimulator JSON config - transition matrix") {
   {
     std::ofstream mout(matrixPath);
     REQUIRE(mout.is_open());
-    mout << "{ \"0\": { \"2\": 0.8, \"END\": 0.2 } }\n";
+    mout << "{ \"0\": { \"2\": 0.8 } }\n";
   }
 
   auto const jsonPath = makeUniquePath("traffic_simulator_tm_config_", ".json");

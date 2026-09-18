@@ -1314,8 +1314,7 @@ Returns:
 
 The file must contain an object whose keys are the current street ids and whose values
 are objects mapping the candidate next street ids to their probabilities, e.g.
-``{"1042": {"1043": 0.6, "1055": 0.2, "END": 0.2}}``. The special "END" key is accepted
-for readability but ignored: the probability of ending the trip is always inferred as
+``{"1042": {"1043": 0.6, "1055": 0.2 }}``. Rows are not required to sum to 1: the probability of ending the trip is always inferred as
 one minus the sum of the other probabilities.
 
 Args:
