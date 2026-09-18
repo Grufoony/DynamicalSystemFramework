@@ -1,7 +1,8 @@
-import dsf
-from dsf import logging
 import dsf_cpp
 import pytest
+
+import dsf
+from dsf import logging
 
 
 def test_root_module_reexports_cpp_bindings():

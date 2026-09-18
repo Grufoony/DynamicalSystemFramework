@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import numpy as np
 import pytest
 
@@ -14,7 +16,7 @@ EXPECTED_COLUMNS = [
 
 
 class InvalidShapeFrame:
-    columns = ["uid", "timestamp", "lat", "lon"]
+    columns: ClassVar[list[str]] = ["uid", "timestamp", "lat", "lon"]
 
     def to_numpy(self):
         return np.array([1.0, 2.0, 3.0], dtype=np.float64)

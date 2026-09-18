@@ -7,13 +7,13 @@ process accordingly.
 """
 
 import os
-from pathlib import Path
 import platform
 import re
 import subprocess
 import sys
+from pathlib import Path
 
-from setuptools import setup, Extension
+from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
 
@@ -88,6 +88,7 @@ class CMakeBuild(build_ext):
                 str(out_stub),
             ],
             env=env,
+            check=False,
         )
 
         if result.returncode != 0:

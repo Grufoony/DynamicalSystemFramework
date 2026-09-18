@@ -10,6 +10,7 @@ standardization of attributes.
 import ast
 import math
 import re
+
 import folium
 import geopandas as gpd
 import networkx as nx
@@ -21,6 +22,15 @@ from dsf import logging
 
 if "turn:lanes" not in ox.settings.useful_tags_way:
     ox.settings.useful_tags_way.append("turn:lanes")
+
+
+def _edge_sort_key(data: dict):
+    """Rank parallel edges by OSM id, then by length."""
+    osmid = data.get("osmid", None)
+    # osmid can be a list when edges were merged
+    if isinstance(osmid, list):
+        osmid = min(osmid)
+    return (osmid if osmid is not None else float("inf"), data.get("length", 0))
 
 
 def fetch_cartography(
@@ -160,19 +170,12 @@ def process_cartography(
                 del data["speed_kph"]
 
     for u, v in set(G.edges()):
-        keys = list(G[u][v].keys())
+        parallel_edges = G[u][v]
+        keys = list(parallel_edges.keys())
         if len(keys) <= 1:
             continue
 
-        def _sort_key(k):
-            d = G[u][v][k]
-            osmid = d.get("osmid", None)
-            # osmid can be a list when edges were merged
-            if isinstance(osmid, list):
-                osmid = min(osmid)
-            return (osmid if osmid is not None else float("inf"), d.get("length", 0))
-
-        preferred_key = min(keys, key=_sort_key)
+        preferred_key = min(keys, key=lambda k: _edge_sort_key(parallel_edges[k]))
         # Swap the preferred edge into key=0 position.
         if preferred_key != 0:
             d0 = G[u][v][0]
@@ -290,9 +293,8 @@ def process_cartography(
         else:
             updates["type"] = "unknown"
 
-        if "width" in data:
-            if isinstance(data["width"], list):
-                data["width"] = min([float(x) for x in data["width"]])
+        if "width" in data and isinstance(data["width"], list):
+            data["width"] = min([float(x) for x in data["width"]])
 
         name = data.get("name", None)
         if isinstance(name, list):
@@ -439,12 +441,18 @@ def process_cartography(
 
     for node in G.nodes():
         t = G.nodes[node].get("type")
-        if t is None or (isinstance(t, float) and t != t):
+        # Missing/NaN types are unknown, and traffic lights need an input degree
+        # of at least 3 to be meaningful.
+        if (
+            t is None
+            or (isinstance(t, float) and np.isnan(t))
+            or (
+                isinstance(t, str)
+                and "traffic_signals" in t.lower()
+                and G.in_degree(node) < 3
+            )
+        ):
             G.nodes[node]["type"] = "N/A"
-        elif isinstance(t, str) and "traffic_signals" in t.lower():
-            # Check the input degree of the node, if < 3, set type to "N/A"
-            if G.in_degree(node) < 3:
-                G.nodes[node]["type"] = "N/A"
 
     # --- Build GeoDataFrames ---
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(nx.MultiDiGraph(G))

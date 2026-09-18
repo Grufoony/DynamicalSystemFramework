@@ -6,17 +6,17 @@ integration step and 10-second agent insertion cadence.
 """
 
 import argparse
-from datetime import datetime
 import logging
+from datetime import datetime
+
+import numpy as np
+from numba import cfunc, float64
 
 from dsf.cartography import create_manhattan_cartography
 from dsf.mobility import (
-    TrafficSimulator,
     AgentInsertionMethod,
+    TrafficSimulator,
 )
-
-from numba import cfunc, float64
-import numpy as np
 
 
 @cfunc(float64(float64, float64), nopython=True, cache=True)
@@ -30,6 +30,7 @@ def custom_speed(max_speed, density):
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -53,7 +54,7 @@ if __name__ == "__main__":
             "Invalid grid dimensions. Please use the format 'rowsxcols' (e.g., 10x10)."
         )
 
-    logging.info(f"Creating manhattan cartography for {rows}x{cols} grid...")
+    logger.info(f"Creating manhattan cartography for {rows}x{cols} grid...")
     # Get the cartography of the specified city
     df_edges, df_nodes = create_manhattan_cartography(rows, cols)
 
@@ -66,7 +67,7 @@ if __name__ == "__main__":
 
     del df_edges, df_nodes
 
-    logging.info("Creating road network and dynamics model...")
+    logger.info("Creating road network and dynamics model...")
 
     simulator = TrafficSimulator()
     simulator.importRoadNetwork(
@@ -77,7 +78,12 @@ if __name__ == "__main__":
     vehicle_input = np.random.normal(args.amp, args.amp * 0.1, size=8640)
     vehicle_input = np.clip(vehicle_input, 0, None).astype(int)
 
-    EPOCH = int(datetime.combine(datetime.today(), datetime.min.time()).timestamp())
+    local_now = datetime.now().astimezone()
+    EPOCH = int(
+        datetime.combine(
+            local_now.date(), datetime.min.time(), tzinfo=local_now.tzinfo
+        ).timestamp()
+    )
 
     simulator.setTimeFrame(EPOCH)
     simulator.saveData(300, True, True, True)

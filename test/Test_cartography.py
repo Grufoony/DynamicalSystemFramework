@@ -2,14 +2,15 @@
 Tests for cartography module.
 """
 
-import pytest
-import networkx as nx
 import folium
+import networkx as nx
+import pytest
+
 from dsf.cartography import (
-    get_cartography,
-    graph_to_gdfs,
-    graph_from_gdfs,
     create_manhattan_cartography,
+    get_cartography,
+    graph_from_gdfs,
+    graph_to_gdfs,
     to_folium_map,
 )
 
@@ -80,21 +81,21 @@ class TestCreateManhattanCartography:
 
     def test_node_ids_are_unique(self):
         """Test that all node IDs are unique."""
-        edges, nodes = create_manhattan_cartography(n_x=5, n_y=5)
+        _edges, nodes = create_manhattan_cartography(n_x=5, n_y=5)
 
         node_ids = nodes["id"].tolist()
         assert len(node_ids) == len(set(node_ids))
 
     def test_edge_ids_are_unique(self):
         """Test that all edge IDs are unique."""
-        edges, nodes = create_manhattan_cartography(n_x=5, n_y=5)
+        edges, _nodes = create_manhattan_cartography(n_x=5, n_y=5)
 
         edge_ids = edges["id"].tolist()
         assert len(edge_ids) == len(set(edge_ids))
 
     def test_all_edges_are_bidirectional(self):
         """Test that for every edge u->v there exists an edge v->u."""
-        edges, nodes = create_manhattan_cartography(n_x=4, n_y=4)
+        edges, _nodes = create_manhattan_cartography(n_x=4, n_y=4)
 
         # Create a set of (source, target) pairs
         edge_pairs = set(zip(edges["source"], edges["target"]))
@@ -105,7 +106,7 @@ class TestCreateManhattanCartography:
 
     def test_node_types(self):
         """Test that all nodes have the correct type."""
-        edges, nodes = create_manhattan_cartography(n_x=3, n_y=3)
+        _edges, nodes = create_manhattan_cartography(n_x=3, n_y=3)
 
         # All nodes should have type "N/A"
         assert all(nodes["type"] == "N/A")
@@ -113,7 +114,7 @@ class TestCreateManhattanCartography:
     def test_edge_attributes(self):
         """Test that edges have correct attributes."""
         maxspeed = 60.0
-        edges, nodes = create_manhattan_cartography(n_x=3, n_y=3, maxspeed=maxspeed)
+        edges, _nodes = create_manhattan_cartography(n_x=3, n_y=3, maxspeed=maxspeed)
 
         # Check nlanes
         assert all(edges["nlanes"] == 1)
@@ -130,7 +131,7 @@ class TestCreateManhattanCartography:
     def test_edge_length_calculation(self):
         """Test that edge lengths are calculated correctly."""
         spacing = 1000.0  # 1 km
-        edges, nodes = create_manhattan_cartography(n_x=3, n_y=3, spacing=spacing)
+        edges, _nodes = create_manhattan_cartography(n_x=3, n_y=3, spacing=spacing)
 
         # All edges should have approximately the same length (spacing)
         # Allow for small numerical errors
@@ -139,7 +140,7 @@ class TestCreateManhattanCartography:
     def test_center_coordinates(self):
         """Test that the grid is centered at the specified coordinates."""
         center_lat, center_lon = 45.0, 10.0
-        edges, nodes = create_manhattan_cartography(
+        _edges, nodes = create_manhattan_cartography(
             n_x=5, n_y=5, center_lat=center_lat, center_lon=center_lon
         )
 
@@ -182,7 +183,7 @@ class TestCreateManhattanCartography:
 
     def test_no_self_loops(self):
         """Test that there are no self-loops (edges from a node to itself)."""
-        edges, nodes = create_manhattan_cartography(n_x=5, n_y=5)
+        edges, _nodes = create_manhattan_cartography(n_x=5, n_y=5)
 
         # No edge should have the same source and target
         assert all(edges["source"] != edges["target"])

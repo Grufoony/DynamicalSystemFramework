@@ -6,16 +6,16 @@ simulation while periodically updating shortest paths.
 """
 
 import argparse
+import pickle
 from datetime import datetime
 from pathlib import Path
-import pickle
-
-import dsf
-from dsf.cartography import get_cartography, to_folium_map
-from dsf import logging
-from dsf.mobility import TrafficSimulator
 
 import numpy as np
+
+import dsf
+from dsf import logging
+from dsf.cartography import get_cartography, to_folium_map
+from dsf.mobility import TrafficSimulator
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -30,7 +30,12 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     logging.info(f"Using dsf version: {dsf.__version__}")
-    EPOCH = int(datetime.combine(datetime.today(), datetime.min.time()).timestamp())
+    local_now = datetime.now().astimezone()
+    EPOCH = int(
+        datetime.combine(
+            local_now.date(), datetime.min.time(), tzinfo=local_now.tzinfo
+        ).timestamp()
+    )
     np.random.seed(args.seed)
     args.city = args.city.lower().strip().replace(" ", "_")
     args.country = args.country.lower().strip().replace(" ", "_")
