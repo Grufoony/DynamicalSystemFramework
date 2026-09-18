@@ -1,6 +1,9 @@
 #include "FirstOrderDynamics.hpp"
 
+#include <charconv>
+
 #include <csv.hpp>
+#include <simdjson.h>
 #include <SQLiteCpp/SQLiteCpp.h>
 #include <spdlog/spdlog.h>
 
@@ -564,33 +567,6 @@ namespace dsf::mobility {
     }
   }
 
-  std::optional<Id> FirstOrderDynamics::m_extractStreet(
-      std::unordered_map<Id, double> const& transitionProbabilities,
-      double const cumulativeProbability) {
-    // Select street based on weighted probabilities
-    if (transitionProbabilities.empty()) {
-      return std::nullopt;
-    }
-    if (transitionProbabilities.size() == 1) {
-      auto const& onlyStreetId = transitionProbabilities.cbegin()->first;
-      spdlog::trace("This transition is to {}", this->graph().edge(onlyStreetId));
-      return onlyStreetId;
-    }
-
-    std::uniform_real_distribution<double> uniformDist{0., cumulativeProbability};
-    auto const randValue = uniformDist(this->m_generator);
-    Id fallbackStreetId;
-    double accumulated = 0.0;
-    for (const auto& [targetStreetId, probability] : transitionProbabilities) {
-      accumulated += probability;
-      fallbackStreetId = targetStreetId;
-      if (randValue < accumulated) {
-        return targetStreetId;
-      }
-    }
-    return fallbackStreetId;
-  }
-
   std::optional<Id> FirstOrderDynamics::m_nextRandomStreetId(
       const std::unique_ptr<Agent>& pAgent, RoadJunction const* pNode) {
     spdlog::trace("Computing m_nextRandomStreetId for {}", *pAgent);
@@ -609,31 +585,62 @@ namespace dsf::mobility {
       previousNodeId = streetCurrent.source();
     }
 
-    for (const auto outEdgeId : outgoingEdges) {
-      if (forbiddenTurns.contains(outEdgeId)) {
-        spdlog::trace("Forbidden turn from street {} to street {}. Skipping.",
-                      pAgent->streetId().value_or(0),
-                      outEdgeId);
-        continue;
+    auto const itRow{currentStreetIdOpt.has_value()
+                         ? m_transitionMatrix.find(*currentStreetIdOpt)
+                         : m_transitionMatrix.cend()};
+
+    auto const collectCandidates = [&](bool const bUseMatrix) -> void {
+      transitionProbabilities.clear();
+      cumulativeProbability = 0.0;
+      for (const auto outEdgeId : outgoingEdges) {
+        if (forbiddenTurns.contains(outEdgeId)) {
+          spdlog::trace("Forbidden turn from street {} to street {}. Skipping.",
+                        pAgent->streetId().value_or(0),
+                        outEdgeId);
+          continue;
+        }
+        auto const& streetOut{this->graph().edge(outEdgeId)};
+
+        // Handle U-turns
+        if ((previousNodeId.has_value()) && (streetOut.target() == *previousNodeId)) {
+          continue;
+        }
+
+        double probability = 1.0;
+        if (bUseMatrix) {
+          auto const itWeight{itRow->second.find(streetOut.id())};
+          if (itWeight == itRow->second.cend()) {
+            continue;
+          }
+          probability = itWeight->second;
+        }
+
+        transitionProbabilities.emplace(streetOut.id(), probability);
+        cumulativeProbability += probability;
       }
-      auto const& streetOut{this->graph().edge(outEdgeId)};
+    };
 
-      double probability = 1.0;
-      //std::exp(-0.5 * pStreetOut->maxSpeed() / (this->m_speedFunction(*pStreetOut)));
-
-      // Handle U-turns
-      if ((previousNodeId.has_value()) && (streetOut.target() == *previousNodeId)) {
-        continue;
-      }
-
-      transitionProbabilities.emplace(streetOut.id(), probability);
-      cumulativeProbability += probability;
+    bool bUseMatrix{itRow != m_transitionMatrix.cend()};
+    collectCandidates(bUseMatrix);
+    if (bUseMatrix && transitionProbabilities.empty()) {
+      // Every street listed for this row has been filtered out: fall back to the uniform
+      // behaviour rather than terminating every agent passing by.
+      spdlog::debug(
+          "No usable transition-matrix entry for street {} at {}. Falling back to a "
+          "uniform choice.",
+          *currentStreetIdOpt,
+          *pNode);
+      bUseMatrix = false;
+      collectCandidates(false);
     }
     spdlog::debug("Found {} valid transitions for {} at {}",
                   transitionProbabilities.size(),
                   *pAgent,
                   *pNode);
-    return m_extractStreet(transitionProbabilities, cumulativeProbability);
+    if (bUseMatrix) {
+      return m_extractStreet<true>(transitionProbabilities, cumulativeProbability);
+    }
+    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
   }
 
   std::optional<Id> FirstOrderDynamics::m_nextStreetId(
@@ -716,7 +723,7 @@ namespace dsf::mobility {
       cumulativeProbability += probability;
     }
 
-    return m_extractStreet(transitionProbabilities, cumulativeProbability);
+    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
   }
 
   void FirstOrderDynamics::m_evolveStreet(Street* pStreet) {
@@ -1376,6 +1383,181 @@ namespace dsf::mobility {
       this->m_importNodeODsFromCSV(fileName, separator);
     }
     spdlog::info("Finished importing ODs from CSV.");
+  }
+  void FirstOrderDynamics::setTransitionMatrix(
+      std::unordered_map<Id, std::unordered_map<Id, double>> const& transitionMatrix) {
+    constexpr double TOLERANCE{1e-9};
+    std::unordered_map<Id, std::unordered_map<Id, double>> validatedMatrix;
+    validatedMatrix.reserve(transitionMatrix.size());
+    for (auto const& [srcStreetId, row] : transitionMatrix) {
+      if (!this->graph().edges().contains(srcStreetId)) {
+        spdlog::warn(
+            "Transition matrix: street {} does not exist in the road network. Ignoring "
+            "its row.",
+            srcStreetId);
+        continue;
+      }
+      auto const& srcStreet{this->graph().edge(srcStreetId)};
+      auto const& outgoingEdges{this->graph().node(srcStreet.target()).outgoingEdges()};
+      std::unordered_map<Id, double> validatedRow;
+      validatedRow.reserve(row.size());
+      double sumWeights{0.};
+      double redistributableWeight{0.};
+      for (auto const& [dstStreetId, weight] : row) {
+        if (weight < 0.) {
+          throw std::invalid_argument(std::format(
+              "The transition probability from street {} to street {} ({}) must be "
+              "non-negative",
+              srcStreetId,
+              dstStreetId,
+              weight));
+        }
+        if (!this->graph().edges().contains(dstStreetId)) {
+          spdlog::warn(
+              "Transition matrix: street {} (target of {}) does not exist in the road "
+              "network. Ignoring this transition.",
+              dstStreetId,
+              srcStreetId);
+          continue;
+        }
+        if (std::find(outgoingEdges.cbegin(), outgoingEdges.cend(), dstStreetId) ==
+            outgoingEdges.cend()) {
+          spdlog::warn(
+              "Transition matrix: street {} is not an outgoing edge of node {}, i.e. the "
+              "target of street {}. Ignoring this transition.",
+              dstStreetId,
+              srcStreet.target(),
+              srcStreetId);
+          continue;
+        }
+        if (srcStreet.forbiddenTurns().contains(dstStreetId)) {
+          spdlog::debug(
+              "Transition matrix: the turn from street {} to street {} is forbidden, "
+              "which random agents cannot take. Its probability will be redistributed "
+              "among the other transitions of street {}.",
+              srcStreetId,
+              dstStreetId,
+              srcStreetId);
+          redistributableWeight += weight;
+          continue;
+        }
+        if (this->graph().edge(dstStreetId).target() == srcStreet.source()) {
+          spdlog::debug(
+              "Transition matrix: the transition from street {} to street {} is a "
+              "U-turn, which random agents cannot take. Its probability will be "
+              "redistributed among the other transitions of street {}.",
+              srcStreetId,
+              dstStreetId,
+              srcStreetId);
+          redistributableWeight += weight;
+          continue;
+        }
+        sumWeights += weight;
+        validatedRow.emplace(dstStreetId, weight);
+      }
+      if (redistributableWeight > 0.) {
+        if (validatedRow.empty()) {
+          spdlog::warn(
+              "Transition matrix: street {} has no other usable transition to "
+              "redistribute the forbidden-turn/U-turn probability onto. It will be "
+              "dropped.",
+              srcStreetId);
+        } else if (sumWeights > 0.) {
+          double const scale{(sumWeights + redistributableWeight) / sumWeights};
+          for (auto& [dstStreetId, weight] : validatedRow) {
+            weight *= scale;
+          }
+          sumWeights += redistributableWeight;
+        } else {
+          double const share{redistributableWeight /
+                             static_cast<double>(validatedRow.size())};
+          for (auto& [dstStreetId, weight] : validatedRow) {
+            weight = share;
+          }
+          sumWeights = redistributableWeight;
+        }
+      }
+      if (sumWeights > 1. + TOLERANCE) {
+        throw std::invalid_argument(std::format(
+            "The transition probabilities of street {} sum up to {}, which is greater "
+            "than 1",
+            srcStreetId,
+            sumWeights));
+      }
+      if (validatedRow.empty()) {
+        spdlog::warn(
+            "Transition matrix: street {} has no usable transition left. Random agents "
+            "will use the uniform behaviour there.",
+            srcStreetId);
+        continue;
+      }
+      validatedMatrix.emplace(srcStreetId, std::move(validatedRow));
+    }
+    if (!validatedMatrix.empty() && validatedMatrix.size() < this->graph().nEdges()) {
+      spdlog::warn(
+          "Transition matrix: {} out of {} streets have no transition probabilities. "
+          "Random agents will use the uniform behaviour there.",
+          this->graph().nEdges() - validatedMatrix.size(),
+          this->graph().nEdges());
+    }
+    m_transitionMatrix = std::move(validatedMatrix);
+  }
+  void FirstOrderDynamics::importTransitionMatrixFromJSON(
+      std::string_view const fileName) {
+    simdjson::dom::parser parser;
+    simdjson::dom::element root;
+    auto const error = parser.load(fileName).get(root);
+    if (error) {
+      throw std::runtime_error(
+          std::format("Failed to load the transition matrix file '{}': {}",
+                      fileName,
+                      simdjson::error_message(error)));
+    }
+    simdjson::dom::object rootObject;
+    if (root.get_object().get(rootObject)) {
+      throw std::runtime_error(std::format(
+          "Invalid transition matrix file '{}': root element is not an object",
+          fileName));
+    }
+    auto const parseId = [&fileName](std::string_view const key) -> Id {
+      Id id{0};
+      auto const [ptr, ec] = std::from_chars(key.data(), key.data() + key.size(), id);
+      if (ec != std::errc{} || ptr != key.data() + key.size()) {
+        throw std::invalid_argument(std::format(
+            "Invalid street id '{}' in the transition matrix file '{}'", key, fileName));
+      }
+      return id;
+    };
+    std::unordered_map<Id, std::unordered_map<Id, double>> transitionMatrix;
+    for (auto const& [srcKey, rowElement] : rootObject) {
+      simdjson::dom::object rowObject;
+      if (rowElement.get_object().get(rowObject)) {
+        throw std::runtime_error(std::format(
+            "Invalid transition matrix file '{}': the value of '{}' is not an "
+            "object",
+            fileName,
+            srcKey));
+      }
+      auto const srcStreetId{parseId(srcKey)};
+      std::unordered_map<Id, double> row;
+      for (auto const& [dstKey, weightElement] : rowObject) {
+        double weight;
+        if (weightElement.get_double().get(weight)) {
+          throw std::runtime_error(std::format(
+              "Invalid transition matrix file '{}': the probability of '{}' -> '{}' is "
+              "not a number",
+              fileName,
+              srcKey,
+              dstKey));
+        }
+        row.emplace(parseId(dstKey), weight);
+      }
+      transitionMatrix.emplace(srcStreetId, std::move(row));
+    }
+    this->setTransitionMatrix(transitionMatrix);
+    spdlog::info("Finished importing the transition matrix from '{}' ({} streets).",
+                 fileName,
+                 m_transitionMatrix.size());
   }
   void FirstOrderDynamics::initTurnCounts() {
     if (!m_turnCounts.empty()) {

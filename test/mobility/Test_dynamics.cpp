@@ -622,6 +622,151 @@ TEST_CASE("FirstOrderDynamics") {
     }
   }
 
+  SUBCASE("transitionMatrix") {
+    // In the manhattan fixture street 2 goes 0 -> 1 and node 1 has the outgoing streets
+    // 3 (1 -> 0, i.e. the U-turn), 4 (1 -> 11) and 6 (1 -> 2).
+    GIVEN("A dynamics object") {
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      THEN("The transition matrix is empty by default") {
+        CHECK(dynamics.transitionMatrix().empty());
+      }
+      WHEN("We import a transition matrix from a JSON file") {
+        dynamics.importTransitionMatrixFromJSON(
+            (DATA_FOLDER / "transition_matrix.json").string());
+        THEN("The matrix is correctly set and the END entry is not stored") {
+          auto const& matrix = dynamics.transitionMatrix();
+          CHECK_EQ(matrix.size(), 2);
+          REQUIRE(matrix.contains(2));
+          CHECK_EQ(matrix.at(2).size(), 2);
+          CHECK_EQ(matrix.at(2).at(4), doctest::Approx(0.6));
+          CHECK_EQ(matrix.at(2).at(6), doctest::Approx(0.2));
+          CHECK_FALSE(matrix.at(2).contains(3));
+          REQUIRE(matrix.contains(4));
+          CHECK_EQ(matrix.at(4).size(), 3);
+          CHECK_EQ(matrix.at(4).at(44), doctest::Approx(0.5));
+        }
+      }
+      WHEN("We import from a file which does not exist") {
+        THEN("An exception is thrown") {
+          CHECK_THROWS_AS(dynamics.importTransitionMatrixFromJSON(
+                              (DATA_FOLDER / "i_do_not_exist.json").string()),
+                          std::runtime_error);
+        }
+      }
+      WHEN("We set a row whose probabilities sum up to more than one") {
+        THEN("An exception is thrown") {
+          CHECK_THROWS_AS(dynamics.setTransitionMatrix({{2, {{4, 0.8}, {6, 0.4}}}}),
+                          std::invalid_argument);
+        }
+      }
+      WHEN("We set a negative probability") {
+        THEN("An exception is thrown") {
+          CHECK_THROWS_AS(dynamics.setTransitionMatrix({{2, {{4, -0.1}}}}),
+                          std::invalid_argument);
+        }
+      }
+      WHEN("We set a row for a street which does not exist") {
+        dynamics.setTransitionMatrix({{100000, {{4, 1.}}}});
+        THEN("The row is ignored") { CHECK(dynamics.transitionMatrix().empty()); }
+      }
+      WHEN("We set a row containing only unusable transitions") {
+        // Street 3 (1 -> 0) is the U-turn of street 2 (0 -> 1)
+        dynamics.setTransitionMatrix({{2, {{3, 1.}}}});
+        THEN("The row is dropped, falling back to the uniform behaviour") {
+          CHECK(dynamics.transitionMatrix().empty());
+        }
+      }
+      WHEN("We set a row whose U-turn weight can be redistributed") {
+        // Street 3 (1 -> 0) is the U-turn of street 2 (0 -> 1); its weight must be
+        // redistributed proportionally onto streets 4 and 6 rather than turning into
+        // extra END probability.
+        dynamics.setTransitionMatrix({{2, {{3, 0.2}, {4, 0.4}, {6, 0.4}}}});
+        THEN(
+            "The U-turn weight is spread over the other transitions and END is "
+            "unchanged") {
+          auto const& matrix = dynamics.transitionMatrix();
+          REQUIRE(matrix.contains(2));
+          CHECK_FALSE(matrix.at(2).contains(3));
+          CHECK_EQ(matrix.at(2).at(4), doctest::Approx(0.5));
+          CHECK_EQ(matrix.at(2).at(6), doctest::Approx(0.5));
+        }
+      }
+      WHEN("We set a row whose forbidden-turn weight can be redistributed") {
+        // Forbid the turn from street 2 onto street 6; its weight must be
+        // redistributed onto street 4 rather than turning into extra END probability.
+        dynamics.graph().edge(2).addForbiddenTurn(6);
+        dynamics.setTransitionMatrix({{2, {{6, 0.2}, {4, 0.8}}}});
+        THEN(
+            "The forbidden-turn weight is spread over the other transitions and END "
+            "is unchanged") {
+          auto const& matrix = dynamics.transitionMatrix();
+          REQUIRE(matrix.contains(2));
+          CHECK_FALSE(matrix.at(2).contains(6));
+          CHECK_EQ(matrix.at(2).at(4), doctest::Approx(1.));
+        }
+      }
+      WHEN("We set a row containing only a forbidden turn") {
+        dynamics.graph().edge(2).addForbiddenTurn(6);
+        dynamics.setTransitionMatrix({{2, {{6, 1.}}}});
+        THEN("The row is dropped, falling back to the uniform behaviour") {
+          CHECK(dynamics.transitionMatrix().empty());
+        }
+      }
+    }
+    GIVEN("A dynamics object with agents starting on street 2") {
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+      auto constexpr nAgents{20};
+      auto constexpr nSteps{500};
+      WHEN("The matrix forces every transition out of street 2 onto street 4") {
+        dynamics.setTransitionMatrix({{2, {{4, 1.}}}});
+        dynamics.initTurnCounts();
+        for (auto i{0}; i < nAgents; ++i) {
+          dynamics.addAgent(nullptr, 2);
+        }
+        for (auto i{0}; i < nSteps; ++i) {
+          dynamics.evolve();
+        }
+        THEN("No agent ever turns onto another street") {
+          auto const& turnCounts = dynamics.turnCounts();
+          REQUIRE(turnCounts.find(2) != turnCounts.end());
+          CHECK(turnCounts.at(2).at(4) > 0);
+          CHECK_EQ(turnCounts.at(2).at(6), 0);
+          CHECK_EQ(turnCounts.at(2).at(3), 0);
+        }
+        THEN("Streets without a row keep routing agents uniformly") {
+          auto const& turnCounts = dynamics.turnCounts();
+          std::size_t otherTurns{0};
+          for (auto const& [fromId, row] : turnCounts) {
+            if (fromId == 2) {
+              continue;
+            }
+            for (auto const& [toId, count] : row) {
+              otherTurns += count;
+            }
+          }
+          CHECK(otherTurns > 0);
+        }
+      }
+      WHEN("The matrix leaves all the probability mass to the END entry") {
+        // The only listed transition has weight 0, so 1 - 0 = 1 is the END probability
+        dynamics.setTransitionMatrix({{2, {{4, 0.}}}});
+        for (auto i{0}; i < nAgents; ++i) {
+          dynamics.addAgent(nullptr, 2);
+        }
+        for (auto i{0}; i < nSteps; ++i) {
+          dynamics.evolve();
+        }
+        THEN("Every agent ends its trip as arrived, not killed") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+              dynamics.agentStats();
+          CHECK_EQ(nArrived, nAgents);
+          CHECK_EQ(nKilled, 0);
+          CHECK_EQ(nCurrent, 0);
+        }
+      }
+    }
+  }
   SUBCASE("setUTurnPenaltyFactor") {
     GIVEN("A dynamics object") {
       FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};

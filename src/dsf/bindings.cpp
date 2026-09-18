@@ -1282,6 +1282,60 @@ Returns:
           "ids\n\n"
           "Returns:\n"
           "    None")
+      .def(
+          "setTransitionMatrix",
+          [](dsf::mobility::FirstOrderDynamics& self,
+             std::unordered_map<dsf::Id, std::unordered_map<dsf::Id, double>> const&
+                 transitionMatrix) { self.setTransitionMatrix(transitionMatrix); },
+          nb::arg("transitionMatrix"),
+          R"doc(Set the transition matrix used to route random agents.
+
+The outer key is the current street id, the inner keys are the candidate next street
+ids and the values are the corresponding probabilities. The probabilities of each row
+must sum up to at most 1: the missing mass is the probability that the agent ends its
+trip at that junction. Streets which are not a key of the matrix keep the default
+uniform behaviour.
+
+Args:
+    transitionMatrix (Mapping[int, Mapping[int, float]]): The transition matrix.
+
+Raises:
+    ValueError: If a probability is negative or if a row sums up to more than 1.
+
+Returns:
+    None)doc")
+      .def(
+          "importTransitionMatrixFromJSON",
+          [](dsf::mobility::FirstOrderDynamics& self, const std::string& fileName) {
+            self.importTransitionMatrixFromJSON(fileName);
+          },
+          nb::arg("fileName"),
+          R"doc(Import the transition matrix used to route random agents from a JSON file.
+
+The file must contain an object whose keys are the current street ids and whose values
+are objects mapping the candidate next street ids to their probabilities, e.g.
+``{"1042": {"1043": 0.6, "1055": 0.2 }}``. Rows are not required to sum to 1: the probability of ending the trip is always inferred as
+one minus the sum of the other probabilities.
+
+Args:
+    fileName (str): Path to the JSON file.
+
+Raises:
+    RuntimeError: If the file cannot be parsed or has an invalid structure.
+    ValueError: If a key is not a valid street id, if a probability is negative or if a
+        row sums up to more than 1.
+
+Returns:
+    None)doc")
+      .def(
+          "transitionMatrix",
+          [](dsf::mobility::FirstOrderDynamics const& self) {
+            return self.transitionMatrix();
+          },
+          R"doc(Get the transition matrix used to route random agents.
+
+Returns:
+    Mapping[int, Mapping[int, float]]: The transition matrix, empty if none was set.)doc")
       .def("initTurnCounts",
            &dsf::mobility::FirstOrderDynamics::initTurnCounts,
            R"doc(Initialize turn count tracking data structures.

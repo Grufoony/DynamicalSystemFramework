@@ -136,6 +136,69 @@ TEST_CASE("TrafficSimulator JSON config parameters") {
   std::filesystem::remove(outputDir);
 }
 
+TEST_CASE("TrafficSimulator JSON config - transition matrix") {
+  auto const inputDir = makeUniqueDirectory("traffic_simulator_tm_input_");
+  auto const outputDir = makeUniqueDirectory("traffic_simulator_tm_output_");
+
+  auto const edgesPath = inputDir / "edges.csv";
+  writeTinyEdgesCsv(edgesPath);
+  auto const nodesPath = inputDir / "nodes.csv";
+  {
+    std::ofstream nout(nodesPath);
+    REQUIRE(nout.is_open());
+    nout << "id;type;geometry\n";
+    nout << "0;normal;\n";
+    nout << "1;normal;\n";
+  }
+  // Street 0 goes 0 -> 1; the only non-U-turn transition at node 1 is street 2 (1 -> 2)
+  auto const matrixPath = inputDir / "transition_matrix.json";
+  {
+    std::ofstream mout(matrixPath);
+    REQUIRE(mout.is_open());
+    mout << "{ \"0\": { \"2\": 0.8 } }\n";
+  }
+
+  auto const jsonPath = makeUniquePath("traffic_simulator_tm_config_", ".json");
+  {
+    std::ofstream out(jsonPath);
+    REQUIRE(out.is_open());
+    out << "{\n";
+    out << "  \"general\": {\n";
+    out << "    \"input_folder\": \"" << inputDir.string() << "\",\n";
+    out << "    \"output_folder\": \"" << outputDir.string() << "\",\n";
+    out << "    \"name\": \"tm_test\"\n";
+    out << "  },\n";
+    out << "  \"road_network\": {\n";
+    out << "    \"edges_file\": \"edges.csv\",\n";
+    out << "    \"node_properties_file\": \"nodes.csv\",\n";
+    out << "    \"set_edge_weight\": { \"weight\": \"length\", \"threshold\": 1.0 }\n";
+    out << "  },\n";
+    out << "  \"dynamics\": {\n";
+    out << "    \"agent_insertion_method\": \"RANDOM\",\n";
+    out << "    \"importTransitionMatrixFromJSON\": { \"file\": "
+           "\"transition_matrix.json\" }\n";
+    out << "  }\n";
+    out << "}\n";
+  }
+
+  TrafficSimulator simulator;
+  simulator.importConfig(jsonPath.string());
+
+  REQUIRE(simulator.dynamics() != nullptr);
+  auto const& matrix = simulator.dynamics()->transitionMatrix();
+  REQUIRE(matrix.contains(0));
+  CHECK_EQ(matrix.size(), 1);
+  CHECK_EQ(matrix.at(0).size(), 1);
+  CHECK_EQ(matrix.at(0).at(2), doctest::Approx(0.8));
+
+  std::filesystem::remove(edgesPath);
+  std::filesystem::remove(nodesPath);
+  std::filesystem::remove(matrixPath);
+  std::filesystem::remove(jsonPath);
+  std::filesystem::remove(inputDir);
+  std::filesystem::remove(outputDir);
+}
+
 TEST_CASE("TrafficSimulator - dynamic ODs") {
   SUBCASE("TrafficSimulator - dynamic ODs") {
     auto DATA_FOLDER = std::filesystem::current_path().parent_path() / "test" / "data";

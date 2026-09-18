@@ -118,3 +118,30 @@ def test_traffic_simulator_smoke_run_with_linear_speed(tmp_path):
 
         cursor.execute("SELECT COUNT(*) FROM avg_stats")
         assert cursor.fetchone()[0] > 0
+
+
+def test_dynamics_transition_matrix_set_and_get(dynamics):
+    # Street 2 goes 0 -> 1; node 1 has the outgoing streets 3 (the U-turn), 4 and 6
+    assert dynamics.transitionMatrix() == {}
+
+    dynamics.setTransitionMatrix({2: {4: 0.6, 6: 0.2}})
+
+    matrix = dynamics.transitionMatrix()
+    assert set(matrix) == {2}
+    assert matrix[2] == pytest.approx({4: 0.6, 6: 0.2})
+
+
+def test_dynamics_transition_matrix_rejects_rows_summing_above_one(dynamics):
+    with pytest.raises(ValueError):
+        dynamics.setTransitionMatrix({2: {4: 0.8, 6: 0.4}})
+
+
+def test_dynamics_import_transition_matrix_from_json(dynamics, tmp_path):
+    matrix_path = tmp_path / "transition_matrix.json"
+    matrix_path.write_text('{"2": {"4": 0.6, "6": 0.2}}', encoding="utf-8")
+
+    dynamics.importTransitionMatrixFromJSON(str(matrix_path))
+
+    matrix = dynamics.transitionMatrix()
+    assert set(matrix) == {2}
+    assert matrix[2] == pytest.approx({4: 0.6, 6: 0.2})
