@@ -92,7 +92,7 @@ namespace dsf::mobility {
       auto strType = row["type"].get<std::string>();
       geometry::PolyLine polyline;
       if (bHasGeometry) {
-        polyline = geometry::PolyLine(row["geometry"].get<std::string>());
+        polyline = geometry::polyLineFromWkt(row["geometry"].get<std::string>());
       }
 
       auto iLanes = 1;
@@ -349,23 +349,23 @@ namespace dsf::mobility {
       }
       auto const& strGeometry = row["geometry"].get<std::string>();
       if (!strGeometry.empty()) {
-        auto const point = geometry::Point(strGeometry);
+        auto const point = geometry::pointFromWkt(strGeometry);
         auto& nodeRef{node(nodeId)};
         // Assign geometry or check if these geometry match the existing ones
         if (!nodeRef.geometry().has_value()) {
           nodeRef.setGeometry(point);
         } else {
-          auto const& [oldLon, oldLat] = nodeRef.geometry().value();
-          auto const& [newLon, newLat] = point;
-          if (std::abs(oldLat - newLat) > 1e-4 || std::abs(oldLon - newLon) > 1e-4) {
+          auto const& oldPoint = nodeRef.geometry().value();
+          if (std::abs(oldPoint.y() - point.y()) > 1e-4 ||
+              std::abs(oldPoint.x() - point.x()) > 1e-4) {
             spdlog::error(
                 "Node {} geometry from properties file ({}, {}) do not match existing "
                 "geometry ({}, {}). Keeping existing geometry.",
                 nodeId,
-                newLat,
-                newLon,
-                oldLat,
-                oldLon);
+                point.y(),
+                point.x(),
+                oldPoint.y(),
+                oldPoint.x());
           }
         }
       }

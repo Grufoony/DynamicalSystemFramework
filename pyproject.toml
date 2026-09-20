@@ -117,7 +117,7 @@ before-all = """
 dnf install -y gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils git curl tar zip unzip &&
 git clone --depth 1 https://github.com/microsoft/vcpkg /opt/vcpkg &&
 /opt/vcpkg/bootstrap-vcpkg.sh &&
-/opt/vcpkg/vcpkg install tbb
+/opt/vcpkg/vcpkg install tbb boost-geometry
 """
 
 [tool.cibuildwheel.linux.environment]
@@ -136,7 +136,7 @@ CMAKE_ARGS = """
 
 [tool.cibuildwheel.macos]
 
-before-all = "brew install cmake tbb fmt spdlog"
+before-all = "brew install cmake tbb fmt spdlog boost"
 
 [tool.cibuildwheel.macos.environment]
 MACOSX_DEPLOYMENT_TARGET = "26.0"
@@ -149,7 +149,7 @@ CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_PREFIX_PATH=/opt/homebrew;/us
 [tool.cibuildwheel.windows]
 
 before-all = """
-vcpkg install tbb:x64-windows
+vcpkg install tbb:x64-windows boost-geometry:x64-windows
 """
 
 [tool.cibuildwheel.windows.environment]

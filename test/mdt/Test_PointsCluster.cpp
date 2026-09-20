@@ -1,5 +1,7 @@
 #include "dsf/mdt/PointsCluster.hpp"
 
+#include <boost/geometry/algorithms/equals.hpp>
+
 #include <ctime>
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
@@ -7,6 +9,11 @@
 
 using namespace dsf::mdt;
 using namespace dsf::geometry;
+
+/// @brief Boost.Geometry points have no operator==; equals() compares coordinates.
+static bool same(Point const& lhs, Point const& rhs) {
+  return boost::geometry::equals(lhs, rhs);
+}
 
 TEST_CASE("PointsCluster - Default constructor") {
   PointsCluster cluster;
@@ -24,7 +31,7 @@ TEST_CASE("PointsCluster - addActivityPoint") {
   CHECK_EQ(cluster.size(), 1);
   CHECK_EQ(cluster.points().size(), 1);
   CHECK_EQ(cluster.points()[0].timestamp, 1000);
-  CHECK_EQ(cluster.points()[0].point, Point(10.0, 20.0));
+  CHECK(same(cluster.points()[0].point, Point(10.0, 20.0)));
 }
 
 TEST_CASE("PointsCluster - addPoint") {
@@ -34,7 +41,7 @@ TEST_CASE("PointsCluster - addPoint") {
 
   CHECK_EQ(cluster.size(), 1);
   CHECK_EQ(cluster.points()[0].timestamp, 2000);
-  CHECK_EQ(cluster.points()[0].point, Point(15.0, 25.0));
+  CHECK(same(cluster.points()[0].point, Point(15.0, 25.0)));
 }
 
 TEST_CASE("PointsCluster - addPoint multiple times") {
@@ -133,7 +140,7 @@ TEST_CASE("PointsCluster - centroid is cached") {
   Point centroid2 = cluster.centroid();
 
   // Should return the same centroid
-  CHECK(centroid1 == centroid2);
+  CHECK(same(centroid1, centroid2));
 }
 
 TEST_CASE("PointsCluster - centroid is reset when adding points") {
@@ -150,7 +157,7 @@ TEST_CASE("PointsCluster - centroid is reset when adding points") {
   Point centroid2 = cluster.centroid();
 
   // Centroid should be different now
-  CHECK_FALSE(centroid1 == centroid2);
+  CHECK_FALSE(same(centroid1, centroid2));
 }
 
 TEST_CASE("PointsCluster - centroid with unsorted points") {

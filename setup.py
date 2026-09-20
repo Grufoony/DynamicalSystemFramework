@@ -151,8 +151,13 @@ class CMakeBuild(build_ext):
                 spdlog_prefix = subprocess.check_output(
                     ["brew", "--prefix", "spdlog"], text=True
                 ).strip()
+                boost_prefix = subprocess.check_output(
+                    ["brew", "--prefix", "boost"], text=True
+                ).strip()
 
-                cmake_prefix_path = f"{fmt_prefix};{spdlog_prefix}"
+                # This overrides any CMAKE_PREFIX_PATH coming from CMAKE_ARGS, so
+                # every Homebrew dependency CMake has to find must be listed here.
+                cmake_prefix_path = f"{fmt_prefix};{spdlog_prefix};{boost_prefix}"
                 cmake_args.append(f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}")
                 print(f"Added macOS Homebrew prefix paths: {cmake_prefix_path}")
 

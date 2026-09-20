@@ -1,43 +1,48 @@
 #pragma once
 
-#include <cmath>
+#include <boost/geometry/core/cs.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+
+#include <cstddef>
 #include <format>
-#include <limits>
 #include <string>
 
 namespace dsf::geometry {
-  class Point {
-  private:
-    double m_x;
-    double m_y;
+  /// @brief A 2D geographic point, in degrees, with x = longitude and y = latitude.
+  /// @details This is an alias for a Boost.Geometry point model, so every
+  ///          Boost.Geometry algorithm (distance, within, simplify, index::rtree, ...)
+  ///          accepts it directly.
+  ///
+  ///          The coordinate system is spherical-equatorial rather than geographic
+  ///          because distances in this library are great-circle (haversine) on a
+  ///          sphere of radius 6371 km; see haversine_km. Switching to
+  ///          cs::geographic would make the default strategy ellipsoidal and return
+  ///          metres, which would silently change clustering results in dsf::mdt.
+  ///
+  ///          Note that, unlike a hand-written type, the default constructor leaves
+  ///          both coordinates uninitialised.
+  using Point = boost::geometry::model::d2::
+      point_xy<double, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
 
-  public:
-    /// @brief Construct a Point with given x and y coordinates.
-    /// @param x The x coordinate
-    /// @param y The y coordinate
-    Point(double x, double y) : m_x(x), m_y(y) {}
-    /// @brief Construct a Point from a string representation.
-    /// @param strPoint The string representation of the point.
-    /// @param format The format of the string representation. Default is "WKT".
-    /// @throws std::invalid_argument if the format is not supported or the string is invalid.
-    Point(std::string const& strPoint, std::string const& format = "WKT");
-    /// @brief Equality operator for Point
-    inline bool operator==(const Point& other) const {
-      return std::abs(m_x - other.m_x) < std::numeric_limits<double>::epsilon() &&
-             std::abs(m_y - other.m_y) < std::numeric_limits<double>::epsilon();
-    }
-    /// @brief Support for structured bindings, e.g., auto const& [x, y] = point;
-    template <std::size_t Index>
-    inline double const& get() const {
-      if constexpr (Index == 0)
-        return m_x;
-      else if constexpr (Index == 1)
-        return m_y;
-    }
+  namespace detail {
+    /// @brief Count the numeric tokens between the outermost parentheses of a WKT
+    ///        string.
+    /// @param wkt The WKT string.
+    /// @return The number of coordinates found, or 0 if there are no parentheses.
+    /// @details boost::geometry::read_wkt silently substitutes zero for coordinates
+    ///          it does not find, so "POINT (1)" reads as (1, 0) and
+    ///          "LINESTRING (1,2)" as the two points (1, 0) and (2, 0). Comparing
+    ///          this count against the expected two-per-point rejects those inputs
+    ///          instead of importing corrupt geometry.
+    std::size_t countWktCoordinates(std::string const& wkt);
+  }  // namespace detail
 
-    inline double const& x() const { return m_x; }
-    inline double const& y() const { return m_y; }
-  };
+  /// @brief Construct a Point from its WKT representation, e.g. "POINT (1 2)".
+  /// @param wkt The WKT string. The POINT keyword is required, and both trailing
+  ///        tokens and missing coordinates are rejected.
+  /// @return The parsed Point.
+  /// @throws std::invalid_argument if the string is not a valid WKT POINT.
+  Point pointFromWkt(std::string const& wkt);
 
   /// @brief Compute the Haversine distance between two geographic points.
   /// @param p1 The first point (longitude, latitude)
@@ -51,30 +56,13 @@ template <>
 struct std::formatter<dsf::geometry::Point> {
   constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
+  // N.B. deliberately not boost::geometry::wkt(): that writes through operator<<
+  // without setting the stream precision, so it truncates coordinates to the
+  // default 6 significant digits (~10 m of error), and it omits the space after
+  // the keyword. std::format emits the shortest round-trippable representation of
+  // a double, which is what pointFromWkt and every CSV fixture expect.
   template <typename FormatContext>
   auto format(dsf::geometry::Point const& point, FormatContext& ctx) const {
-    return std::format_to(ctx.out(), "POINT ({}, {})", point.x(), point.y());
+    return std::format_to(ctx.out(), "POINT ({} {})", point.x(), point.y());
   }
 };
-
-// Structured binding support for dsf::geometry::Point
-namespace std {
-  template <>
-  struct tuple_size<dsf::geometry::Point> : std::integral_constant<std::size_t, 2> {};
-
-  template <>
-  struct tuple_element<0, dsf::geometry::Point> {
-    using type = double;
-  };
-
-  template <>
-  struct tuple_element<1, dsf::geometry::Point> {
-    using type = double;
-  };
-}  // namespace std
-
-// ADL-based get for structured bindings
-template <std::size_t I>
-inline double const& get(dsf::geometry::Point const& point) {
-  return point.get<I>();
-}

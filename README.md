@@ -41,14 +41,15 @@ print(dsf.__version__)
 ## Installation (from source)
 
 ### Requirements
-The project requires `C++20` or greater, `cmake`, `tbb` `simdjson`, `spdlog`, `csv-parser` and `SQLiteCpp`.
+The project requires `C++20` or greater, `cmake`, `tbb`, `boost` (headers only, for Boost.Geometry), `simdjson`, `spdlog`, `csv-parser` and `SQLiteCpp`.
+`tbb` and `boost` must be installed system-wide; the remaining dependencies are fetched automatically at configure time.
 To install requirements on Ubuntu:
 ```shell
-sudo apt install cmake libtbb-dev
+sudo apt install cmake libtbb-dev libboost-dev
 ```
 To install requirements on macOS:
 ```shell
-brew install cmake tbb
+brew install cmake tbb boost
 ```
 
 ### Installation (C++)
