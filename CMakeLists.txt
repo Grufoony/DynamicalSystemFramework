@@ -177,7 +177,7 @@ endif()
 FetchContent_Declare(
   SQLiteCpp
   GIT_REPOSITORY https://github.com/SRombauts/SQLiteCpp
-  GIT_TAG 3.3.3)
+  GIT_TAG 3.4.0)
 FetchContent_GetProperties(SQLiteCpp)
 if(NOT SQLiteCpp_POPULATED)
   FetchContent_MakeAvailable(SQLiteCpp)
