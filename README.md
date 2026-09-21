@@ -8,7 +8,7 @@
 [![SPDLOG](https://img.shields.io/badge/spdlog-1.17.0-blue.svg)](https://github.com/gabime/spdlog)
 [![CSV](https://img.shields.io/badge/csv_parser-5.2.0-blue.svg)](https://github.com/vincentlaucsb/csv-parser)
 [![JSON](https://img.shields.io/badge/simdjson-4.6.1-blue.svg)](https://github.com/simdjson/simdjson)
-[![SQLite](https://img.shields.io/badge/SQLiteCpp-3.3.3-blue.svg)](https://github.com/SRombauts/SQLiteCpp)
+[![SQLite](https://img.shields.io/badge/SQLiteCpp-3.4.0-blue.svg)](https://github.com/SRombauts/SQLiteCpp)
 [![codecov](https://codecov.io/gh/Grufoony/DynamicalSystemFramework/graph/badge.svg?token=JV53J6IUJ3)](https://codecov.io/gh/Grufoony/DynamicalSystemFramework)
 
 The aim of this project is to rework the original [Traffic Flow Dynamics Model](https://github.com/Grufoony/TrafficFlowDynamicsModel).
