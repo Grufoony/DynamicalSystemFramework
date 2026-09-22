@@ -233,6 +233,7 @@ namespace dsf::mobility {
                   bool const saveAgentData = false);
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
+    /// - (CONSTANT): speed = max_speed, i.e. agents always travel in free flow
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
     template <typename... TArgs>
     void setSpeedFunction(SpeedFunction const speedFunction, TArgs&&... args);
@@ -639,6 +640,19 @@ namespace dsf::mobility {
                    (pStreet.maxSpeed() * (1. - alpha * pStreet.density<true>()));
           });
           m_speedFunctionDescription = std::format("LINEAR(alpha={})", alpha);
+        }
+        break;
+      case SpeedFunction::CONSTANT:
+        if constexpr (sizeof...(args) > 0) {
+          throw std::invalid_argument(std::format(
+              "Constant speed function requires no arguments, but {} were provided",
+              sizeof...(args)));
+        } else {
+          m_speedFunction = [](Street const& pStreet) { return pStreet.maxSpeed(); };
+          Street::setEstimatedTravelTimeFunction([](Street const& pStreet) {
+            return pStreet.length() / pStreet.maxSpeed();
+          });
+          m_speedFunctionDescription = "CONSTANT";
         }
         break;
     }

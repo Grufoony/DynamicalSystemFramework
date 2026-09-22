@@ -19,7 +19,7 @@ namespace dsf {
   using Id = uint64_t;
   using Delay = uint16_t;
 
-  enum class SpeedFunction : uint8_t { CUSTOM = 0, LINEAR = 1 };
+  enum class SpeedFunction : uint8_t { CUSTOM = 0, LINEAR = 1, CONSTANT = 2 };
   enum Direction : uint8_t {
     RIGHT = 0,  // delta < 0
     RIGHTANDSTRAIGHT = 1,
