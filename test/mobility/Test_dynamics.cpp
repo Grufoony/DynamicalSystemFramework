@@ -2120,3 +2120,115 @@ TEST_CASE("RoadDynamics Configuration") {
     }
   }
 }
+
+TEST_CASE("SpeedFunction::CONSTANT") {
+  // 0 --[s0: 100 m, 10 m/s]--> 1 --[s1: 200 m, 20 m/s]--> 2 --[s2: 100 m, 10 m/s]--> 3
+  // Agents are routed to node 2, which needs an outgoing street not to be a dead end.
+  auto const makeNetwork = []() {
+    RoadNetwork graph;
+    graph.setEdgeWeight("length");
+    graph.addStreets(Street{0, std::make_pair(0, 1), 100., 10.},
+                     Street{1, std::make_pair(1, 2), 200., 20.},
+                     Street{2, std::make_pair(2, 3), 100., 10.});
+    return graph;
+  };
+  SUBCASE("Arguments") {
+    GIVEN("A dynamics object") {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      THEN("The constant speed function takes no arguments") {
+        CHECK_NOTHROW(dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT));
+      }
+      THEN("Passing an argument throws") {
+        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT, 0.5),
+                        std::invalid_argument);
+      }
+    }
+  }
+  SUBCASE("Estimated travel time") {
+    GIVEN("A dynamics object using the constant speed function") {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
+      THEN("Empty streets are traversed in free flow") {
+        CHECK_EQ(dynamics.graph().edge(0).estimatedTravelTime(), doctest::Approx(10.));
+        CHECK_EQ(dynamics.graph().edge(1).estimatedTravelTime(), doctest::Approx(10.));
+      }
+      WHEN("The first street gets loaded with agents") {
+        dynamics.addItinerary(2, 2);
+        dynamics.updatePaths();
+        for (auto i{0}; i < 15; ++i) {
+          dynamics.addAgent(dynamics.itineraries().at(2), 0);
+        }
+        for (auto i{0}; i < 5; ++i) {
+          dynamics.evolve();
+        }
+        auto const& street{dynamics.graph().edge(0)};
+        REQUIRE(street.density<true>() > 0.);
+        THEN("The estimated travel time does not depend on the density") {
+          CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(10.));
+        }
+        THEN("The linear speed function would instead slow the street down") {
+          auto const density{street.density<true>()};
+          dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+          CHECK_EQ(street.estimatedTravelTime(),
+                   doctest::Approx(100. / (10. * (1. - 0.8 * density))));
+          CHECK(street.estimatedTravelTime() > 10.);
+        }
+      }
+    }
+  }
+  SUBCASE("Agent speeds") {
+    auto const load = [](FirstOrderDynamics& dynamics) {
+      dynamics.addItinerary(2, 2);
+      dynamics.updatePaths();
+      for (auto i{0}; i < 15; ++i) {
+        dynamics.addAgent(dynamics.itineraries().at(2), 0);
+      }
+      for (auto i{0}; i < 10; ++i) {
+        dynamics.evolve();
+      }
+    };
+    auto const speeds = [](FirstOrderDynamics const& dynamics, Id const streetId) {
+      std::vector<double> result;
+      for (auto const& pAgent : dynamics.graph().edge(streetId).movingAgents()) {
+        result.push_back(pAgent->speed());
+      }
+      return result;
+    };
+    GIVEN("A dynamics object using the constant speed function") {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
+      WHEN("We evolve the dynamics until the streets are loaded") {
+        load(dynamics);
+        THEN("Every moving agent travels at the speed limit of its street") {
+          for (Id streetId{0}; streetId < 2; ++streetId) {
+            auto const maxSpeed{dynamics.graph().edge(streetId).maxSpeed()};
+            for (auto const speed : speeds(dynamics, streetId)) {
+              CHECK_EQ(speed, doctest::Approx(maxSpeed));
+            }
+          }
+          // The loop above must not be vacuous, and the street must be congested
+          // enough for a density-dependent speed function to behave differently
+          CHECK_FALSE(speeds(dynamics, 0).empty());
+          CHECK(dynamics.graph().edge(0).density<true>() > 0.);
+        }
+      }
+    }
+    GIVEN("The same dynamics using the linear speed function") {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+      WHEN("We evolve the dynamics until the streets are loaded") {
+        load(dynamics);
+        THEN("Some agent is slower than the speed limit of its street") {
+          auto const maxSpeed{dynamics.graph().edge(0).maxSpeed()};
+          auto const streetSpeeds{speeds(dynamics, 0)};
+          REQUIRE_FALSE(streetSpeeds.empty());
+          auto bSomeoneIsSlower{false};
+          for (auto const speed : streetSpeeds) {
+            bSomeoneIsSlower |= speed < maxSpeed;
+          }
+          CHECK(bSomeoneIsSlower);
+        }
+      }
+    }
+  }
+}

@@ -58,6 +58,7 @@ NB_MODULE(dsf_cpp, m) {
   nb::enum_<dsf::SpeedFunction>(mobility, "SpeedFunction")
       .value("CUSTOM", dsf::SpeedFunction::CUSTOM)
       .value("LINEAR", dsf::SpeedFunction::LINEAR)
+      .value("CONSTANT", dsf::SpeedFunction::CONSTANT)
       .export_values();
 
   // Bind Direction enum
@@ -1067,6 +1068,13 @@ Returns:
               case dsf::SpeedFunction::LINEAR:
                 self.setSpeedFunction(dsf::SpeedFunction::LINEAR, nb::cast<double>(arg));
                 break;
+              case dsf::SpeedFunction::CONSTANT:
+                if (!arg.is_none()) {
+                  throw std::invalid_argument(
+                      "Constant speed function requires no arguments");
+                }
+                self.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
+                break;
               case dsf::SpeedFunction::CUSTOM: {
                 auto* func_ptr = reinterpret_cast<double (*)(double, double)>(
                     nb::cast<uintptr_t>(arg));
@@ -1082,12 +1090,12 @@ Returns:
             }
           },
           nb::arg("speedFunction"),
-          nb::arg("arg"),
+          nb::arg("arg") = nb::none(),
           R"doc(Set the speed function for agents.
 
       Args:
-          speedFunction (SpeedFunction): The speed function type (LINEAR or CUSTOM)
-          arg: For LINEAR, a float alpha in [0., 1.). For CUSTOM, an integer address (uintptr_t) of a C function with signature double(double max_speed, double density).)doc")
+          speedFunction (SpeedFunction): The speed function type (LINEAR, CONSTANT or CUSTOM)
+          arg: For LINEAR, a float alpha in [0., 1.). For CUSTOM, an integer address (uintptr_t) of a C function with signature double(double max_speed, double density). For CONSTANT, it must be omitted.)doc")
       .def("setConcurrency",
            &dsf::mobility::FirstOrderDynamics::setConcurrency,
            nb::arg("concurrency"),

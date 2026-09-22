@@ -145,3 +145,17 @@ def test_dynamics_import_transition_matrix_from_json(dynamics, tmp_path):
     matrix = dynamics.transitionMatrix()
     assert set(matrix) == {2}
     assert matrix[2] == pytest.approx({4: 0.6, 6: 0.2})
+
+
+def test_dynamics_constant_speed_function(dynamics):
+    dynamics.setSpeedFunction(mobility.SpeedFunction.CONSTANT)
+
+    street = dynamics.graph().edge(0)
+    assert street.estimatedTravelTime() == pytest.approx(
+        street.length() / street.maxSpeed()
+    )
+
+
+def test_dynamics_constant_speed_function_rejects_argument(dynamics):
+    with pytest.raises(ValueError):
+        dynamics.setSpeedFunction(mobility.SpeedFunction.CONSTANT, 0.8)
