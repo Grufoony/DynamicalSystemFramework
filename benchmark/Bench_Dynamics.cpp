@@ -71,8 +71,6 @@ static std::unique_ptr<FirstOrderDynamics> makeODDynamics() {
 
 // A dynamics whose agents are topped up at every step, like TrafficSimulator does, so
 // that the load stays constant.
-// NOTE: FirstOrderDynamics::setReinsertAgents(true) is not used on purpose, since
-// reinserting agents during the parallel street evolution is not thread-safe.
 struct Scenario {
   std::unique_ptr<FirstOrderDynamics> pDynamics;
   std::size_t nAgents;

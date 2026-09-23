@@ -128,6 +128,19 @@ TEST_CASE("Agent methods") {
     CHECK_FALSE(agent.streetId().has_value());
     CHECK_EQ(agent.trip().size(), 1);
   }
+  SUBCASE("reset restarts from the first street") {
+    agent.setSrcStreetId(3);
+    agent.setNextStreetId(4);
+    agent.reset(555);
+    CHECK_EQ(agent.srcStreetId().value(), 3);
+    CHECK_EQ(agent.nextStreetId().value(), 3);
+  }
+  SUBCASE("reset clears the next street if the first street is unknown") {
+    agent.setNextStreetId(4);
+    agent.reset(555);
+    CHECK_FALSE(agent.srcStreetId().has_value());
+    CHECK_FALSE(agent.nextStreetId().has_value());
+  }
 }
 
 TEST_CASE("Agent formatting") {

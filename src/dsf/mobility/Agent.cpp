@@ -13,6 +13,7 @@ namespace dsf::mobility {
         m_trip{itinerary != nullptr ? std::vector<std::shared_ptr<Itinerary>>{itinerary}
                                     : std::vector<std::shared_ptr<Itinerary>>{}},
         m_srcNodeId{srcNodeId},
+        m_srcStreetId{std::nullopt},
         m_nextStreetId{std::nullopt},
         m_itineraryIdx{0},
         m_speed{0.},
@@ -26,6 +27,7 @@ namespace dsf::mobility {
         m_freeTime{spawnTime},
         m_trip{trip},
         m_srcNodeId{srcNodeId},
+        m_srcStreetId{std::nullopt},
         m_nextStreetId{std::nullopt},
         m_itineraryIdx{0},
         m_speed{0.},
@@ -75,9 +77,7 @@ namespace dsf::mobility {
     m_spawnTime = spawnTime;
     m_freeTime = 0;
     m_streetId = std::nullopt;
-    // NOTE: m_nextStreetId is deliberately preserved. FirstOrderDynamics'
-    // reinsertion path (m_reinsertAgents) relies on it to know where to put the
-    // agent back; clearing it here makes m_evolveAgents kill the agent instead.
+    m_nextStreetId = m_srcStreetId;
     m_speed = 0.;
     m_distance = 0.;
     m_itineraryIdx = 0;

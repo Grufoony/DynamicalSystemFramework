@@ -120,6 +120,7 @@ namespace dsf::mobility {
     tbb::concurrent_unordered_map<Id, std::unordered_map<Direction, double>>
         m_queuesAtTrafficLights;
     tbb::concurrent_vector<std::pair<double, double>> m_travelDTs;
+    tbb::concurrent_vector<std::unique_ptr<Agent>> m_agentsToReinsert;
     std::time_t m_previousOptimizationTime{0};
 
   protected:

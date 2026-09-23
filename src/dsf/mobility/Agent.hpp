@@ -32,6 +32,7 @@ namespace dsf::mobility {
     std::vector<std::shared_ptr<Itinerary>> m_trip;
     std::optional<Id> m_streetId;
     std::optional<Id> m_srcNodeId;
+    std::optional<Id> m_srcStreetId;  // The first street of the agent's trip
     std::optional<Id> m_nextStreetId;
     std::size_t m_itineraryIdx;
     double m_speed;
@@ -72,6 +73,10 @@ namespace dsf::mobility {
     /// @brief Set the street occupied by the agent
     /// @param streetId The id of the street currently occupied by the agent
     void setStreetId(std::optional<Id> streetId = std::nullopt);
+    /// @brief Set the id of the first street of the agent's trip
+    /// @param srcStreetId The id of the first street, which must be an outgoing street of
+    /// the agent's source node
+    inline auto setSrcStreetId(Id srcStreetId) { m_srcStreetId = srcStreetId; }
     /// @brief Set the id of the next street
     /// @param nextStreetId The id of the next street
     inline auto setNextStreetId(Id nextStreetId) { m_nextStreetId = nextStreetId; }
@@ -145,6 +150,9 @@ namespace dsf::mobility {
     /// @brief Get the id of the source node of the agent
     /// @return The id of the source node of the agent
     inline std::optional<Id> srcNodeId() const noexcept { return m_srcNodeId; };
+    /// @brief Get the id of the first street of the agent's trip
+    /// @return The id of the first street of the agent's trip
+    inline std::optional<Id> srcStreetId() const noexcept { return m_srcStreetId; };
     /// @brief Get the id of the next street
     /// @return The id of the next street
     inline std::optional<Id> nextStreetId() const noexcept { return m_nextStreetId; };

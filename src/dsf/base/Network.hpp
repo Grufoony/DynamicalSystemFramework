@@ -48,6 +48,10 @@ namespace dsf {
     constexpr inline auto m_cantorHash(std::pair<Id, Id> const& idPair) const {
       return m_cantorHash(idPair.first, idPair.second);
     }
+    /// @brief Find the edge going from source to target
+    /// @details Only the source node's outgoing edges are scanned, instead of all edges
+    /// @return edge_t* A pointer to the edge, or nullptr if it does not exist
+    edge_t* m_findEdge(Id const source, Id const target) const;
 
   private:
     std::unordered_map<Id, double> m_computeDistancesToTarget(Id const targetNodeId) const;
@@ -250,16 +254,29 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
+  edge_t* Network<node_t, edge_t>::m_findEdge(Id const source, Id const target) const {
+    auto const itNode = m_nodes.find(source);
+    if (itNode == m_nodes.cend()) {
+      return nullptr;
+    }
+    for (auto const& edgeId : itNode->second->outgoingEdges()) {
+      auto* pEdge{m_edges.at(edgeId).get()};
+      if (pEdge->target() == target) {
+        return pEdge;
+      }
+    }
+    return nullptr;
+  }
+
+  template <typename node_t, typename edge_t>
+    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   edge_t& Network<node_t, edge_t>::edge(Id const source, Id const target) const {
-    auto const it = std::find_if(
-        m_edges.cbegin(), m_edges.cend(), [source, target](auto const& pair) {
-          return pair.second->source() == source && pair.second->target() == target;
-        });
-    if (it == m_edges.cend()) {
+    auto* pEdge{m_findEdge(source, target)};
+    if (pEdge == nullptr) {
       throw std::out_of_range(
           std::format("Edge with source {} and target {} not found.", source, target));
     }
-    return *it->second;
+    return *pEdge;
   }
 
   template <typename node_t, typename edge_t>

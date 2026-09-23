@@ -1184,6 +1184,30 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK(dynamics.graph().node(0).density() > 0.);
           CHECK_EQ(dynamics.nAgents(), 1);
         }
+        dynamics.evolve();
+        THEN("The agent restarts its trip from its first street") {
+          CHECK_EQ(dynamics.graph().edge(0).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 0);
+        }
+      }
+    }
+    GIVEN("A dynamics with many random agents reinserted when they arrive") {
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      dynamics.setReinsertAgents(true);
+      // Short trips, so that many agents arrive concurrently during the parallel
+      // street evolution
+      dynamics.setMeanTravelDistance(100.);
+      dynamics.addAgents(2000, AgentInsertionMethod::RANDOM);
+      WHEN("We evolve the dynamics") {
+        for (int i = 0; i < 500; ++i) {
+          dynamics.evolve();
+        }
+        THEN("Arrived agents are reinserted and none is lost") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nAgents] =
+              dynamics.agentStats();
+          CHECK(nArrived > 0);
+          CHECK_EQ(nAgents + nKilled, 2000);
+        }
       }
     }
     GIVEN("A simple network and an agent with forced itinerary") {
