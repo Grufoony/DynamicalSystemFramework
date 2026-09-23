@@ -42,10 +42,32 @@ jobs:
           PUBLISH_VERSION="${{ steps.extract.outputs.version }}"
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            PUBLISH_VERSION="${PUBLISH_VERSION}.dev${{ github.run_number }}"
+            # (Test)PyPI never accepts the same file twice, even after deleting it: give
+            # every upload a new version. The attempt number is included so that
+            # re-running a failed workflow does not reuse the previous attempt's version.
+            DEV_NUMBER=$(( ${{ github.run_number }} * 100 + ${{ github.run_attempt }} ))
+            PUBLISH_VERSION="${PUBLISH_VERSION}.dev${DEV_NUMBER}"
           fi
 
           echo "publish_version=${PUBLISH_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check that the version is not on PyPI yet
+        shell: bash
+        run: |
+          VERSION="${{ steps.extract.outputs.version }}"
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://pypi.org/pypi/dsf-suite/${VERSION}/json")
+
+          if [ "$STATUS" = "200" ]; then
+            MESSAGE="dsf-suite ${VERSION} is already on PyPI. Bump DSF_VERSION_* in src/dsf/dsf.hpp"
+            if [ "${{ github.event_name }}" = "push" ]; then
+              echo "::error::${MESSAGE}: PyPI does not allow replacing files."
+              exit 1
+            fi
+            echo "::warning::${MESSAGE} before merging, or publishing on main will fail."
+          elif [ "$STATUS" != "404" ]; then
+            echo "::warning::Could not check PyPI for dsf-suite ${VERSION} (HTTP ${STATUS})."
+          fi
 
   build-wheels:
     name: Build wheels on ${{ matrix.os }}
