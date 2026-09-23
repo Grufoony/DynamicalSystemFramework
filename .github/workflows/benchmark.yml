@@ -1,0 +1,173 @@
+name: "CI: Benchmark"
+
+# Same-runner A/B comparison: the base commit and the head commit are built and
+# benchmarked in the same job, so that machine-to-machine noise cancels out.
+# A PR fails if any benchmark slows down by more than BENCH_TOLERANCE with a
+# statistically significant difference (see benchmark/compare_benchmarks.py).
+# Add the `skip-benchmark` label to a PR to report regressions without failing.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Base ref to compare against"
+        required: false
+        default: "main"
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  BENCH_TOLERANCE: "0.10"
+  # Repetitions per side, split over BENCH_ROUNDS alternating runs (see run_ab.sh)
+  BENCH_REPETITIONS: "12"
+  BENCH_ROUNDS: "4"
+  BENCH_MIN_TIME: "0.1s"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false &&
+       ((github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+        github.event.label.name == 'skip-benchmark'))
+
+    steps:
+      - name: Resolve base and head commits
+        id: refs
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request)
+              echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+              echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+              ;;
+            push)
+              echo "base=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+              echo "head=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "base=${{ inputs.base_ref }}" >> "$GITHUB_OUTPUT"
+              echo "head=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Checkout head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.refs.outputs.head }}
+          path: head
+
+      - name: Checkout base
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.refs.outputs.base }}
+          path: base
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential cmake libtbb-dev
+
+      # -march=native is part of the Release flags, so cached objects are only
+      # valid on the same CPU architecture: include it in the cache key.
+      - name: Detect CPU architecture
+        id: cpu
+        run: echo "march=$(gcc -march=native -Q --help=target | awk '/^ +-march=/ {print $2; exit}')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: benchmark-${{ runner.os }}-${{ steps.cpu.outputs.march }}
+          max-size: 1G
+
+      - name: Build base and head
+        run: |
+          for side in base head; do
+            echo "::group::Build $side"
+            cmake -S $side -B $side/build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DDSF_BENCHMARKS=ON \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            cmake --build $side/build -j$(nproc) --config Release
+            echo "::endgroup::"
+          done
+          ccache --show-stats
+
+      - name: Run benchmarks
+        id: run
+        run: |
+          set +e
+          head/benchmark/run_ab.sh base/benchmark head/benchmark results
+          if [ $? -ne 0 ]; then
+            echo "head_crashed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compare results
+        id: compare
+        env:
+          NO_FAIL: >-
+            ${{ github.event_name != 'pull_request' ||
+                contains(github.event.pull_request.labels.*.name, 'skip-benchmark') }}
+        run: |
+          args=(
+            --base results/base
+            --head results/head
+            --tolerance "$BENCH_TOLERANCE"
+            --base-label "${{ steps.refs.outputs.base }}"
+            --head-label "${{ steps.refs.outputs.head }}"
+            --output report.md
+          )
+          while IFS= read -r warning; do
+            args+=(--warning "$warning")
+          done < results/warnings.txt
+          if [ "$NO_FAIL" = "true" ]; then
+            args+=(--no-fail)
+          fi
+          if [ "${{ steps.run.outputs.head_crashed }}" = "true" ]; then
+            args+=(--head-failed)
+          fi
+          set +e
+          python3 head/benchmark/compare_benchmarks.py "${args[@]}"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        # The token is read-only on PRs from forks: the job summary still has the report
+        continue-on-error: true
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: benchmark
+          path: report.md
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-results
+          path: |
+            results/
+            report.md
+          if-no-files-found: ignore
+
+      - name: Fail on crashes or regressions
+        if: steps.run.outputs.head_crashed == 'true' || steps.compare.outputs.exit_code != '0'
+        run: |
+          if [ "${{ steps.run.outputs.head_crashed }}" = "true" ]; then
+            echo "::error::At least one benchmark executable failed on the head commit."
+          fi
+          if [ "${{ steps.compare.outputs.exit_code }}" != "0" ]; then
+            echo "::error::Performance regressions detected (exit code ${{ steps.compare.outputs.exit_code }}). See the job summary. Add the 'skip-benchmark' label if the slowdown is intended."
+          fi
+          exit 1

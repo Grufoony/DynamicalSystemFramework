@@ -1505,14 +1505,7 @@ namespace dsf::mobility {
   }
 
   Street const* RoadNetwork::street(Id source, Id destination) const {
-    auto const it = std::find_if(
-        m_edges.cbegin(), m_edges.cend(), [source, destination](auto const& pair) {
-          return pair.second->source() == source && pair.second->target() == destination;
-        });
-    if (it == m_edges.cend()) {
-      return nullptr;
-    }
-    return it->second.get();
+    return m_findEdge(source, destination);
   }
   void RoadNetwork::exportCSV(std::string_view const folder) const {
     auto const nodeTypeToString = [](RoadJunction const& junction) {

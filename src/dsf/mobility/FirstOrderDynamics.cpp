@@ -1061,7 +1061,7 @@ namespace dsf::mobility {
         if (m_reinsertAgents) {
           // reset Agent's values
           pAgent->reset(this->time_step());
-          this->addAgent(std::move(pAgent));
+          m_agentsToReinsert.push_back(std::move(pAgent));
         }
         continue;
       }
@@ -1240,6 +1240,10 @@ namespace dsf::mobility {
           continue;
         }
         pAgent->setNextStreetId(*nextStreetId);
+      }
+      if (!pAgent->srcStreetId().has_value()) {
+        // Remember where the trip starts, to restart it from there on reinsertion
+        pAgent->setSrcStreetId(*pAgent->nextStreetId());
       }
       spdlog::debug("Checking next street for {}", *pAgent);
       auto* nextStreet{&this->graph().edge(*(pAgent->nextStreetId()))};
@@ -1818,6 +1822,7 @@ namespace dsf::mobility {
     auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
     auto pAgent = std::make_unique<Agent>(
         m_nInsertedAgents, this->time_step(), trip, srcStreet.source());
+    pAgent->setSrcStreetId(srcStreet.id());
     pAgent->setNextStreetId(srcStreet.id());
     addAgent(std::move(pAgent));
   }
@@ -1831,6 +1836,7 @@ namespace dsf::mobility {
     auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
     auto pAgent = std::make_unique<Agent>(
         m_nInsertedAgents, this->time_step(), pItinerary, srcStreet.source());
+    pAgent->setSrcStreetId(srcStreet.id());
     pAgent->setNextStreetId(srcStreet.id());
     addAgent(std::move(pAgent));
   }
@@ -1990,6 +1996,21 @@ namespace dsf::mobility {
           },
           tbb::auto_partitioner{});
     });
+    if (!m_agentsToReinsert.empty()) {
+      // Sort by id, so that the insertion order does not depend on thread scheduling
+      std::vector<std::unique_ptr<Agent>> agentsToReinsert;
+      agentsToReinsert.reserve(m_agentsToReinsert.size());
+      for (auto& pAgent : m_agentsToReinsert) {
+        agentsToReinsert.push_back(std::move(pAgent));
+      }
+      m_agentsToReinsert.clear();
+      std::sort(agentsToReinsert.begin(),
+                agentsToReinsert.end(),
+                [](auto const& lhs, auto const& rhs) { return lhs->id() < rhs->id(); });
+      for (auto& pAgent : agentsToReinsert) {
+        this->addAgent(std::move(pAgent));
+      }
+    }
     spdlog::debug("Init evolving nodes at time {}", this->time_step());
     // Move transport capacity agents from each node
     this->m_taskArena.execute([&] {

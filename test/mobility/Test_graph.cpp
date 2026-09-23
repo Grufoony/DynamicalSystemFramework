@@ -873,6 +873,24 @@ TEST_CASE("RoadNetwork") {
         THEN("It throws an exception") { CHECK_FALSE(graph.street(2, 1)); }
       }
     }
+    GIVEN("A RoadNetwork object with a path of two streets") {
+      RoadNetwork graph{};
+      graph.addNDefaultNodes(3);
+      graph.addStreets(Street{1, std::make_pair(0, 1), 1.},
+                       Street{2, std::make_pair(1, 2), 1.});
+      WHEN("We search for streets by their endpoints") {
+        THEN("Existing streets are found") {
+          CHECK_EQ(graph.street(1, 2)->id(), 2);
+          CHECK_EQ(graph.edge(0, 1).id(), 1);
+        }
+        THEN("Missing streets between existing nodes are not found") {
+          CHECK_FALSE(graph.street(0, 2));
+          CHECK_FALSE(graph.street(2, 1));
+          CHECK_THROWS_AS(graph.edge(0, 2), std::out_of_range);
+          CHECK_THROWS_AS(graph.edge(3, 0), std::out_of_range);
+        }
+      }
+    }
   }
 
   SUBCASE("adjustNodeCapacities and normalizeStreetCapacities") {
