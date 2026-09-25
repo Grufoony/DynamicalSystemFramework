@@ -1897,9 +1897,14 @@ TEST_CASE("FirstOrderDynamics") {
           // The travel data has been cleared by the previous call
           CHECK_FALSE(dynamics.meanTravelDistance().is_valid);
         }
-        THEN("The streets below the density threshold contribute to the flow") {
+        THEN(
+            "Only the streets on the requested side of the threshold contribute to the "
+            "flow") {
           // The agent left streets 0 and 1, which are now empty
           CHECK_EQ(dynamics.streetMeanFlow(0.5, false).n, 2);
+          // Reading the flow does not consume the speed samples
+          CHECK_EQ(dynamics.streetMeanFlow().n, 2);
+          CHECK_EQ(dynamics.streetMeanFlow(0.5, true).n, 0);
         }
       }
     }
@@ -2050,6 +2055,28 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(nKilled, 1);
           CHECK_EQ(nArrived, 0);
           CHECK_EQ(nCurrent, 0);
+        }
+      }
+    }
+    GIVEN("Agents still waiting to enter a full origin street") {
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      // A 5 m street only has room for one vehicle
+      graph2.addStreets(Street{0, std::make_pair(0, 1), 5.},
+                        Street{1, std::make_pair(1, 2), 100.});
+      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      dynamics.setODs({{0, 1, 1.}});
+      dynamics.updatePaths();
+      dynamics.killStagnantAgents(1.);
+      dynamics.addAgents(3, AgentInsertionMethod::ODS);
+      dynamics.evolve();
+      WHEN("New agents are added") {
+        dynamics.addAgents(1, AgentInsertionMethod::ODS);
+        THEN("The agents left waiting are counted as killed") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+              dynamics.agentStats();
+          CHECK_GT(nKilled, 0);
+          CHECK_EQ(nInserted, nArrived + nKilled + nCurrent);
         }
       }
     }

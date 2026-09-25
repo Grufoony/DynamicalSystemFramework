@@ -518,7 +518,7 @@ TEST_CASE("RoadJunction and Intersection formatting") {
         std::format("{}", junction),
         "RoadJunction(id: 7, name: , capacity: 1, transportCapacity: 1, coords: N/A)");
     dsf::mobility::RoadJunction located{8, dsf::geometry::Point{1., 2.}};
-    CHECK(std::format("{}", located).find("coords: POINT (1, 2))") != std::string::npos);
+    CHECK(std::format("{}", located).find("coords: POINT (1 2))") != std::string::npos);
   }
 
   SUBCASE("std::format Intersection with edges and coordinates") {
@@ -528,7 +528,7 @@ TEST_CASE("RoadJunction and Intersection formatting") {
     std::string formatted = std::format("{}", intersection);
     CHECK(formatted.find("ingoing edges: 3 ") != std::string::npos);
     CHECK(formatted.find("outgoing edges: 4 ") != std::string::npos);
-    CHECK(formatted.find("coords: POINT (1, 2))") != std::string::npos);
+    CHECK(formatted.find("coords: POINT (1 2))") != std::string::npos);
   }
 
   SUBCASE("Roundabout density") {

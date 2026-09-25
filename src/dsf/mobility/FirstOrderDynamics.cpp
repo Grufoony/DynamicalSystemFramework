@@ -366,6 +366,7 @@ namespace dsf::mobility {
           nStagnantAgents);
       m_agents.clear();
       m_nAgents -= nStagnantAgents;
+      m_nKilledAgents += nStagnantAgents;
     }
     if (m_ODs.size() == 1) {
       auto [originId, destinationId, weight] = m_ODs.at(0);
@@ -422,6 +423,7 @@ namespace dsf::mobility {
           nStagnantAgents);
       m_agents.clear();
       m_nAgents -= nStagnantAgents;
+      m_nKilledAgents += nStagnantAgents;
     }
     auto const& nSources{m_origins.size()};
     auto const& nDestinations{m_destinations.size()};
@@ -505,6 +507,7 @@ namespace dsf::mobility {
           nStagnantAgents);
       m_agents.clear();
       m_nAgents -= nStagnantAgents;
+      m_nKilledAgents += nStagnantAgents;
     }
     if (m_origins.empty()) {
       throw std::runtime_error(
@@ -1763,6 +1766,7 @@ namespace dsf::mobility {
           nStagnantAgents);
       m_agents.clear();
       m_nAgents -= nStagnantAgents;
+      m_nKilledAgents += nStagnantAgents;
     }
     if (optItineraryId.has_value() && !this->itineraries().contains(*optItineraryId)) {
       throw std::invalid_argument(
@@ -2382,7 +2386,7 @@ namespace dsf::mobility {
     std::vector<double> flows;
     flows.reserve(this->graph().nEdges());
     for (const auto& [streetId, pStreet] : this->graph().edges()) {
-      auto const speedMeasure = pStreet->meanSpeed<true>();
+      auto const speedMeasure = pStreet->meanSpeed<false>();
       if (speedMeasure.is_valid) {
         flows.push_back(pStreet->density<false>() * speedMeasure.mean);
       }
@@ -2395,7 +2399,7 @@ namespace dsf::mobility {
     std::vector<double> flows;
     flows.reserve(this->graph().nEdges());
     for (const auto& [streetId, pStreet] : this->graph().edges()) {
-      auto const speedMeasure = pStreet->meanSpeed<true>();
+      auto const speedMeasure = pStreet->meanSpeed<false>();
       if (!speedMeasure.is_valid) {
         continue;
       }

@@ -1341,7 +1341,15 @@ TEST_CASE("RoadNetwork") {
     CHECK(nodesCsv.find("id,type,geometry,capacity,transportCapacity,name") !=
           std::string::npos);
     CHECK(nodesCsv.find("intersection") != std::string::npos);
-    CHECK(nodesCsv.find("POINT (") != std::string::npos);
+    CHECK(nodesCsv.find("POINT (8 45)") != std::string::npos);
+
+    // The exported node geometries can be imported back
+    RoadNetwork roundTrip{};
+    roundTrip.addNode(0);
+    roundTrip.addNode(1);
+    roundTrip.importNodeProperties(nodesPath.string(), ',');
+    CHECK_EQ(roundTrip.node(0).geometry(), dsf::geometry::Point(8.0, 45.0));
+    CHECK_EQ(roundTrip.node(1).geometry(), dsf::geometry::Point(8.1, 45.1));
 
     std::filesystem::remove(edgesPath);
     std::filesystem::remove(nodesPath);
