@@ -159,6 +159,30 @@ TEST_CASE("FirstOrderDynamics") {
           }
         }
       }
+      WHEN("We set weights which do not sum up to one") {
+        dynamics.setDestinations(std::unordered_map<Id, double>{{3, 1.}, {4, 3.}});
+        dynamics.setODs({{0, 3, 1.}, {2, 4, 3.}});
+        THEN("The weights are normalized") {
+          for (auto const& [id, weight] : dynamics.destinations()) {
+            CHECK_EQ(weight, doctest::Approx(id == 3 ? 0.25 : 0.75));
+          }
+          CHECK_EQ(dynamics.itineraries().size(), 2);
+        }
+      }
+      WHEN("We set no origins") {
+        dynamics.setOrigins();
+        THEN("Every street becomes an origin with the same weight") {
+          CHECK_EQ(dynamics.origins().size(), dynamics.graph().nEdges());
+          CHECK_EQ(std::get<1>(dynamics.origins().front()),
+                   doctest::Approx(1. / dynamics.graph().nEdges()));
+        }
+      }
+      THEN("Non-positive weights throw") {
+        CHECK_THROWS_AS(dynamics.setOrigins({{0, 0.}}), std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.setDestinations(std::unordered_map<Id, double>{{3, 0.}}),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.setODs({{0, 3, 0.}}), std::invalid_argument);
+      }
     }
   }
   SUBCASE("addAgent") {
@@ -221,6 +245,27 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.graph().edge(404).movingAgents().top()->itinerary()->id(), 2);
 #endif
         }
+      }
+      WHEN("We add agents with a given itinerary") {
+        dynamics.addAgentsUniformly(4, 1);
+        THEN("Every agent follows that itinerary") {
+          CHECK_EQ(dynamics.nAgents(), 4);
+          for (auto const& [streetId, pStreet] : dynamics.graph().edges()) {
+            for (auto const& pAgent : pStreet->movingAgents()) {
+              CHECK_EQ(pAgent->itinerary()->id(), 1);
+            }
+          }
+        }
+      }
+      WHEN("We add agents with the UNIFORM insertion method") {
+        dynamics.addAgents(5, AgentInsertionMethod::UNIFORM);
+        THEN("The agents are added") { CHECK_EQ(dynamics.nAgents(), 5); }
+      }
+      THEN("Invalid requests throw") {
+        CHECK_THROWS_AS(dynamics.addItinerary(2, 2), std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.addAgentsUniformly(1, 999), std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.addAgentsUniformly(dynamics.graph().capacity() + 1),
+                        std::overflow_error);
       }
     }
   }
@@ -597,6 +642,55 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.nAgents(), 1);
         }
       }
+
+      WHEN("We import CSV files with partial or invalid rows") {
+        FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+        auto const csvPath = std::filesystem::temp_directory_path() / "dsf_ods_rows.csv";
+        auto const writeCsv = [&csvPath](std::string const& content) {
+          std::ofstream out{csvPath};
+          REQUIRE(out.is_open());
+          out << content;
+        };
+        THEN("Node ids in the compat format are mapped onto their streets") {
+          writeCsv("id;o_prob;d_prob\n0;1.0;\n2;;1.0\n");
+          dynamics.importODsFromCSV(csvPath.string(), ';', false);
+          REQUIRE_EQ(dynamics.origins().size(), 1);
+          REQUIRE_EQ(dynamics.destinations().size(), 1);
+          CHECK_EQ(std::get<0>(dynamics.origins().front()),
+                   dynamics.graph().node(0).outgoingEdges().front());
+          CHECK_EQ(std::get<0>(dynamics.destinations().front()),
+                   dynamics.graph().node(2).ingoingEdges().front());
+        }
+        THEN("Rows with an unknown type or no valid destination are skipped") {
+          for (bool const bEdges : {false, true}) {
+            writeCsv("id;type;weight\n0;O;1.0\n2;X;1.0\n14;D;1.0\n");
+            dynamics.importODsFromCSV(csvPath.string(), ';', bEdges);
+            CHECK_EQ(dynamics.origins().size(), 1);
+            CHECK_EQ(dynamics.destinations().size(), 1);
+
+            writeCsv("origin_id;weight;destinations\n0;0.5;2:1.0,bad\n1;0.5;\n");
+            dynamics.importODsFromCSV(csvPath.string(), ';', bEdges);
+            REQUIRE_EQ(dynamics.origins().size(), 1);
+            CHECK_EQ(std::get<1>(dynamics.origins().front()), doctest::Approx(1.));
+          }
+        }
+        THEN("Missing files and unsupported formats throw") {
+          CHECK_THROWS_AS(dynamics.importODsFromCSV("nonexistent_file.csv", ';', false),
+                          std::invalid_argument);
+          writeCsv("foo;bar\n0;1\n");
+          CHECK_THROWS_AS(dynamics.importODsFromCSV(csvPath.string(), ';', false),
+                          std::runtime_error);
+          CHECK_THROWS_AS(dynamics.importODsFromCSV(csvPath.string(), ';', true),
+                          std::runtime_error);
+          // OD pairs are only supported between streets
+          writeCsv("origin_id;destination_id;weight\n0;2;1.0\n");
+          CHECK_THROWS_AS(dynamics.importODsFromCSV(csvPath.string(), ';', false),
+                          std::runtime_error);
+          CHECK_THROWS_AS(dynamics.setConditionalODs({{0, {1.0, {{2, 0.}}}}}),
+                          std::invalid_argument);
+        }
+        std::filesystem::remove(csvPath);
+      }
     }
   }
   SUBCASE("addRandomAgents and time") {
@@ -669,6 +763,51 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.setTransitionMatrix({{100000, {{4, 1.}}}});
         THEN("The row is ignored") { CHECK(dynamics.transitionMatrix().empty()); }
       }
+      WHEN("We set transitions onto missing or non-adjacent streets") {
+        // Street 0 (0 -> 10) does not leave node 1, the target of street 2
+        dynamics.setTransitionMatrix({{2, {{100000, 0.3}, {0, 0.3}, {4, 0.4}}}});
+        THEN("Those transitions are ignored") {
+          auto const& matrix = dynamics.transitionMatrix();
+          REQUIRE(matrix.contains(2));
+          CHECK_EQ(matrix.at(2).size(), 1);
+          CHECK_EQ(matrix.at(2).at(4), doctest::Approx(0.4));
+        }
+      }
+      WHEN("We set a U-turn next to zero-weight transitions") {
+        dynamics.setTransitionMatrix({{2, {{3, 0.6}, {4, 0.}, {6, 0.}}}});
+        THEN("The U-turn weight is shared equally") {
+          auto const& matrix = dynamics.transitionMatrix();
+          REQUIRE(matrix.contains(2));
+          CHECK_EQ(matrix.at(2).at(4), doctest::Approx(0.3));
+          CHECK_EQ(matrix.at(2).at(6), doctest::Approx(0.3));
+        }
+      }
+      WHEN("We import malformed JSON files") {
+        auto const jsonPath =
+            std::filesystem::temp_directory_path() / "dsf_bad_transition_matrix.json";
+        auto const importJson = [&](std::string const& content) {
+          {
+            std::ofstream out{jsonPath};
+            REQUIRE(out.is_open());
+            out << content;
+          }
+          dynamics.importTransitionMatrixFromJSON(jsonPath.string());
+        };
+        THEN("An exception is thrown") {
+          CHECK_THROWS_AS(importJson("[]"), std::runtime_error);
+          CHECK_THROWS_AS(importJson(R"({ "2": 0.5 })"), std::runtime_error);
+          CHECK_THROWS_AS(importJson(R"({ "2": { "4": "high" } })"), std::runtime_error);
+          CHECK_THROWS_AS(importJson(R"({ "two": { "4": 0.5 } })"),
+                          std::invalid_argument);
+        }
+        std::filesystem::remove(jsonPath);
+      }
+      THEN("Turn counts must be initialized exactly once before being reset") {
+        CHECK_THROWS_AS(dynamics.resetTurnCounts(), std::runtime_error);
+        dynamics.initTurnCounts();
+        CHECK_THROWS_AS(dynamics.initTurnCounts(), std::runtime_error);
+        CHECK_NOTHROW(dynamics.resetTurnCounts());
+      }
       WHEN("We set a row containing only unusable transitions") {
         // Street 3 (1 -> 0) is the U-turn of street 2 (0 -> 1)
         dynamics.setTransitionMatrix({{2, {{3, 1.}}}});
@@ -733,6 +872,9 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK(turnCounts.at(2).at(4) > 0);
           CHECK_EQ(turnCounts.at(2).at(6), 0);
           CHECK_EQ(turnCounts.at(2).at(3), 0);
+          auto const normalized = dynamics.normalizedTurnCounts();
+          CHECK_EQ(normalized.at(2).at(4), doctest::Approx(1.));
+          CHECK_EQ(normalized.at(2).at(6), 0.);
         }
         THEN("Streets without a row keep routing agents uniformly") {
           auto const& turnCounts = dynamics.turnCounts();
@@ -1014,10 +1156,16 @@ TEST_CASE("FirstOrderDynamics") {
       WHEN(
           "We add an impossible itinerary (to source node) and update paths with "
           "throw_on_empty=false") {
-        dynamics.addItinerary(std::make_shared<Itinerary>(0, 0));
+        dynamics.setDestinations(std::unordered_map<Id, double>{{0, 1.}});
+        dynamics.setODs({{0, 0, 1.}});
+        dynamics.setConditionalODs({{0, {1., {{0, 1.}}}}});
         dynamics.setUpdatePathsThrowOnEmpty(false);
         dynamics.updatePaths();
-        THEN("The itinerary is removed") { CHECK(dynamics.itineraries().empty()); }
+        THEN("The itinerary and every origin and destination using it are removed") {
+          CHECK(dynamics.itineraries().empty());
+          CHECK(dynamics.destinations().empty());
+          CHECK(dynamics.origins().empty());
+        }
       }
     }
   }
@@ -1604,6 +1752,34 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(tl.meanGreenTime(true), tl.meanGreenTime(false));
         }
       }
+      WHEN("We optimize with the DOUBLE_TAIL algorithm and a log file") {
+        // Synchronization needs a second traffic light upstream of node 1
+        auto& tl0 = dynamics.graph().makeTrafficLight(0);
+        TrafficLightPhase p{4};
+        p.addGreen(5);
+        tl0.addPhase(p);
+        for (int i = 0; i < 7; ++i) {
+          dynamics.addAgent(dynamics.itineraries().at(126), 1);
+        }
+        dynamics.setDataUpdatePeriod(4);
+        for (int i = 0; i < 9; ++i) {
+          dynamics.evolve();
+        }
+        auto const logPath =
+            std::filesystem::temp_directory_path() / "dsf_tl_optimization.log";
+        std::filesystem::remove(logPath);
+        dynamics.optimizeTrafficLights(
+            dsf::TrafficLightOptimization::DOUBLE_TAIL, logPath.string(), 1, 0.);
+        THEN("The optimization steps are logged") {
+          std::ifstream in{logPath};
+          REQUIRE(in.is_open());
+          std::string const log{std::istreambuf_iterator<char>{in}, {}};
+          CHECK(log.find("Init Traffic Lights optimisation") != std::string::npos);
+          CHECK(log.find("New cycles for") != std::string::npos);
+          CHECK(log.find("End Traffic Lights optimisation") != std::string::npos);
+        }
+        std::filesystem::remove(logPath);
+      }
     }
   }
   SUBCASE("Roundabout") {
@@ -1715,6 +1891,21 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(distance.std, doctest::Approx(0.));
           CHECK_EQ(dynamics.nAgents(), 0);
         }
+        THEN("The travel speed is the travelled distance over the travel time") {
+          auto const travelTime{dynamics.meanTravelTime().mean};
+          CHECK_EQ(dynamics.meanTravelSpeed(true).mean, doctest::Approx(4. / travelTime));
+          // The travel data has been cleared by the previous call
+          CHECK_FALSE(dynamics.meanTravelDistance().is_valid);
+        }
+        THEN(
+            "Only the streets on the requested side of the threshold contribute to the "
+            "flow") {
+          // The agent left streets 0 and 1, which are now empty
+          CHECK_EQ(dynamics.streetMeanFlow(0.5, false).n, 2);
+          // Reading the flow does not consume the speed samples
+          CHECK_EQ(dynamics.streetMeanFlow().n, 2);
+          CHECK_EQ(dynamics.streetMeanFlow(0.5, true).n, 0);
+        }
       }
     }
   }
@@ -1806,6 +1997,86 @@ TEST_CASE("FirstOrderDynamics") {
           // Street 2 is the destination edge and is never entered.
           CHECK_EQ(distance.mean, 35.);
           CHECK_EQ(distance.std, doctest::Approx(0.));
+        }
+      }
+    }
+  }
+  SUBCASE("Path cache") {
+    auto const makeNetwork = []() {
+      RoadNetwork graph;
+      graph.setEdgeWeight("length");
+      graph.addStreets(Street{0, std::make_pair(0, 1), 10.},
+                       Street{1, std::make_pair(1, 2), 10.},
+                       Street{2, std::make_pair(2, 3), 10.});
+      return graph;
+    };
+    auto const cacheFile = std::filesystem::path{CACHE_FOLDER} / "4242.ity";
+    std::filesystem::remove(cacheFile);
+    GIVEN("A dynamics object with the cache enabled") {
+      FirstOrderDynamics dynamics{makeNetwork(), true, 69};
+      dynamics.addItinerary(4242, 2);
+      dynamics.updatePaths();
+      THEN("The path is saved and reloaded by another dynamics object") {
+        CHECK(std::filesystem::exists(cacheFile));
+        FirstOrderDynamics cached{makeNetwork(), true, 69};
+        cached.addItinerary(4242, 2);
+        cached.updatePaths();
+        CHECK_FALSE(cached.itineraries().at(4242)->path().empty());
+        CHECK_EQ(cached.itineraries().at(4242)->path(),
+                 dynamics.itineraries().at(4242)->path());
+      }
+    }
+    std::filesystem::remove(cacheFile);
+  }
+  SUBCASE("Stagnant agents") {
+    GIVEN("An agent waiting at a traffic light which is never green for it") {
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      graph2.addStreets(Street{0, std::make_pair(0, 1), 13.8888888889},
+                        Street{1, std::make_pair(1, 2), 13.8888888889},
+                        Street{2, std::make_pair(3, 1), 13.8888888889});
+      auto& tl = graph2.makeTrafficLight(1);
+      TrafficLightPhase phase{10};
+      phase.addGreen(2);
+      tl.addPhase(phase);
+      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      dynamics.addItinerary(1, 1);
+      dynamics.updatePaths();
+      dynamics.addAgent(dynamics.itineraries().at(1), 0);
+      WHEN("Stagnant agents are killed and we evolve the dynamics") {
+        CHECK_THROWS_AS(dynamics.killStagnantAgents(0.), std::invalid_argument);
+        dynamics.killStagnantAgents(1.);
+        for (auto i{0}; i < 10; ++i) {
+          dynamics.evolve();
+        }
+        THEN("The agent is killed instead of waiting forever") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+              dynamics.agentStats();
+          CHECK_EQ(nKilled, 1);
+          CHECK_EQ(nArrived, 0);
+          CHECK_EQ(nCurrent, 0);
+        }
+      }
+    }
+    GIVEN("Agents still waiting to enter a full origin street") {
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      // A 5 m street only has room for one vehicle
+      graph2.addStreets(Street{0, std::make_pair(0, 1), 5.},
+                        Street{1, std::make_pair(1, 2), 100.});
+      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      dynamics.setODs({{0, 1, 1.}});
+      dynamics.updatePaths();
+      dynamics.killStagnantAgents(1.);
+      dynamics.addAgents(3, AgentInsertionMethod::ODS);
+      dynamics.evolve();
+      WHEN("New agents are added") {
+        dynamics.addAgents(1, AgentInsertionMethod::ODS);
+        THEN("The agents left waiting are counted as killed") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+              dynamics.agentStats();
+          CHECK_GT(nKilled, 0);
+          CHECK_EQ(nInserted, nArrived + nKilled + nCurrent);
         }
       }
     }
@@ -2131,6 +2402,14 @@ TEST_CASE("RoadDynamics Configuration") {
     }
   }
 
+  SUBCASE("setErrorProbability and setPassageProbability") {
+    for (auto const p : {-0.1, 1.1}) {
+      CHECK_THROWS_AS(dynamics.setErrorProbability(p), std::invalid_argument);
+      CHECK_THROWS_AS(dynamics.setPassageProbability(p), std::invalid_argument);
+    }
+    CHECK_NOTHROW(dynamics.setErrorProbability(0.5));
+  }
+
   SUBCASE("setMeanTravelTime") {
     dynamics.setMeanTravelTime(3600);
 
@@ -2164,6 +2443,10 @@ TEST_CASE("SpeedFunction::CONSTANT") {
       }
       THEN("Passing an argument throws") {
         CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT, 0.5),
+                        std::invalid_argument);
+      }
+      THEN("The linear speed function needs an alpha in [0, 1)") {
+        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 1.),
                         std::invalid_argument);
       }
     }
@@ -2251,6 +2534,23 @@ TEST_CASE("SpeedFunction::CONSTANT") {
             bSomeoneIsSlower |= speed < maxSpeed;
           }
           CHECK(bSomeoneIsSlower);
+        }
+      }
+    }
+    GIVEN("The same dynamics using a custom speed function") {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::CUSTOM, [](Street const& street) {
+        return street.maxSpeed() / 2.;
+      });
+      WHEN("We evolve the dynamics until the streets are loaded") {
+        load(dynamics);
+        THEN("Every moving agent travels at the custom speed") {
+          auto const streetSpeeds{speeds(dynamics, 0)};
+          REQUIRE_FALSE(streetSpeeds.empty());
+          for (auto const speed : streetSpeeds) {
+            CHECK_EQ(speed, doctest::Approx(dynamics.graph().edge(0).maxSpeed() / 2.));
+          }
+          CHECK_EQ(dynamics.graph().edge(0).estimatedTravelTime(), doctest::Approx(20.));
         }
       }
     }

@@ -25,10 +25,9 @@ namespace dsf::mobility {
                                          std::size_t const nArrived,
                                          std::size_t const nKilled,
                                          std::size_t const nRemaining) const {
-    // These counters need not add up: the ghost-clearing paths in FirstOrderDynamics
-    // decrement the live count without bumping the killed count. Do the subtraction in
-    // a signed type so an imbalance shows up as a negative number instead of wrapping
-    // around to ~1.8e19.
+    // Every inserted agent should be arrived, killed (stagnant pending agents included)
+    // or remaining, so ghosts should be 0. Do the subtraction in a signed type anyway,
+    // so an imbalance shows up as a negative number instead of wrapping around to ~1.8e19.
     auto const accounted = static_cast<std::int64_t>(nArrived) +
                            static_cast<std::int64_t>(nKilled) +
                            static_cast<std::int64_t>(nRemaining);

@@ -495,9 +495,12 @@ namespace dsf::mobility {
     template <bool Normalized>
     Measurement<double> streetMeanDensity() const;
     /// @brief Get the mean flow of the streets in \f$s^{-1}\f$
+    /// @details The flow uses the speeds of the agents that left each street since the last
+    /// data save (see `evolve`); reading it does not reset them.
     /// @return Measurement<double> The mean flow of the streets and the standard deviation
     Measurement<double> streetMeanFlow() const;
     /// @brief Get the mean flow of the streets in \f$s^{-1}\f$
+    /// @details Same speed samples as streetMeanFlow(); reading them does not reset them.
     /// @param threshold The density threshold to consider
     /// @param above If true, the function returns the mean flow of the streets with a density above the threshold, otherwise below
     /// @return Measurement<double> The mean flow of the streets and the standard deviation

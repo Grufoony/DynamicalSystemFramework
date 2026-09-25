@@ -81,6 +81,7 @@ TEST_CASE("Agent methods") {
     CHECK_FALSE(agent.nextStreetId().has_value());
   }
   SUBCASE("setStreetId with nullopt uses nextStreetId") {
+    CHECK_THROWS_AS(agent.setStreetId(), std::logic_error);
     agent.setNextStreetId(77);
     agent.setStreetId();
     CHECK(agent.streetId().has_value());
@@ -89,6 +90,7 @@ TEST_CASE("Agent methods") {
   SUBCASE("setSpeed and speed") {
     agent.setSpeed(12.5);
     CHECK_EQ(agent.speed(), 12.5);
+    CHECK_THROWS_AS(agent.setSpeed(-1.), std::invalid_argument);
   }
   SUBCASE("setFreeTime and freeTime") {
     agent.setFreeTime(1234);
@@ -98,6 +100,7 @@ TEST_CASE("Agent methods") {
     double d0 = agent.distance();
     agent.incrementDistance(5.5);
     CHECK_EQ(agent.distance(), d0 + 5.5);
+    CHECK_THROWS_AS(agent.incrementDistance(-1.), std::invalid_argument);
   }
   SUBCASE("updateItinerary advances index") {
     auto it1 = std::make_shared<Itinerary>(1, 10);
@@ -194,6 +197,8 @@ TEST_CASE("Agent formatting") {
   SUBCASE("hasArrived") {
     Agent agent{0, 10};  // spawnTime = 10
     CHECK(agent.isRandom());
+    CHECK_THROWS_AS(agent.itinerary(), std::logic_error);
+    CHECK_THROWS_AS(agent.setMaxDistance(0.), std::invalid_argument);
 
     // Test Max Distance
     agent.setMaxDistance(100.0);
@@ -216,5 +221,9 @@ TEST_CASE("Agent formatting") {
     CHECK(agent.hasArrived(60));
     // After expiration
     CHECK(agent.hasArrived(61));
+
+    // Agents with an itinerary arrive at their destination, not by time or distance
+    Agent agentWithItinerary{2, 10, std::make_shared<Itinerary>(1, 1)};
+    CHECK_FALSE(agentWithItinerary.hasArrived(1000));
   }
 }

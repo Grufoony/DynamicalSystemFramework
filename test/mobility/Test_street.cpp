@@ -91,6 +91,9 @@ TEST_CASE("Street") {
     Street::setEstimatedTravelTimeFunction(
         [](Street const& street) { return 2.0 * street.length() / street.maxSpeed(); });
     CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(12.0));
+    CHECK_EQ(Street::estimatedTravelTimeFunction()(street), doctest::Approx(12.0));
+    CHECK_THROWS_AS(Street::setEstimatedTravelTimeFunction(nullptr),
+                    std::invalid_argument);
 
     Street::setEstimatedTravelTimeFunction([](Street const& resetStreet) {
       return resetStreet.length() / resetStreet.maxSpeed();
@@ -113,6 +116,29 @@ TEST_CASE("Street") {
           CHECK_EQ(street.laneMapping()[1], dsf::Direction::STRAIGHT);
           CHECK_EQ(street.laneMapping()[2], dsf::Direction::STRAIGHT);
         }
+      }
+      WHEN("We map compound directions and queue one agent per lane") {
+        street.setLaneMapping(
+            std::vector<dsf::Direction>{dsf::Direction::RIGHTANDSTRAIGHT,
+                                        dsf::Direction::STRAIGHT,
+                                        dsf::Direction::LEFTANDSTRAIGHT});
+        for (std::size_t lane{0}; lane < 3; ++lane) {
+          street.addAgent(std::make_unique<Agent>(lane, 0), 0);
+          street.enqueue(lane);
+        }
+        THEN("Each direction counts the agents on the lanes serving it") {
+          CHECK_EQ(street.nExitingAgents(dsf::Direction::RIGHT, false), 1.);
+          CHECK_EQ(street.nExitingAgents(dsf::Direction::STRAIGHT, false), 3.);
+          CHECK_EQ(street.nExitingAgents(dsf::Direction::LEFT, false), 1.);
+          CHECK_EQ(street.nExitingAgents(dsf::Direction::RIGHTANDSTRAIGHT, false), 2.);
+          // Two lanes serve LEFT&STRAIGHT, one agent each
+          CHECK_EQ(street.nExitingAgents(dsf::Direction::LEFTANDSTRAIGHT, true), 1.);
+        }
+      }
+      THEN("A lane mapping with the wrong size throws") {
+        CHECK_THROWS_AS(
+            street.setLaneMapping(std::vector<dsf::Direction>{dsf::Direction::RIGHT}),
+            std::invalid_argument);
       }
     }
   }
@@ -144,6 +170,18 @@ TEST_CASE("Street") {
           CHECK_EQ(street.maxSpeed(), initialMaxSpeed);
           CHECK_EQ(street.exitQueues().size(), 1);
           CHECK_EQ(street.laneMapping().size(), 1);
+        }
+      }
+
+      WHEN("Number of lanes is decreased while agents are queued on both lanes") {
+        for (std::size_t lane{0}; lane < 2; ++lane) {
+          street.addAgent(std::make_unique<Agent>(lane, 0), 0);
+          street.enqueue(lane);
+        }
+        street.changeNLanes(1);
+        THEN("The agents of the removed lane are moved to the surviving one") {
+          CHECK_EQ(street.exitQueues().size(), 1);
+          CHECK_EQ(street.queue(0).size(), 2);
         }
       }
 
@@ -228,7 +266,6 @@ TEST_CASE("Street") {
     CHECK(street.queue(0).front());
     CHECK(street.queue(0).back());
     CHECK_EQ(street.queue(0).size(), street.capacity());
-    CHECK_EQ(street.queue(0).size(), street.capacity());
     CHECK_EQ(doctest::Approx(street.density<false>()), 1.14286);
     CHECK(street.isFull());
   }
@@ -258,7 +295,6 @@ TEST_CASE("Street") {
     CHECK(street.queue(0).front());  // check that agent 2 is now at front
     // check that the length of the queue has decreased
     CHECK_EQ(street.queue(0).size(), 3);
-    CHECK_EQ(street.queue(0).size(), 3);
     // check that the next agent dequeued is agent 2
     CHECK(street.dequeue(0, 2));
     CHECK_EQ(street.queue(0).size(), 2);
@@ -282,8 +318,10 @@ TEST_CASE("Street with a coil") {
   SUBCASE("Entry Counter") {
     GIVEN("A street with an entry counter") {
       Street street{1, std::make_pair(0, 1), 3.5};
+      CHECK_THROWS_AS(street.resetCounter(), std::runtime_error);
       street.enableCounter("EntryCoil", dsf::mobility::CounterPosition::ENTRY);
       CHECK_EQ(street.counterName(), "EntryCoil");
+      CHECK_THROWS_AS(street.enableCounter("OtherCoil"), std::runtime_error);
       WHEN("An agent is added") {
         street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
         THEN("The input flow is one immediately") { CHECK_EQ(street.counts(), 1); }
@@ -690,5 +728,20 @@ TEST_CASE("Street formatting") {
     std::string formatted = std::format("{}", street);
     CHECK(formatted.find("Street(id: 30") != std::string::npos);
     CHECK(formatted.find("agents: 2") != std::string::npos);
+  }
+
+  SUBCASE("std::format with lane mapping and forbidden turns") {
+    Street street{40, std::make_pair(1, 2), 100.0, 15.0, 6};
+    street.setLaneMapping(std::vector<dsf::Direction>{dsf::Direction::RIGHT,
+                                                      dsf::Direction::RIGHTANDSTRAIGHT,
+                                                      dsf::Direction::STRAIGHT,
+                                                      dsf::Direction::LEFTANDSTRAIGHT,
+                                                      dsf::Direction::LEFT,
+                                                      dsf::Direction::UTURN});
+    street.setForbiddenTurns(std::set<dsf::Id>{3, 5});
+
+    std::string formatted = std::format("{}", street);
+    CHECK(formatted.find("Lane mapping: R RS S LS L U") != std::string::npos);
+    CHECK(formatted.find("Forbidden turns: 3 5") != std::string::npos);
   }
 }

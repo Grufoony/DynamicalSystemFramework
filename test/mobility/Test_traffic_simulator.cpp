@@ -41,6 +41,20 @@ namespace {
     out << "3;2;1;13.8888888889;50;edge_3;residential;1\n";
   }
 
+  void writeFile(std::filesystem::path const& filePath, std::string const& content) {
+    std::ofstream out(filePath);
+    REQUIRE(out.is_open());
+    out << content;
+  }
+
+  std::string firstLine(std::filesystem::path const& filePath) {
+    std::ifstream in(filePath);
+    REQUIRE(in.is_open());
+    std::string line;
+    REQUIRE(std::getline(in, line));
+    return line;
+  }
+
   int rowCount(SQLite::Database& db, std::string const& tableName) {
     SQLite::Statement query(db, "SELECT COUNT(*) FROM " + tableName);
     REQUIRE(query.executeStep());
@@ -199,6 +213,160 @@ TEST_CASE("TrafficSimulator JSON config - transition matrix") {
   std::filesystem::remove(outputDir);
 }
 
+TEST_CASE("TrafficSimulator JSON config - all options") {
+  auto const inputDir = makeUniqueDirectory("traffic_simulator_all_input_");
+  auto const outputDir = makeUniqueDirectory("traffic_simulator_all_output_");
+
+  // Street 0 carries a coil and node 1 is a roundabout, so both end up in the dump
+  writeFile(inputDir / "edges.csv",
+            "id;source;target;length;maxspeed;name;type;nlanes;coilcode\n"
+            "0;0;1;13.8888888889;50;edge_0;residential;1;C0\n"
+            "1;1;0;13.8888888889;50;edge_1;residential;1;\n"
+            "2;1;2;13.8888888889;50;edge_2;residential;1;\n"
+            "3;2;1;13.8888888889;50;edge_3;residential;1;\n");
+  writeFile(inputDir / "nodes.csv",
+            "id;type;geometry\n"
+            "0;normal;POINT (0 0)\n"
+            "1;roundabout;POINT (1 0)\n"
+            "2;normal;POINT (2 0)\n");
+  // Compat format: an empty probability means the street is not an origin/destination
+  writeFile(inputDir / "ods.csv", "id,o_prob,d_prob\n0,1.0,\n3,,1.0\n");
+
+  auto const jsonPath = makeUniquePath("traffic_simulator_all_config_", ".json");
+  writeFile(jsonPath,
+            R"({
+  "general": {
+    "input_folder": ")" +
+                inputDir.string() +
+                R"(",
+    "output_folder": ")" +
+                outputDir.string() +
+                R"(",
+    "name": "all options",
+    "database": "all_options.db",
+    "init_time": "20240101",
+    "end_time": "20240101 000020",
+    "update_paths": { "interval": 5, "throw_on_empty": false },
+    "save_data": { "interval": 1, "avg": true, "road": true, "travel": true,
+                   "agent": true, "turn_counts": true }
+  },
+  "road_network": {
+    "edges_file": "edges.csv",
+    "node_properties_file": "nodes.csv",
+    "set_edge_weight": { "weight": "length", "threshold": 1.0 }
+  },
+  "dynamics": {
+    "seed": 42,
+    "max_concurrency": 2,
+    "agent_insertion_method": "RANDOM_ODS",
+    "error_probability": 0.05,
+    "kill_stagnant_agents": 10.0,
+    "mean_travel_distance": 1000.0,
+    "mean_travel_time": 600,
+    "importODsFromCSV": { "file": "ods.csv", "separator": ",", "edges": true }
+  }
+})");
+
+  TrafficSimulator simulator{jsonPath.string()};
+  CHECK_EQ(simulator.name(), "all options");
+  CHECK_EQ(simulator.safeName(), "all_options");
+  CHECK_EQ(simulator.strInitTime(), "2024-01-01 00:00:00");
+  CHECK_EQ(simulator.strEndTime(), "2024-01-01 00:00:20");
+  REQUIRE(simulator.database() != nullptr);
+  REQUIRE(simulator.dynamics() != nullptr);
+  CHECK_EQ(simulator.dynamics()->origins().size(), 1);
+  CHECK_EQ(simulator.dynamics()->destinations().size(), 1);
+
+  simulator.run(std::vector<std::size_t>{2, 2, 2, 2});
+
+  auto const dbPath = outputDir / "all_options.db";
+  {
+    SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+    CHECK_GT(rowCount(db, "travel_data"), 0);
+    CHECK_GT(rowCount(db, "agent_data"), 0);
+    CHECK_GT(rowCount(db, "turn_counts"), 0);
+    SQLite::Statement coil(db, "SELECT coilcode FROM edges WHERE id = 0");
+    REQUIRE(coil.executeStep());
+    CHECK_EQ(coil.getColumn(0).getString(), "c0");
+    SQLite::Statement node(db, "SELECT type, geometry FROM nodes WHERE id = 1");
+    REQUIRE(node.executeStep());
+    CHECK_EQ(node.getColumn(0).getString(), "roundabout");
+    CHECK_FALSE(node.getColumn(1).isNull());
+  }
+
+  std::filesystem::remove_all(inputDir);
+  std::filesystem::remove_all(outputDir);
+  std::filesystem::remove(jsonPath);
+}
+
+TEST_CASE("TrafficSimulator JSON config errors") {
+  auto const inputDir = makeUniqueDirectory("traffic_simulator_err_input_");
+  auto const outputDir = makeUniqueDirectory("traffic_simulator_err_output_");
+  auto const jsonPath = makeUniquePath("traffic_simulator_err_config_", ".json");
+  writeTinyEdgesCsv(inputDir / "edges.csv");
+  writeFile(inputDir / "nodes.csv", "id;type;geometry\n0;normal;\n");
+
+  // Builds a config from the body of the "general" section and the other sections
+  auto const makeConfig = [&](std::string const& generalExtra,
+                              std::string const& otherSections) {
+    return R"({ "general": { "input_folder": ")" + inputDir.string() +
+           R"(", "output_folder": ")" + outputDir.string() + R"(", "name": "err")" +
+           generalExtra + "}" + otherSections + "}";
+  };
+  std::string const roadNetwork{
+      R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
+      R"("nodes.csv", "set_edge_weight": { "weight": "length", "threshold": 1.0 } })"};
+  auto const importConfig = [&](std::string const& content) {
+    writeFile(jsonPath, content);
+    TrafficSimulator simulator;
+    simulator.importConfig(jsonPath.string());
+  };
+
+  SUBCASE("The file does not exist") {
+    CHECK_THROWS_AS(TrafficSimulator{(inputDir / "missing.json").string()},
+                    std::runtime_error);
+  }
+  SUBCASE("The root is not an object") {
+    CHECK_THROWS_AS(importConfig("[1, 2]"), std::runtime_error);
+  }
+  SUBCASE("A required section or field is missing") {
+    CHECK_THROWS_AS(importConfig("{}"), std::runtime_error);
+    CHECK_THROWS_AS(importConfig(R"({ "general": {} })"), std::runtime_error);
+    CHECK_THROWS_AS(importConfig(makeConfig("", "")), std::runtime_error);
+    CHECK_THROWS_AS(importConfig(makeConfig("", roadNetwork)), std::runtime_error);
+  }
+  SUBCASE("A time field is malformed") {
+    CHECK_THROWS_AS(importConfig(makeConfig(R"(, "init_time": true)", "")),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(importConfig(makeConfig(R"(, "init_time": "2024")", "")),
+                    std::invalid_argument);
+  }
+  SUBCASE("dynamic_ods is malformed") {
+    CHECK_THROWS_AS(importConfig(makeConfig(R"(, "dynamic_ods": {})", "")),
+                    std::runtime_error);
+    CHECK_THROWS_AS(importConfig(makeConfig(R"(, "dynamic_ods": [1])", "")),
+                    std::runtime_error);
+  }
+  SUBCASE("The agent insertion method is unknown") {
+    CHECK_THROWS_AS(
+        importConfig(makeConfig(
+            "", roadNetwork + R"(, "dynamics": { "agent_insertion_method": "FOO" })")),
+        std::runtime_error);
+  }
+  SUBCASE("Every other agent insertion method is accepted") {
+    for (auto const* method : {"CONDITIONAL_RANDOM_ODS", "UNIFORM"}) {
+      CHECK_NOTHROW(importConfig(
+          makeConfig("",
+                     roadNetwork + R"(, "dynamics": { "agent_insertion_method": ")" +
+                         method + R"(" })")));
+    }
+  }
+
+  std::filesystem::remove_all(inputDir);
+  std::filesystem::remove_all(outputDir);
+  std::filesystem::remove(jsonPath);
+}
+
 TEST_CASE("TrafficSimulator - dynamic ODs") {
   SUBCASE("TrafficSimulator - dynamic ODs") {
     auto DATA_FOLDER = std::filesystem::current_path().parent_path() / "test" / "data";
@@ -217,6 +385,7 @@ TEST_CASE("TrafficSimulator - dynamic ODs") {
         // The throw happens at run-time, not at config-import time
         THEN("Running the simulation throws a std::runtime_error") {
           CHECK_THROWS_AS(simulator.run({10}), std::runtime_error);
+          CHECK_THROWS_AS(simulator.run(1, 1, 1), std::runtime_error);
         }
       }
 
@@ -253,11 +422,17 @@ TEST_CASE("TrafficSimulator - dynamic ODs") {
         simulator.importConfig(configPath);
 
         CHECK_NOTHROW(simulator.run({1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+        CHECK_EQ(simulator.dynamics()->time_step(), 10);
+      }
 
-        THEN("The simulator runs to completion without error") {
-          // Structural: if we get here both swaps executed cleanly
-          CHECK(true);
-        }
+      WHEN("dynamic_ods contains two updates and we run a slow charge") {
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_two_phases.json").string();
+        TrafficSimulator simulator;
+        simulator.importConfig(configPath);
+        simulator.setTimeFrame(0, 10);
+
+        CHECK_NOTHROW(simulator.run(1, 1, 5));
+        CHECK_EQ(simulator.dynamics()->time_step(), 10);
       }
 
       WHEN("The OD file referenced in dynamic_ods does not exist") {
@@ -572,4 +747,110 @@ TEST_CASE("TrafficSimulator CSV turn counts persistence") {
 
   std::filesystem::remove(edgesPath);
   std::filesystem::remove(turnCountsCsv);
+}
+TEST_CASE("TrafficSimulator run validation") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  SUBCASE("Running without a road network throws") {
+    TrafficSimulator simulator;
+    CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}), std::runtime_error);
+    CHECK_THROWS_AS(simulator.run(1, 1, 1), std::runtime_error);
+  }
+  SUBCASE("Invalid schedules throw") {
+    TrafficSimulator simulator;
+    simulator.importRoadNetwork(edgesPath.string());
+    simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+    CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{}), std::runtime_error);
+    CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}, 0), std::invalid_argument);
+    CHECK_THROWS_AS(simulator.run(1, 0, 1), std::invalid_argument);
+    CHECK_THROWS_AS(simulator.run(1, 1, 0), std::invalid_argument);
+
+    simulator.setTimeFrame(10, 16);
+    // An end time not after the init time is ignored, leaving end (16) < init (20)
+    simulator.setTimeFrame(20, 20);
+    CHECK_EQ(simulator.endTime(), 16);
+    CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}), std::runtime_error);
+    CHECK_THROWS_AS(simulator.run(1, 1, 1), std::runtime_error);
+  }
+
+  std::filesystem::remove(edgesPath);
+}
+
+TEST_CASE("TrafficSimulator run schedule") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.setName("traffic_simulator_schedule_test");
+  simulator.importRoadNetwork(edgesPath.string());
+  REQUIRE(simulator.dynamics() != nullptr);
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+
+  SUBCASE("An explicit insertion delta time overrides the end time") {
+    simulator.setTimeFrame(0, 100);
+    simulator.run(std::vector<std::size_t>{1, 1}, 3);
+    CHECK_EQ(simulator.endTime(), 6);
+    CHECK_EQ(simulator.dynamics()->time_step(), 6);
+  }
+  SUBCASE("A saving interval of 0 saves a single snapshot") {
+    // 7 steps for 2 insertions: the delta time is 3 and step 6 exceeds the schedule
+    simulator.setTimeFrame(0, 7);
+    simulator.saveData(0, true);
+    simulator.run(std::vector<std::size_t>{1, 1});
+    CHECK_EQ(simulator.dynamics()->time_step(), 7);
+
+    auto const avgCsv = std::filesystem::current_path() /
+                        (std::to_string(static_cast<std::uint64_t>(simulator.id())) +
+                         "_traffic_simulator_schedule_test_avg_stats.csv");
+    REQUIRE(std::filesystem::exists(avgCsv));
+    std::ifstream avgFile(avgCsv);
+    std::size_t nLines{0};
+    for (std::string line; std::getline(avgFile, line);) {
+      ++nLines;
+    }
+    CHECK_EQ(nLines, 2);  // header + one snapshot
+    avgFile.close();
+    std::filesystem::remove(avgCsv);
+  }
+
+  std::filesystem::remove(edgesPath);
+}
+
+TEST_CASE("TrafficSimulator slow charge with travel and agent data") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.setName("traffic_simulator_slow_charge_test");
+  simulator.importRoadNetwork(edgesPath.string());
+  REQUIRE(simulator.dynamics() != nullptr);
+  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
+
+  simulator.saveData(5, false, false, true, true);
+  simulator.setTimeFrame(0, 20);
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+  // One agent at t=0, then insertions every 2 steps, checked every 4 steps
+  simulator.run(1, 2, 4);
+
+  CHECK_EQ(simulator.dynamics()->time_step(), 20);
+  auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
+      simulator.dynamics()->agentStats();
+  CHECK_GE(nAdded, 10);
+  CHECK_GT(nArrived, 0);
+
+  auto const baseName = std::to_string(static_cast<std::uint64_t>(simulator.id())) +
+                        "_traffic_simulator_slow_charge_test";
+  auto const travelCsv =
+      std::filesystem::current_path() / (baseName + "_travel_data.csv");
+  auto const agentCsv = std::filesystem::current_path() / (baseName + "_agent_data.csv");
+  REQUIRE(std::filesystem::exists(travelCsv));
+  REQUIRE(std::filesystem::exists(agentCsv));
+  CHECK_EQ(firstLine(travelCsv), "datetime;time_step;distance_m;travel_time_s");
+  CHECK_EQ(firstLine(agentCsv), "agent_id;edge_id;time_step_in;time_step_out");
+
+  std::filesystem::remove(edgesPath);
+  std::filesystem::remove(travelCsv);
+  std::filesystem::remove(agentCsv);
 }

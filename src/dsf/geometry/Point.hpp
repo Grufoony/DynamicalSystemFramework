@@ -53,7 +53,7 @@ struct std::formatter<dsf::geometry::Point> {
 
   template <typename FormatContext>
   auto format(dsf::geometry::Point const& point, FormatContext& ctx) const {
-    return std::format_to(ctx.out(), "POINT ({}, {})", point.x(), point.y());
+    return std::format_to(ctx.out(), "POINT ({} {})", point.x(), point.y());
   }
 };
 

@@ -14,6 +14,11 @@
 #include <string_view>
 
 #ifdef _WIN32
+// Keep <windows.h> from defining min/max macros, which break std::max and
+// std::numeric_limits<T>::max() in every file including this header
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <io.h>
 #include <windows.h>
 #define isatty _isatty

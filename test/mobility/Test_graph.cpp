@@ -164,6 +164,40 @@ TEST_CASE("RoadNetwork") {
 
       std::filesystem::remove(csvPath);
     }
+    GIVEN("A graph object and other traffic light CSVs") {
+      RoadNetwork graph;
+      graph.addNDefaultNodes(4);
+      graph.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
+                       Street{101, std::make_pair(2, 1), 50., 13.8888888889});
+
+      auto const csvPath =
+          std::filesystem::temp_directory_path() / "dsf_import_traffic_lights_other.csv";
+      auto const importCsv = [&](std::string const& rows) {
+        {
+          std::ofstream out{csvPath};
+          REQUIRE(out.is_open());
+          out << "id;sourceId;cycleTime;greenTime\n" << rows;
+        }
+        graph.importTrafficLights(csvPath.string());
+      };
+
+      THEN("Invalid definitions throw") {
+        CHECK_THROWS_AS(graph.importTrafficLights("i_do_not_exist.csv"),
+                        std::runtime_error);
+        CHECK_THROWS_AS(importCsv("1;0;30;60\n"), std::invalid_argument);
+        CHECK_THROWS_AS(importCsv("1;0;90;30\n1;2;60;30\n"), std::invalid_argument);
+        CHECK_THROWS_AS(importCsv("1;0;70000;30\n"), std::invalid_argument);
+      }
+      THEN("Green times covering the whole cycle give a single phase") {
+        importCsv("1;0;60;60\n\n1;2;60;60\n");
+        auto const& tl = graph.node<TrafficLight>(1);
+        REQUIRE_EQ(tl.phases().size(), 1);
+        CHECK(tl.phases()[0].containsGreen(100, dsf::Direction::ANY));
+        CHECK(tl.phases()[0].containsGreen(101, dsf::Direction::ANY));
+      }
+
+      std::filesystem::remove(csvPath);
+    }
   }
   SUBCASE("exportTrafficLights") {
     GIVEN("A graph object with a two-phase traffic light") {
@@ -182,6 +216,8 @@ TEST_CASE("RoadNetwork") {
       phase1.addGreen(101);  // Direction::ANY
 
       tl.setPhases({phase0, phase1});
+      // A traffic light without phases has nothing to export and must be skipped
+      graph.makeTrafficLight(3);
 
       auto const csvPath =
           std::filesystem::temp_directory_path() / "dsf_export_traffic_lights.csv";
@@ -231,47 +267,6 @@ TEST_CASE("RoadNetwork") {
           CHECK_FALSE(rows.contains(3));  // street 102 not green in any phase
         }
 
-        THEN(
-            "The CSV contains one row per green street with the right cycle/green "
-            "times") {
-          std::ifstream in{csvPath};
-          REQUIRE(in.is_open());
-
-          std::string header;
-          std::getline(in, header);
-          CHECK_EQ(header, "id;sourceId;cycleTime;greenTime");
-
-          std::unordered_map<Id, std::pair<Delay, Delay>> rows;
-          std::string line;
-          std::size_t nRows{0};
-          while (std::getline(in, line)) {
-            if (line.empty())
-              continue;
-            ++nRows;
-            std::istringstream iss{line};
-            std::string strId, strSource, strCycle, strGreen;
-            std::getline(iss, strId, ';');
-            std::getline(iss, strSource, ';');
-            std::getline(iss, strCycle, ';');
-            std::getline(iss, strGreen, '\n');
-
-            CHECK_EQ(static_cast<Id>(std::stoul(strId)), 1);
-            auto const sourceId = static_cast<Id>(std::stoul(strSource));
-            rows[sourceId] = {static_cast<Delay>(std::stoul(strCycle)),
-                              static_cast<Delay>(std::stoul(strGreen))};
-          }
-
-          CHECK_EQ(nRows, 2);
-          REQUIRE(rows.contains(0));
-          REQUIRE(rows.contains(2));
-          CHECK_EQ(rows.at(0).first, 90);
-          CHECK_EQ(rows.at(0).second, 30);
-          CHECK_EQ(rows.at(2).first, 90);
-          CHECK_EQ(rows.at(2).second, 60);
-
-          CHECK_FALSE(rows.contains(3));
-        }
-
         THEN("Re-importing the exported CSV reconstructs an equivalent traffic light") {
           RoadNetwork roundTrip;
           roundTrip.addNDefaultNodes(4);
@@ -292,6 +287,14 @@ TEST_CASE("RoadNetwork") {
           CHECK(tl2.isGreen(100, dsf::Direction::ANY));        // active phase
           CHECK_FALSE(tl2.isGreen(101, dsf::Direction::ANY));  // not active yet
           CHECK_FALSE(tl2.isGreen(102, dsf::Direction::RIGHT));
+        }
+      }
+      WHEN("We export to a path which cannot be opened") {
+        auto const badPath =
+            std::filesystem::temp_directory_path() / "dsf_missing_dir" / "tl.csv";
+        THEN("An exception is thrown") {
+          CHECK_THROWS_AS(graph.exportTrafficLights(badPath.string()),
+                          std::runtime_error);
         }
       }
 
@@ -574,6 +577,177 @@ TEST_CASE("RoadNetwork") {
           std::filesystem::remove(tmpGeoJsonPath);
         }
       }
+
+      WHEN("We import edges from CSV with optional and invalid fields") {
+        auto const tmpCsvPath =
+            std::filesystem::temp_directory_path() / "dsf_optional_edges_test.csv";
+        {
+          std::ofstream tmpCsv(tmpCsvPath);
+          REQUIRE(tmpCsv.is_open());
+          tmpCsv << "id;source;target;length;maxspeed;nlanes;type;name;coilcode;capacity;"
+                    "status;forbidden_turns;lane_mapping\n";
+          tmpCsv << "10;0;1;100;50;2;primary;a;C1;5;open;[11, 12];[left, straight]\n";
+          // Invalid maxspeed, nlanes and capacity fall back to their defaults
+          tmpCsv << "11;1;2;100;fast;many;secondary;b;null;big;CLOSED;;"
+                    "[straight_right, straight_left, through]\n";
+          tmpCsv << "12;2;3;100;50;1;tertiary;c;;;weird;[x];[any]\n";
+          tmpCsv << "13;3;3;100;50;1;tertiary;self_loop;;;;;\n";
+        }
+
+        RoadNetwork graphWithOptionals;
+        graphWithOptionals.importEdges(tmpCsvPath.string());
+        std::filesystem::remove(tmpCsvPath);
+
+        THEN("Valid fields are imported, invalid ones are skipped") {
+          CHECK_EQ(graphWithOptionals.nEdges(), 3);
+          CHECK_EQ(graphWithOptionals.nCoils(), 1);
+
+          auto const& e10 = graphWithOptionals.edge(static_cast<Id>(10));
+          CHECK_EQ(e10.counterName(), "c1");
+          CHECK_EQ(e10.capacity(), 5);
+          CHECK(e10.isActive());
+          CHECK_EQ(e10.forbiddenTurns(), std::set<Id>{11, 12});
+          CHECK_EQ(e10.laneMapping(),
+                   std::vector<Direction>{Direction::STRAIGHT, Direction::LEFT});
+
+          auto const& e11 = graphWithOptionals.edge(static_cast<Id>(11));
+          CHECK_FALSE(e11.hasCoil());
+          CHECK_FALSE(e11.isActive());
+          CHECK_EQ(e11.maxSpeed(), doctest::Approx(30. / 3.6));
+          // The lane mapping sets the number of lanes
+          CHECK_EQ(e11.nLanes(), 3);
+          CHECK_EQ(e11.laneMapping(),
+                   std::vector<Direction>{Direction::RIGHTANDSTRAIGHT,
+                                          Direction::ANY,
+                                          Direction::LEFTANDSTRAIGHT});
+
+          auto const& e12 = graphWithOptionals.edge(static_cast<Id>(12));
+          CHECK(e12.isActive());
+          CHECK(e12.forbiddenTurns().empty());
+          CHECK_EQ(e12.laneMapping(), std::vector<Direction>{Direction::ANY});
+        }
+      }
+
+      WHEN("We import edges from GeoJSON with optional and invalid fields") {
+        auto const tmpGeoJsonPath =
+            std::filesystem::temp_directory_path() / "dsf_optional_edges_test.geojson";
+        {
+          std::ofstream tmpGeoJson(tmpGeoJsonPath);
+          REQUIRE(tmpGeoJson.is_open());
+          tmpGeoJson << R"({
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature",
+      "properties": { "id": 500, "source": 30, "target": 31, "length": 50.0,
+        "maxspeed": "50", "nlanes": "2", "type": "primary", "name": "a",
+        "coilcode": "C5", "forbidden_turns": [501, "x"],
+        "lane_mapping": ["Left", "straight", 3],
+        "custom_int": 7, "custom_str": "hello", "custom_null": null, "custom_arr": [1] },
+      "geometry": { "type": "LineString", "coordinates": [[8.0, 45.0], [8.1, 45.1]] } },
+    { "type": "Feature",
+      "properties": { "id": 501, "source": 31, "target": 32, "length": 50.0,
+        "maxspeed": "fast", "nlanes": "x", "type": ["secondary", 5], "name": "b",
+        "coilcode": 42, "forbidden_turns": "none", "lane_mapping": "none",
+        "mobility_class": "high" },
+      "geometry": { "type": "LineString", "coordinates": [[8.1, 45.1], [8.2, 45.2]] } },
+    { "type": "Feature",
+      "properties": { "id": 502, "source": 32, "target": 33, "length": 50.0,
+        "maxspeed": 50, "nlanes": 1, "type": 7, "name": "c", "coilcode": -3 },
+      "geometry": { "type": "LineString", "coordinates": [[8.2, 45.2], [8.3, 45.3]] } },
+    { "type": "Feature",
+      "properties": { "id": 503, "source": 33, "target": 34, "length": 50.0,
+        "maxspeed": 50, "nlanes": 1, "type": "residential", "name": "d",
+        "coilcode": true },
+      "geometry": { "type": "LineString", "coordinates": [[8.3, 45.3], [8.4, 45.4]] } },
+    { "type": "Feature",
+      "properties": { "id": 504, "source": 34, "target": 34, "length": 50.0,
+        "maxspeed": 50, "nlanes": 1, "type": "residential", "name": "loop" },
+      "geometry": { "type": "LineString", "coordinates": [[8.4, 45.4], [8.4, 45.4]] } }
+  ]
+})";
+        }
+
+        RoadNetwork graphWithOptionals;
+        graphWithOptionals.importEdges(tmpGeoJsonPath.string());
+        std::filesystem::remove(tmpGeoJsonPath);
+
+        THEN("Valid fields are imported, invalid ones are skipped") {
+          CHECK_EQ(graphWithOptionals.nEdges(), 4);
+          CHECK_EQ(graphWithOptionals.nCoils(), 4);
+
+          auto const& e500 = graphWithOptionals.edge(static_cast<Id>(500));
+          CHECK_EQ(e500.maxSpeed(), doctest::Approx(50. / 3.6));
+          CHECK_EQ(e500.nLanes(), 2);
+          CHECK_EQ(e500.mobilityClass(), 64u);
+          CHECK_EQ(e500.counterName(), "C5");
+          CHECK_EQ(e500.forbiddenTurns(), std::set<Id>{501});
+          CHECK_EQ(e500.laneMapping(),
+                   std::vector<Direction>{Direction::STRAIGHT, Direction::LEFT});
+          CHECK_EQ(e500.getAttribute<std::int64_t>("custom_int"), 7);
+          CHECK_EQ(e500.getAttribute<std::string>("custom_str"), "hello");
+          CHECK(e500.attributes().contains("custom_null"));
+          CHECK_FALSE(e500.attributes().contains("custom_arr"));
+
+          auto const& e501 = graphWithOptionals.edge(static_cast<Id>(501));
+          CHECK_EQ(e501.maxSpeed(), doctest::Approx(30. / 3.6));
+          CHECK_EQ(e501.nLanes(), 1);
+          CHECK_EQ(e501.mobilityClass(), 0u);
+          CHECK_EQ(e501.counterName(), "42");
+          CHECK(e501.forbiddenTurns().empty());
+
+          CHECK_EQ(graphWithOptionals.edge(static_cast<Id>(502)).counterName(), "-3");
+        }
+      }
+
+      WHEN("We import from invalid files") {
+        auto const tmpPath = std::filesystem::temp_directory_path() / "dsf_invalid.txt";
+        auto const tmpJsonPath =
+            std::filesystem::temp_directory_path() / "dsf_invalid.json";
+        {
+          std::ofstream tmpFile(tmpPath);
+          std::ofstream tmpJson(tmpJsonPath);
+          REQUIRE(tmpFile.is_open());
+          REQUIRE(tmpJson.is_open());
+          tmpJson << "{ not json";
+        }
+        THEN("An exception is thrown") {
+          CHECK_THROWS_AS(graph.importNodeProperties(tmpPath.string()),
+                          std::runtime_error);
+          CHECK_THROWS_AS(graph.importEdges("i_do_not_exist.csv"), std::runtime_error);
+          CHECK_THROWS_AS(graph.importEdges(tmpPath.string()), std::invalid_argument);
+          CHECK_THROWS_AS(graph.importEdges(tmpJsonPath.string()), std::runtime_error);
+
+          graph.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
+          CHECK_THROWS_AS(graph.importNodeProperties("i_do_not_exist.csv"),
+                          std::runtime_error);
+          CHECK_THROWS_AS(graph.importNodeProperties(tmpPath.string()),
+                          std::invalid_argument);
+          CHECK_THROWS_AS(graph.importNodeProperties(tmpJsonPath.string()),
+                          std::invalid_argument);
+        }
+        std::filesystem::remove(tmpPath);
+        std::filesystem::remove(tmpJsonPath);
+      }
+
+      WHEN("We import node properties for unknown nodes or mismatching geometries") {
+        graph.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
+        auto const tmpCsvPath =
+            std::filesystem::temp_directory_path() / "dsf_node_properties_test.csv";
+        {
+          std::ofstream tmpCsv(tmpCsvPath);
+          REQUIRE(tmpCsv.is_open());
+          tmpCsv << "id;type;geometry\n";
+          tmpCsv << "99999;traffic_signals;POINT (0 0)\n";
+          tmpCsv << "0;N/A;POINT (10 10)\n";
+        }
+        auto const oldGeometry = graph.node(0).geometry();
+        graph.importNodeProperties(tmpCsvPath.string());
+        std::filesystem::remove(tmpCsvPath);
+        THEN("Unknown nodes are skipped and existing geometries are kept") {
+          CHECK_EQ(graph.nTrafficLights(), 0);
+          CHECK_EQ(graph.node(0).geometry(), oldGeometry);
+        }
+      }
     }
     SUBCASE("street") {
       /// GIVEN: a graph
@@ -826,6 +1000,14 @@ TEST_CASE("RoadNetwork") {
       WHEN("We make node 0 a roundabout") {
         graph.makeRoundabout(0);
         THEN("The node 0 is a roundabout") { CHECK(graph.node(0).isRoundabout()); }
+      }
+      WHEN("We make node 1 a station") {
+        auto& station = graph.makeStation(1, 5);
+        THEN("The node 1 is a station and keeps its connections") {
+          CHECK(station.isStation());
+          CHECK_EQ(station.managementTime(), 5);
+          CHECK_EQ(station.ingoingEdges().size(), 1);
+        }
       }
     }
   }
@@ -1159,7 +1341,15 @@ TEST_CASE("RoadNetwork") {
     CHECK(nodesCsv.find("id,type,geometry,capacity,transportCapacity,name") !=
           std::string::npos);
     CHECK(nodesCsv.find("intersection") != std::string::npos);
-    CHECK(nodesCsv.find("POINT (") != std::string::npos);
+    CHECK(nodesCsv.find("POINT (8 45)") != std::string::npos);
+
+    // The exported node geometries can be imported back
+    RoadNetwork roundTrip{};
+    roundTrip.addNode(0);
+    roundTrip.addNode(1);
+    roundTrip.importNodeProperties(nodesPath.string(), ',');
+    CHECK_EQ(roundTrip.node(0).geometry(), dsf::geometry::Point(8.0, 45.0));
+    CHECK_EQ(roundTrip.node(1).geometry(), dsf::geometry::Point(8.1, 45.1));
 
     std::filesystem::remove(edgesPath);
     std::filesystem::remove(nodesPath);
@@ -1932,6 +2122,9 @@ TEST_CASE("RoadStatus") {
     // Re-open street
     graph.setStreetStatusById(0, RoadStatus::OPEN);
     CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::OPEN);
+
+    CHECK_THROWS_AS(graph.setStreetStatusById(999, RoadStatus::CLOSED),
+                    std::out_of_range);
   }
 
   SUBCASE("setStreetStatusByName") {
@@ -2315,6 +2508,29 @@ TEST_CASE("Change Street Lanes") {
         }
       }
     }
+  }
+}
+
+TEST_CASE("Change Street Capacity") {
+  RoadNetwork graph{};
+  graph.addStreets(Street{0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Main Street"},
+                   Street{1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Street"},
+                   Street{2, std::make_pair(2, 3), 100.0, 13.8888, 1, "Side Road"});
+  auto const initialCapacity = graph.edge(0).capacity();
+  auto const initialTotalCapacity = graph.capacity();
+
+  SUBCASE("changeStreetCapacityById") {
+    graph.changeStreetCapacityById(0, 2.);
+    CHECK_EQ(graph.edge(0).capacity(), 2 * initialCapacity);
+    CHECK_EQ(graph.edge(1).capacity(), initialCapacity);
+    CHECK_EQ(graph.capacity(), initialTotalCapacity + initialCapacity);
+    CHECK_THROWS_AS(graph.changeStreetCapacityById(999, 2.), std::out_of_range);
+  }
+  SUBCASE("changeStreetCapacityByName") {
+    graph.changeStreetCapacityByName("Main", 0.5);
+    CHECK_EQ(graph.edge(0).capacity(), std::ceil(initialCapacity * 0.5));
+    CHECK_EQ(graph.edge(1).capacity(), std::ceil(initialCapacity * 0.5));
+    CHECK_EQ(graph.edge(2).capacity(), initialCapacity);
   }
 }
 
