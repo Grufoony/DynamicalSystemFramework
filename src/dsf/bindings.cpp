@@ -1357,7 +1357,15 @@ Returns:
       .def(
           "transitionMatrix",
           [](dsf::mobility::FirstOrderDynamics const& self) {
-            return self.transitionMatrix();
+            nb::dict py_result;
+            for (auto const& [srcStreetId, row] : self.transitionMatrix()) {
+              nb::dict py_row;
+              for (auto const& [dstStreetId, probability] : row) {
+                py_row[nb::cast(dstStreetId)] = nb::cast(probability);
+              }
+              py_result[nb::cast(srcStreetId)] = py_row;
+            }
+            return py_result;
           },
           R"doc(Get the transition matrix used to route random agents.
 

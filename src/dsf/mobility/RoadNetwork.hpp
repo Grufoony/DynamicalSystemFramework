@@ -44,7 +44,7 @@ namespace dsf::mobility {
   private:
     std::size_t m_capacity = 0;
 
-    std::unordered_map<Id, double> m_computeEdgeDistancesToTarget(
+    ankerl::unordered_dense::map<Id, double> m_computeEdgeDistancesToTarget(
         Id const targetEdgeId) const final;
 
     /// @brief If every node has coordinates, set the street angles
@@ -267,9 +267,9 @@ namespace dsf::mobility {
     void exportCSV(std::string_view const folder) const;
   };
 
-  inline std::unordered_map<Id, double> RoadNetwork::m_computeEdgeDistancesToTarget(
-      Id const targetEdgeId) const {
-    std::unordered_map<Id, double> distToTarget;
+  inline ankerl::unordered_dense::map<Id, double>
+  RoadNetwork::m_computeEdgeDistancesToTarget(Id const targetEdgeId) const {
+    ankerl::unordered_dense::map<Id, double> distToTarget;
     distToTarget.reserve(nEdges());
     for (auto const& pair : m_edges) {
       distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());

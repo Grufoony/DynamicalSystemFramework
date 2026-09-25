@@ -19,10 +19,9 @@
 #include <stop_token>
 #include <thread>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
+#include <ankerl/unordered_dense.h>
 #include <spdlog/spdlog.h>
 #include <tbb/blocked_range.h>
 #include <tbb/combinable.h>
@@ -33,8 +32,8 @@ namespace dsf {
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   class Network {
   protected:
-    std::unordered_map<Id, std::unique_ptr<node_t>> m_nodes;
-    std::unordered_map<Id, std::unique_ptr<edge_t>> m_edges;
+    ankerl::unordered_dense::map<Id, std::unique_ptr<node_t>> m_nodes;
+    ankerl::unordered_dense::map<Id, std::unique_ptr<edge_t>> m_edges;
 
     std::function<double(edge_t const&)> m_weightFunction =
         []([[maybe_unused]] edge_t const& edge) {
@@ -54,13 +53,14 @@ namespace dsf {
     edge_t* m_findEdge(Id const source, Id const target) const;
 
   private:
-    std::unordered_map<Id, double> m_computeDistancesToTarget(Id const targetNodeId) const;
-    virtual std::unordered_map<Id, double> m_computeEdgeDistancesToTarget(
+    ankerl::unordered_dense::map<Id, double> m_computeDistancesToTarget(
+        Id const targetNodeId) const;
+    virtual ankerl::unordered_dense::map<Id, double> m_computeEdgeDistancesToTarget(
         Id const targetEdgeId) const;
 
-    std::unordered_map<Id, double> m_computeDistancesFromSource(
+    ankerl::unordered_dense::map<Id, double> m_computeDistancesFromSource(
         Id const sourceNodeId) const;
-    std::unordered_map<Id, double> m_computeEdgeDistancesFromSource(
+    ankerl::unordered_dense::map<Id, double> m_computeEdgeDistancesFromSource(
         Id const sourceEdgeId) const;
 
   public:
@@ -281,9 +281,9 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline std::unordered_map<Id, double>
+  inline ankerl::unordered_dense::map<Id, double>
   Network<node_t, edge_t>::m_computeDistancesToTarget(Id const targetId) const {
-    std::unordered_map<Id, double> distToTarget;
+    ankerl::unordered_dense::map<Id, double> distToTarget;
     distToTarget.reserve(nNodes());
     for (auto const& pair : m_nodes) {
       distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
@@ -325,9 +325,9 @@ namespace dsf {
   }
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline std::unordered_map<Id, double>
+  inline ankerl::unordered_dense::map<Id, double>
   Network<node_t, edge_t>::m_computeEdgeDistancesToTarget(Id const targetEdgeId) const {
-    std::unordered_map<Id, double> distToTarget;
+    ankerl::unordered_dense::map<Id, double> distToTarget;
     distToTarget.reserve(nEdges());
     for (auto const& pair : m_edges) {
       distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
@@ -371,9 +371,9 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline std::unordered_map<Id, double>
+  inline ankerl::unordered_dense::map<Id, double>
   Network<node_t, edge_t>::m_computeDistancesFromSource(Id const sourceId) const {
-    std::unordered_map<Id, double> distFromSource;
+    ankerl::unordered_dense::map<Id, double> distFromSource;
     distFromSource.reserve(nNodes());
     for (auto const& pair : m_nodes) {
       distFromSource.emplace(pair.first, std::numeric_limits<double>::infinity());
@@ -416,9 +416,9 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline std::unordered_map<Id, double>
+  inline ankerl::unordered_dense::map<Id, double>
   Network<node_t, edge_t>::m_computeEdgeDistancesFromSource(Id const sourceEdgeId) const {
-    std::unordered_map<Id, double> distFromSource;
+    ankerl::unordered_dense::map<Id, double> distFromSource;
     distFromSource.reserve(nEdges());
     for (auto const& pair : m_edges) {
       distFromSource.emplace(pair.first, std::numeric_limits<double>::infinity());
@@ -600,7 +600,7 @@ namespace dsf {
     auto const distFromSource = m_computeDistancesFromSource(sourceId);
 
     PathCollection candidate;
-    std::unordered_map<Id, std::vector<Id>> reverseCandidate;
+    ankerl::unordered_dense::map<Id, std::vector<Id>> reverseCandidate;
 
     for (auto const& [nodeId, pNode] : this->nodes()) {
       auto const nodeDistFromSource = distFromSource.at(nodeId);
@@ -657,7 +657,7 @@ namespace dsf {
       }
     }
 
-    std::unordered_set<Id> reachableFromSource;
+    ankerl::unordered_dense::set<Id> reachableFromSource;
     std::vector<Id> stack{sourceId};
     while (!stack.empty()) {
       auto const currentNode = stack.back();
@@ -679,7 +679,7 @@ namespace dsf {
       }
     }
 
-    std::unordered_set<Id> canReachTarget;
+    ankerl::unordered_dense::set<Id> canReachTarget;
     stack.push_back(targetId);
     while (!stack.empty()) {
       auto const currentNode = stack.back();
@@ -747,7 +747,7 @@ namespace dsf {
     }
 
     // Each TBB thread accumulates its own BC increments; we merge afterwards.
-    tbb::combinable<std::unordered_map<Id, double>> localBC;
+    tbb::combinable<ankerl::unordered_dense::map<Id, double>> localBC;
 
     tbb::parallel_for(std::size_t(0), sourceIds.size(), [&](std::size_t idx) {
       auto& local = localBC.local();
@@ -760,7 +760,7 @@ namespace dsf {
         double delta{0.0};
       };
 
-      std::unordered_map<Id, PathDataHelper> pathData;
+      ankerl::unordered_dense::map<Id, PathDataHelper> pathData;
       pathData.reserve(N_NODES);
       for (auto const& [nId, _] : m_nodes) {
         pathData.emplace(nId, PathDataHelper{});
@@ -779,7 +779,7 @@ namespace dsf {
           pq;
       pq.push({0.0, sourceId});
 
-      std::unordered_set<Id> visited;
+      ankerl::unordered_dense::set<Id> visited;
 
       while (!pq.empty()) {
         auto [d, v] = pq.top();
@@ -862,7 +862,7 @@ namespace dsf {
     }
 
     // Each TBB thread accumulates its own edge BC increments.
-    tbb::combinable<std::unordered_map<Id, double>> localBC;
+    tbb::combinable<ankerl::unordered_dense::map<Id, double>> localBC;
 
     tbb::parallel_for(size_t(0), sourceIds.size(), [&](size_t idx) {
       auto& local = localBC.local();
@@ -875,7 +875,7 @@ namespace dsf {
         double delta{0.0};
       };
 
-      std::unordered_map<Id, PathDataHelper> pathData;
+      ankerl::unordered_dense::map<Id, PathDataHelper> pathData;
       pathData.reserve(N_NODES);
       for (auto const& [nId, _] : m_nodes) {
         pathData.emplace(nId, PathDataHelper{});
@@ -894,7 +894,7 @@ namespace dsf {
           pq;
       pq.push({0.0, sourceId});
 
-      std::unordered_set<Id> visited;
+      ankerl::unordered_dense::set<Id> visited;
 
       while (!pq.empty()) {
         auto [d, v] = pq.top();
@@ -1001,13 +1001,13 @@ namespace dsf {
       nodeIds.push_back(id);
     }
 
-    std::unordered_map<Id, size_t> nodeIndex;
+    ankerl::unordered_dense::map<Id, size_t> nodeIndex;
     nodeIndex.reserve(N_NODES);
     for (std::size_t i = 0; i < N_NODES; ++i) {
       nodeIndex.emplace(nodeIds[i], i);
     }
 
-    tbb::combinable<std::unordered_map<Id, double>> localAccum;
+    tbb::combinable<ankerl::unordered_dense::map<Id, double>> localAccum;
 
     tbb::parallel_for(std::size_t(0), N_NODES, [&](std::size_t const sourceIndex) {
       auto& local = localAccum.local();
@@ -1101,7 +1101,7 @@ namespace dsf {
             size_t const spurIndex = nodeIndex.at(spurNodeId);
 
             // Build banned-node set: all root-path nodes except the spur node.
-            std::unordered_set<Id> bannedNodes;
+            ankerl::unordered_dense::set<Id> bannedNodes;
             Id visitedNodeId = nodeIds[sourceIndex];
             for (auto const eId : rootPath) {
               Id const srcNodeId = visitedNodeId;
@@ -1113,7 +1113,7 @@ namespace dsf {
 
             // Ban the outgoing edge at the spur position for every accepted
             // path that shares the same root prefix.
-            std::unordered_set<Id> bannedEdges;
+            ankerl::unordered_dense::set<Id> bannedEdges;
             for (auto const& path : acceptedPaths) {
               if (path.edges.size() <= prefixSize) {
                 continue;

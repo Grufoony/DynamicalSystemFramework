@@ -148,6 +148,15 @@ FetchContent_GetProperties(simdjson)
 if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
 endif()
+# Get unordered_dense
+FetchContent_Declare(
+  unordered_dense
+  GIT_REPOSITORY https://github.com/martinus/unordered_dense
+  GIT_TAG v4.11.0)
+FetchContent_GetProperties(unordered_dense)
+if(NOT unordered_dense_POPULATED)
+  FetchContent_MakeAvailable(unordered_dense)
+endif()
 # Check if the user has TBB installed
 find_package(TBB QUIET)
 
@@ -190,7 +199,7 @@ target_include_directories(
              $<INSTALL_INTERFACE:include>)
 
 # Link other libraries
-target_link_libraries(dsf PUBLIC TBB::tbb SQLiteCpp 
+target_link_libraries(dsf PUBLIC TBB::tbb SQLiteCpp $<BUILD_INTERFACE:unordered_dense::unordered_dense>
                           PRIVATE $<BUILD_INTERFACE:simdjson::simdjson> spdlog::spdlog $<BUILD_INTERFACE:csv>)
 
 # Install dsf library
@@ -205,6 +214,10 @@ install(
   DIRECTORY ${PROJECT_SOURCE_DIR}/src/
   DESTINATION ${CMAKE_INSTALL_PREFIX}/include
   REGEX "dsf/utility/csv_writer\\.hpp$" EXCLUDE)
+
+# unordered_dense is used in the public headers
+install(FILES ${unordered_dense_SOURCE_DIR}/include/ankerl/unordered_dense.h
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/include/ankerl)
 
 install(
   EXPORT dsfConfig

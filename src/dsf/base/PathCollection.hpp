@@ -4,13 +4,16 @@
 
 #include <format>
 #include <list>
-#include <unordered_map>
 #include <vector>
 
+#include <ankerl/unordered_dense.h>
+
 namespace dsf {
-  class PathCollection : public std::unordered_map<Id, std::vector<Id>> {
+  class PathCollection : public ankerl::unordered_dense::map<Id, std::vector<Id>> {
+    using base_t = ankerl::unordered_dense::map<Id, std::vector<Id>>;
+
   public:
-    using std::unordered_map<Id, std::vector<Id>>::unordered_map;  // Inherit constructors
+    using base_t::base_t;  // Inherit constructors
 
     /// @brief Explode all possible paths from sourceId to targetId
     /// @param sourceId The starting point of the paths

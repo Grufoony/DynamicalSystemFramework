@@ -585,7 +585,8 @@ namespace dsf::mobility {
     auto const& outgoingEdges = pNode->outgoingEdges();
 
     // Calculate transition probabilities for all valid outgoing edges
-    std::unordered_map<Id, double> transitionProbabilities;
+    ankerl::unordered_dense::map<Id, double> transitionProbabilities;
+    transitionProbabilities.reserve(outgoingEdges.size());
     double cumulativeProbability = 0.0;
 
     std::set<Id> forbiddenTurns;
@@ -694,7 +695,8 @@ namespace dsf::mobility {
     }
 
     // Calculate transition probabilities for all valid outgoing edges
-    std::unordered_map<Id, double> transitionProbabilities;
+    ankerl::unordered_dense::map<Id, double> transitionProbabilities;
+    transitionProbabilities.reserve(outgoingEdges.size());
     double cumulativeProbability = 0.0;
 
     for (const auto outEdgeId : outgoingEdges) {
@@ -1417,7 +1419,8 @@ namespace dsf::mobility {
   void FirstOrderDynamics::setTransitionMatrix(
       std::unordered_map<Id, std::unordered_map<Id, double>> const& transitionMatrix) {
     constexpr double TOLERANCE{1e-9};
-    std::unordered_map<Id, std::unordered_map<Id, double>> validatedMatrix;
+    ankerl::unordered_dense::map<Id, ankerl::unordered_dense::map<Id, double>>
+        validatedMatrix;
     validatedMatrix.reserve(transitionMatrix.size());
     for (auto const& [srcStreetId, row] : transitionMatrix) {
       if (!this->graph().edges().contains(srcStreetId)) {
@@ -1429,7 +1432,7 @@ namespace dsf::mobility {
       }
       auto const& srcStreet{this->graph().edge(srcStreetId)};
       auto const& outgoingEdges{this->graph().node(srcStreet.target()).outgoingEdges()};
-      std::unordered_map<Id, double> validatedRow;
+      ankerl::unordered_dense::map<Id, double> validatedRow;
       validatedRow.reserve(row.size());
       double sumWeights{0.};
       double redistributableWeight{0.};
