@@ -58,4 +58,45 @@ TEST_CASE("progress_bar") {
     CHECK(content.find("hello from the progress bar test") != std::string::npos);
     CHECK(content.find("Test:") == std::string::npos);
   }
+
+  SUBCASE("The default logger is routed through the sink while the bar is alive") {
+    std::FILE* file = std::tmpfile();
+    REQUIRE(file != nullptr);
+    auto fileLogger = std::make_shared<spdlog::logger>(
+        "progress_bar_test_default", std::make_shared<progress_sink>(file));
+    auto const pPreviousDefault = spdlog::default_logger();
+    REQUIRE(pPreviousDefault->name().empty());
+    {
+      progress_bar bar{fileLogger, "Test", 1};
+      CHECK_NE(spdlog::default_logger(), pPreviousDefault);
+      spdlog::info("hello from the default logger");
+      ++bar;
+    }
+    // The original default logger is restored once the bar is gone
+    CHECK_EQ(spdlog::default_logger(), pPreviousDefault);
+    std::rewind(file);
+    std::string content;
+    for (int c; (c = std::fgetc(file)) != EOF;) {
+      content += static_cast<char>(c);
+    }
+    std::fclose(file);
+    CHECK(content.find("hello from the default logger") != std::string::npos);
+  }
+
+  SUBCASE("A custom default logger is left untouched") {
+    auto const pPreviousDefault = spdlog::default_logger();
+    auto pCustomDefault = std::make_shared<spdlog::logger>("progress_bar_test_custom");
+    spdlog::set_default_logger(pCustomDefault);
+    std::FILE* file = std::tmpfile();
+    REQUIRE(file != nullptr);
+    auto fileLogger = std::make_shared<spdlog::logger>(
+        "progress_bar_test_custom_sink", std::make_shared<progress_sink>(file));
+    {
+      progress_bar bar{fileLogger, "Test", 1};
+      CHECK_EQ(spdlog::default_logger(), pCustomDefault);
+    }
+    CHECK_EQ(spdlog::default_logger(), pCustomDefault);
+    spdlog::set_default_logger(pPreviousDefault);
+    std::fclose(file);
+  }
 }

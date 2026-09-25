@@ -360,6 +360,10 @@ namespace dsf::mobility {
                     updatePathsConfig["throw_on_empty"].get_bool().has_value()
                         ? updatePathsConfig["throw_on_empty"].get_bool().value()
                         : true);
+        if (!updatePathsConfig["intelligent_fraction"].error()) {
+          m_dynamics->setIntelligentAgentsFraction(
+              updatePathsConfig["intelligent_fraction"].get_double().value());
+        }
       }
     }
     // Save Data

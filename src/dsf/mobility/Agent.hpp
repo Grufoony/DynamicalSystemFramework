@@ -39,6 +39,8 @@ namespace dsf::mobility {
     double m_distance;                     // Travelled distance
     std::optional<double> m_maxDistance;   // Maximum distance for stochastic agents
     std::optional<std::time_t> m_maxTime;  // Maximum time for stochastic agents
+    bool m_bIsIntelligent;  // If true, the agent follows the updated paths, otherwise the
+                            // free-flow ones (default is false)
 
   public:
     /// @brief Construct a new Agent object
@@ -102,6 +104,12 @@ namespace dsf::mobility {
     /// @brief Set the agent's maximum time
     /// @param maxTime The agent's maximum time
     inline void setMaxTime(std::time_t const maxTime) { m_maxTime = maxTime; }
+    /// @brief Set whether the agent is intelligent
+    /// @param isIntelligent If true, the agent routes on the periodically updated best paths,
+    ///   otherwise on the free-flow ones (computed on the empty network)
+    inline void setIntelligent(bool const isIntelligent) noexcept {
+      m_bIsIntelligent = isIntelligent;
+    }
 
     void updateItinerary();
     /// @brief Reset the agent
@@ -165,6 +173,10 @@ namespace dsf::mobility {
     /// @brief Return true if the agent is a random agent
     /// @return True if the agent is a random agent, false otherwise
     inline bool isRandom() const noexcept { return m_trip.empty(); };
+    /// @brief Return true if the agent is intelligent
+    /// @return True if the agent routes on the periodically updated best paths, false if it
+    ///   routes on the free-flow ones
+    inline bool isIntelligent() const noexcept { return m_bIsIntelligent; };
     /// @brief Check if a random agent has arrived at its destination
     /// @param currentTime The current simulation time
     /// @return True if the agent has arrived (exceeded max distance or time), false otherwise

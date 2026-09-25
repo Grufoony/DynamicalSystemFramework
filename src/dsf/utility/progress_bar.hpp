@@ -3,6 +3,7 @@
 #include <spdlog/sinks/base_sink.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -123,7 +124,8 @@ namespace dsf::utility {
   class progress_bar {
   private:
     std::shared_ptr<spdlog::logger> m_logger;
-    // std::shared_ptr<spdlog::logger> m_previous_default_logger;
+    // The default logger replaced while the bar is alive, restored on destruction
+    std::shared_ptr<spdlog::logger> m_previous_default_logger;
     std::string m_desc;
     std::size_t m_total;
     bool m_ascii;
@@ -177,6 +179,19 @@ namespace dsf::utility {
       }
       if (m_sink) {
         m_sink->attach(this);
+        // Messages logged through spdlog's built-in (unnamed) default logger would be
+        // written straight to the terminal, over the bar. Route them through the
+        // progress_sink while the bar is alive, so that the bar is erased and redrawn
+        // around them. Custom default loggers (e.g. log_to_file) are left untouched.
+        auto pDefaultLogger = spdlog::default_logger();
+        if (pDefaultLogger && pDefaultLogger->name().empty()) {
+          auto pProxyLogger = std::make_shared<spdlog::logger>(
+              std::string{}, m_logger->sinks().cbegin(), m_logger->sinks().cend());
+          pProxyLogger->set_level(pDefaultLogger->level());
+          pProxyLogger->flush_on(pDefaultLogger->flush_level());
+          m_previous_default_logger = std::move(pDefaultLogger);
+          spdlog::set_default_logger(std::move(pProxyLogger));
+        }
         m_sink->repaint();
       }
     }
@@ -187,6 +202,9 @@ namespace dsf::utility {
       }
       m_sink->repaint(true);
       m_sink->detach();
+      if (m_previous_default_logger) {
+        spdlog::set_default_logger(std::move(m_previous_default_logger));
+      }
     }
 
     progress_bar(const progress_bar&) = delete;
@@ -292,6 +310,13 @@ namespace dsf::utility {
     m_refresh_width();
 
     if (msg) {
+      if (m_bar) {
+        // Wipe the bar first: a message shorter than the bar would leave its tail behind
+        std::string const blank(static_cast<std::size_t>(std::max(m_width - 1, 0)), ' ');
+        std::fputc('\r', m_file);
+        std::fwrite(blank.data(), 1, blank.size(), m_file);
+        std::fputc('\r', m_file);
+      }
       spdlog::memory_buf_t buf;
       formatter_->format(*msg, buf);
       std::fwrite(buf.data(), 1, buf.size(), m_file);

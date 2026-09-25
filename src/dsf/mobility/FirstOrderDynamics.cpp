@@ -352,6 +352,15 @@ namespace dsf::mobility {
       spdlog::debug("Saved path in cache for itinerary {}", pItinerary->id());
     }
   }
+  void FirstOrderDynamics::m_assignIntelligence(std::unique_ptr<Agent> const& pAgent) {
+    if (m_intelligentFraction <= 0. || pAgent->isRandom()) {
+      return;
+    }
+    // Skip the draw when every agent is intelligent, to leave the generator untouched
+    std::bernoulli_distribution intelligenceDist{m_intelligentFraction};
+    pAgent->setIntelligent(m_intelligentFraction >= 1. ||
+                           intelligenceDist(this->m_generator));
+  }
   void FirstOrderDynamics::m_addAgentsODs(std::size_t nAgents) {
     if (m_ODs.empty()) {
       throw std::runtime_error(
@@ -666,7 +675,14 @@ namespace dsf::mobility {
       forbiddenTurns = pStreetCurrent->forbiddenTurns();
 
       // Get path targets for non-random agents
-      auto const& path = pAgent->itinerary()->path();
+      auto const* pItinerary{pAgent->itinerary().get()};
+      if (!pAgent->isIntelligent()) {
+        auto const freeflowIt = m_freeflowItineraries.find(pItinerary->id());
+        if (freeflowIt != m_freeflowItineraries.cend()) {
+          pItinerary = freeflowIt->second.get();
+        }
+      }
+      auto const& path = pItinerary->path();
       auto const pathIt = path.find(pStreetCurrent->id());
       if (pathIt == path.cend()) {
         spdlog::debug("No itinerary path entry for {} at {}. Returning no transition.",
@@ -1304,6 +1320,13 @@ namespace dsf::mobility {
     }
     m_errorProbability = errorProbability;
   }
+  void FirstOrderDynamics::setIntelligentAgentsFraction(double const intelligentFraction) {
+    if (intelligentFraction < 0. || intelligentFraction > 1.) {
+      throw std::invalid_argument(std::format(
+          "The intelligent fraction ({}) must be in [0, 1]", intelligentFraction));
+    }
+    m_intelligentFraction = intelligentFraction;
+  }
   void FirstOrderDynamics::setPassageProbability(double passageProbability) {
     if (passageProbability < 0. || passageProbability > 1.) {
       throw std::invalid_argument(std::format(
@@ -1750,7 +1773,28 @@ namespace dsf::mobility {
           return bErase;
         });
         m_itineraries.erase(id);
+        m_freeflowItineraries.erase(id);
       }
+    }
+    // Snapshot the free-flow paths of the itineraries which do not have one yet
+    std::size_t nNewFreeflowItineraries{0};
+    for (auto const& [id, pItinerary] : m_itineraries) {
+      if (m_freeflowItineraries.contains(id)) {
+        continue;
+      }
+      auto pFreeflowItinerary =
+          std::make_shared<Itinerary>(pItinerary->id(), pItinerary->destination());
+      pFreeflowItinerary->setPath(pItinerary->path());
+      m_freeflowItineraries.emplace(id, std::move(pFreeflowItinerary));
+      ++nNewFreeflowItineraries;
+    }
+    if (nNewFreeflowItineraries > 0 && this->nAgents() > 0) {
+      spdlog::warn(
+          "Computed {} free-flow itineraries on a non-empty network ({} agents): they "
+          "may "
+          "not reflect free-flow conditions.",
+          nNewFreeflowItineraries,
+          this->nAgents());
     }
     spdlog::debug("End updating paths.");
   }
@@ -1819,29 +1863,33 @@ namespace dsf::mobility {
 
   void FirstOrderDynamics::addAgent(std::vector<std::shared_ptr<Itinerary>> const& trip,
                                     std::optional<Id> optSrcStreetId) {
+    std::unique_ptr<Agent> pAgent;
     if (!optSrcStreetId.has_value()) {
-      addAgent(std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), trip));
-      return;
+      pAgent = std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), trip);
+    } else {
+      auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
+      pAgent = std::make_unique<Agent>(
+          m_nInsertedAgents, this->time_step(), trip, srcStreet.source());
+      pAgent->setSrcStreetId(srcStreet.id());
+      pAgent->setNextStreetId(srcStreet.id());
     }
-    auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
-    auto pAgent = std::make_unique<Agent>(
-        m_nInsertedAgents, this->time_step(), trip, srcStreet.source());
-    pAgent->setSrcStreetId(srcStreet.id());
-    pAgent->setNextStreetId(srcStreet.id());
+    m_assignIntelligence(pAgent);
     addAgent(std::move(pAgent));
   }
 
   void FirstOrderDynamics::addAgent(std::shared_ptr<Itinerary> pItinerary,
                                     std::optional<Id> optSrcStreetId) {
+    std::unique_ptr<Agent> pAgent;
     if (!optSrcStreetId.has_value()) {
-      addAgent(std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), pItinerary));
-      return;
+      pAgent = std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), pItinerary);
+    } else {
+      auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
+      pAgent = std::make_unique<Agent>(
+          m_nInsertedAgents, this->time_step(), pItinerary, srcStreet.source());
+      pAgent->setSrcStreetId(srcStreet.id());
+      pAgent->setNextStreetId(srcStreet.id());
     }
-    auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
-    auto pAgent = std::make_unique<Agent>(
-        m_nInsertedAgents, this->time_step(), pItinerary, srcStreet.source());
-    pAgent->setSrcStreetId(srcStreet.id());
-    pAgent->setNextStreetId(srcStreet.id());
+    m_assignIntelligence(pAgent);
     addAgent(std::move(pAgent));
   }
 

@@ -116,6 +116,16 @@ TEST_CASE("Agent methods") {
     a2.updateItinerary();  // Should not go out of bounds
     CHECK_EQ(a2.itinerary()->id(), 3);
   }
+  SUBCASE("isIntelligent") {
+    Agent agent{0, 0, std::make_shared<Itinerary>(0, 5)};
+    CHECK_FALSE(agent.isIntelligent());  // agents are not intelligent by default
+    agent.setIntelligent(true);
+    CHECK(agent.isIntelligent());
+    agent.reset(10);
+    CHECK(agent.isIntelligent());  // the flag survives reinsertion
+    agent.setIntelligent(false);
+    CHECK_FALSE(agent.isIntelligent());
+  }
   SUBCASE("reset resets state") {
     agent.setSpeed(10.);
     agent.incrementDistance(5.);

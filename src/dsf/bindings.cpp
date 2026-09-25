@@ -6,6 +6,7 @@
 #include <nanobind/stl/function.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/string_view.h>
 #include <nanobind/stl/tuple.h>
@@ -1172,6 +1173,24 @@ Returns:
 
       Returns:
         None)doc")
+      .def("setIntelligentAgentsFraction",
+           &dsf::mobility::FirstOrderDynamics::setIntelligentAgentsFraction,
+           nb::arg("intelligentFraction"),
+           R"doc(Set the fraction of intelligent agents, i.e. following the updated paths.
+
+      Non-intelligent agents follow the free-flow paths. Default is 0.
+
+      Args:
+        intelligentFraction (float): Fraction in the range [0, 1].
+
+      Returns:
+        None)doc")
+      .def("intelligentAgentsFraction",
+           &dsf::mobility::FirstOrderDynamics::intelligentAgentsFraction,
+           R"doc(Get the fraction of intelligent agents, i.e. following the updated paths.
+
+      Returns:
+        float: The fraction in the range [0, 1].)doc")
       .def("killStagnantAgents",
            &dsf::mobility::FirstOrderDynamics::killStagnantAgents,
            nb::arg("timeToleranceFactor") = 3.,
@@ -1384,6 +1403,16 @@ Returns:
             return py_result;
           },
           R"doc(Get the itineraries mapping as a dict[id, Itinerary].)doc")
+      .def(
+          "freeflowItineraries",
+          [](const dsf::mobility::FirstOrderDynamics& self) {
+            nb::dict py_result;
+            for (const auto& [id, pItin] : self.freeflowItineraries()) {
+              py_result[nb::cast(id)] = nb::cast(pItin);
+            }
+            return py_result;
+          },
+          R"doc(Get the free-flow itineraries mapping as a dict[id, Itinerary].)doc")
       .def("addAgentsUniformly",
            &dsf::mobility::FirstOrderDynamics::addAgentsUniformly,
            nb::arg("nAgents"),
