@@ -26,8 +26,7 @@ std::string readFile(std::string const& filename) {
 
 TEST_CASE("TrajectoryCollection - Default constructor") {
   TrajectoryCollection collection;
-  // Should not crash, collection is created but empty
-  CHECK(true);
+  CHECK(collection.trajectories().empty());
 }
 
 TEST_CASE("TrajectoryCollection - Constructor with non-existent file") {
@@ -158,46 +157,62 @@ TEST_CASE("TrajectoryCollection - Export to invalid path") {
 TEST_CASE("TrajectoryCollection - Filter trajectories") {
   std::string testFile = "test_trajectory_filter.csv";
 
-  // Create test data with points that should cluster
+  // Points 0.01 degrees apart are ~1 km away: with a 500 m radius each one is a cluster
   std::string csvContent =
       "uid;timestamp;lat;lon\n"
-      "1;1000;44.4949;11.3426\n"
-      "1;2000;44.4950;11.3427\n"
-      "1;3000;44.4951;11.3428\n"
-      "2;1000;45.4064;11.8767\n"
-      "2;2000;45.4065;11.8768\n";
+      // User 1 has a single point
+      "1;0;44.49;11.34\n"
+      // User 2 jumps ~100 km in 10 minutes between the second and the third point
+      "2;0;44.49;11.34\n"
+      "2;600;44.50;11.34\n"
+      "2;1200;45.40;11.87\n"
+      "2;1800;45.41;11.87\n"
+      // User 3 stops for 20 minutes at the first location
+      "3;0;44.00;11.00\n"
+      "3;1200;44.00;11.00\n"
+      "3;1800;44.01;11.00\n"
+      "3;2400;44.02;11.00\n";
   createTestCSV(testFile, csvContent);
 
   TrajectoryCollection collection(testFile);
-
-  // Apply filter (should not crash)
-  collection.filter(0.5, 150.0);  // 500m radius, 150 km/h max speed
-
-  // Clean up
   std::filesystem::remove(testFile);
 
-  CHECK(true);  // Filter completed successfully
+  // 500 m radius, 150 km/h max speed, at least 2 points, stops of at least 10 minutes
+  collection.filter(0.5, 150.0, 2, 10);
+  auto const& trajectories = collection.trajectories();
+
+  // Too few points: removed
+  CHECK_FALSE(trajectories.contains(1));
+  // The jump exceeds the max speed: split in two
+  REQUIRE(trajectories.contains(2));
+  REQUIRE_EQ(trajectories.at(2).size(), 2);
+  CHECK_EQ(trajectories.at(2)[0].size(), 2);
+  CHECK_EQ(trajectories.at(2)[1].size(), 2);
+  // The stop splits the trajectory and the single-cluster segment before it is dropped
+  REQUIRE(trajectories.contains(3));
+  REQUIRE_EQ(trajectories.at(3).size(), 1);
+  CHECK_EQ(trajectories.at(3)[0].size(), 2);
 }
 
-TEST_CASE("TrajectoryCollection - Filter with different parameters") {
-  std::string testFile = "test_trajectory_filter_params.csv";
+TEST_CASE("TrajectoryCollection - Import with column mapping and bounding box") {
+  std::string testFile = "test_trajectory_mapping.csv";
 
   std::string csvContent =
-      "uid;timestamp;lat;lon\n"
+      "user;time;y;x\n"
       "1;1000;44.4949;11.3426\n"
-      "1;2000;44.4950;11.3427\n"
-      "1;3000;44.4951;11.3428\n";
+      "2;1000;44.4949;13.3426\n";
   createTestCSV(testFile, csvContent);
 
-  TrajectoryCollection collection(testFile);
-
-  // Try different filter parameters
-  collection.filter(1.0, 100.0);  // 1 km radius, 100 km/h
-
-  // Clean up
+  // Unknown keys are ignored; the bounding box is [minLon, minLat, maxLon, maxLat]
+  TrajectoryCollection collection(
+      testFile,
+      {{"uid", "user"}, {"timestamp", "time"}, {"lat", "y"}, {"lon", "x"}, {"foo", "bar"}},
+      ';',
+      {11.0, 44.0, 12.0, 45.0});
   std::filesystem::remove(testFile);
 
-  CHECK(true);
+  CHECK_EQ(collection.trajectories().size(), 1);
+  CHECK(collection.trajectories().contains(1));
 }
 
 TEST_CASE("TrajectoryCollection - Multiple users workflow") {

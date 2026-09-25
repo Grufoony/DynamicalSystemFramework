@@ -46,5 +46,8 @@ TEST_CASE("PolyLine constructors and parsing") {
   SUBCASE("Invalid WKT format throws") {
     CHECK_THROWS_AS(PolyLine("LINESTRING(1,2,3,4)"), std::invalid_argument);
     CHECK_THROWS_AS(PolyLine("LINESTRING(1 2 3 4)"), std::invalid_argument);
+    CHECK_THROWS_AS(PolyLine("LINESTRING 1 2, 3 4"), std::invalid_argument);
+    CHECK_THROWS_AS(PolyLine(std::string{"LINESTRING(1 2, 3 4)"}, "GeoJSON"),
+                    std::invalid_argument);
   }
 }

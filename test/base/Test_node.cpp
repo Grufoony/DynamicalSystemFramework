@@ -4,6 +4,7 @@
 
 #include "dsf/base/Node.hpp"
 #include "dsf/mobility/Intersection.hpp"
+#include "dsf/mobility/Roundabout.hpp"
 #include "dsf/mobility/TrafficLight.hpp"
 #include "dsf/mobility/Station.hpp"
 #include "dsf/utility/Typedef.hpp"
@@ -229,6 +230,53 @@ TEST_CASE("TrafficLight") {
       }
     }
   }
+  SUBCASE("Phase management") {
+    GIVEN("A traffic light without phases") {
+      TrafficLight tl{0, dsf::geometry::Point{0., 0.}};
+      THEN("It does nothing and follows the free-turn policy") {
+        ++tl;
+        tl.advanceBy(3);
+        tl.restore();  // no snapshot: ignored
+        CHECK_EQ(tl.counter(), 0);
+        CHECK_FALSE(tl.isGreen(0, dsf::Direction::ANY));
+        tl.setAllowFreeTurns(true);
+        CHECK(tl.isGreen(0, dsf::Direction::ANY));
+      }
+      THEN("Phases with zero duration are rejected") {
+        CHECK_THROWS_AS(tl.addPhase(TrafficLightPhase{0}), std::invalid_argument);
+        CHECK_THROWS_AS(tl.setPhases({TrafficLightPhase{0}}), std::invalid_argument);
+      }
+      WHEN("We set a compound-direction phase and a second phase") {
+        TrafficLightPhase phase0{3};
+        phase0.addGreen(0, dsf::Direction::RIGHTANDSTRAIGHT);
+        tl.setPhases({phase0, TrafficLightPhase{2}});
+        THEN("Simple directions fall back on the compound one, but not vice versa") {
+          CHECK(tl.isGreen(0, dsf::Direction::RIGHT));
+          CHECK(tl.isGreen(0, dsf::Direction::STRAIGHT));
+          CHECK_FALSE(tl.isGreen(0, dsf::Direction::LEFTANDSTRAIGHT));
+          CHECK(tl.isDefault());
+        }
+        THEN("A modified phase is reset to its default") {
+          tl.phase(0).setDuration(5);
+          CHECK_FALSE(tl.isDefault());
+          // 6 ticks consume the 5-tick first phase and 1 tick of the second
+          tl.advanceBy(6);
+          CHECK_EQ(tl.currentPhaseIndex(), 1);
+          CHECK_EQ(tl.counter(), 1);
+          tl.reset();
+          CHECK(tl.isDefault());
+          CHECK_EQ(tl.currentPhaseIndex(), 0);
+          CHECK_EQ(tl.counter(), 0);
+        }
+        THEN("Clearing removes phases and defaults") {
+          tl.clearPhases();
+          CHECK(tl.phases().empty());
+          CHECK(tl.defaultPhases().empty());
+          CHECK_EQ(tl.cycleTime(), 0);
+        }
+      }
+    }
+  }
   SUBCASE("Snapshot restore") {
     GIVEN("A traffic light with an empty phase list") {
       TrafficLight tl{0, dsf::geometry::Point{0., 0.}};
@@ -375,7 +423,12 @@ TEST_CASE("Station") {
       Station station{id, managementTime};
       WHEN("A train is enqueued") {
         station.enqueue(1, dsf::train_t::BUS);
-        THEN("The train is enqueued correctly") { CHECK_EQ(station.dequeue(), 1); }
+        THEN("The train is enqueued correctly") {
+          CHECK_EQ(station.density(), doctest::Approx(1.));
+          CHECK(station.isFull());
+          CHECK_EQ(station.dequeue(), 1);
+          CHECK_FALSE(station.isFull());
+        }
       }
       WHEN("Multiple trains are enqueued") {
         station.enqueue(1, dsf::train_t::RV);
@@ -454,5 +507,35 @@ TEST_CASE("TrafficLight formatting") {
 
     std::string formatted = std::format("{}", tl);
     CHECK(formatted.find("counter=3") != std::string::npos);
+  }
+}
+TEST_CASE("RoadJunction and Intersection formatting") {
+  SUBCASE("std::format RoadJunction") {
+    dsf::mobility::RoadJunction junction{7};
+    CHECK_EQ(junction.density(), 0.);
+    CHECK(junction.isFull());
+    CHECK_EQ(
+        std::format("{}", junction),
+        "RoadJunction(id: 7, name: , capacity: 1, transportCapacity: 1, coords: N/A)");
+    dsf::mobility::RoadJunction located{8, dsf::geometry::Point{1., 2.}};
+    CHECK(std::format("{}", located).find("coords: POINT (1, 2))") != std::string::npos);
+  }
+
+  SUBCASE("std::format Intersection with edges and coordinates") {
+    Intersection intersection{9, dsf::geometry::Point{1., 2.}};
+    intersection.addIngoingEdge(3);
+    intersection.addOutgoingEdge(4);
+    std::string formatted = std::format("{}", intersection);
+    CHECK(formatted.find("ingoing edges: 3 ") != std::string::npos);
+    CHECK(formatted.find("outgoing edges: 4 ") != std::string::npos);
+    CHECK(formatted.find("coords: POINT (1, 2))") != std::string::npos);
+  }
+
+  SUBCASE("Roundabout density") {
+    dsf::mobility::Roundabout roundabout{10};
+    roundabout.setCapacity(2);
+    roundabout.enqueue(std::make_unique<dsf::mobility::Agent>(0, 0));
+    CHECK_EQ(roundabout.density(), doctest::Approx(0.5));
+    CHECK_FALSE(roundabout.isFull());
   }
 }

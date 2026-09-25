@@ -17,6 +17,11 @@ TEST_CASE("Point constructors and equality") {
     CHECK_EQ(p.x(), 3.2);
     CHECK_EQ(p.y(), 4.5);
   }
+  SUBCASE("Invalid string constructor throws") {
+    CHECK_THROWS_AS(Point("POINT 3.2 4.5"), std::invalid_argument);
+    CHECK_THROWS_AS(Point("POINT(3.2)"), std::invalid_argument);
+    CHECK_THROWS_AS(Point("POINT(3.2 4.5)", "GeoJSON"), std::invalid_argument);
+  }
   SUBCASE("Equality operator") {
     Point p1(1.0, 2.0);
     Point p2(1.0, 2.0);
