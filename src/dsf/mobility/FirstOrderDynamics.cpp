@@ -352,12 +352,14 @@ namespace dsf::mobility {
       spdlog::debug("Saved path in cache for itinerary {}", pItinerary->id());
     }
   }
-  void FirstOrderDynamics::m_assignFreeflow(std::unique_ptr<Agent> const& pAgent) {
-    if (m_freeflowFraction <= 0. || pAgent->isRandom()) {
+  void FirstOrderDynamics::m_assignIntelligence(std::unique_ptr<Agent> const& pAgent) {
+    if (m_intelligentFraction <= 0. || pAgent->isRandom()) {
       return;
     }
-    std::bernoulli_distribution freeflowDist{m_freeflowFraction};
-    pAgent->setFollowsFreeflow(freeflowDist(this->m_generator));
+    // Skip the draw when every agent is intelligent, to leave the generator untouched
+    std::bernoulli_distribution intelligenceDist{m_intelligentFraction};
+    pAgent->setIntelligent(m_intelligentFraction >= 1. ||
+                           intelligenceDist(this->m_generator));
   }
   void FirstOrderDynamics::m_addAgentsODs(std::size_t nAgents) {
     if (m_ODs.empty()) {
@@ -674,7 +676,7 @@ namespace dsf::mobility {
 
       // Get path targets for non-random agents
       auto const* pItinerary{pAgent->itinerary().get()};
-      if (pAgent->followsFreeflow()) {
+      if (!pAgent->isIntelligent()) {
         auto const freeflowIt = m_freeflowItineraries.find(pItinerary->id());
         if (freeflowIt != m_freeflowItineraries.cend()) {
           pItinerary = freeflowIt->second.get();
@@ -1318,12 +1320,12 @@ namespace dsf::mobility {
     }
     m_errorProbability = errorProbability;
   }
-  void FirstOrderDynamics::setFreeflowFraction(double const freeflowFraction) {
-    if (freeflowFraction < 0. || freeflowFraction > 1.) {
-      throw std::invalid_argument(
-          std::format("The free-flow fraction ({}) must be in [0, 1]", freeflowFraction));
+  void FirstOrderDynamics::setIntelligentAgentsFraction(double const intelligentFraction) {
+    if (intelligentFraction < 0. || intelligentFraction > 1.) {
+      throw std::invalid_argument(std::format(
+          "The intelligent fraction ({}) must be in [0, 1]", intelligentFraction));
     }
-    m_freeflowFraction = freeflowFraction;
+    m_intelligentFraction = intelligentFraction;
   }
   void FirstOrderDynamics::setPassageProbability(double passageProbability) {
     if (passageProbability < 0. || passageProbability > 1.) {
@@ -1871,7 +1873,7 @@ namespace dsf::mobility {
       pAgent->setSrcStreetId(srcStreet.id());
       pAgent->setNextStreetId(srcStreet.id());
     }
-    m_assignFreeflow(pAgent);
+    m_assignIntelligence(pAgent);
     addAgent(std::move(pAgent));
   }
 
@@ -1887,7 +1889,7 @@ namespace dsf::mobility {
       pAgent->setSrcStreetId(srcStreet.id());
       pAgent->setNextStreetId(srcStreet.id());
     }
-    m_assignFreeflow(pAgent);
+    m_assignIntelligence(pAgent);
     addAgent(std::move(pAgent));
   }
 

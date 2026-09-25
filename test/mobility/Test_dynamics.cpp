@@ -1193,12 +1193,14 @@ TEST_CASE("FirstOrderDynamics") {
           street.addAgent(std::move(pAgent), 0);
         }
       };
-      THEN("The default free-flow fraction is zero and invalid values throw") {
-        CHECK_EQ(dynamics.freeflowFraction(), 0.);
-        CHECK_THROWS_AS(dynamics.setFreeflowFraction(-0.1), std::invalid_argument);
-        CHECK_THROWS_AS(dynamics.setFreeflowFraction(1.1), std::invalid_argument);
-        dynamics.setFreeflowFraction(0.3);
-        CHECK_EQ(dynamics.freeflowFraction(), 0.3);
+      THEN("The default intelligent fraction is zero and invalid values throw") {
+        CHECK_EQ(dynamics.intelligentAgentsFraction(), 0.);
+        CHECK_THROWS_AS(dynamics.setIntelligentAgentsFraction(-0.1),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.setIntelligentAgentsFraction(1.1),
+                        std::invalid_argument);
+        dynamics.setIntelligentAgentsFraction(0.3);
+        CHECK_EQ(dynamics.intelligentAgentsFraction(), 0.3);
       }
       THEN("There are no free-flow itineraries before updating the paths") {
         CHECK(dynamics.freeflowItineraries().empty());
@@ -1222,65 +1224,68 @@ TEST_CASE("FirstOrderDynamics") {
             CHECK_EQ(dynamics.freeflowItineraries().at(0)->path().at(5),
                      std::vector<Id>{0});
           }
-          AND_WHEN("A free-flow agent and a regular agent reach node 0") {
+          AND_WHEN("A free-flow agent and an intelligent agent reach node 0") {
             auto const& pItinerary{dynamics.itineraries().at(0)};
             for (Id const agentId : {0, 1}) {
               auto pAgent = std::make_unique<Agent>(0, 0, pItinerary, 5);
               pAgent->setSrcStreetId(5);
               pAgent->setNextStreetId(5);
-              pAgent->setFollowsFreeflow(agentId == 0);
+              pAgent->setIntelligent(agentId != 0);
               dynamics.addAgent(std::move(pAgent));
             }
             for (int i{0}; i < 6; ++i) {
               dynamics.evolve();
             }
-            THEN("The free-flow agent takes the short branch, the other the long one") {
+            THEN(
+                "The free-flow agent takes the short branch, the intelligent the long "
+                "one") {
               auto const& shortBranch{dynamics.graph().edge(0).movingAgents()};
               auto const& longBranch{dynamics.graph().edge(2).movingAgents()};
               REQUIRE_EQ(shortBranch.size(), 19);
               REQUIRE_EQ(longBranch.size(), 1);
-              CHECK(shortBranch.top()->followsFreeflow());
-              CHECK_FALSE(longBranch.top()->followsFreeflow());
+              CHECK_FALSE(shortBranch.top()->isIntelligent());
+              CHECK(longBranch.top()->isIntelligent());
             }
           }
         }
-        AND_WHEN("Agents are added with a free-flow fraction of 0") {
+        AND_WHEN("Agents are added with the default intelligent fraction") {
           for (int i{0}; i < 20; ++i) {
             dynamics.addAgent(dynamics.itineraries().at(0), 5);
           }
-          THEN("No agent follows the free-flow itineraries") {
+          THEN("No agent is intelligent") {
             for (auto const& pAgent : dynamics.agents()) {
-              CHECK_FALSE(pAgent->followsFreeflow());
+              CHECK_FALSE(pAgent->isIntelligent());
             }
           }
         }
-        AND_WHEN("Agents are added with a free-flow fraction of 1") {
-          dynamics.setFreeflowFraction(1.);
+        AND_WHEN("Agents are added with an intelligent fraction of 1") {
+          dynamics.setIntelligentAgentsFraction(1.);
           for (int i{0}; i < 20; ++i) {
             dynamics.addAgent(dynamics.itineraries().at(0), 5);
           }
           dynamics.addAgent(
               std::vector<std::shared_ptr<Itinerary>>{dynamics.itineraries().at(0)});
           dynamics.addAgent();
-          THEN("Every agent with an itinerary follows the free-flow itineraries") {
+          THEN("Every agent with an itinerary is intelligent, random ones are not") {
             REQUIRE_EQ(dynamics.agents().size(), 22);
             for (auto const& pAgent : dynamics.agents()) {
-              CHECK_EQ(pAgent->followsFreeflow(), !pAgent->isRandom());
+              CHECK_EQ(pAgent->isIntelligent(), !pAgent->isRandom());
             }
           }
         }
-        AND_WHEN("Agents are added with a free-flow fraction of 0.5") {
-          dynamics.setFreeflowFraction(0.5);
-          for (int i{0}; i < 200; ++i) {
+        AND_WHEN("Agents are added with an intelligent fraction of 0.2") {
+          dynamics.setIntelligentAgentsFraction(0.2);
+          for (int i{0}; i < 500; ++i) {
             dynamics.addAgent(dynamics.itineraries().at(0), 5);
           }
-          THEN("The agents are split between the two groups") {
-            auto const nFreeflow = std::count_if(
-                dynamics.agents().cbegin(),
-                dynamics.agents().cend(),
-                [](auto const& pAgent) { return pAgent->followsFreeflow(); });
-            CHECK_GT(nFreeflow, 50);
-            CHECK_LT(nFreeflow, 150);
+          THEN("About a fifth of the agents is intelligent") {
+            auto const nIntelligent =
+                std::count_if(dynamics.agents().cbegin(),
+                              dynamics.agents().cend(),
+                              [](auto const& pAgent) { return pAgent->isIntelligent(); });
+            // Asymmetric fraction: an inverted draw (~400) would fail this check
+            CHECK_GT(nIntelligent, 60);
+            CHECK_LT(nIntelligent, 140);
           }
         }
       }

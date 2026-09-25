@@ -246,7 +246,8 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "database": "all_options.db",
     "init_time": "20240101",
     "end_time": "20240101 000020",
-    "update_paths": { "interval": 5, "throw_on_empty": false },
+    "update_paths": { "interval": 5, "throw_on_empty": false,
+                      "intelligent_fraction": 0.5 },
     "save_data": { "interval": 1, "avg": true, "road": true, "travel": true,
                    "agent": true, "turn_counts": true }
   },
@@ -260,7 +261,6 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "max_concurrency": 2,
     "agent_insertion_method": "RANDOM_ODS",
     "error_probability": 0.05,
-    "freeflow_fraction": 0.5,
     "kill_stagnant_agents": 10.0,
     "mean_travel_distance": 1000.0,
     "mean_travel_time": 600,
@@ -277,7 +277,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   REQUIRE(simulator.dynamics() != nullptr);
   CHECK_EQ(simulator.dynamics()->origins().size(), 1);
   CHECK_EQ(simulator.dynamics()->destinations().size(), 1);
-  CHECK_EQ(simulator.dynamics()->freeflowFraction(), 0.5);
+  CHECK_EQ(simulator.dynamics()->intelligentAgentsFraction(), 0.5);
 
   simulator.run(std::vector<std::size_t>{2, 2, 2, 2});
   CHECK_EQ(simulator.dynamics()->freeflowItineraries().size(),
@@ -357,12 +357,12 @@ TEST_CASE("TrafficSimulator JSON config errors") {
             "", roadNetwork + R"(, "dynamics": { "agent_insertion_method": "FOO" })")),
         std::runtime_error);
   }
-  SUBCASE("The free-flow fraction is out of range") {
-    CHECK_THROWS_AS(importConfig(makeConfig(
-                        "",
-                        roadNetwork + R"(, "dynamics": { "agent_insertion_method": )"
-                                      R"("ODS", "freeflow_fraction": 1.5 })")),
-                    std::invalid_argument);
+  SUBCASE("The intelligent fraction is out of range") {
+    CHECK_THROWS_AS(
+        importConfig(makeConfig(
+            R"(, "update_paths": { "interval": 1, "intelligent_fraction": 1.5 })",
+            roadNetwork + R"(, "dynamics": { "agent_insertion_method": "ODS" })")),
+        std::invalid_argument);
   }
   SUBCASE("Every other agent insertion method is accepted") {
     for (auto const* method : {"CONDITIONAL_RANDOM_ODS", "UNIFORM"}) {

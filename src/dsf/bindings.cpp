@@ -1173,19 +1173,21 @@ Returns:
 
       Returns:
         None)doc")
-      .def("setFreeflowFraction",
-           &dsf::mobility::FirstOrderDynamics::setFreeflowFraction,
-           nb::arg("freeflowFraction"),
-           R"doc(Set the fraction of agents following the free-flow itineraries.
+      .def("setIntelligentAgentsFraction",
+           &dsf::mobility::FirstOrderDynamics::setIntelligentAgentsFraction,
+           nb::arg("intelligentFraction"),
+           R"doc(Set the fraction of intelligent agents, i.e. following the updated paths.
+
+      Non-intelligent agents follow the free-flow paths. Default is 0.
 
       Args:
-        freeflowFraction (float): Fraction in the range [0, 1].
+        intelligentFraction (float): Fraction in the range [0, 1].
 
       Returns:
         None)doc")
-      .def("freeflowFraction",
-           &dsf::mobility::FirstOrderDynamics::freeflowFraction,
-           R"doc(Get the fraction of agents following the free-flow itineraries.
+      .def("intelligentAgentsFraction",
+           &dsf::mobility::FirstOrderDynamics::intelligentAgentsFraction,
+           R"doc(Get the fraction of intelligent agents, i.e. following the updated paths.
 
       Returns:
         float: The fraction in the range [0, 1].)doc")

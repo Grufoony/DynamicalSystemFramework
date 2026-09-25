@@ -113,7 +113,7 @@ namespace dsf::mobility {
     std::function<double(Street const&)> m_speedFunction;
     std::string m_speedFunctionDescription;
     double m_uturnPenaltyFactor = 0.1;
-    double m_freeflowFraction = 0.;
+    double m_intelligentFraction = 0.;
     bool m_updatepathsThrowOnEmpty = true;
     bool m_reinsertAgents = false;
 
@@ -144,10 +144,10 @@ namespace dsf::mobility {
     /// @brief Update the path of a single itinerary using Dijsktra's algorithm
     /// @param pItinerary An std::shared_ptr to the itinerary
     void m_updatePath(std::shared_ptr<Itinerary> const& pItinerary);
-    /// @brief Flag a non-random agent as following the free-flow itinerary with probability
-    ///   m_freeflowFraction
+    /// @brief Flag a non-random agent as intelligent (i.e. following the updated paths instead
+    ///   of the free-flow ones) with probability m_intelligentFraction
     /// @param pAgent A std::unique_ptr to the agent
-    void m_assignFreeflow(std::unique_ptr<Agent> const& pAgent);
+    void m_assignIntelligence(std::unique_ptr<Agent> const& pAgent);
 
     template <bool Uniformly>
     void m_addAgentsRandom(std::size_t nAgents);
@@ -289,13 +289,14 @@ namespace dsf::mobility {
     inline void setReinsertAgents(bool const reinsertAgents) noexcept {
       m_reinsertAgents = reinsertAgents;
     }
-    /// @brief Set the fraction of agents following the free-flow itineraries
-    /// @param freeflowFraction The fraction, in [0, 1]
-    /// @details Each non-random agent is flagged with this probability when it is added.
-    ///   Flagged agents route on the free-flow best paths (see freeflowItineraries()), while the
-    ///   others follow the paths recomputed at each updatePaths() call.
+    /// @brief Set the fraction of intelligent agents
+    /// @param intelligentFraction The fraction, in [0, 1]
+    /// @details When it is added, each non-random agent is flagged as intelligent with this
+    ///   probability (default is 0, i.e. no intelligent agents). Intelligent agents follow the
+    ///   paths recomputed at each updatePaths() call, while the others route on the free-flow
+    ///   best paths (see freeflowItineraries()).
     /// @throw std::invalid_argument If the fraction is not in [0, 1]
-    void setFreeflowFraction(double const freeflowFraction);
+    void setIntelligentAgentsFraction(double const intelligentFraction);
     /// @brief Set the origins
     /// @param origins The origin nodes
     void setOrigins(std::unordered_map<Id, double> const& origins = {});
@@ -450,9 +451,11 @@ namespace dsf::mobility {
     inline auto const& freeflowItineraries() const noexcept {
       return m_freeflowItineraries;
     }
-    /// @brief Get the fraction of agents following the free-flow itineraries
+    /// @brief Get the fraction of intelligent agents, i.e. following the updated paths
     /// @return double The fraction, in [0, 1]
-    inline auto freeflowFraction() const noexcept { return m_freeflowFraction; }
+    inline auto intelligentAgentsFraction() const noexcept {
+      return m_intelligentFraction;
+    }
     /// @brief Get the itineraries
     /// @return const std::unordered_map<Id, Itinerary>&, The itineraries
     inline auto const& itineraries() const noexcept { return m_itineraries; }

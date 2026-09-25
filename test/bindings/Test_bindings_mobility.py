@@ -162,11 +162,11 @@ def test_dynamics_constant_speed_function_rejects_argument(dynamics):
 
 
 def test_dynamics_freeflow_itineraries(dynamics):
-    assert dynamics.freeflowFraction() == 0.0
-    dynamics.setFreeflowFraction(0.3)
-    assert dynamics.freeflowFraction() == pytest.approx(0.3)
+    assert dynamics.intelligentAgentsFraction() == 0.0
+    dynamics.setIntelligentAgentsFraction(0.3)
+    assert dynamics.intelligentAgentsFraction() == pytest.approx(0.3)
     with pytest.raises(ValueError):
-        dynamics.setFreeflowFraction(1.5)
+        dynamics.setIntelligentAgentsFraction(1.5)
 
     assert dynamics.freeflowItineraries() == {}
     dynamics.addItinerary(4, 4)

@@ -283,10 +283,6 @@ namespace dsf::mobility {
         m_dynamics->setErrorProbability(
             dynamicsConfig["error_probability"].get_double().value());
       }
-      if (!dynamicsConfig["freeflow_fraction"].error()) {
-        m_dynamics->setFreeflowFraction(
-            dynamicsConfig["freeflow_fraction"].get_double().value());
-      }
       if (!dynamicsConfig["kill_stagnant_agents"].error()) {
         m_dynamics->killStagnantAgents(
             dynamicsConfig["kill_stagnant_agents"].get_double().value());
@@ -364,6 +360,10 @@ namespace dsf::mobility {
                     updatePathsConfig["throw_on_empty"].get_bool().has_value()
                         ? updatePathsConfig["throw_on_empty"].get_bool().value()
                         : true);
+        if (!updatePathsConfig["intelligent_fraction"].error()) {
+          m_dynamics->setIntelligentAgentsFraction(
+              updatePathsConfig["intelligent_fraction"].get_double().value());
+        }
       }
     }
     // Save Data
