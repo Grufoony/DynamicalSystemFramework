@@ -230,19 +230,19 @@ TEST_CASE("FirstOrderDynamics") {
             "the itinerary") {
           CHECK_EQ(dynamics.nAgents(), 3);
 #ifdef __APPLE__
-          CHECK_EQ(dynamics.graph().edge(422).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(422).movingAgents().top()->itinerary()->id(), 2);
-          CHECK_EQ(dynamics.graph().edge(199).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(199).movingAgents().top()->itinerary()->id(), 2);
-          CHECK_EQ(dynamics.graph().edge(166).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(166).movingAgents().top()->itinerary()->id(), 1);
+          CHECK_EQ(dynamics.graph().edge(27).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(27).movingAgents().top()->itinerary()->id(), 1);
+          CHECK_EQ(dynamics.graph().edge(177).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(177).movingAgents().top()->itinerary()->id(), 1);
+          CHECK_EQ(dynamics.graph().edge(274).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(274).movingAgents().top()->itinerary()->id(), 2);
 #else
-          CHECK_EQ(dynamics.graph().edge(13).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(13).movingAgents().top()->itinerary()->id(), 2);
+          CHECK_EQ(dynamics.graph().edge(145).nAgents(), 1);
+          CHECK_EQ(dynamics.graph().edge(145).movingAgents().top()->itinerary()->id(), 1);
           CHECK_EQ(dynamics.graph().edge(370).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(370).movingAgents().top()->itinerary()->id(), 1);
+          CHECK_EQ(dynamics.graph().edge(370).movingAgents().top()->itinerary()->id(), 2);
           CHECK_EQ(dynamics.graph().edge(404).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(404).movingAgents().top()->itinerary()->id(), 2);
+          CHECK_EQ(dynamics.graph().edge(404).movingAgents().top()->itinerary()->id(), 1);
 #endif
         }
       }
@@ -2402,9 +2402,9 @@ TEST_CASE("FirstOrderDynamics") {
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
+          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 3);
         }
       }
     }

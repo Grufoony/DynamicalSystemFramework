@@ -35,11 +35,11 @@ namespace dsf::mdt {
                        point.y() < bbox[1] || point.y() > bbox[3])) {
         continue;
       }
-      if (m_trajectories.find(uids[i]) == m_trajectories.end()) {
-        m_trajectories[uids[i]] = std::vector<Trajectory>{};
-        m_trajectories[uids[i]].emplace_back();
+      auto& trajectories{m_trajectories.try_emplace(uids[i]).first->second};
+      if (trajectories.empty()) {
+        trajectories.emplace_back();
       }
-      m_trajectories[uids[i]][0].addPoint(timestamps[i], point);
+      trajectories[0].addPoint(timestamps[i], point);
     }
   }
 

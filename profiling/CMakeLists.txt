@@ -27,6 +27,15 @@ FetchContent_GetProperties(csv-parser)
 if(NOT csv-parser_POPULATED)
   FetchContent_MakeAvailable(csv-parser)
 endif()
+# Get unordered_dense
+FetchContent_Declare(
+  unordered_dense
+  GIT_REPOSITORY https://github.com/martinus/unordered_dense
+  GIT_TAG v4.11.0)
+FetchContent_GetProperties(unordered_dense)
+if(NOT unordered_dense_POPULATED)
+  FetchContent_MakeAvailable(unordered_dense)
+endif()
 
 file(GLOB SOURCES "../src/dsf/base/*.cpp" "../src/dsf/mobility/*.cpp"
      "../src/dsf/utility/*.cpp" "../src/dsf/geometry/*.cpp")
@@ -35,7 +44,8 @@ file(GLOB SOURCES "../src/dsf/base/*.cpp" "../src/dsf/mobility/*.cpp"
 add_executable(prof.out main.cpp ${SOURCES})
 target_include_directories(prof.out PRIVATE ../src/)
 target_link_libraries(prof.out PRIVATE TBB::tbb fmt::fmt spdlog::spdlog
-                                       $<BUILD_INTERFACE:simdjson::simdjson> $<BUILD_INTERFACE:csv>)
+                                       $<BUILD_INTERFACE:simdjson::simdjson> $<BUILD_INTERFACE:csv>
+                                       unordered_dense::unordered_dense)
 target_compile_options(prof.out PRIVATE -pg)
 target_link_options(prof.out PRIVATE -pg)
 add_executable(mem.out main.cpp ${SOURCES})
