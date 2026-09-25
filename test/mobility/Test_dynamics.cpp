@@ -1169,6 +1169,133 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
+  SUBCASE("Freeflow itineraries") {
+    GIVEN("A network with a short (0->1->2) and a long (0->3->2) branch") {
+      // Streets 0-1 form the short branch, 2-3 the long one; 4 is the destination street
+      // and 5 feeds node 0.
+      Street s0{0, std::make_pair(0, 1), 100.};
+      Street s1{1, std::make_pair(1, 2), 100.};
+      Street s2{2, std::make_pair(0, 3), 120.};
+      Street s3{3, std::make_pair(3, 2), 120.};
+      Street s4{4, std::make_pair(2, 4), 10.};
+      Street s5{5, std::make_pair(5, 0), 10.};
+      RoadNetwork graph;
+      graph.addStreets(s0, s1, s2, s3, s4, s5);
+      FirstOrderDynamics dynamics{std::move(graph), false, 69};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+      dynamics.addItinerary(0, 4);
+      auto const congestShortBranch = [&dynamics]() {
+        auto& street{dynamics.graph().edge(0)};
+        // Park agents that never leave the street to raise its density
+        for (Id i{0}; i < 18; ++i) {
+          auto pAgent = std::make_unique<Agent>(1000 + i, 0);
+          pAgent->setFreeTime(std::numeric_limits<std::time_t>::max());
+          street.addAgent(std::move(pAgent), 0);
+        }
+      };
+      THEN("The default free-flow fraction is zero and invalid values throw") {
+        CHECK_EQ(dynamics.freeflowFraction(), 0.);
+        CHECK_THROWS_AS(dynamics.setFreeflowFraction(-0.1), std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.setFreeflowFraction(1.1), std::invalid_argument);
+        dynamics.setFreeflowFraction(0.3);
+        CHECK_EQ(dynamics.freeflowFraction(), 0.3);
+      }
+      THEN("There are no free-flow itineraries before updating the paths") {
+        CHECK(dynamics.freeflowItineraries().empty());
+      }
+      WHEN("The paths are updated on the empty network") {
+        dynamics.updatePaths();
+        THEN("The free-flow itineraries match the current ones") {
+          REQUIRE_EQ(dynamics.freeflowItineraries().size(), 1);
+          auto const& pFreeflow{dynamics.freeflowItineraries().at(0)};
+          auto const& pCurrent{dynamics.itineraries().at(0)};
+          CHECK_NE(pFreeflow, pCurrent);
+          CHECK_EQ(pFreeflow->destination(), pCurrent->destination());
+          CHECK_EQ(pFreeflow->path(), pCurrent->path());
+          CHECK_EQ(pFreeflow->path().at(5), std::vector<Id>{0});
+        }
+        AND_WHEN("The short branch gets congested and the paths are updated again") {
+          congestShortBranch();
+          dynamics.updatePaths();
+          THEN("Only the current itinerary moves to the long branch") {
+            CHECK_EQ(dynamics.itineraries().at(0)->path().at(5), std::vector<Id>{2});
+            CHECK_EQ(dynamics.freeflowItineraries().at(0)->path().at(5),
+                     std::vector<Id>{0});
+          }
+          AND_WHEN("A free-flow agent and a regular agent reach node 0") {
+            auto const& pItinerary{dynamics.itineraries().at(0)};
+            for (Id const agentId : {0, 1}) {
+              auto pAgent = std::make_unique<Agent>(0, 0, pItinerary, 5);
+              pAgent->setSrcStreetId(5);
+              pAgent->setNextStreetId(5);
+              pAgent->setFollowsFreeflow(agentId == 0);
+              dynamics.addAgent(std::move(pAgent));
+            }
+            for (int i{0}; i < 6; ++i) {
+              dynamics.evolve();
+            }
+            THEN("The free-flow agent takes the short branch, the other the long one") {
+              auto const& shortBranch{dynamics.graph().edge(0).movingAgents()};
+              auto const& longBranch{dynamics.graph().edge(2).movingAgents()};
+              REQUIRE_EQ(shortBranch.size(), 19);
+              REQUIRE_EQ(longBranch.size(), 1);
+              CHECK(shortBranch.top()->followsFreeflow());
+              CHECK_FALSE(longBranch.top()->followsFreeflow());
+            }
+          }
+        }
+        AND_WHEN("Agents are added with a free-flow fraction of 0") {
+          for (int i{0}; i < 20; ++i) {
+            dynamics.addAgent(dynamics.itineraries().at(0), 5);
+          }
+          THEN("No agent follows the free-flow itineraries") {
+            for (auto const& pAgent : dynamics.agents()) {
+              CHECK_FALSE(pAgent->followsFreeflow());
+            }
+          }
+        }
+        AND_WHEN("Agents are added with a free-flow fraction of 1") {
+          dynamics.setFreeflowFraction(1.);
+          for (int i{0}; i < 20; ++i) {
+            dynamics.addAgent(dynamics.itineraries().at(0), 5);
+          }
+          dynamics.addAgent(
+              std::vector<std::shared_ptr<Itinerary>>{dynamics.itineraries().at(0)});
+          dynamics.addAgent();
+          THEN("Every agent with an itinerary follows the free-flow itineraries") {
+            REQUIRE_EQ(dynamics.agents().size(), 22);
+            for (auto const& pAgent : dynamics.agents()) {
+              CHECK_EQ(pAgent->followsFreeflow(), !pAgent->isRandom());
+            }
+          }
+        }
+        AND_WHEN("Agents are added with a free-flow fraction of 0.5") {
+          dynamics.setFreeflowFraction(0.5);
+          for (int i{0}; i < 200; ++i) {
+            dynamics.addAgent(dynamics.itineraries().at(0), 5);
+          }
+          THEN("The agents are split between the two groups") {
+            auto const nFreeflow = std::count_if(
+                dynamics.agents().cbegin(),
+                dynamics.agents().cend(),
+                [](auto const& pAgent) { return pAgent->followsFreeflow(); });
+            CHECK_GT(nFreeflow, 50);
+            CHECK_LT(nFreeflow, 150);
+          }
+        }
+      }
+      WHEN("An itinerary without a valid path is removed") {
+        dynamics.addItinerary(1, 5);
+        dynamics.setUpdatePathsThrowOnEmpty(false);
+        dynamics.updatePaths();
+        THEN("It is also missing from the free-flow itineraries") {
+          CHECK_FALSE(dynamics.itineraries().contains(1));
+          CHECK_FALSE(dynamics.freeflowItineraries().contains(1));
+          CHECK(dynamics.freeflowItineraries().contains(0));
+        }
+      }
+    }
+  }
   SUBCASE("Evolve") {
     GIVEN("A dynamics object with one non-random agent that reaches its destination") {
       Street s1{0, std::make_pair(0, 1), 13.8888888889};

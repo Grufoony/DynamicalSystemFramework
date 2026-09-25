@@ -116,6 +116,16 @@ TEST_CASE("Agent methods") {
     a2.updateItinerary();  // Should not go out of bounds
     CHECK_EQ(a2.itinerary()->id(), 3);
   }
+  SUBCASE("followsFreeflow") {
+    Agent agent{0, 0, std::make_shared<Itinerary>(0, 5)};
+    CHECK_FALSE(agent.followsFreeflow());
+    agent.setFollowsFreeflow(true);
+    CHECK(agent.followsFreeflow());
+    agent.reset(10);
+    CHECK(agent.followsFreeflow());  // the flag survives reinsertion
+    agent.setFollowsFreeflow(false);
+    CHECK_FALSE(agent.followsFreeflow());
+  }
   SUBCASE("reset resets state") {
     agent.setSpeed(10.);
     agent.incrementDistance(5.);

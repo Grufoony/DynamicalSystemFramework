@@ -96,6 +96,7 @@ namespace dsf::mobility {
   class FirstOrderDynamics : public Dynamics<RoadNetwork> {
     std::vector<Id> m_nodeIndices;
     std::vector<std::unique_ptr<Agent>> m_agents;
+    std::unordered_map<Id, std::shared_ptr<Itinerary>> m_freeflowItineraries;
     std::unordered_map<Id, std::shared_ptr<Itinerary>> m_itineraries;
     std::vector<std::tuple<Id, double>> m_origins;
     std::vector<std::tuple<Id, double>> m_destinations;
@@ -112,6 +113,7 @@ namespace dsf::mobility {
     std::function<double(Street const&)> m_speedFunction;
     std::string m_speedFunctionDescription;
     double m_uturnPenaltyFactor = 0.1;
+    double m_freeflowFraction = 0.;
     bool m_updatepathsThrowOnEmpty = true;
     bool m_reinsertAgents = false;
 
@@ -142,6 +144,10 @@ namespace dsf::mobility {
     /// @brief Update the path of a single itinerary using Dijsktra's algorithm
     /// @param pItinerary An std::shared_ptr to the itinerary
     void m_updatePath(std::shared_ptr<Itinerary> const& pItinerary);
+    /// @brief Flag a non-random agent as following the free-flow itinerary with probability
+    ///   m_freeflowFraction
+    /// @param pAgent A std::unique_ptr to the agent
+    void m_assignFreeflow(std::unique_ptr<Agent> const& pAgent);
 
     template <bool Uniformly>
     void m_addAgentsRandom(std::size_t nAgents);
@@ -283,6 +289,13 @@ namespace dsf::mobility {
     inline void setReinsertAgents(bool const reinsertAgents) noexcept {
       m_reinsertAgents = reinsertAgents;
     }
+    /// @brief Set the fraction of agents following the free-flow itineraries
+    /// @param freeflowFraction The fraction, in [0, 1]
+    /// @details Each non-random agent is flagged with this probability when it is added.
+    ///   Flagged agents route on the free-flow best paths (see freeflowItineraries()), while the
+    ///   others follow the paths recomputed at each updatePaths() call.
+    /// @throw std::invalid_argument If the fraction is not in [0, 1]
+    void setFreeflowFraction(double const freeflowFraction);
     /// @brief Set the origins
     /// @param origins The origin nodes
     void setOrigins(std::unordered_map<Id, double> const& origins = {});
@@ -360,6 +373,9 @@ namespace dsf::mobility {
     /// @throws std::runtime_error if the turn counts map is not initialized
     void resetTurnCounts();
     /// @brief Update the paths of the itineraries based on the given weight function
+    /// @details Itineraries without a free-flow counterpart get one, copied from the freshly computed
+    ///   path. This snapshot is never updated afterwards, so the first call should happen on the empty
+    ///   network.
     /// @throws std::runtime_error if m_updatepathsThrowOnEmpty is true and an itinerary has an empty path
     void updatePaths();
     /// @brief Add agents uniformly on the road network
@@ -428,6 +444,15 @@ namespace dsf::mobility {
         double const percentage = 0.3,
         double const threshold = 1.3);
 
+    /// @brief Get the free-flow itineraries
+    /// @return const std::unordered_map<Id, std::shared_ptr<Itinerary>>&, The free-flow itineraries,
+    ///   i.e. the best paths computed at the first updatePaths() call for each itinerary
+    inline auto const& freeflowItineraries() const noexcept {
+      return m_freeflowItineraries;
+    }
+    /// @brief Get the fraction of agents following the free-flow itineraries
+    /// @return double The fraction, in [0, 1]
+    inline auto freeflowFraction() const noexcept { return m_freeflowFraction; }
     /// @brief Get the itineraries
     /// @return const std::unordered_map<Id, Itinerary>&, The itineraries
     inline auto const& itineraries() const noexcept { return m_itineraries; }

@@ -17,7 +17,8 @@ namespace dsf::mobility {
         m_nextStreetId{std::nullopt},
         m_itineraryIdx{0},
         m_speed{0.},
-        m_distance{0.} {}
+        m_distance{0.},
+        m_bFollowsFreeflow{false} {}
   Agent::Agent(Id const id,
                std::time_t const& spawnTime,
                std::vector<std::shared_ptr<Itinerary>> const& trip,
@@ -31,7 +32,8 @@ namespace dsf::mobility {
         m_nextStreetId{std::nullopt},
         m_itineraryIdx{0},
         m_speed{0.},
-        m_distance{0.} {}
+        m_distance{0.},
+        m_bFollowsFreeflow{false} {}
 
   void Agent::setSrcNodeId(Id srcNodeId) { m_srcNodeId = srcNodeId; }
   void Agent::setSpawnTime(std::time_t const& spawnTime) { m_spawnTime = spawnTime; }

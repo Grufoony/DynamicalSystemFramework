@@ -260,6 +260,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "max_concurrency": 2,
     "agent_insertion_method": "RANDOM_ODS",
     "error_probability": 0.05,
+    "freeflow_fraction": 0.5,
     "kill_stagnant_agents": 10.0,
     "mean_travel_distance": 1000.0,
     "mean_travel_time": 600,
@@ -276,8 +277,11 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   REQUIRE(simulator.dynamics() != nullptr);
   CHECK_EQ(simulator.dynamics()->origins().size(), 1);
   CHECK_EQ(simulator.dynamics()->destinations().size(), 1);
+  CHECK_EQ(simulator.dynamics()->freeflowFraction(), 0.5);
 
   simulator.run(std::vector<std::size_t>{2, 2, 2, 2});
+  CHECK_EQ(simulator.dynamics()->freeflowItineraries().size(),
+           simulator.dynamics()->itineraries().size());
 
   auto const dbPath = outputDir / "all_options.db";
   {
@@ -352,6 +356,13 @@ TEST_CASE("TrafficSimulator JSON config errors") {
         importConfig(makeConfig(
             "", roadNetwork + R"(, "dynamics": { "agent_insertion_method": "FOO" })")),
         std::runtime_error);
+  }
+  SUBCASE("The free-flow fraction is out of range") {
+    CHECK_THROWS_AS(importConfig(makeConfig(
+                        "",
+                        roadNetwork + R"(, "dynamics": { "agent_insertion_method": )"
+                                      R"("ODS", "freeflow_fraction": 1.5 })")),
+                    std::invalid_argument);
   }
   SUBCASE("Every other agent insertion method is accepted") {
     for (auto const* method : {"CONDITIONAL_RANDOM_ODS", "UNIFORM"}) {
