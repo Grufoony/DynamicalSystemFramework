@@ -1161,14 +1161,15 @@ namespace dsf::mobility {
     } else if (strv_weight == "uniform") {
       m_weightFunction = []([[maybe_unused]] Street const& street) { return 1.0; };
     } else {  // Custom attribute
-      m_weightFunction = [strv_weight](Street const& street) {
+      // Own the name: the caller's buffer (e.g. the JSON config parser) may not outlive the lambda
+      m_weightFunction = [attribute = std::string{strv_weight}](Street const& street) {
         auto it = std::find_if(
             street.attributes().cbegin(),
             street.attributes().cend(),
-            [strv_weight](auto const& pair) { return pair.first == strv_weight; });
+            [&attribute](auto const& pair) { return pair.first == attribute; });
         if (it == street.attributes().end()) {
-          throw std::runtime_error(std::format(
-              "Attribute {} not found in street {}", strv_weight, street.id()));
+          throw std::runtime_error(
+              std::format("Attribute {} not found in street {}", attribute, street.id()));
         }
         auto const& attrValue = it->second;
         return std::visit(

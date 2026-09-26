@@ -1113,7 +1113,10 @@ TEST_CASE("FirstOrderDynamics") {
       s6.setAttribute("custom_cost", 1.0);
 
       RoadNetwork graph;
-      graph.setEdgeWeight("custom_cost");
+      // The weight must not depend on the caller's buffer (e.g. the JSON parser's)
+      std::string weightName{"custom_cost"};
+      graph.setEdgeWeight(weightName);
+      weightName = "xxxxxxxxxxx";
       graph.addStreets(s1, s2, s3, s4, s5, s6);
       FirstOrderDynamics dynamics{std::move(graph), false, 69};
       dynamics.addItinerary(0, 4);
