@@ -235,6 +235,11 @@ namespace dsf::mobility {
               require_field(roadNetworkConfig, "road_network", "node_properties_file")
                   .get_string()
                   .value());
+      // Must be set before the import: it defines the capacity of the streets without one
+      if (!roadNetworkConfig["mean_vehicle_length"].error()) {
+        Road::setMeanVehicleLength(
+            roadNetworkConfig["mean_vehicle_length"].get_double().value());
+      }
       importRoadNetwork(edgesFile.string(), nodePropertiesFile.string());
       auto const setEdgeWeightParams =
           require_field(roadNetworkConfig, "road_network", "set_edge_weight");

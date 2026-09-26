@@ -214,6 +214,8 @@ TEST_CASE("TrafficSimulator JSON config - transition matrix") {
 }
 
 TEST_CASE("TrafficSimulator JSON config - all options") {
+  // The mean vehicle length is static: restore it for the following test cases
+  auto const previousMeanVehicleLength{Road::meanVehicleLength()};
   auto const inputDir = makeUniqueDirectory("traffic_simulator_all_input_");
   auto const outputDir = makeUniqueDirectory("traffic_simulator_all_output_");
 
@@ -254,6 +256,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   "road_network": {
     "edges_file": "edges.csv",
     "node_properties_file": "nodes.csv",
+    "mean_vehicle_length": 2.5,
     "set_edge_weight": { "weight": "length", "threshold": 1.0 }
   },
   "dynamics": {
@@ -278,6 +281,9 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   CHECK_EQ(simulator.dynamics()->origins().size(), 1);
   CHECK_EQ(simulator.dynamics()->destinations().size(), 1);
   CHECK_EQ(simulator.dynamics()->intelligentAgentsFraction(), 0.5);
+  // The streets have no capacity column: it follows from the mean vehicle length
+  CHECK_EQ(Road::meanVehicleLength(), 2.5);
+  CHECK_EQ(simulator.dynamics()->graph().edge(0).capacity(), 6);
 
   simulator.run(std::vector<std::size_t>{2, 2, 2, 2});
   CHECK_EQ(simulator.dynamics()->freeflowItineraries().size(),
@@ -301,6 +307,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   std::filesystem::remove_all(inputDir);
   std::filesystem::remove_all(outputDir);
   std::filesystem::remove(jsonPath);
+  Road::setMeanVehicleLength(previousMeanVehicleLength);
 }
 
 TEST_CASE("TrafficSimulator JSON config errors") {
@@ -350,6 +357,15 @@ TEST_CASE("TrafficSimulator JSON config errors") {
                     std::runtime_error);
     CHECK_THROWS_AS(importConfig(makeConfig(R"(, "dynamic_ods": [1])", "")),
                     std::runtime_error);
+  }
+  SUBCASE("The mean vehicle length is not positive") {
+    CHECK_THROWS_AS(
+        importConfig(makeConfig(
+            "",
+            R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
+            R"("nodes.csv", "mean_vehicle_length": 0.0, "set_edge_weight": )"
+            R"({ "weight": "length", "threshold": 1.0 } })")),
+        std::invalid_argument);
   }
   SUBCASE("The agent insertion method is unknown") {
     CHECK_THROWS_AS(
