@@ -19,6 +19,7 @@
   "road_network": {
     "edges_file": "edges.csv",
     "node_properties_file": "node_props.csv",
+    "mean_vehicle_length": 5.0,
     "set_edge_weight": {
       "weight": "traveltime",
       "threshold": 0.05
