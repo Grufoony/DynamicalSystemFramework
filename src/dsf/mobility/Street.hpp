@@ -183,6 +183,11 @@ namespace dsf::mobility {
     /// @brief Get the number of of moving agents, i.e. agents not yet enqueued
     /// @return std::size_t The number of moving agents
     std::size_t nMovingAgents() const;
+    /// @brief Get the street's density of moving agents, i.e. excluding the queued ones
+    /// @tparam Normalized If true, the density is normalized by the street's capacity
+    /// @return double, The moving agents' density in \f$m^{-1}\f$ or in \f$a.u.\f$, if normalized
+    template <bool Normalized>
+    double movingDensity() const;
     /// @brief Get the number of agents on all queues for a given direction
     /// @param direction The direction of the agents (default is ANY)
     /// @param normalizeOnNLanes If true, the number of agents is normalized by the number of lanes
@@ -219,6 +224,14 @@ namespace dsf::mobility {
     /// @return bool True if the street has a coil, false otherwise
     constexpr bool hasCoil() const { return m_counter.has_value(); };
   };
+
+  template <bool Normalized>
+  inline double Street::movingDensity() const {
+    if constexpr (Normalized) {
+      return this->nMovingAgents() / static_cast<double>(this->capacity());
+    }
+    return this->nMovingAgents() / (this->length() * this->nLanes());
+  }
 
   template <bool Reset>
   inline Measurement<double> Street::meanSpeed() {

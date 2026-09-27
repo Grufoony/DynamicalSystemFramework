@@ -234,6 +234,21 @@ NB_MODULE(dsf_cpp, m) {
 
     Returns:
         float: Density value.)doc")
+          .def(
+              "movingDensity",
+              [&](dsf::mobility::Street const& self, bool normalized) {
+                if (normalized) {
+                  return self.movingDensity<true>();
+                }
+                return self.movingDensity<false>();
+              },
+              nb::arg("normalized") = false,
+              R"doc(Get the current density of the agents travelling this street, excluding the queued ones.
+    Args:
+        normalized (bool, optional): If true, return density normalized by capacity.
+
+    Returns:
+        float: Density value.)doc")
           .def("estimatedTravelTime",
                &dsf::mobility::Street::estimatedTravelTime,
                "Get estimated travel time for this street using the active estimator.")
@@ -692,8 +707,12 @@ NB_MODULE(dsf_cpp, m) {
            R"doc(Set edge weights for routing and analysis.
 
       Args:
-        weight (string): Weight type (e.g., 'length', 'traveltime').
-        threshold (float | None): Optional threshold to apply.)doc")
+        weight (string): Weight type. 'traveltime' is the estimated travel time plus the time
+          needed to clear the exit queues (mean lane queue / min(1, transport capacity)),
+          'length' the street length, 'uniform' 1 for every street; any other value is the
+          name of a numeric custom attribute.
+        threshold (float | None): Optional relative tolerance: paths whose cost is within
+          distance * (1 + threshold) of the shortest one are kept.)doc")
       .def(
           "describe",
           [](dsf::mobility::RoadNetwork& self) {
@@ -1095,7 +1114,7 @@ Returns:
                 self.setSpeedFunction(
                     dsf::SpeedFunction::CUSTOM,
                     [func_ptr](dsf::mobility::Street const& street) -> double {
-                      return func_ptr(street.maxSpeed(), street.density<true>());
+                      return func_ptr(street.maxSpeed(), street.movingDensity<true>());
                     });
                 break;
               }
@@ -1108,8 +1127,8 @@ Returns:
           R"doc(Set the speed function for agents.
 
       Args:
-          speedFunction (SpeedFunction): The speed function type (LINEAR, BPR, CONSTANT or CUSTOM)
-          arg: For LINEAR, a float alpha in [0., 1.). For BPR, a tuple (alpha, a, b) of floats, giving travel time = (length / max_speed) * (1 + a * (2 * alpha * density)^b), i.e. a critical density of max_density / (2 * alpha), with alpha in (0., 1.], a >= 0 and b > 0. For CUSTOM, an integer address (uintptr_t) of a C function with signature double(double max_speed, double density). For CONSTANT, it must be omitted.)doc")
+          speedFunction (SpeedFunction): The speed function type (LINEAR, CONSTANT or CUSTOM)
+          arg: For LINEAR, a float alpha in [0., 1.): speed = max_speed * (1 - alpha * moving density). For CUSTOM, an integer address (uintptr_t) of a C function with signature double(double max_speed, double density), called with the moving density. For CONSTANT, it must be omitted. The moving density is the number of agents travelling the street, excluding the queued ones, over its capacity.)doc")
       .def("setConcurrency",
            &dsf::mobility::FirstOrderDynamics::setConcurrency,
            nb::arg("concurrency"),

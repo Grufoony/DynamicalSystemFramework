@@ -1187,13 +1187,27 @@ TEST_CASE("FirstOrderDynamics") {
       FirstOrderDynamics dynamics{std::move(graph), false, 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(0, 4);
-      auto const congestShortBranch = [&dynamics]() {
+      auto const parkOnShortBranch = [&dynamics](Id const nAgents) {
         auto& street{dynamics.graph().edge(0)};
         // Park agents that never leave the street to raise its density
-        for (Id i{0}; i < 18; ++i) {
+        for (Id i{0}; i < nAgents; ++i) {
           auto pAgent = std::make_unique<Agent>(1000 + i, 0);
           pAgent->setFreeTime(std::numeric_limits<std::time_t>::max());
           street.addAgent(std::move(pAgent), 0);
+        }
+      };
+      auto const sendAgentsThroughNode0 = [&dynamics]() {
+        // A free-flow agent and an intelligent agent enter from street 5
+        auto const& pItinerary{dynamics.itineraries().at(0)};
+        for (Id const agentId : {0, 1}) {
+          auto pAgent = std::make_unique<Agent>(0, 0, pItinerary, 5);
+          pAgent->setSrcStreetId(5);
+          pAgent->setNextStreetId(5);
+          pAgent->setIntelligent(agentId != 0);
+          dynamics.addAgent(std::move(pAgent));
+        }
+        for (int i{0}; i < 6; ++i) {
+          dynamics.evolve();
         }
       };
       THEN("The default intelligent fraction is zero and invalid values throw") {
@@ -1220,7 +1234,7 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(pFreeflow->path().at(5), std::vector<Id>{0});
         }
         AND_WHEN("The short branch gets congested and the paths are updated again") {
-          congestShortBranch();
+          parkOnShortBranch(18);
           dynamics.updatePaths();
           THEN("Only the current itinerary moves to the long branch") {
             CHECK_EQ(dynamics.itineraries().at(0)->path().at(5), std::vector<Id>{2});
@@ -1228,17 +1242,7 @@ TEST_CASE("FirstOrderDynamics") {
                      std::vector<Id>{0});
           }
           AND_WHEN("A free-flow agent and an intelligent agent reach node 0") {
-            auto const& pItinerary{dynamics.itineraries().at(0)};
-            for (Id const agentId : {0, 1}) {
-              auto pAgent = std::make_unique<Agent>(0, 0, pItinerary, 5);
-              pAgent->setSrcStreetId(5);
-              pAgent->setNextStreetId(5);
-              pAgent->setIntelligent(agentId != 0);
-              dynamics.addAgent(std::move(pAgent));
-            }
-            for (int i{0}; i < 6; ++i) {
-              dynamics.evolve();
-            }
+            sendAgentsThroughNode0();
             THEN(
                 "The free-flow agent takes the short branch, the intelligent the long "
                 "one") {
@@ -1248,6 +1252,49 @@ TEST_CASE("FirstOrderDynamics") {
               REQUIRE_EQ(longBranch.size(), 1);
               CHECK_FALSE(shortBranch.top()->isIntelligent());
               CHECK(longBranch.top()->isIntelligent());
+            }
+          }
+        }
+        AND_WHEN("Four agents travel the short branch and the paths are updated again") {
+          // Their density slows the short branch to 8.57 + 7.2 = 15.77 s, still faster
+          // than the 17.28 s of the long one
+          parkOnShortBranch(4);
+          dynamics.updatePaths();
+          THEN("The current itinerary keeps the short branch") {
+            CHECK_EQ(dynamics.graph().edge(0).estimatedTravelTime(),
+                     doctest::Approx(100. / (13.8888888889 * (1. - 0.8 * 0.2))));
+            CHECK_EQ(dynamics.itineraries().at(0)->path().at(5), std::vector<Id>{0});
+          }
+          AND_WHEN("The same agents queue at the end of the short branch") {
+            // Queued, they no longer slow the street down but cost 4 s of queue time:
+            // 7.2 + 4 + 7.2 = 18.4 s
+            auto& street{dynamics.graph().edge(0)};
+            while (!street.movingAgents().empty()) {
+              street.enqueue(0);
+            }
+            dynamics.updatePaths();
+            THEN("Only the current itinerary moves to the long branch") {
+              CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(7.2));
+              CHECK_EQ(dynamics.itineraries().at(0)->path().at(5), std::vector<Id>{2});
+              CHECK_EQ(dynamics.freeflowItineraries().at(0)->path().at(5),
+                       std::vector<Id>{0});
+            }
+            AND_WHEN("A free-flow agent and an intelligent agent reach node 0") {
+              sendAgentsThroughNode0();
+              THEN(
+                  "The free-flow agent joins the queued branch, the intelligent one "
+                  "avoids it") {
+                auto const& shortBranch{dynamics.graph().edge(0)};
+                auto const& longBranch{dynamics.graph().edge(2).movingAgents()};
+                CHECK_EQ(shortBranch.nExitingAgents(), 4);
+                REQUIRE_EQ(shortBranch.movingAgents().size(), 1);
+                REQUIRE_EQ(longBranch.size(), 1);
+                CHECK_FALSE(shortBranch.movingAgents().top()->isIntelligent());
+                CHECK(longBranch.top()->isIntelligent());
+                // The queue does not slow down the agents entering the street
+                CHECK_EQ(shortBranch.movingAgents().top()->speed(),
+                         doctest::Approx(shortBranch.maxSpeed()));
+              }
             }
           }
         }
@@ -2622,7 +2669,7 @@ TEST_CASE("SpeedFunction") {
           CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(10.));
         }
         THEN("The linear speed function would instead slow the street down") {
-          auto const density{street.density<true>()};
+          auto const density{street.movingDensity<true>()};
           dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
           CHECK_EQ(street.estimatedTravelTime(),
                    doctest::Approx(100. / (10. * (1. - 0.8 * density))));

@@ -259,7 +259,11 @@ TEST_CASE("Street") {
     street.addAgent(std::make_unique<Agent>(a2), 0);
     street.enqueue(0);
     CHECK_EQ(doctest::Approx(street.density<false>()), 0.571429);
+    // Queued agents do not count in the moving density
+    CHECK_EQ(street.movingDensity<false>(), 0.);
     street.addAgent(std::make_unique<Agent>(a3), 0);
+    CHECK_EQ(doctest::Approx(street.movingDensity<false>()), 0.285714);
+    CHECK_EQ(doctest::Approx(street.movingDensity<true>()), 0.25);
     street.enqueue(0);
     street.addAgent(std::make_unique<Agent>(a4), 0);
     street.enqueue(0);

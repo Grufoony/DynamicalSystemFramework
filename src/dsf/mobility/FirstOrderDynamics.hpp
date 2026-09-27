@@ -667,12 +667,13 @@ namespace dsf::mobility {
             throw std::invalid_argument(
                 std::format("The alpha parameter ({}) must be in [0., 1)", alpha));
           }
+          // Queued agents do not slow the street down: they cost queue time instead
           m_speedFunction = [alpha](Street const& pStreet) {
-            return pStreet.maxSpeed() * (1. - alpha * pStreet.density<true>());
+            return pStreet.maxSpeed() * (1. - alpha * pStreet.movingDensity<true>());
           };
           Street::setEstimatedTravelTimeFunction([alpha](Street const& pStreet) {
             return pStreet.length() /
-                   (pStreet.maxSpeed() * (1. - alpha * pStreet.density<true>()));
+                   (pStreet.maxSpeed() * (1. - alpha * pStreet.movingDensity<true>()));
           });
           m_speedFunctionDescription = std::format("LINEAR(alpha={})", alpha);
         }
