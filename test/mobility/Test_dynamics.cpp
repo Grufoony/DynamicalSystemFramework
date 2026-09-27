@@ -2559,7 +2559,7 @@ TEST_CASE("RoadDynamics Configuration") {
   }
 }
 
-TEST_CASE("SpeedFunction::CONSTANT") {
+TEST_CASE("SpeedFunction") {
   // 0 --[s0: 100 m, 10 m/s]--> 1 --[s1: 200 m, 20 m/s]--> 2 --[s2: 100 m, 10 m/s]--> 3
   // Agents are routed to node 2, which needs an outgoing street not to be a dead end.
   auto const makeNetwork = []() {
@@ -2582,6 +2582,19 @@ TEST_CASE("SpeedFunction::CONSTANT") {
       }
       THEN("The linear speed function needs an alpha in [0, 1)") {
         CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 1.),
+                        std::invalid_argument);
+      }
+      THEN("The BPR speed function needs alpha in (0, 1], a >= 0 and b > 0") {
+        CHECK_NOTHROW(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1., 0.15, 4.));
+        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1.),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 0., 0.15, 4.),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1.5, 0.15, 4.),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1., -0.1, 4.),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1., 0.15, 0.),
                         std::invalid_argument);
       }
     }
@@ -2615,6 +2628,32 @@ TEST_CASE("SpeedFunction::CONSTANT") {
                    doctest::Approx(100. / (10. * (1. - 0.8 * density))));
           CHECK(street.estimatedTravelTime() > 10.);
         }
+        THEN("The BPR speed function slows the street down as well") {
+          auto const density{street.density<true>()};
+          dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 0.8, 0.15, 4.);
+          CHECK_EQ(street.estimatedTravelTime(),
+                   doctest::Approx(10. * (1. + 0.15 * std::pow(2. * 0.8 * density, 4.))));
+          CHECK(street.estimatedTravelTime() > 10.);
+        }
+      }
+    }
+    GIVEN("A street half full, i.e. at the critical density when alpha is 1") {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      // 100 m, 10 m/s: free-flow travel time 10 s. The capacity is explicit because
+      // the mean vehicle length is static state that other test cases change.
+      Street street{9, std::make_pair(0, 1), 100., 10., 1, std::string(), {}, 20};
+      for (Id agentId{0}; agentId < 10; ++agentId) {
+        street.addAgent(std::make_unique<Agent>(agentId, 0), 0);
+      }
+      REQUIRE_EQ(street.density<true>(), doctest::Approx(0.5));
+      THEN("The BPR travel time is (1 + a) times the free-flow one") {
+        dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1., 0.15, 4.);
+        CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(11.5));
+      }
+      THEN("Halving alpha moves the critical density to the maximum density") {
+        dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 0.5, 0.15, 4.);
+        CHECK_EQ(street.estimatedTravelTime(),
+                 doctest::Approx(10. * (1. + 0.15 * std::pow(0.5, 4.))));
       }
     }
   }
@@ -2658,6 +2697,23 @@ TEST_CASE("SpeedFunction::CONSTANT") {
     GIVEN("The same dynamics using the linear speed function") {
       FirstOrderDynamics dynamics{makeNetwork(), false, 42};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+      WHEN("We evolve the dynamics until the streets are loaded") {
+        load(dynamics);
+        THEN("Some agent is slower than the speed limit of its street") {
+          auto const maxSpeed{dynamics.graph().edge(0).maxSpeed()};
+          auto const streetSpeeds{speeds(dynamics, 0)};
+          REQUIRE_FALSE(streetSpeeds.empty());
+          auto bSomeoneIsSlower{false};
+          for (auto const speed : streetSpeeds) {
+            bSomeoneIsSlower |= speed < maxSpeed;
+          }
+          CHECK(bSomeoneIsSlower);
+        }
+      }
+    }
+    GIVEN("The same dynamics using the BPR speed function") {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1., 0.15, 4.);
       WHEN("We evolve the dynamics until the streets are loaded") {
         load(dynamics);
         THEN("Some agent is slower than the speed limit of its street") {

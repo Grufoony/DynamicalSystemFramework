@@ -60,6 +60,7 @@ NB_MODULE(dsf_cpp, m) {
       .value("CUSTOM", dsf::SpeedFunction::CUSTOM)
       .value("LINEAR", dsf::SpeedFunction::LINEAR)
       .value("CONSTANT", dsf::SpeedFunction::CONSTANT)
+      .value("BPR", dsf::SpeedFunction::BPR)
       .export_values();
 
   // Bind Direction enum
@@ -1076,6 +1077,18 @@ Returns:
                 }
                 self.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
                 break;
+              case dsf::SpeedFunction::BPR: {
+                std::tuple<double, double, double> params;
+                if (!nb::try_cast(arg, params)) {
+                  throw std::invalid_argument(
+                      "BPR speed function requires a (alpha, a, b) tuple of floats");
+                }
+                self.setSpeedFunction(dsf::SpeedFunction::BPR,
+                                      std::get<0>(params),
+                                      std::get<1>(params),
+                                      std::get<2>(params));
+                break;
+              }
               case dsf::SpeedFunction::CUSTOM: {
                 auto* func_ptr = reinterpret_cast<double (*)(double, double)>(
                     nb::cast<uintptr_t>(arg));
@@ -1095,8 +1108,8 @@ Returns:
           R"doc(Set the speed function for agents.
 
       Args:
-          speedFunction (SpeedFunction): The speed function type (LINEAR, CONSTANT or CUSTOM)
-          arg: For LINEAR, a float alpha in [0., 1.). For CUSTOM, an integer address (uintptr_t) of a C function with signature double(double max_speed, double density). For CONSTANT, it must be omitted.)doc")
+          speedFunction (SpeedFunction): The speed function type (LINEAR, BPR, CONSTANT or CUSTOM)
+          arg: For LINEAR, a float alpha in [0., 1.). For BPR, a tuple (alpha, a, b) of floats, giving travel time = (length / max_speed) * (1 + a * (2 * alpha * density)^b), i.e. a critical density of max_density / (2 * alpha), with alpha in (0., 1.], a >= 0 and b > 0. For CUSTOM, an integer address (uintptr_t) of a C function with signature double(double max_speed, double density). For CONSTANT, it must be omitted.)doc")
       .def("setConcurrency",
            &dsf::mobility::FirstOrderDynamics::setConcurrency,
            nb::arg("concurrency"),

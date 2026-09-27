@@ -240,6 +240,9 @@ namespace dsf::mobility {
                   bool const saveAgentData = false);
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
+    /// - (BPR, alpha, a, b): travel time = (length / max_speed) * (1 + a * (density / critical_density)^b),
+    ///   i.e. speed = max_speed / (1 + a * (2 * alpha * density)^b), where the critical density is
+    ///   max_density / (2 * alpha), alpha is in (0, 1], a >= 0 and b > 0 (classic BPR: 1, 0.15, 4)
     /// - (CONSTANT): speed = max_speed, i.e. agents always travel in free flow
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
     template <typename... TArgs>
@@ -672,6 +675,46 @@ namespace dsf::mobility {
                    (pStreet.maxSpeed() * (1. - alpha * pStreet.density<true>()));
           });
           m_speedFunctionDescription = std::format("LINEAR(alpha={})", alpha);
+        }
+        break;
+      case SpeedFunction::BPR:
+        // There should be three arguments: alpha, which sets the critical density to
+        // max_density / (2 * alpha), and the BPR coefficients a and b
+        if constexpr (sizeof...(args) != 3) {
+          throw std::invalid_argument(
+              std::format("BPR speed function requires exactly three arguments (alpha, "
+                          "a, b), but {} were provided",
+                          sizeof...(args)));
+        } else if constexpr (!(std::is_convertible_v<TArgs, double> && ...)) {
+          throw std::invalid_argument(
+              "BPR speed function requires double arguments (alpha, a, b)");
+        } else {
+          double alpha = std::get<0>(std::forward_as_tuple(args...));
+          double a = std::get<1>(std::forward_as_tuple(args...));
+          double b = std::get<2>(std::forward_as_tuple(args...));
+          if (alpha <= 0. || alpha > 1.) {
+            throw std::invalid_argument(
+                std::format("The alpha parameter ({}) must be in (0., 1.]", alpha));
+          }
+          if (a < 0.) {
+            throw std::invalid_argument(
+                std::format("The a parameter ({}) must be non-negative", a));
+          }
+          if (b <= 0.) {
+            throw std::invalid_argument(
+                std::format("The b parameter ({}) must be positive", b));
+          }
+          // density / critical_density = 2 * alpha * normalized density
+          m_speedFunction = [alpha, a, b](Street const& pStreet) {
+            return pStreet.maxSpeed() /
+                   (1. + a * std::pow(2. * alpha * pStreet.density<true>(), b));
+          };
+          Street::setEstimatedTravelTimeFunction([alpha, a, b](Street const& pStreet) {
+            return pStreet.length() / pStreet.maxSpeed() *
+                   (1. + a * std::pow(2. * alpha * pStreet.density<true>(), b));
+          });
+          m_speedFunctionDescription =
+              std::format("BPR(alpha={}, a={}, b={})", alpha, a, b);
         }
         break;
       case SpeedFunction::CONSTANT:

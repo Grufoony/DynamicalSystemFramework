@@ -161,6 +161,21 @@ def test_dynamics_constant_speed_function_rejects_argument(dynamics):
         dynamics.setSpeedFunction(mobility.SpeedFunction.CONSTANT, 0.8)
 
 
+def test_dynamics_bpr_speed_function(dynamics):
+    dynamics.setSpeedFunction(mobility.SpeedFunction.BPR, (1.0, 0.15, 4.0))
+
+    street = dynamics.graph().edge(0)
+    assert street.estimatedTravelTime() == pytest.approx(
+        street.length() / street.maxSpeed()
+    )
+
+
+@pytest.mark.parametrize("arg", [0.8, (1.0, 0.15), (0.0, 0.15, 4.0)])
+def test_dynamics_bpr_speed_function_rejects_bad_arguments(dynamics, arg):
+    with pytest.raises(ValueError):
+        dynamics.setSpeedFunction(mobility.SpeedFunction.BPR, arg)
+
+
 def test_dynamics_freeflow_itineraries(dynamics):
     assert dynamics.intelligentAgentsFraction() == 0.0
     dynamics.setIntelligentAgentsFraction(0.3)
