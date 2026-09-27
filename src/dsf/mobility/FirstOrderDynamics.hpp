@@ -239,7 +239,8 @@ namespace dsf::mobility {
                   bool const saveTravelData = false,
                   bool const saveAgentData = false);
     /// @brief Set the speed function. Options are:
-    /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
+    /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * moving_density), where alpha is a parameter in [0, 1)
+    ///   and moving_density = n_moving_agents / capacity (queued agents cost queue time instead, see RoadNetwork::setEdgeWeight)
     /// - (CONSTANT): speed = max_speed, i.e. agents always travel in free flow
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
     template <typename... TArgs>
@@ -664,12 +665,13 @@ namespace dsf::mobility {
             throw std::invalid_argument(
                 std::format("The alpha parameter ({}) must be in [0., 1)", alpha));
           }
+          // Queued agents do not slow the street down: they cost queue time instead
           m_speedFunction = [alpha](Street const& pStreet) {
-            return pStreet.maxSpeed() * (1. - alpha * pStreet.density<true>());
+            return pStreet.maxSpeed() * (1. - alpha * pStreet.movingDensity<true>());
           };
           Street::setEstimatedTravelTimeFunction([alpha](Street const& pStreet) {
             return pStreet.length() /
-                   (pStreet.maxSpeed() * (1. - alpha * pStreet.density<true>()));
+                   (pStreet.maxSpeed() * (1. - alpha * pStreet.movingDensity<true>()));
           });
           m_speedFunctionDescription = std::format("LINEAR(alpha={})", alpha);
         }

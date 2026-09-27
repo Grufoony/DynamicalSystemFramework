@@ -2097,6 +2097,51 @@ TEST_CASE("ShortestPath") {
       return resetStreet.length() / resetStreet.maxSpeed();
     });
   }
+
+  SUBCASE("TravelTimeWeight_AddsQueueDelay") {
+    Street::setEstimatedTravelTimeFunction(
+        [](Street const& street) { return street.length() / street.maxSpeed(); });
+
+    RoadNetwork graph{};
+    graph.setEdgeWeight("traveltime");
+    // 0 -> 1 -> 2 takes 20 s, the two-lane 0 -> 2 takes 12 s plus its queue time
+    Street s01(0, std::make_pair(0, 1), 100., 10.);
+    Street s12(1, std::make_pair(1, 2), 100., 10.);
+    Street s02(2, std::make_pair(0, 2), 120., 10., 2);
+    Street s40(3, std::make_pair(4, 0), 100., 10.);
+    Street s23(4, std::make_pair(2, 3), 100., 10.);
+    graph.addStreets(s01, s12, s02, s40, s23);
+
+    auto& queuedStreet = graph.edge(2);
+    queuedStreet.addAgent(std::make_unique<Agent>(0, 0), 0);
+    queuedStreet.enqueue(0);
+
+    // One agent over two lanes: 12 + 0.5 / 0.1 = 17 s < 20 s
+    queuedStreet.setTransportCapacity(0.1);
+    auto nodePath = graph.shortestPath(0, 2);
+    REQUIRE(nodePath.contains(0));
+    REQUIRE_EQ(nodePath.at(0).size(), 1);
+    CHECK_EQ(nodePath.at(0).at(0), 2);
+    auto edgePath = graph.allEdgePathsTo(4);
+    REQUIRE(edgePath.contains(3));
+    REQUIRE_EQ(edgePath.at(3).size(), 1);
+    CHECK_EQ(edgePath.at(3).at(0), 2);
+
+    // 12 + 0.5 / 0.05 = 22 s > 20 s
+    queuedStreet.setTransportCapacity(0.05);
+    nodePath = graph.shortestPath(0, 2);
+    REQUIRE(nodePath.contains(0));
+    REQUIRE_EQ(nodePath.at(0).size(), 1);
+    CHECK_EQ(nodePath.at(0).at(0), 1);
+    edgePath = graph.allEdgePathsTo(4);
+    REQUIRE(edgePath.contains(3));
+    REQUIRE_EQ(edgePath.at(3).size(), 1);
+    CHECK_EQ(edgePath.at(3).at(0), 0);
+
+    Street::setEstimatedTravelTimeFunction([](Street const& resetStreet) {
+      return resetStreet.length() / resetStreet.maxSpeed();
+    });
+  }
 }
 
 TEST_CASE("RoadStatus") {

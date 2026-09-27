@@ -1154,7 +1154,11 @@ namespace dsf::mobility {
                                   std::optional<double> const threshold) {
     if (strv_weight == "traveltime") {
       m_weightFunction = [](Street const& street) {
-        return street.estimatedTravelTime();
+        // Each lane releases at most one agent per time step, with probability equal to the
+        // transport capacity: the mean lane queue takes queue / min(1, tc) steps to clear.
+        auto const queueTime{street.nExitingAgents(Direction::ANY, true) /
+                             std::min(1., street.transportCapacity())};
+        return street.estimatedTravelTime() + queueTime;
       };
     } else if (strv_weight == "length") {
       m_weightFunction = [](Street const& street) { return street.length(); };
