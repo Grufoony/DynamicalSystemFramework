@@ -168,7 +168,8 @@ def test_dynamics_constant_speed_function_rejects_argument(dynamics):
 
 
 def test_dynamics_bpr_speed_function(dynamics):
-    dynamics.setSpeedFunction(mobility.SpeedFunction.BPR, (1.0, 0.15, 4.0))
+    # alpha > 1 is allowed: the critical density is then below half the maximum one
+    dynamics.setSpeedFunction(mobility.SpeedFunction.BPR, (8.0, 0.15, 4.0))
 
     street = dynamics.graph().edge(0)
     assert street.estimatedTravelTime() == pytest.approx(

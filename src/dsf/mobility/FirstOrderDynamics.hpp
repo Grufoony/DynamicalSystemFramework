@@ -240,9 +240,13 @@ namespace dsf::mobility {
                   bool const saveAgentData = false);
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * density), where alpha is a parameter in [0, 1)
-    /// - (BPR, alpha, a, b): travel time = (length / max_speed) * (1 + a * (density / critical_density)^b),
-    ///   i.e. speed = max_speed / (1 + a * (2 * alpha * density)^b), where the critical density is
-    ///   max_density / (2 * alpha), alpha is in (0, 1], a >= 0 and b > 0 (classic BPR: 1, 0.15, 4)
+    /// - (BPR, alpha, a, b): travel time = (length / max_speed) * (1 + a * y^b), i.e.
+    ///   speed = max_speed / (1 + a * y^b), where y = flow / capacity solves
+    ///   y * (1 + a * y^b) = 2 * alpha * density (flow form). Hence
+    ///   2 * alpha = max_density * max_speed / capacity, and the travel time is (1 + a) times the
+    ///   free-flow one when the flow equals the capacity. alpha > 0, a >= 0 and b > 0 (classic
+    ///   BPR: a = 0.15, b = 4). The density is the moving one: queued agents do not slow the
+    ///   street down
     /// - (CONSTANT): speed = max_speed, i.e. agents always travel in free flow
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
     template <typename... TArgs>
@@ -679,8 +683,8 @@ namespace dsf::mobility {
         }
         break;
       case SpeedFunction::BPR:
-        // There should be three arguments: alpha, which sets the critical density to
-        // max_density / (2 * alpha), and the BPR coefficients a and b
+        // There should be three arguments: alpha, with
+        // 2 * alpha = max_density * max_speed / capacity, and the BPR coefficients a and b
         if constexpr (sizeof...(args) != 3) {
           throw std::invalid_argument(
               std::format("BPR speed function requires exactly three arguments (alpha, "
@@ -693,9 +697,9 @@ namespace dsf::mobility {
           double alpha = std::get<0>(std::forward_as_tuple(args...));
           double a = std::get<1>(std::forward_as_tuple(args...));
           double b = std::get<2>(std::forward_as_tuple(args...));
-          if (alpha <= 0. || alpha > 1.) {
+          if (alpha <= 0.) {
             throw std::invalid_argument(
-                std::format("The alpha parameter ({}) must be in (0., 1.]", alpha));
+                std::format("The alpha parameter ({}) must be positive", alpha));
           }
           if (a < 0.) {
             throw std::invalid_argument(
@@ -705,14 +709,32 @@ namespace dsf::mobility {
             throw std::invalid_argument(
                 std::format("The b parameter ({}) must be positive", b));
           }
-          // density / critical_density = 2 * alpha * normalized density
-          m_speedFunction = [alpha, a, b](Street const& pStreet) {
-            return pStreet.maxSpeed() /
-                   (1. + a * std::pow(2. * alpha * pStreet.density<true>(), b));
+          auto const bprFactor = [alpha, a, b](Street const& pStreet) {
+            // Flow form: y = q / capacity solves y * (1 + a * y^b) = 2 * alpha * moving density,
+            // so the steady-state travel time is the BPR one, t0 * (1 + a * y^b).
+            // Queued agents do not slow the street down: they cost queue time instead
+            double const u = 2. * alpha * pStreet.movingDensity<true>();
+            if (u <= 0.) {
+              return 1.;
+            }
+            // f(y) = y (1 + a y^b) - u is convex and increasing, and f(u) >= 0:
+            // Newton started from y = u converges monotonically from above
+            double y = u;
+            for (int i = 0; i < 50; ++i) {
+              double const yb = std::pow(y, b);
+              double const dy = (y * (1. + a * yb) - u) / (1. + a * (b + 1.) * yb);
+              y -= dy;
+              if (std::abs(dy) < 1e-12) {
+                break;
+              }
+            }
+            return 1. + a * std::pow(y, b);
           };
-          Street::setEstimatedTravelTimeFunction([alpha, a, b](Street const& pStreet) {
-            return pStreet.length() / pStreet.maxSpeed() *
-                   (1. + a * std::pow(2. * alpha * pStreet.density<true>(), b));
+          m_speedFunction = [bprFactor](Street const& pStreet) {
+            return pStreet.maxSpeed() / bprFactor(pStreet);
+          };
+          Street::setEstimatedTravelTimeFunction([bprFactor](Street const& pStreet) {
+            return pStreet.length() / pStreet.maxSpeed() * bprFactor(pStreet);
           });
           m_speedFunctionDescription =
               std::format("BPR(alpha={}, a={}, b={})", alpha, a, b);

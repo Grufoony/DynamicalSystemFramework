@@ -2631,13 +2631,15 @@ TEST_CASE("SpeedFunction") {
         CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 1.),
                         std::invalid_argument);
       }
-      THEN("The BPR speed function needs alpha in (0, 1], a >= 0 and b > 0") {
+      THEN("The BPR speed function needs alpha > 0, a >= 0 and b > 0") {
         CHECK_NOTHROW(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1., 0.15, 4.));
+        // alpha > 1 puts the critical density below half the maximum density
+        CHECK_NOTHROW(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 8., 0.15, 4.));
         CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1.),
                         std::invalid_argument);
         CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 0., 0.15, 4.),
                         std::invalid_argument);
-        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1.5, 0.15, 4.),
+        CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, -1., 0.15, 4.),
                         std::invalid_argument);
         CHECK_THROWS_AS(dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1., -0.1, 4.),
                         std::invalid_argument);
@@ -2676,15 +2678,19 @@ TEST_CASE("SpeedFunction") {
           CHECK(street.estimatedTravelTime() > 10.);
         }
         THEN("The BPR speed function slows the street down as well") {
-          auto const density{street.density<true>()};
+          auto const density{street.movingDensity<true>()};
           dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 0.8, 0.15, 4.);
-          CHECK_EQ(street.estimatedTravelTime(),
-                   doctest::Approx(10. * (1. + 0.15 * std::pow(2. * 0.8 * density, 4.))));
           CHECK(street.estimatedTravelTime() > 10.);
+          // Flow form: y = flow / capacity, read from t = t0 (1 + a y^b), solves
+          // y (1 + a y^b) = 2 alpha density
+          auto const y{
+              std::pow((street.estimatedTravelTime() / 10. - 1.) / 0.15, 1. / 4.)};
+          CHECK_EQ(y * (1. + 0.15 * std::pow(y, 4.)),
+                   doctest::Approx(2. * 0.8 * density));
         }
       }
     }
-    GIVEN("A street half full, i.e. at the critical density when alpha is 1") {
+    GIVEN("A street half full of moving agents") {
       FirstOrderDynamics dynamics{makeNetwork(), false, 42};
       // 100 m, 10 m/s: free-flow travel time 10 s. The capacity is explicit because
       // the mean vehicle length is static state that other test cases change.
@@ -2692,15 +2698,23 @@ TEST_CASE("SpeedFunction") {
       for (Id agentId{0}; agentId < 10; ++agentId) {
         street.addAgent(std::make_unique<Agent>(agentId, 0), 0);
       }
-      REQUIRE_EQ(street.density<true>(), doctest::Approx(0.5));
-      THEN("The BPR travel time is (1 + a) times the free-flow one") {
-        dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1., 0.15, 4.);
+      REQUIRE_EQ(street.movingDensity<true>(), doctest::Approx(0.5));
+      // With 2 alpha = (1 + a) / 0.5 the flow equals the capacity (y = 1)
+      THEN("At capacity the BPR travel time is (1 + a) times the free-flow one") {
+        dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1.15, 0.15, 4.);
         CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(11.5));
       }
-      THEN("Halving alpha moves the critical density to the maximum density") {
-        dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 0.5, 0.15, 4.);
-        CHECK_EQ(street.estimatedTravelTime(),
-                 doctest::Approx(10. * (1. + 0.15 * std::pow(0.5, 4.))));
+      WHEN("Four more agents queue at the end of the street") {
+        for (Id agentId{10}; agentId < 14; ++agentId) {
+          street.addAgent(std::make_unique<Agent>(agentId, 0), 0);
+          street.enqueue(0);
+        }
+        REQUIRE_EQ(street.density<true>(), doctest::Approx(0.7));
+        REQUIRE_EQ(street.movingDensity<true>(), doctest::Approx(0.5));
+        THEN("The queued agents do not change the BPR travel time") {
+          dynamics.setSpeedFunction(dsf::SpeedFunction::BPR, 1.15, 0.15, 4.);
+          CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(11.5));
+        }
       }
     }
   }
