@@ -2008,8 +2008,8 @@ namespace dsf::mobility {
 
                   auto const speedMeasure = pStreet->meanSpeed<true>();
                   if (speedMeasure.is_valid) {
-                    auto const speed = speedMeasure.mean * 3.6;  // to kph
-                    auto const speed_std = speedMeasure.std * 3.6;
+                    auto const speed = speedMeasure.mean * MS_TO_KMH;  // to kph
+                    auto const speed_std = speedMeasure.std * MS_TO_KMH;
                     if (dataRequest.saveAverageStats) {
                       mean_speed.fetch_add(speed, std::memory_order_relaxed);
                       std_speed.fetch_add(speed * speed + speed_std * speed_std,
@@ -2035,8 +2035,8 @@ namespace dsf::mobility {
                       pStreet->resetCounter();
                     }
                     if (speedMeasure.is_valid) {
-                      record.avgSpeed = speedMeasure.mean * 3.6;  // to kph
-                      record.stdSpeed = speedMeasure.std * 3.6;
+                      record.avgSpeed = speedMeasure.mean * MS_TO_KMH;  // to kph
+                      record.stdSpeed = speedMeasure.std * MS_TO_KMH;
                       record.nObservations = speedMeasure.n;
                     }
                     record.queueLength = queueLength;

@@ -351,11 +351,12 @@ namespace dsf::mobility {
       throw std::runtime_error("Error opening file \"" + fileName + "\" for reading.");
     }
     auto const fileExt = fileName.substr(fileName.find_last_of('.') + 1);
-    if (!fileExtMap.contains(fileExt)) {
+    auto const optFileExt = fileExtFromString(fileExt);
+    if (!optFileExt.has_value()) {
       throw std::invalid_argument(
           std::format("File extension ({}) not supported", fileExt));
     }
-    switch (fileExtMap.at(fileExt)) {
+    switch (*optFileExt) {
       case FileExt::CSV:
         spdlog::debug("Importing nodes from CSV file: {}", fileName);
         this->m_csvEdgesImporter(fileName, std::forward<TArgs>(args)...);
@@ -384,11 +385,12 @@ namespace dsf::mobility {
       throw std::runtime_error("Error opening file \"" + fileName + "\" for reading.");
     }
     auto const fileExt = fileName.substr(fileName.find_last_of('.') + 1);
-    if (!fileExtMap.contains(fileExt)) {
+    auto const optFileExt = fileExtFromString(fileExt);
+    if (!optFileExt.has_value()) {
       throw std::invalid_argument(
           std::format("File extension ({}) not supported", fileExt));
     }
-    switch (fileExtMap.at(fileExt)) {
+    switch (*optFileExt) {
       case FileExt::CSV:
         spdlog::debug("Importing node properties from CSV file: {}", fileName);
         this->m_csvNodePropertiesImporter(fileName, std::forward<TArgs>(args)...);
@@ -486,12 +488,12 @@ namespace dsf::mobility {
         }
 
         // Keep hop transitions acyclic so path expansion remains finite.
-        if (nextDistToTarget + 1e-12 >= edgeDistToTarget) {
+        if (nextDistToTarget + PATH_COST_EPS >= edgeDistToTarget) {
           continue;
         }
 
         auto const fullPathCost = m_weightFunction(pNextEdge) + nextDistToTarget;
-        if (fullPathCost <= edgeBudget + 1e-12 &&
+        if (fullPathCost <= edgeBudget + PATH_COST_EPS &&
             std::find(hops.begin(), hops.end(), nextEdgeId) == hops.end()) {
           hops.push_back(nextEdgeId);
         }
