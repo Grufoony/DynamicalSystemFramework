@@ -156,6 +156,12 @@ def test_dynamics_constant_speed_function(dynamics):
     )
 
 
+def test_street_moving_density(dynamics):
+    street = dynamics.graph().edge(0)
+    assert street.movingDensity() == street.density() == 0.0
+    assert street.movingDensity(normalized=True) == 0.0
+
+
 def test_dynamics_constant_speed_function_rejects_argument(dynamics):
     with pytest.raises(ValueError):
         dynamics.setSpeedFunction(mobility.SpeedFunction.CONSTANT, 0.8)
