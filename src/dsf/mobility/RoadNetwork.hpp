@@ -145,6 +145,7 @@ namespace dsf::mobility {
     /// - forbiddenTurns: The forbidden turns of the street, encoding information about street into which the street cannot output agents. The format is a string "sourceId1-targetid1, sourceId2-targetid2,..."
     /// - coilcode: An integer code to identify the coil located on the street
     /// - priority: boolean, whether the street is a priority road or not. This information can be used in the traffic light cycle generation.
+    /// - transport_capacity: positive number, the probability per time step that the front agent of each lane can leave the street (default 1). Values >= 1 saturate on the street (at most one agent per lane per step), but still scale node capacities in adjustNodeCapacities(). Invalid or non-positive values fall back to the default.
     /// - any additional CSV column or JSON field will be imported as an edge attribute, with automatic type inference among bool, int64, double, string and null.
     /// @param args Additional arguments
     template <typename... TArgs>

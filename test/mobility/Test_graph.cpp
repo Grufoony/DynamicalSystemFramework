@@ -585,13 +585,13 @@ TEST_CASE("RoadNetwork") {
           std::ofstream tmpCsv(tmpCsvPath);
           REQUIRE(tmpCsv.is_open());
           tmpCsv << "id;source;target;length;maxspeed;nlanes;type;name;coilcode;capacity;"
-                    "status;forbidden_turns;lane_mapping\n";
-          tmpCsv << "10;0;1;100;50;2;primary;a;C1;5;open;[11, 12];[left, straight]\n";
+                    "status;forbidden_turns;lane_mapping;transport_capacity\n";
+          tmpCsv << "10;0;1;100;50;2;primary;a;C1;5;open;[11, 12];[left, straight];0.5\n";
           // Invalid maxspeed, nlanes and capacity fall back to their defaults
           tmpCsv << "11;1;2;100;fast;many;secondary;b;null;big;CLOSED;;"
-                    "[straight_right, straight_left, through]\n";
-          tmpCsv << "12;2;3;100;50;1;tertiary;c;;;weird;[x];[any]\n";
-          tmpCsv << "13;3;3;100;50;1;tertiary;self_loop;;;;;\n";
+                    "[straight_right, straight_left, through];2\n";
+          tmpCsv << "12;2;3;100;50;1;tertiary;c;;;weird;[x];[any];-1\n";
+          tmpCsv << "13;3;3;100;50;1;tertiary;self_loop;;;;;;\n";
         }
 
         RoadNetwork graphWithOptionals;
@@ -609,6 +609,8 @@ TEST_CASE("RoadNetwork") {
           CHECK_EQ(e10.forbiddenTurns(), std::set<Id>{11, 12});
           CHECK_EQ(e10.laneMapping(),
                    std::vector<Direction>{Direction::STRAIGHT, Direction::LEFT});
+          CHECK_EQ(e10.transportCapacity(), doctest::Approx(0.5));
+          CHECK_FALSE(e10.attributes().contains("transport_capacity"));
 
           auto const& e11 = graphWithOptionals.edge(static_cast<Id>(11));
           CHECK_FALSE(e11.hasCoil());
@@ -620,11 +622,15 @@ TEST_CASE("RoadNetwork") {
                    std::vector<Direction>{Direction::RIGHTANDSTRAIGHT,
                                           Direction::ANY,
                                           Direction::LEFTANDSTRAIGHT});
+          // Values above 1 are accepted and not rescaled by the lane_mapping lane change
+          CHECK_EQ(e11.transportCapacity(), doctest::Approx(2.));
 
           auto const& e12 = graphWithOptionals.edge(static_cast<Id>(12));
           CHECK(e12.isActive());
           CHECK(e12.forbiddenTurns().empty());
           CHECK_EQ(e12.laneMapping(), std::vector<Direction>{Direction::ANY});
+          // Non-positive transport capacity falls back to the default
+          CHECK_EQ(e12.transportCapacity(), doctest::Approx(1.));
         }
       }
 
@@ -641,23 +647,24 @@ TEST_CASE("RoadNetwork") {
       "properties": { "id": 500, "source": 30, "target": 31, "length": 50.0,
         "maxspeed": "50", "nlanes": "2", "type": "primary", "name": "a",
         "coilcode": "C5", "forbidden_turns": [501, "x"],
-        "lane_mapping": ["Left", "straight", 3],
+        "lane_mapping": ["Left", "straight", 3], "transport_capacity": 0.25,
         "custom_int": 7, "custom_str": "hello", "custom_null": null, "custom_arr": [1] },
       "geometry": { "type": "LineString", "coordinates": [[8.0, 45.0], [8.1, 45.1]] } },
     { "type": "Feature",
       "properties": { "id": 501, "source": 31, "target": 32, "length": 50.0,
         "maxspeed": "fast", "nlanes": "x", "type": ["secondary", 5], "name": "b",
         "coilcode": 42, "forbidden_turns": "none", "lane_mapping": "none",
-        "mobility_class": "high" },
+        "mobility_class": "high", "transport_capacity": "x" },
       "geometry": { "type": "LineString", "coordinates": [[8.1, 45.1], [8.2, 45.2]] } },
     { "type": "Feature",
       "properties": { "id": 502, "source": 32, "target": 33, "length": 50.0,
-        "maxspeed": 50, "nlanes": 1, "type": 7, "name": "c", "coilcode": -3 },
+        "maxspeed": 50, "nlanes": 1, "type": 7, "name": "c", "coilcode": -3,
+        "transport_capacity": 3 },
       "geometry": { "type": "LineString", "coordinates": [[8.2, 45.2], [8.3, 45.3]] } },
     { "type": "Feature",
       "properties": { "id": 503, "source": 33, "target": 34, "length": 50.0,
         "maxspeed": 50, "nlanes": 1, "type": "residential", "name": "d",
-        "coilcode": true },
+        "coilcode": true, "transport_capacity": 0 },
       "geometry": { "type": "LineString", "coordinates": [[8.3, 45.3], [8.4, 45.4]] } },
     { "type": "Feature",
       "properties": { "id": 504, "source": 34, "target": 34, "length": 50.0,
@@ -687,6 +694,8 @@ TEST_CASE("RoadNetwork") {
           CHECK_EQ(e500.getAttribute<std::string>("custom_str"), "hello");
           CHECK(e500.attributes().contains("custom_null"));
           CHECK_FALSE(e500.attributes().contains("custom_arr"));
+          CHECK_EQ(e500.transportCapacity(), doctest::Approx(0.25));
+          CHECK_FALSE(e500.attributes().contains("transport_capacity"));
 
           auto const& e501 = graphWithOptionals.edge(static_cast<Id>(501));
           CHECK_EQ(e501.maxSpeed(), doctest::Approx(30. / 3.6));
@@ -694,8 +703,14 @@ TEST_CASE("RoadNetwork") {
           CHECK_EQ(e501.mobilityClass(), 0u);
           CHECK_EQ(e501.counterName(), "42");
           CHECK(e501.forbiddenTurns().empty());
+          CHECK_EQ(e501.transportCapacity(), doctest::Approx(1.));
 
-          CHECK_EQ(graphWithOptionals.edge(static_cast<Id>(502)).counterName(), "-3");
+          auto const& e502 = graphWithOptionals.edge(static_cast<Id>(502));
+          CHECK_EQ(e502.counterName(), "-3");
+          CHECK_EQ(e502.transportCapacity(), doctest::Approx(3.));
+
+          CHECK_EQ(graphWithOptionals.edge(static_cast<Id>(503)).transportCapacity(),
+                   doctest::Approx(1.));
         }
       }
 
@@ -1308,6 +1323,7 @@ TEST_CASE("RoadNetwork") {
                  {dsf::geometry::Point(8.0, 45.0), dsf::geometry::Point(8.1, 45.1)}}};
     s.setMobilityClass(64u);  // PRIMARY
     s.setPriority();
+    s.setTransportCapacity(0.5);
     graph.addStreet(std::move(s));
     graph.addCoil(42, "coil_42");
 
@@ -1326,8 +1342,9 @@ TEST_CASE("RoadNetwork") {
     REQUIRE(edgesFile.is_open());
     std::string edgesCsv((std::istreambuf_iterator<char>(edgesFile)),
                          std::istreambuf_iterator<char>());
-    CHECK(edgesCsv.find("id,source,target,length,maxspeed,nlanes,type,capacity,status,"
-                        "name,priority,coilcode,geometry") != std::string::npos);
+    CHECK(edgesCsv.find("id,source,target,length,maxspeed,nlanes,type,capacity,"
+                        "transport_capacity,status,name,priority,coilcode,geometry") !=
+          std::string::npos);
     CHECK(edgesCsv.find("Exported Street") != std::string::npos);
     CHECK(edgesCsv.find("64") != std::string::npos);  // PRIMARY
     CHECK(edgesCsv.find("OPEN") != std::string::npos);
@@ -1350,6 +1367,12 @@ TEST_CASE("RoadNetwork") {
     roundTrip.importNodeProperties(nodesPath.string(), ',');
     CHECK_EQ(roundTrip.node(0).geometry(), dsf::geometry::Point(8.0, 45.0));
     CHECK_EQ(roundTrip.node(1).geometry(), dsf::geometry::Point(8.1, 45.1));
+
+    // The exported transport capacity can be imported back
+    RoadNetwork edgesRoundTrip{};
+    edgesRoundTrip.importEdges(edgesPath.string(), ',');
+    CHECK_EQ(edgesRoundTrip.edge(static_cast<Id>(42)).transportCapacity(),
+             doctest::Approx(0.5));
 
     std::filesystem::remove(edgesPath);
     std::filesystem::remove(nodesPath);
