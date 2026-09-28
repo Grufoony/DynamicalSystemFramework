@@ -22,6 +22,7 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "name",
                                      "type",
                                      "capacity",
+                                     "transport_capacity",
                                      "status",
                                      "coilcode",
                                      "priority",
@@ -69,6 +70,9 @@ namespace dsf::mobility {
         (std::find(colNames.begin(), colNames.end(), "priority") != colNames.end());
     bool const bHasCapacity =
         (std::find(colNames.begin(), colNames.end(), "capacity") != colNames.end());
+    bool const bHasTransportCapacity =
+        (std::find(colNames.begin(), colNames.end(), "transport_capacity") !=
+         colNames.end());
     bool const bHasStatus =
         (std::find(colNames.begin(), colNames.end(), "status") != colNames.end());
     bool const bHasForbiddenTurns =
@@ -281,6 +285,15 @@ namespace dsf::mobility {
           spdlog::warn("Invalid lane_mapping ({}) for {}.",
                        row["lane_mapping"].get<std::string>(),
                        edge(streetId));
+        }
+      }
+      // Parse transport_capacity after lane_mapping: changeNLanes() rescales it
+      if (bHasTransportCapacity && !row["transport_capacity"].is_null()) {
+        try {
+          edge(streetId).setTransportCapacity(row["transport_capacity"].get<double>());
+        } catch (...) {
+          spdlog::warn("Invalid transport_capacity for edge {}. Using default (1).",
+                       streetId);
         }
       }
 
@@ -600,6 +613,23 @@ namespace dsf::mobility {
         } else {
           spdlog::warn(
               "Invalid lane_mapping property for edge {}, expected an array, skipping",
+              edge_id);
+        }
+      }
+      // Handle transport_capacity property
+      auto const transport_capacity_result = edge_properties.at_key("transport_capacity");
+      if (!transport_capacity_result.error() && !transport_capacity_result.is_null()) {
+        if (transport_capacity_result.is_number()) {
+          try {
+            edge(edge_id).setTransportCapacity(transport_capacity_result.get_double());
+          } catch (std::invalid_argument const&) {
+            spdlog::warn("Invalid transport_capacity for edge {}, keeping default (1)",
+                         edge_id);
+          }
+        } else {
+          spdlog::warn(
+              "Invalid transport_capacity property for edge {}, expected a number, "
+              "keeping default (1)",
               edge_id);
         }
       }
@@ -1578,6 +1608,7 @@ namespace dsf::mobility {
                                            "nlanes",
                                            "type",
                                            "capacity",
+                                           "transport_capacity",
                                            "status",
                                            "name",
                                            "priority",
@@ -1601,6 +1632,7 @@ namespace dsf::mobility {
         edgeRow.emplace_back(std::format("{}", pStreet->nLanes()));
         edgeRow.emplace_back(std::format("{}", pStreet->mobilityClass()));
         edgeRow.emplace_back(std::format("{}", pStreet->capacity()));
+        edgeRow.emplace_back(std::format("{}", pStreet->transportCapacity()));
         edgeRow.emplace_back(std::format("{}", pStreet->roadStatus()));
         edgeRow.emplace_back(pStreet->name());
         edgeRow.emplace_back(std::format("{}", pStreet->hasPriority()));
