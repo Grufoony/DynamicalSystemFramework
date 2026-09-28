@@ -29,6 +29,9 @@
 #include <tbb/parallel_for.h>
 
 namespace dsf {
+  /// @brief Absolute tolerance used when comparing path costs
+  inline constexpr double PATH_COST_EPS = 1e-12;
+
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   class Network {
@@ -42,10 +45,10 @@ namespace dsf {
         };
     std::optional<double> m_weightThreshold = std::nullopt;
 
-    constexpr inline auto m_cantorHash(Id u, Id v) const {
+    static constexpr auto m_cantorHash(Id u, Id v) noexcept {
       return ((u + v) * (u + v + 1)) / 2 + v;
     }
-    constexpr inline auto m_cantorHash(std::pair<Id, Id> const& idPair) const {
+    static constexpr auto m_cantorHash(std::pair<Id, Id> const& idPair) noexcept {
       return m_cantorHash(idPair.first, idPair.second);
     }
     /// @brief Find the edge going from source to target
@@ -495,12 +498,12 @@ namespace dsf {
         }
 
         // Keep hop transitions acyclic so path expansion remains finite.
-        if (nextDistToTarget + 1e-12 >= nodeDistToTarget) {
+        if (nextDistToTarget + PATH_COST_EPS >= nodeDistToTarget) {
           continue;
         }
 
         auto const fullPathCost = m_weightFunction(outEdge) + nextDistToTarget;
-        if (fullPathCost <= nodeBudget + 1e-12 &&
+        if (fullPathCost <= nodeBudget + PATH_COST_EPS &&
             std::find(hops.begin(), hops.end(), nextNodeId) == hops.end()) {
           hops.push_back(nextNodeId);
         }
@@ -551,12 +554,12 @@ namespace dsf {
         }
 
         // Keep hop transitions acyclic so path expansion remains finite.
-        if (nextDistToTarget + 1e-12 >= edgeDistToTarget) {
+        if (nextDistToTarget + PATH_COST_EPS >= edgeDistToTarget) {
           continue;
         }
 
         auto const fullPathCost = m_weightFunction(pNextEdge) + nextDistToTarget;
-        if (fullPathCost <= edgeBudget + 1e-12 &&
+        if (fullPathCost <= edgeBudget + PATH_COST_EPS &&
             std::find(hops.begin(), hops.end(), nextEdgeId) == hops.end()) {
           hops.push_back(nextEdgeId);
         }
@@ -623,7 +626,7 @@ namespace dsf {
         }
 
         // Keep transitions acyclic and convergent for finite path expansion.
-        if (nextDistToTarget + 1e-12 >= nodeDistToTarget) {
+        if (nextDistToTarget + PATH_COST_EPS >= nodeDistToTarget) {
           continue;
         }
 
@@ -634,13 +637,13 @@ namespace dsf {
         // Keep intermediate transitions source-distance-consistent so all
         // prefixes to a node share the same cost label.
         if (nextNodeId != targetId &&
-            (projectedDistFromSource > nextDistFromSource + 1e-12 ||
-             projectedDistFromSource + 1e-12 < nextDistFromSource)) {
+            (projectedDistFromSource > nextDistFromSource + PATH_COST_EPS ||
+             projectedDistFromSource + PATH_COST_EPS < nextDistFromSource)) {
           continue;
         }
 
         auto const optimisticCost = projectedDistFromSource + nextDistToTarget;
-        if (optimisticCost > sourceBudget + 1e-12) {
+        if (optimisticCost > sourceBudget + PATH_COST_EPS) {
           continue;
         }
 

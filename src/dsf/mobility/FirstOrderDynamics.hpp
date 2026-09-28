@@ -38,7 +38,7 @@
 #include "RoadNetwork.hpp"
 #include "../utility/Typedef.hpp"
 
-static constexpr auto CACHE_FOLDER = "./.dsfcache/";
+inline constexpr std::string_view CACHE_FOLDER = "./.dsfcache/";
 
 namespace dsf::mobility {
   using TurnCountsDict =

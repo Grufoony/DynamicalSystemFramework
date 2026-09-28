@@ -13,6 +13,16 @@ TEST_CASE("Point constructors and equality") {
     CHECK_EQ(p.x(), 1.5);
     CHECK_EQ(p.y(), -2.3);
   }
+  SUBCASE("Constexpr construction and structured bindings") {
+    constexpr Point p(1.5, -2.3);
+    static_assert(p.x() == 1.5);
+    static_assert(p.y() == -2.3);
+    static_assert(p.get<0>() == 1.5);
+    static_assert(p.get<1>() == -2.3);
+    auto const& [x, y] = p;
+    CHECK_EQ(x, 1.5);
+    CHECK_EQ(y, -2.3);
+  }
   SUBCASE("String constructor WKT") {
     Point p("POINT(3.2 4.5)");
     CHECK_EQ(p.x(), 3.2);

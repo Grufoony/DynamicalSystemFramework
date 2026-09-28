@@ -14,7 +14,8 @@
 namespace dsf::mobility {
   namespace {
     /// @brief Percentage of @p value over @p total, or 0 when @p total is 0.
-    double percentOf(std::size_t const value, std::size_t const total) {
+    constexpr double percentOf(std::size_t const value,
+                               std::size_t const total) noexcept {
       return total == 0 ? 0.
                         : static_cast<double>(value) * 100. / static_cast<double>(total);
     }

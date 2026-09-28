@@ -15,7 +15,7 @@ namespace dsf::geometry {
     /// @brief Construct a Point with given x and y coordinates.
     /// @param x The x coordinate
     /// @param y The y coordinate
-    Point(double x, double y) : m_x(x), m_y(y) {}
+    constexpr Point(double x, double y) noexcept : m_x(x), m_y(y) {}
     /// @brief Construct a Point from a string representation.
     /// @param strPoint The string representation of the point.
     /// @param format The format of the string representation. Default is "WKT".
@@ -28,15 +28,15 @@ namespace dsf::geometry {
     }
     /// @brief Support for structured bindings, e.g., auto const& [x, y] = point;
     template <std::size_t Index>
-    inline double const& get() const {
+    constexpr double const& get() const noexcept {
       if constexpr (Index == 0)
         return m_x;
       else if constexpr (Index == 1)
         return m_y;
     }
 
-    inline double const& x() const { return m_x; }
-    inline double const& y() const { return m_y; }
+    constexpr double const& x() const noexcept { return m_x; }
+    constexpr double const& y() const noexcept { return m_y; }
   };
 
   /// @brief Compute the Haversine distance between two geographic points.
@@ -75,6 +75,6 @@ namespace std {
 
 // ADL-based get for structured bindings
 template <std::size_t I>
-inline double const& get(dsf::geometry::Point const& point) {
+constexpr double const& get(dsf::geometry::Point const& point) noexcept {
   return point.get<I>();
 }

@@ -119,7 +119,7 @@ namespace dsf::mobility {
                      sourceId,
                      targetId);
       }
-      dMaxSpeed /= 3.6;  // Convert to m/s
+      dMaxSpeed /= MS_TO_KMH;  // Convert to m/s
 
       addStreet(Street(streetId,
                        std::make_pair(sourceId, targetId),
@@ -455,7 +455,7 @@ namespace dsf::mobility {
           edge_maxspeed = maxspeed_val.get_double();
         }
       }
-      edge_maxspeed /= 3.6;
+      edge_maxspeed /= MS_TO_KMH;
 
       // Robust extraction for lanes
       auto edge_lanes{1u};
@@ -1628,7 +1628,7 @@ namespace dsf::mobility {
         edgeRow.emplace_back(std::format("{}", pStreet->source()));
         edgeRow.emplace_back(std::format("{}", pStreet->target()));
         edgeRow.emplace_back(std::format("{}", pStreet->length()));
-        edgeRow.emplace_back(std::format("{}", pStreet->maxSpeed() * 3.6));
+        edgeRow.emplace_back(std::format("{}", pStreet->maxSpeed() * MS_TO_KMH));
         edgeRow.emplace_back(std::format("{}", pStreet->nLanes()));
         edgeRow.emplace_back(std::format("{}", pStreet->mobilityClass()));
         edgeRow.emplace_back(std::format("{}", pStreet->capacity()));

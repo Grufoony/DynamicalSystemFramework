@@ -11,8 +11,8 @@
 #define DSF_EXECUTION
 #endif
 #include <format>
+#include <optional>
 #include <string_view>
-#include <unordered_map>
 
 namespace dsf {
 
@@ -29,7 +29,7 @@ namespace dsf {
     LEFT = 5,  // delta > 0
     UTURN = 6  // std::abs(delta) > std::numbers::pi
   };
-  constexpr std::array<std::string_view, 7> directionToString{
+  inline constexpr std::array<std::string_view, 7> directionToString{
       "RIGHT", "RIGHT&STRAIGHT", "STRAIGHT", "ANY", "LEFT&STRAIGHT", "LEFT", "UTURN"};
   enum class TrafficLightOptimization : uint8_t { SINGLE_TAIL = 0, DOUBLE_TAIL = 1 };
   enum train_t : uint8_t {
@@ -43,8 +43,24 @@ namespace dsf {
     ES = 7,            // Eurostar
   };
   enum class FileExt : std::size_t { CSV, JSON, GEOJSON };
-  std::unordered_map<std::string, FileExt> const fileExtMap{
-      {"csv", FileExt::CSV}, {"json", FileExt::JSON}, {"geojson", FileExt::GEOJSON}};
+  /// @brief Get the FileExt matching a file extension (without the leading dot)
+  /// @param ext The file extension, e.g. "csv"
+  /// @return std::optional<FileExt> The matching FileExt, or std::nullopt if unsupported
+  constexpr std::optional<FileExt> fileExtFromString(std::string_view ext) noexcept {
+    if (ext == "csv") {
+      return FileExt::CSV;
+    }
+    if (ext == "json") {
+      return FileExt::JSON;
+    }
+    if (ext == "geojson") {
+      return FileExt::GEOJSON;
+    }
+    return std::nullopt;
+  }
+
+  /// @brief Conversion factor from m/s to km/h
+  inline constexpr double MS_TO_KMH = 3.6;
 
 };  // namespace dsf
 
