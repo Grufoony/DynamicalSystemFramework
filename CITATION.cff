@@ -9,8 +9,11 @@ authors:
   - family-names: Berselli
     given-names: Gregorio
     orcid: 'https://orcid.org/0009-0004-7797-9138'
+  - family-names: Bazzani
+    given-names: Armando
+    orcid: 'https://orcid.org/0000-0002-9633-0017'
 repository-code: 'https://github.com/Grufoony/DynamicalSystemFramework'
 url: 'https://grufoony.github.io/DynamicalSystemFramework/'
 license: AGPL-3.0-only
-version: 7.2.8
+version: 7.2.9
 date-released: '2026-09-27'
