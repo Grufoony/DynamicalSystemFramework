@@ -3,6 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/dsf-suite)](https://pypi.org/project/dsf-suite/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18745492.svg)](https://doi.org/10.5281/zenodo.18745492)
 
+
 [![Standard](https://img.shields.io/badge/C%2B%2B-20/23-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B#Standardization)
 [![TBB](https://img.shields.io/badge/TBB-2022.3.0-blue.svg)](https://github.com/oneapi-src/oneTBB)
 [![SPDLOG](https://img.shields.io/badge/spdlog-1.17.0-blue.svg)](https://github.com/gabime/spdlog)
@@ -139,18 +140,9 @@ for f in ./*.out ; do ./$f ; done
 ```
 
 ## Citing
-
-```BibTex
-@software{berselli_2026_18745492,
-  author       = {Berselli, Gregorio},
-  title        = {DynamicalSystemFramework},
-  month        = mar,
-  year         = 2026,
-  publisher    = {Zenodo},
-  doi          = {10.5281/zenodo.18745492},
-  url          = {https://doi.org/10.5281/zenodo.18745492},
-}
-```
+If you use this software, please cite it using the metadata in [CITATION.cff](CITATION.cff)
+(GitHub's "Cite this repository" button exports it as BibTeX/APA), or via its DOI:
+[10.5281/zenodo.18745492](https://doi.org/10.5281/zenodo.18745492).
 
 ## Bibliography
 - **Mungai, Veronica** (2024) *Studio dell'ottimizzazione di una rete semaforica*. University of Bologna, Bachelor's Degree in Physics [L-DM270]. [Link to Thesis](https://amslaurea.unibo.it/id/eprint/32525/).

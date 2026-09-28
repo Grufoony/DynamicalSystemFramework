@@ -12,6 +12,7 @@ authors:
   - family-names: Bazzani
     given-names: Armando
     orcid: 'https://orcid.org/0000-0002-9633-0017'
+doi: 10.5281/zenodo.18745492
 repository-code: 'https://github.com/Grufoony/DynamicalSystemFramework'
 url: 'https://grufoony.github.io/DynamicalSystemFramework/'
 license: AGPL-3.0-only
