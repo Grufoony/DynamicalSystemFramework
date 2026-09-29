@@ -265,6 +265,9 @@ namespace dsf::mobility {
       if (!dynamicsConfig["max_concurrency"].error()) {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
       }
+      if (!dynamicsConfig["dt"].error()) {
+        m_dynamics->setDt(dynamicsConfig["dt"].get_double().value());
+      }
       auto const agentInsertionMethod =
           require_field(dynamicsConfig, "dynamics", "agent_insertion_method")
               .get_string()
@@ -396,6 +399,20 @@ namespace dsf::mobility {
     }
   }
 
+  std::pair<std::time_t, std::optional<std::time_t>>
+  TrafficSimulator::m_intervalsToTimeSteps() const {
+    auto const updatePathSteps{
+        m_updatePathDeltaT > 0
+            ? m_dynamics->secondsToTimeSteps(static_cast<double>(m_updatePathDeltaT))
+            : std::time_t{0}};
+    std::optional<std::time_t> savingSteps{std::nullopt};
+    if (m_savingInterval.has_value()) {
+      savingSteps =
+          m_dynamics->secondsToTimeSteps(static_cast<double>(*m_savingInterval));
+    }
+    return {updatePathSteps, savingSteps};
+  }
+
   void TrafficSimulator::m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
                                       std::optional<std::time_t> const deltaT,
                                       double const percentRandomAgents) {
@@ -417,7 +434,11 @@ namespace dsf::mobility {
       }
       m_endTime = scheduleEndTime;
     }
-    std::time_t agentInsertionDeltaT = deltaT.value_or(0);
+    // Agent insertion interval, in time steps
+    std::time_t agentInsertionDeltaT =
+        deltaT.has_value()
+            ? m_dynamics->secondsToTimeSteps(static_cast<double>(deltaT.value()))
+            : 0;
 
     if (nAgentsPerTimeStep.empty()) {
       throw std::runtime_error(
@@ -430,20 +451,27 @@ namespace dsf::mobility {
           m_timeToStr(m_endTime),
           m_timeToStr(m_initTime)));
     }
-    auto totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
     auto const nInsertions{nAgentsPerTimeStep.size()};
+    std::time_t totalTimeSteps{0};
+    if (m_endTime != 0) {
+      totalTimeSteps =
+          m_dynamics->secondsToTimeSteps(static_cast<double>(m_endTime - m_initTime));
+    }
 
     if (agentInsertionDeltaT == 0) {
       if (m_endTime > m_initTime) {
         agentInsertionDeltaT = totalTimeSteps / static_cast<std::time_t>(nInsertions);
         if (totalTimeSteps % static_cast<std::time_t>(nInsertions) != 0) {
           spdlog::warn(
-              "Total simulation time ({} seconds) is not perfectly divisible by the "
+              "Total simulation time ({} time steps) is not perfectly divisible by the "
               "number of agent insertion steps ({}). The last agent insertion step "
               "will occur at time {} instead of the end time {}.",
               totalTimeSteps,
               nInsertions,
-              m_timeToStr(m_initTime + agentInsertionDeltaT * nInsertions),
+              m_timeToStr(m_initTime +
+                          static_cast<std::time_t>(std::llround(
+                              m_dynamics->timeStepsToSeconds(agentInsertionDeltaT) *
+                              static_cast<double>(nInsertions)))),
               m_timeToStr(m_endTime));
         }
       }
@@ -452,26 +480,26 @@ namespace dsf::mobility {
       }
     }
     if (m_endTime == 0) {
-      m_endTime =
-          m_initTime + static_cast<std::time_t>(agentInsertionDeltaT * nInsertions);
-      totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
+      totalTimeSteps = agentInsertionDeltaT * static_cast<std::time_t>(nInsertions);
+      m_endTime = m_initTime + static_cast<std::time_t>(std::ceil(
+                                   m_dynamics->timeStepsToSeconds(totalTimeSteps)));
     }
+    auto const [updatePathSteps, savingIntervalSteps] = m_intervalsToTimeSteps();
+    auto savingSteps{savingIntervalSteps};
 
     m_preparePersistence();
 
     spdlog::info(
-        "Starting simulation run from {} to {} ({} time steps) with agent insertion "
-        "every {} seconds.",
+        "Starting simulation run from {} to {} ({} time steps of {} seconds) with agent "
+        "insertion every {} time steps.",
         m_timeToStr(m_initTime),
         m_timeToStr(m_endTime),
         totalTimeSteps,
+        m_dynamics->dt(),
         agentInsertionDeltaT);
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
 
-    std::optional<std::time_t> nextODUpdateTime =
-        m_dynamicODsUpdate.empty()
-            ? std::nullopt
-            : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+    auto nextODUpdateTime{m_nextODUpdateTimeStep()};
     if (nextODUpdateTime.has_value() && *nextODUpdateTime != 0) {
       throw std::runtime_error(std::format(
           "First dynamic OD update time must be 0 (initial time). Current value: {}",
@@ -481,12 +509,9 @@ namespace dsf::mobility {
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
         m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
         m_dynamicODsUpdate.pop();
-        nextODUpdateTime =
-            m_dynamicODsUpdate.empty()
-                ? std::nullopt
-                : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        nextODUpdateTime = m_nextODUpdateTimeStep();
         m_dynamics->updatePaths();
-      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
+      } else if ((updatePathSteps > 0 && currentStep % updatePathSteps == 0) ||
                  (currentStep == 0)) {
         m_dynamics->updatePaths();
       }
@@ -510,9 +535,8 @@ namespace dsf::mobility {
         }
       }
 
-      bool const shouldSave =
-          m_savingInterval.has_value() &&
-          (m_savingInterval.value() == 0 || currentStep % m_savingInterval.value() == 0);
+      bool const shouldSave = savingSteps.has_value() &&
+                              (*savingSteps == 0 || currentStep % *savingSteps == 0);
       auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
                                                                       m_saveStreetData,
                                                                       m_saveTravelData,
@@ -523,7 +547,8 @@ namespace dsf::mobility {
       if (shouldSave) {
         spdlog::debug("Saving step data at time step {}.", currentStep);
         m_flushStepData(std::move(stepData));
-        if (m_savingInterval.value() == 0) {
+        if (*savingSteps == 0) {
+          savingSteps.reset();
           m_savingInterval.reset();
           m_saveAverageStats = false;
           m_saveStreetData = false;
@@ -539,38 +564,43 @@ namespace dsf::mobility {
     m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
   }
   void TrafficSimulator::m_runSlowCharge(std::size_t const nInitialAgents,
-                                         std::time_t const agentInsertionDeltaT,
-                                         std::time_t const checkDeltaT,
+                                         std::time_t const agentInsertionSeconds,
+                                         std::time_t const checkSeconds,
                                          std::size_t const agentIncrement) {
     if (m_endTime < m_initTime) {
       throw std::runtime_error(
           "End time must be greater than or equal to initial time for the simulation.");
     }
-    if (agentInsertionDeltaT <= 0) {
+    if (agentInsertionSeconds <= 0) {
       throw std::invalid_argument(std::format(
-          "Agent insertion delta time ({}) must be positive.", agentInsertionDeltaT));
+          "Agent insertion delta time ({}) must be positive.", agentInsertionSeconds));
     }
-    if (checkDeltaT <= 0) {
+    if (checkSeconds <= 0) {
       throw std::invalid_argument(
-          std::format("Check delta time ({}) must be positive.", checkDeltaT));
+          std::format("Check delta time ({}) must be positive.", checkSeconds));
     }
-    auto const totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
+    auto const totalTimeSteps =
+        m_dynamics->secondsToTimeSteps(static_cast<double>(m_endTime - m_initTime));
+    auto const agentInsertionDeltaT =
+        m_dynamics->secondsToTimeSteps(static_cast<double>(agentInsertionSeconds));
+    auto const checkDeltaT =
+        m_dynamics->secondsToTimeSteps(static_cast<double>(checkSeconds));
+    auto const [updatePathSteps, savingIntervalSteps] = m_intervalsToTimeSteps();
+    auto savingSteps{savingIntervalSteps};
 
     m_preparePersistence();
 
     spdlog::info(
-        "Starting slow charge run from {} to {} ({} time steps) with agent insertion "
-        " check every {} seconds.",
+        "Starting slow charge run from {} to {} ({} time steps of {} seconds) with agent "
+        "insertion check every {} time steps.",
         m_timeToStr(m_initTime),
         m_timeToStr(m_endTime),
         totalTimeSteps,
+        m_dynamics->dt(),
         checkDeltaT);
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
 
-    std::optional<std::time_t> nextODUpdateTime =
-        m_dynamicODsUpdate.empty()
-            ? std::nullopt
-            : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+    auto nextODUpdateTime{m_nextODUpdateTimeStep()};
     if (nextODUpdateTime.has_value() && *nextODUpdateTime != 0) {
       throw std::runtime_error(std::format(
           "First dynamic OD update time must be 0 (initial time). Current value: {}",
@@ -582,12 +612,9 @@ namespace dsf::mobility {
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
         m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
         m_dynamicODsUpdate.pop();
-        nextODUpdateTime =
-            m_dynamicODsUpdate.empty()
-                ? std::nullopt
-                : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        nextODUpdateTime = m_nextODUpdateTimeStep();
         m_dynamics->updatePaths();
-      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
+      } else if ((updatePathSteps > 0 && currentStep % updatePathSteps == 0) ||
                  (currentStep == 0)) {
         m_dynamics->updatePaths();
       }
@@ -601,9 +628,8 @@ namespace dsf::mobility {
         m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);
       }
 
-      bool const shouldSave =
-          m_savingInterval.has_value() &&
-          (m_savingInterval.value() == 0 || currentStep % m_savingInterval.value() == 0);
+      bool const shouldSave = savingSteps.has_value() &&
+                              (*savingSteps == 0 || currentStep % *savingSteps == 0);
       auto stepData = m_dynamics->evolve(shouldSave ? StepDataRequest{m_saveAverageStats,
                                                                       m_saveStreetData,
                                                                       m_saveTravelData,
@@ -613,7 +639,8 @@ namespace dsf::mobility {
 
       if (shouldSave) {
         m_flushStepData(std::move(stepData));
-        if (m_savingInterval.value() == 0) {
+        if (*savingSteps == 0) {
+          savingSteps.reset();
           m_savingInterval.reset();
           m_saveAverageStats = false;
           m_saveStreetData = false;
@@ -1340,7 +1367,9 @@ namespace dsf::mobility {
       return;
     }
 
-    auto const datetime = m_timeToStr(m_initTime + stepData.timeStep);
+    auto const datetime =
+        m_timeToStr(m_initTime + static_cast<std::time_t>(std::llround(
+                                     m_dynamics->timeStepsToSeconds(stepData.timeStep))));
     auto const timeStep = static_cast<std::int64_t>(stepData.timeStep);
     auto const simulationId = static_cast<std::int64_t>(m_id);
 

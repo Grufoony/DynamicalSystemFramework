@@ -1230,7 +1230,8 @@ namespace dsf::mobility {
        << " coil sensors.\n";
   }
 
-  void RoadNetwork::adjustNodeCapacities() {
+  void RoadNetwork::adjustNodeCapacities(double const dt) {
+    auto const timeStepScale{std::max(1., dt)};
     double value;
     for (auto const& [_, pNode] : nodes()) {
       value = 0.;
@@ -1238,7 +1239,7 @@ namespace dsf::mobility {
         auto* pStreet{&this->edge(edgeId)};
         value += pStreet->nLanes() * pStreet->transportCapacity();
       }
-      pNode->setCapacity(static_cast<std::size_t>(value));
+      pNode->setCapacity(static_cast<std::size_t>(value * timeStepScale));
       value = 0.;
       for (auto const& edgeId : pNode->outgoingEdges()) {
         auto* pStreet{&this->edge(edgeId)};
@@ -1249,7 +1250,7 @@ namespace dsf::mobility {
         // Falling back to the outgoing sum, and ultimately to 1: a zero capacity makes
         // isFull() permanently true (the node would never accept an agent) and turns
         // density() into a division by zero.
-        pNode->setCapacity(value > 0. ? static_cast<std::size_t>(value)
+        pNode->setCapacity(value > 0. ? static_cast<std::size_t>(value * timeStepScale)
                                       : static_cast<std::size_t>(1));
       }
     }

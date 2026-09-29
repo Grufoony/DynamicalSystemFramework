@@ -136,6 +136,13 @@ namespace dsf::mobility {
     bool m_forcePriorities{false};
 
   private:
+    /// @brief Get the number of time steps needed to travel a given length at a given speed
+    /// @param length The length to travel, in meters
+    /// @param speed The travel speed, in m/s
+    /// @return std::time_t The number of time steps, rounded up
+    inline std::time_t m_travelTimeSteps(double const length, double const speed) const {
+      return static_cast<std::time_t>(std::ceil(length / (speed * this->dt())));
+    }
     /// @brief Kill an agent from the dynamics
     /// @tparam Arrived A boolean indicating whether the agent has arrived at its destination
     /// @param pAgent A std::unique_ptr to the agent to kill
@@ -206,7 +213,7 @@ namespace dsf::mobility {
                        std::optional<unsigned int> seed = std::nullopt);
 
     /// @brief Automatically prepare the network for the simulation. This method calls the following methods in order:
-    /// - RoadNetwork::adjustNodeCapacities()
+    /// - RoadNetwork::adjustNodeCapacities(dt)
     /// - RoadNetwork::autoMapStreetLanes()
     /// - RoadNetwork::autoAssignRoadPriorities()
     /// - RoadNetwork::autoInitTrafficLights()
@@ -228,7 +235,7 @@ namespace dsf::mobility {
     ///   It is useful in the case of random agents
     void setPassageProbability(double passageProbability);
     /// @brief Set the time tolerance factor for killing stagnant agents.
-    ///   An agent will be considered stagnant if it has not moved for timeToleranceFactor * std::ceil(street_length / street_maxSpeed) time units.
+    ///   An agent will be considered stagnant if it has not moved for timeToleranceFactor * std::ceil(street_length / (street_maxSpeed * dt)) time steps.
     /// @param timeToleranceFactor The time tolerance factor
     /// @throw std::invalid_argument If the time tolerance factor is not positive
     void killStagnantAgents(double timeToleranceFactor = 3.);
@@ -258,7 +265,7 @@ namespace dsf::mobility {
       m_updatepathsThrowOnEmpty = throwOnEmpty;
     }
     /// @brief Set the data update period.
-    /// @param dataUpdatePeriod Delay, The period
+    /// @param dataUpdatePeriod Delay, The period in seconds. It must be a multiple of dt.
     /// @details Some data, i.e. the street queue lengths, are stored only after a fixed amount of time which is represented by this variable.
     inline void setDataUpdatePeriod(Delay const dataUpdatePeriod) noexcept {
       m_dataUpdatePeriod = dataUpdatePeriod;
@@ -273,7 +280,7 @@ namespace dsf::mobility {
                                     "meanTravelDistance must be positive");
     };
     /// @brief Set the mean travel time for random agents. The travel time will be sampled from an exponential distribution with this mean.
-    /// @param meanTravelTime The mean travel time
+    /// @param meanTravelTime The mean travel time, in seconds
     inline void setMeanTravelTime(std::time_t const meanTravelTime) noexcept {
       m_meanTravelTime = meanTravelTime;
     };
@@ -567,8 +574,9 @@ namespace dsf::mobility {
       spdlog::trace("Killing agent {}", *pAgent);
       ++m_nKilledAgents;
     }
-    m_travelDTs.push_back({pAgent->distance(),
-                           static_cast<double>(this->time_step() - pAgent->spawnTime())});
+    m_travelDTs.push_back(
+        {pAgent->distance(),
+         this->timeStepsToSeconds(this->time_step() - pAgent->spawnTime())});
 
     auto const optNextStreetId = pAgent->nextStreetId();
     if (optNextStreetId.has_value()) {
@@ -705,7 +713,8 @@ namespace dsf::mobility {
           this->m_agents.back()->setMaxDistance(distDist(this->m_generator));
         }
         if (m_meanTravelTime.has_value()) {
-          this->m_agents.back()->setMaxTime(timeDist(this->m_generator));
+          this->m_agents.back()->setMaxTime(
+              static_cast<std::time_t>(timeDist(this->m_generator) / this->dt()));
         }
       }
     } else {
@@ -730,7 +739,8 @@ namespace dsf::mobility {
           this->m_agents.back()->setMaxDistance(distDist(this->m_generator));
         }
         if (m_meanTravelTime.has_value()) {
-          this->m_agents.back()->setMaxTime(timeDist(this->m_generator));
+          this->m_agents.back()->setMaxTime(
+              static_cast<std::time_t>(timeDist(this->m_generator) / this->dt()));
         }
       }
     }

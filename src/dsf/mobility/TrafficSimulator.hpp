@@ -58,6 +58,20 @@ namespace dsf::mobility {
 
     std::string m_generateCSVfilename(std::string_view const tableName) const;
 
+    /// @brief Get the time step, relative to the start of the run, of the next dynamic OD update
+    /// @return std::optional<std::time_t> The time step, or std::nullopt if there are no more updates
+    /// @throw std::invalid_argument If the update time is not a multiple of dt
+    inline std::optional<std::time_t> m_nextODUpdateTimeStep() const {
+      if (m_dynamicODsUpdate.empty()) {
+        return std::nullopt;
+      }
+      return m_dynamics->secondsToTimeSteps(
+          static_cast<double>(std::get<0>(m_dynamicODsUpdate.front())));
+    }
+    /// @brief Convert the configured update paths and saving intervals (seconds) into time steps
+    /// @return std::pair<std::time_t, std::optional<std::time_t>> The update paths interval and the saving interval, in time steps
+    std::pair<std::time_t, std::optional<std::time_t>> m_intervalsToTimeSteps() const;
+
     /// @brief Assign a unique id to the simulation using the current time in the format YYYYMMDDHHMMSS
     void m_createId();
 
@@ -225,8 +239,8 @@ namespace dsf::mobility {
                       std::optional<std::time_t> const deltaT = std::nullopt,
                       double const percentRandomAgents = 0.0);
     void m_runSlowCharge(std::size_t const nInitialAgents,
-                         std::time_t const agentInsertionDeltaT,
-                         std::time_t const checkDeltaT,
+                         std::time_t const agentInsertionSeconds,
+                         std::time_t const checkSeconds,
                          std::size_t const agentIncrement = 1);
 
   public:
@@ -254,11 +268,12 @@ namespace dsf::mobility {
                            std::string_view const nodePropertiesFile = std::string_view());
 
     /// @brief Configure the path-update cadence forwarded to the dynamics engine.
-    /// @param deltaT The update cadence in time steps.
+    /// @param deltaT The update cadence in seconds (a multiple of the dynamics' dt). 0 means paths are updated only at the start.
     /// @param throw_on_empty Whether an empty itinerary path should throw.
     void updatePaths(std::time_t const deltaT = 0, bool const throw_on_empty = true);
 
     /// @brief Configure the data-saving behavior.
+    /// @param savingInterval The saving interval in seconds (a multiple of the dynamics' dt). 0 means data are saved only once, at the first time step.
     void saveData(std::time_t const savingInterval,
                   bool const saveAverageStats = false,
                   bool const saveStreetData = false,
@@ -286,6 +301,11 @@ namespace dsf::mobility {
     }
 
     /// @brief Run the simulation until the configured end time.
+    /// @param nAgentsPerTimeStep The number of agents to insert at each insertion step
+    /// @param deltaT Optional interval between insertions, in seconds (a multiple of the dynamics' dt)
+    /// @param percentageRandomAgents The fraction of inserted agents that are random
+    /// @details All time inputs (time frame, intervals, dynamic OD times) are in seconds and are converted into time steps using the dynamics' dt.
+    /// @throw std::invalid_argument If a time input is not a multiple of dt
     inline void run(std::vector<std::size_t> const& nAgentsPerTimeStep,
                     std::optional<std::time_t> const deltaT = std::nullopt,
                     double const percentageRandomAgents = 0.0) {
@@ -297,6 +317,12 @@ namespace dsf::mobility {
       m_runDefault(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
     }
 
+    /// @brief Run a slow-charge simulation until the configured end time.
+    /// @param nInitialAgents The number of agents inserted at each insertion step at the start
+    /// @param agentInsertionDeltaT The interval between insertions, in seconds (a multiple of the dynamics' dt)
+    /// @param checkDeltaT The interval between checks of the number of agents, in seconds (a multiple of the dynamics' dt)
+    /// @param agentIncrement The number of agents added to each insertion when the number of agents decreases
+    /// @throw std::invalid_argument If a time input is not a multiple of dt
     inline void run(std::size_t const nInitialAgents,
                     std::time_t const agentInsertionDeltaT,
                     std::time_t const checkDeltaT,

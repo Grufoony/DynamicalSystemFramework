@@ -27,14 +27,14 @@ namespace dsf::mobility {
     /// @param capacity The junction's capacity
     virtual void setCapacity(std::size_t const capacity);
     /// @brief Set the junction's transport capacity
-    /// @param capacity The junction's transport capacity
+    /// @param capacity The junction's transport capacity, in agents per second
     void setTransportCapacity(double capacity);
 
     /// @brief Get the junction's capacity
     /// @return std::size_t The junction's capacity
     inline std::size_t capacity() const { return m_capacity; }
     /// @brief Get the junction's transport capacity
-    /// @return double The junction's transport capacity
+    /// @return double The junction's transport capacity, in agents per second
     inline double transportCapacity() const { return m_transportCapacity; }
 
     virtual inline double density() const { return 0.; }

@@ -66,7 +66,7 @@ namespace dsf::mobility {
     /// @param capacity The capacity
     /// @throws std::invalid_argument If the capacity is less or equal to 0
     void setCapacity(int capacity);
-    /// @brief Set the transport capacity, in number of agents
+    /// @brief Set the transport capacity, in agents per second per lane
     /// @param transportCapacity The transport capacity
     /// @throws std::invalid_argument If the transport capacity is less or equal to 0
     void setTransportCapacity(double transportCapacity);
@@ -110,8 +110,8 @@ namespace dsf::mobility {
     /// @brief Check if the road is active (i.e., open)
     /// @return bool, True if the road is active, false otherwise
     inline bool isActive() const final { return m_roadStatus == RoadStatus::OPEN; }
-    /// @brief Get the road's transport capacity, in number of agents
-    /// @return double The road's transport capacity, in number of agents
+    /// @brief Get the road's transport capacity, in agents per second per lane
+    /// @return double The road's transport capacity, in agents per second per lane
     inline auto transportCapacity() const noexcept { return m_transportCapacity; }
     /// @brief Get the name
     /// @return std::string The name
