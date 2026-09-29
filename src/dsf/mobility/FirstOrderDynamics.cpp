@@ -1317,14 +1317,8 @@ namespace dsf::mobility {
                                           bool const bAutoAssignRoadPriorities,
                                           bool const bAutoInitTrafficLights) {
     if (bAdjustNodeCapacities) {
-      m_graph->adjustNodeCapacities();
       // A node must host all the agents entering it in one time step
-      if (this->dt() > 1.) {
-        auto const scale{static_cast<std::size_t>(this->dt())};
-        for (auto const& [_, pNode] : this->graph().nodes()) {
-          pNode->setCapacity(pNode->capacity() * scale);
-        }
-      }
+      m_graph->m_adjustNodeCapacities(std::max(1., this->dt()));
     }
     if (bAutoMapStreetLanes) {
       m_graph->autoMapStreetLanes();

@@ -2870,6 +2870,26 @@ TEST_CASE("Time step duration (dt)") {
     CHECK_EQ(maxInflow(2.), 2);
     CHECK_EQ(maxInflow(0.5), 1);
   }
+  SUBCASE("Node capacities host the agents entering in one time step") {
+    // 3 lanes at 0.5 agents/s enter node 1 and leave node 0, which has no ingoing
+    // streets and falls back to its outgoing ones: 1.5 agents per second
+    auto const nodeCapacity = [](double const dt) {
+      RoadNetwork graph;
+      graph.addStreets(Street{0, std::make_pair(0, 1), 100., 10., 3},
+                       Street{1, std::make_pair(1, 2), 100., 10.});
+      graph.edge(0).setTransportCapacity(0.5);
+      FirstOrderDynamics dynamics{std::move(graph), false, 42};
+      dynamics.setDt(dt);
+      dynamics.prepareNetwork(true, false, false, false);
+      return std::make_pair(dynamics.graph().node(1).capacity(),
+                            dynamics.graph().node(0).capacity());
+    };
+    // The capacity is scaled before rounding down: floor(1.5 * 2) = 3, not 2
+    CHECK_EQ(nodeCapacity(1.), std::make_pair(std::size_t{1}, std::size_t{1}));
+    CHECK_EQ(nodeCapacity(2.), std::make_pair(std::size_t{3}, std::size_t{3}));
+    // Sub-second time steps keep the per-second capacity
+    CHECK_EQ(nodeCapacity(0.5), std::make_pair(std::size_t{1}, std::size_t{1}));
+  }
   SUBCASE("Traffic lights advance by dt seconds per time step") {
     auto const makeDynamics = [&](Delay const phaseDuration, double const dt) {
       auto graph{makeNetwork()};

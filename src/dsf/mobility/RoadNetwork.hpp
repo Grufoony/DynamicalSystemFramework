@@ -39,10 +39,19 @@
 #include <spdlog/spdlog.h>
 
 namespace dsf::mobility {
+  class FirstOrderDynamics;
+
   /// @brief The RoadNetwork class represents a graph in the network.
   class RoadNetwork : public Network<RoadJunction, Street> {
+    // Scales the node capacities by the time step duration in prepareNetwork
+    friend class FirstOrderDynamics;
+
   private:
     std::size_t m_capacity = 0;
+
+    /// @brief Adjust the nodes' capacities, scaled by a given factor
+    /// @param scale The factor applied to the node capacities before rounding them down (at least 1)
+    void m_adjustNodeCapacities(double const scale);
 
     std::unordered_map<Id, double> m_computeEdgeDistancesToTarget(
         Id const targetEdgeId) const final;
