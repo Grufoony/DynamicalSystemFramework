@@ -410,6 +410,10 @@ namespace dsf::mobility {
       savingSteps =
           m_dynamics->secondsToTimeSteps(static_cast<double>(*m_savingInterval));
     }
+    // Validate the dynamic OD update times now, so that the run cannot fail midway
+    for (auto odUpdates{m_dynamicODsUpdate}; !odUpdates.empty(); odUpdates.pop()) {
+      m_dynamics->secondsToTimeSteps(static_cast<double>(std::get<0>(odUpdates.front())));
+    }
     return {updatePathSteps, savingSteps};
   }
 

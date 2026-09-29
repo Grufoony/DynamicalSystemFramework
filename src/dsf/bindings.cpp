@@ -693,12 +693,11 @@ NB_MODULE(dsf_cpp, m) {
       .def(
           "adjustNodeCapacities",
           &dsf::mobility::RoadNetwork::adjustNodeCapacities,
-          nb::arg("dt") = 1.,
           R"doc(Adjust the capacities of nodes from the transport capacities of their streets.
 
-      Args:
-        dt (float): Duration of a simulation time step, in seconds. Node capacities are
-          scaled by max(1, dt). Default 1.)doc")
+      Each node can host the agents entering it in one second. With time steps longer
+      than one second (dt > 1), use Dynamics.prepareNetwork instead, which also scales
+      the capacities by dt.)doc")
       .def("autoInitTrafficLights",
            &dsf::mobility::RoadNetwork::autoInitTrafficLights,
            nb::arg("mainRoadPercentage") = 0.6,
@@ -1156,6 +1155,46 @@ Returns:
 
       Returns:
         float: Duration of a time step in seconds.)doc")
+      .def("secondsToTimeSteps",
+           &dsf::mobility::FirstOrderDynamics::secondsToTimeSteps,
+           nb::arg("seconds"),
+           R"doc(Convert a duration in seconds into a number of time steps.
+
+      Args:
+        seconds (float): The duration in seconds. It must be a multiple of dt.
+
+      Returns:
+        int: The number of time steps.)doc")
+      .def("timeStepsToSeconds",
+           &dsf::mobility::FirstOrderDynamics::timeStepsToSeconds,
+           nb::arg("timeSteps"),
+           R"doc(Convert a number of time steps into a duration in seconds.
+
+      Args:
+        timeSteps (int): The number of time steps.
+
+      Returns:
+        float: The duration in seconds.)doc")
+      .def("prepareNetwork",
+           &dsf::mobility::FirstOrderDynamics::prepareNetwork,
+           nb::arg("adjustNodeCapacities") = true,
+           nb::arg("autoMapStreetLanes") = false,
+           nb::arg("autoAssignRoadPriorities") = true,
+           nb::arg("autoInitTrafficLights") = true,
+           R"doc(Prepare the network for the simulation.
+
+      Args:
+        adjustNodeCapacities (bool): Adjust the node capacities from the streets' transport
+          capacities, scaled by dt if dt > 1. Default True.
+        autoMapStreetLanes (bool): Map the streets' lanes from the network topology.
+          Default False.
+        autoAssignRoadPriorities (bool): Assign the road priorities from the network
+          topology. Default True.
+        autoInitTrafficLights (bool): Initialise the traffic light phases from the
+          streets' geometry. Default True.
+
+      Returns:
+        None)doc")
       .def("time_step",
            &dsf::mobility::FirstOrderDynamics::time_step,
            R"doc(Get the current simulation time step.

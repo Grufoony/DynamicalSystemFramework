@@ -85,9 +85,9 @@ namespace dsf::mobility {
     std::size_t nTrafficLights() const;
 
     /// @brief Adjust the nodes' transport capacity
-    /// @details The nodes' capacity is adjusted using the graph's streets transport capacity, which may vary basing on the number of lanes. The node capacity will be set to the sum of the incoming streets' transport capacity (agents per second), times max(1, dt) so that a node can host all the agents entering it in one time step.
-    /// @param dt The duration of a simulation time step, in seconds (default is 1)
-    void adjustNodeCapacities(double const dt = 1.);
+    /// @details The nodes' capacity is adjusted using the graph's streets transport capacity, which may vary basing on the number of lanes. The node capacity will be set to the sum of the incoming streets' transport capacity (agents per second), i.e. the number of agents that can enter the node in one second.
+    /// @note With simulation time steps longer than one second (dt > 1), use FirstOrderDynamics::prepareNetwork instead, which also scales the capacities by dt so that a node can host all the agents entering it in one time step.
+    void adjustNodeCapacities();
     /// @brief Auto-initialise traffic light phases from street geometry.
     /// @param mainRoadPercentage Fraction of the cycle time allocated to
     ///        priority streets (default 0.6).

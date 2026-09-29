@@ -130,18 +130,23 @@ namespace dsf::mobility {
     std::optional<double> m_passageProbability{std::nullopt};
     std::optional<double> m_meanTravelDistance{std::nullopt};
     std::optional<std::time_t> m_meanTravelTime{std::nullopt};
-    std::optional<Delay> m_dataUpdatePeriod;
+    std::optional<Delay> m_dataUpdatePeriod;             // In seconds
+    std::optional<std::time_t> m_dataUpdatePeriodSteps;  // In time steps
     bool m_bCacheEnabled;
     std::optional<double> m_timeToleranceFactor{std::nullopt};
     bool m_forcePriorities{false};
 
   private:
+    /// @brief Check the time inputs against dt before the simulation starts
+    /// @details The data update period is converted into time steps and every traffic light phase duration must be a multiple of dt.
+    /// @throw std::invalid_argument If a time input is not a multiple of dt
+    void m_validateTimeInputs();
     /// @brief Get the number of time steps needed to travel a given length at a given speed
     /// @param length The length to travel, in meters
     /// @param speed The travel speed, in m/s
     /// @return std::time_t The number of time steps, rounded up
     inline std::time_t m_travelTimeSteps(double const length, double const speed) const {
-      return static_cast<std::time_t>(std::ceil(length / (speed * this->dt())));
+      return this->ceilTimeSteps(length / speed);
     }
     /// @brief Kill an agent from the dynamics
     /// @tparam Arrived A boolean indicating whether the agent has arrived at its destination
@@ -213,7 +218,7 @@ namespace dsf::mobility {
                        std::optional<unsigned int> seed = std::nullopt);
 
     /// @brief Automatically prepare the network for the simulation. This method calls the following methods in order:
-    /// - RoadNetwork::adjustNodeCapacities(dt)
+    /// - RoadNetwork::adjustNodeCapacities(), scaling the node capacities by dt if dt > 1
     /// - RoadNetwork::autoMapStreetLanes()
     /// - RoadNetwork::autoAssignRoadPriorities()
     /// - RoadNetwork::autoInitTrafficLights()
@@ -267,7 +272,9 @@ namespace dsf::mobility {
     /// @brief Set the data update period.
     /// @param dataUpdatePeriod Delay, The period in seconds. It must be a multiple of dt.
     /// @details Some data, i.e. the street queue lengths, are stored only after a fixed amount of time which is represented by this variable.
-    inline void setDataUpdatePeriod(Delay const dataUpdatePeriod) noexcept {
+    /// @throw std::invalid_argument If the period is not a multiple of dt
+    inline void setDataUpdatePeriod(Delay const dataUpdatePeriod) {
+      m_dataUpdatePeriodSteps = this->secondsToTimeSteps(dataUpdatePeriod);
       m_dataUpdatePeriod = dataUpdatePeriod;
     }
     /// @brief Set the mean distance travelled by a random agent. The distance will be sampled from an exponential distribution with this mean.

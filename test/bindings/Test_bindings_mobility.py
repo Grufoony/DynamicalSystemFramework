@@ -170,6 +170,11 @@ def test_dynamics_dt(dynamics):
     with pytest.raises(ValueError):
         dynamics.setDt(1.5)
     assert dynamics.dt() == 0.5
+    assert dynamics.secondsToTimeSteps(3) == 6
+    assert dynamics.timeStepsToSeconds(6) == pytest.approx(3.0)
+    dynamics.evolve()
+    with pytest.raises(RuntimeError):
+        dynamics.setDt(1.0)
 
 
 def test_dynamics_constant_speed_function_rejects_argument(dynamics):

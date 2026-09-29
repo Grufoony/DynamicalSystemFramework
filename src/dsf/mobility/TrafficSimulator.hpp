@@ -68,8 +68,9 @@ namespace dsf::mobility {
       return m_dynamics->secondsToTimeSteps(
           static_cast<double>(std::get<0>(m_dynamicODsUpdate.front())));
     }
-    /// @brief Convert the configured update paths and saving intervals (seconds) into time steps
+    /// @brief Convert the configured update paths and saving intervals (seconds) into time steps, and check that the dynamic OD update times are multiples of dt
     /// @return std::pair<std::time_t, std::optional<std::time_t>> The update paths interval and the saving interval, in time steps
+    /// @throw std::invalid_argument If an interval or a dynamic OD update time is not a multiple of dt
     std::pair<std::time_t, std::optional<std::time_t>> m_intervalsToTimeSteps() const;
 
     /// @brief Assign a unique id to the simulation using the current time in the format YYYYMMDDHHMMSS

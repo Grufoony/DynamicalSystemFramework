@@ -466,6 +466,20 @@ TEST_CASE("TrafficSimulator - dynamic ODs") {
         CHECK_EQ(simulator.dynamics()->time_step(), 10);
       }
 
+      WHEN("A dynamic OD update time is not a multiple of dt") {
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_two_phases.json").string();
+        TrafficSimulator simulator;
+        simulator.importConfig(configPath);
+        // The second update is at 5 s
+        simulator.dynamics()->setDt(2.);
+        simulator.setTimeFrame(0, 10);
+
+        THEN("Running throws before the simulation starts") {
+          CHECK_THROWS_AS(simulator.run({1, 1, 1, 1, 1}), std::invalid_argument);
+          CHECK_EQ(simulator.dynamics()->time_step(), 0);
+        }
+      }
+
       WHEN("The OD file referenced in dynamic_ods does not exist") {
         auto const configPath = (DATA_FOLDER / "dynamic_ods_bad_file.json").string();
         TrafficSimulator simulator;

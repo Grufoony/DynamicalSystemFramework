@@ -895,9 +895,9 @@ namespace dsf::mobility {
 
       if (m_timeToleranceFactor.has_value()) {
         auto const timeDiff{this->time_step() - pAgentTemp->freeTime()};
-        auto const timeTolerance{
-            *m_timeToleranceFactor *
-            std::ceil(pStreet->length() / (pStreet->maxSpeed() * this->dt()))};
+        auto const timeTolerance{*m_timeToleranceFactor *
+                                 static_cast<double>(m_travelTimeSteps(
+                                     pStreet->length(), pStreet->maxSpeed()))};
         if (timeDiff > timeTolerance) {
           spdlog::debug(
               "Time-step {} - {} currently on {} ({} turn - Traffic Light? {}), "
@@ -1317,7 +1317,14 @@ namespace dsf::mobility {
                                           bool const bAutoAssignRoadPriorities,
                                           bool const bAutoInitTrafficLights) {
     if (bAdjustNodeCapacities) {
-      m_graph->adjustNodeCapacities(this->dt());
+      m_graph->adjustNodeCapacities();
+      // A node must host all the agents entering it in one time step
+      if (this->dt() > 1.) {
+        auto const scale{static_cast<std::size_t>(this->dt())};
+        for (auto const& [_, pNode] : this->graph().nodes()) {
+          pNode->setCapacity(pNode->capacity() * scale);
+        }
+      }
     }
     if (bAutoMapStreetLanes) {
       m_graph->autoMapStreetLanes();
@@ -1964,7 +1971,37 @@ namespace dsf::mobility {
     m_itineraries.emplace(itinerary->id(), std::move(itinerary));
   }
 
+  void FirstOrderDynamics::m_validateTimeInputs() {
+    if (m_dataUpdatePeriod.has_value()) {
+      m_dataUpdatePeriodSteps = this->secondsToTimeSteps(*m_dataUpdatePeriod);
+    }
+    for (auto const& [nodeId, pNode] : this->graph().nodes()) {
+      if (!pNode->isTrafficLight()) {
+        continue;
+      }
+      auto const& tl = dynamic_cast<TrafficLight const&>(*pNode);
+      for (std::size_t i{0}; i < tl.phases().size(); ++i) {
+        auto const duration{tl.phases()[i].duration()};
+        try {
+          this->secondsToTimeSteps(duration);
+        } catch (std::invalid_argument const&) {
+          throw std::invalid_argument(
+              std::format("TrafficLight {}: phase {} duration ({} s) is not a multiple "
+                          "of the time step duration dt ({} s).",
+                          nodeId,
+                          i,
+                          duration,
+                          this->dt()));
+        }
+      }
+    }
+  }
+
   StepDataResult FirstOrderDynamics::evolve(StepDataRequest const& dataRequest) {
+    // Time inputs are validated once, before any state changes
+    if (this->time_step() == 0) {
+      m_validateTimeInputs();
+    }
     StepDataResult stepData;
     stepData.timeStep = this->time_step();
     auto const n_threads{std::max<std::size_t>(1, this->concurrency())};
@@ -1979,9 +2016,8 @@ namespace dsf::mobility {
 
     spdlog::debug("Init evolve at time {}", this->time_step());
     // move the first agent of each street queue, if possible, putting it in the next node
-    bool const bUpdateData =
-        m_dataUpdatePeriod.has_value() &&
-        this->time_step() % this->secondsToTimeSteps(*m_dataUpdatePeriod) == 0;
+    bool const bUpdateData = m_dataUpdatePeriodSteps.has_value() &&
+                             this->time_step() % *m_dataUpdatePeriodSteps == 0;
     auto const numNodes{this->graph().nNodes()};
     auto const numEdges{this->graph().nEdges()};
     spdlog::debug("Init evolving streets at time {}", this->time_step());

@@ -58,7 +58,9 @@ namespace dsf {
     void setConcurrency(std::size_t const concurrency);
     /// @brief Set the duration of a simulation time step, in seconds
     /// @param dt The duration of a time step in seconds. It must be either an integer (n) or the inverse of an integer (1/n), so that seconds and time steps are always related by an integer factor.
-    /// @throw std::invalid_argument If dt is not positive or is neither n nor 1/n
+    /// @details dt must be set before the simulation starts and before preparing the network, since node capacities, agents' times and traffic lights depend on it.
+    /// @throw std::invalid_argument If dt is not finite and positive or is neither n nor 1/n
+    /// @throw std::runtime_error If the simulation has already started (time_step() > 0)
     void setDt(double const dt);
     /// @brief Get the current concurrency (number of threads configured in the task arena)
     /// @return std::size_t, The current concurrency
@@ -83,6 +85,11 @@ namespace dsf {
     /// @return std::time_t, The number of time steps
     /// @throw std::invalid_argument If seconds is not a multiple of dt
     std::time_t secondsToTimeSteps(double const seconds) const;
+    /// @brief Get the number of time steps needed to cover a duration in seconds, rounded up
+    /// @param seconds The duration in seconds
+    /// @return std::time_t, The number of time steps
+    /// @details Durations that are multiples of dt up to floating-point error (e.g. with dt = 1/3) are not rounded up to the next time step.
+    std::time_t ceilTimeSteps(double const seconds) const;
     /// @brief Convert a number of time steps into a duration in seconds
     /// @param timeSteps The number of time steps
     /// @return double, The duration in seconds
@@ -130,7 +137,13 @@ namespace dsf {
     auto const isInteger = [](double const value) {
       return std::abs(value - std::round(value)) < tolerance * std::max(1., value);
     };
-    if (!(dt > 0.) || !(isInteger(dt) || isInteger(1. / dt))) {
+    if (m_timeStep > 0) {
+      throw std::runtime_error(std::format(
+          "Cannot change the time step duration dt at time step {}: it must be set "
+          "before the simulation starts.",
+          m_timeStep));
+    }
+    if (!std::isfinite(dt) || !(dt > 0.) || !(isInteger(dt) || isInteger(1. / dt))) {
       throw std::invalid_argument(std::format(
           "The time step duration dt ({}) must be a positive integer or the inverse of "
           "a positive integer.",
@@ -151,5 +164,13 @@ namespace dsf {
           m_dt));
     }
     return static_cast<std::time_t>(rounded);
+  }
+
+  template <typename network_t>
+  std::time_t Dynamics<network_t>::ceilTimeSteps(double const seconds) const {
+    constexpr double tolerance{1e-9};
+    auto const timeSteps{seconds / m_dt};
+    return static_cast<std::time_t>(
+        std::ceil(timeSteps - tolerance * std::max(1., std::abs(timeSteps))));
   }
 };  // namespace dsf

@@ -2752,7 +2752,12 @@ TEST_CASE("Time step duration (dt)") {
   SUBCASE("setDt and conversions") {
     FirstOrderDynamics dynamics{makeNetwork(), false, 42};
     CHECK_EQ(dynamics.dt(), 1.);
-    for (auto const dt : {0., -1., 1.5, 0.3}) {
+    for (auto const dt : {0.,
+                          -1.,
+                          1.5,
+                          0.3,
+                          std::numeric_limits<double>::infinity(),
+                          std::numeric_limits<double>::quiet_NaN()}) {
       CHECK_THROWS_AS(dynamics.setDt(dt), std::invalid_argument);
     }
     CHECK_EQ(dynamics.dt(), 1.);
@@ -2766,9 +2771,41 @@ TEST_CASE("Time step duration (dt)") {
     CHECK_THROWS_AS(dynamics.secondsToTimeSteps(3.), std::invalid_argument);
     dynamics.setDt(0.25);
     CHECK_EQ(dynamics.secondsToTimeSteps(3.), 12);
+    // 1/3 and 1/10 are not exact in binary: exact multiples must not be rounded up
+    dynamics.setDt(1. / 3.);
+    CHECK_EQ(dynamics.secondsToTimeSteps(10.), 30);
+    // 5/3 / (1/3) = 5.000000000000001 in floating point
+    CHECK_EQ(dynamics.ceilTimeSteps(5. / 3.), 5);
+    CHECK_EQ(dynamics.ceilTimeSteps(10.5), 32);
+    // 18 m at 14 m/s: (18/14) / (1/7) = 9.000000000000002 in floating point
+    dynamics.setDt(1. / 7.);
+    CHECK_EQ(dynamics.ceilTimeSteps(18. / 14.), 9);
+    dynamics.setDt(0.1);
+    CHECK_EQ(dynamics.ceilTimeSteps(10.), 100);
+
+    GIVEN("A data update period") {
+      dynamics.setDt(2.);
+      THEN("It must be a multiple of dt") {
+        CHECK_THROWS_AS(dynamics.setDataUpdatePeriod(3), std::invalid_argument);
+        CHECK_NOTHROW(dynamics.setDataUpdatePeriod(4));
+      }
+      THEN("A period set before dt is checked before the first time step") {
+        dynamics.setDt(1.);
+        dynamics.setDataUpdatePeriod(3);
+        dynamics.setDt(2.);
+        CHECK_THROWS_AS(dynamics.evolve(), std::invalid_argument);
+        CHECK_EQ(dynamics.time_step(), 0);
+      }
+    }
+    WHEN("The simulation has started") {
+      dynamics.evolve();
+      THEN("dt cannot be changed anymore") {
+        CHECK_THROWS_AS(dynamics.setDt(1.), std::runtime_error);
+      }
+    }
   }
   SUBCASE("Agent travel is measured in physical units") {
-    for (auto const dt : {1., 2., 0.5}) {
+    for (auto const dt : {1., 2., 0.5, 1. / 3., 0.1}) {
       CAPTURE(dt);
       FirstOrderDynamics dynamics{makeNetwork(), false, 42};
       dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
@@ -2784,7 +2821,7 @@ TEST_CASE("Time step duration (dt)") {
       REQUIRE_FALSE(movingAgents.empty());
       // 100 m at 10 m/s take 10 s, i.e. 10 / dt time steps from the insertion step
       CHECK_EQ(movingAgents.top()->freeTime() - (dynamics.time_step() - 1),
-               static_cast<std::time_t>(10. / dt));
+               static_cast<std::time_t>(std::round(10. / dt)));
       if (dt < 1.) {
         // With dt < 1 the release from a lane (1 agent/s) is stochastic
         continue;
@@ -2813,7 +2850,7 @@ TEST_CASE("Time step duration (dt)") {
       FirstOrderDynamics dynamics{makeNetwork(), false, 42};
       dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
       dynamics.setDt(dt);
-      dynamics.graph().adjustNodeCapacities(dynamics.dt());
+      dynamics.prepareNetwork(true, false, false, false);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
       for (auto i{0}; i < 10; ++i) {
@@ -2861,9 +2898,12 @@ TEST_CASE("Time step duration (dt)") {
     }
     GIVEN("Phases of 5 s and time steps of 2 s") {
       auto pDynamics{makeDynamics(5, 2.)};
-      pDynamics->evolve();
-      pDynamics->evolve();
+      // The phases are checked before the first time step changes any state
       CHECK_THROWS_AS(pDynamics->evolve(), std::invalid_argument);
+      CHECK_EQ(pDynamics->time_step(), 0);
+      CHECK_EQ(phaseIndex(*pDynamics), 0);
+      CHECK_EQ(dynamic_cast<TrafficLight const&>(pDynamics->graph().node(1)).counter(),
+               0.);
     }
   }
   SUBCASE("Stagnant agents tolerance is scaled by dt") {
