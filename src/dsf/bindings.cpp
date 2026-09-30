@@ -693,11 +693,16 @@ NB_MODULE(dsf_cpp, m) {
       .def(
           "adjustNodeCapacities",
           &dsf::mobility::RoadNetwork::adjustNodeCapacities,
+          nb::arg("dt") = 1.,
           R"doc(Adjust the capacities of nodes from the transport capacities of their streets.
 
-      Each node can host the agents entering it in one second. With time steps longer
-      than one second (dt > 1), use Dynamics.prepareNetwork instead, which also scales
-      the capacities by dt.)doc")
+      Args:
+        dt (float): Duration of a simulation time step, in seconds. The capacities are
+          scaled by max(1, dt) before rounding down, so that a node can host the agents
+          entering it in one time step. Default 1.
+
+      Returns:
+        None)doc")
       .def("autoInitTrafficLights",
            &dsf::mobility::RoadNetwork::autoInitTrafficLights,
            nb::arg("mainRoadPercentage") = 0.6,

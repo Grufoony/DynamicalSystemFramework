@@ -2889,6 +2889,13 @@ TEST_CASE("Time step duration (dt)") {
     CHECK_EQ(nodeCapacity(2.), std::make_pair(std::size_t{3}, std::size_t{3}));
     // Sub-second time steps keep the per-second capacity
     CHECK_EQ(nodeCapacity(0.5), std::make_pair(std::size_t{1}, std::size_t{1}));
+    // The same scaling applies when the network is adjusted directly
+    RoadNetwork graph;
+    graph.addStreets(Street{0, std::make_pair(0, 1), 100., 10., 3},
+                     Street{1, std::make_pair(1, 2), 100., 10.});
+    graph.edge(0).setTransportCapacity(0.5);
+    graph.adjustNodeCapacities(2.);
+    CHECK_EQ(graph.node(1).capacity(), 3);
   }
   SUBCASE("Traffic lights advance by dt seconds per time step") {
     auto const makeDynamics = [&](Delay const phaseDuration, double const dt) {

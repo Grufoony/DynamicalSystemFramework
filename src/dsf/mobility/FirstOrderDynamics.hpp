@@ -218,7 +218,7 @@ namespace dsf::mobility {
                        std::optional<unsigned int> seed = std::nullopt);
 
     /// @brief Automatically prepare the network for the simulation. This method calls the following methods in order:
-    /// - RoadNetwork::adjustNodeCapacities(), scaling the node capacities by dt if dt > 1
+    /// - RoadNetwork::adjustNodeCapacities(dt)
     /// - RoadNetwork::autoMapStreetLanes()
     /// - RoadNetwork::autoAssignRoadPriorities()
     /// - RoadNetwork::autoInitTrafficLights()

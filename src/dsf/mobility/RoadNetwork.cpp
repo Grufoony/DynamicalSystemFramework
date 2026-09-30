@@ -1230,10 +1230,8 @@ namespace dsf::mobility {
        << " coil sensors.\n";
   }
 
-  void RoadNetwork::adjustNodeCapacities() { m_adjustNodeCapacities(1.); }
-
-  void RoadNetwork::m_adjustNodeCapacities(double const scale) {
-    assert(scale >= 1.);
+  void RoadNetwork::adjustNodeCapacities(double const dt) {
+    auto const scale{std::max(1., dt)};
     double value;
     for (auto const& [_, pNode] : nodes()) {
       value = 0.;

@@ -1318,7 +1318,7 @@ namespace dsf::mobility {
                                           bool const bAutoInitTrafficLights) {
     if (bAdjustNodeCapacities) {
       // A node must host all the agents entering it in one time step
-      m_graph->m_adjustNodeCapacities(std::max(1., this->dt()));
+      m_graph->adjustNodeCapacities(this->dt());
     }
     if (bAutoMapStreetLanes) {
       m_graph->autoMapStreetLanes();
