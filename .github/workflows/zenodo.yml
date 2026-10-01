@@ -13,7 +13,7 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: 🛡️ Validate Zenodo Metadata
         uses: vsoch/zenodo-validator@main 
