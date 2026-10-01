@@ -1,5 +1,5 @@
 
-FROM almalinux:9
+FROM almalinux:10
 
 # copy the source in a directory for testing
 COPY ./ /app/test/
