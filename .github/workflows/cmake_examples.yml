@@ -30,7 +30,7 @@ jobs:
           brew install tbb
         fi
 
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Build DSF with examples and install
       working-directory: ${{github.workspace}}

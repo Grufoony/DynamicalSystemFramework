@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract version from dsf.hpp
         id: extract
@@ -67,16 +67,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Cache vcpkg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/vcpkg
@@ -84,12 +84,12 @@ jobs:
           key: vcpkg-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'CMakeLists.txt', '.github/workflows/pypi.yml') }}
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.4.1
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           DSF_PACKAGE_VERSION: ${{ needs.extract-version.outputs.publish-version }}
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.os }}
           path: wheelhouse/*.whl
@@ -105,10 +105,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
@@ -123,7 +123,7 @@ jobs:
         run: python -m build --sdist
 
       - name: Upload sdist artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -142,7 +142,7 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist-artifacts
 
@@ -157,7 +157,7 @@ jobs:
           ls -lh dist/
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
