@@ -162,6 +162,21 @@ def test_street_moving_density(dynamics):
     assert street.movingDensity(normalized=True) == 0.0
 
 
+def test_dynamics_dt(dynamics):
+    assert dynamics.dt() == 1.0
+    assert dynamics.time_step() == 0
+    dynamics.setDt(0.5)
+    assert dynamics.dt() == 0.5
+    with pytest.raises(ValueError):
+        dynamics.setDt(1.5)
+    assert dynamics.dt() == 0.5
+    assert dynamics.secondsToTimeSteps(3) == 6
+    assert dynamics.timeStepsToSeconds(6) == pytest.approx(3.0)
+    dynamics.evolve()
+    with pytest.raises(RuntimeError):
+        dynamics.setDt(1.0)
+
+
 def test_dynamics_constant_speed_function_rejects_argument(dynamics):
     with pytest.raises(ValueError):
         dynamics.setSpeedFunction(mobility.SpeedFunction.CONSTANT, 0.8)

@@ -2738,3 +2738,251 @@ TEST_CASE("SpeedFunction::CONSTANT") {
     }
   }
 }
+
+TEST_CASE("Time step duration (dt)") {
+  // 0 --[s0: 100 m, 10 m/s]--> 1 --[s1: 200 m, 20 m/s]--> 2 --[s2: 100 m, 10 m/s]--> 3
+  auto const makeNetwork = []() {
+    RoadNetwork graph;
+    graph.setEdgeWeight("length");
+    graph.addStreets(Street{0, std::make_pair(0, 1), 100., 10.},
+                     Street{1, std::make_pair(1, 2), 200., 20.},
+                     Street{2, std::make_pair(2, 3), 100., 10.});
+    return graph;
+  };
+  SUBCASE("setDt and conversions") {
+    FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+    CHECK_EQ(dynamics.dt(), 1.);
+    for (auto const dt : {0.,
+                          -1.,
+                          1.5,
+                          0.3,
+                          std::numeric_limits<double>::infinity(),
+                          std::numeric_limits<double>::quiet_NaN()}) {
+      CHECK_THROWS_AS(dynamics.setDt(dt), std::invalid_argument);
+    }
+    CHECK_EQ(dynamics.dt(), 1.);
+    for (auto const dt : {0.5, 0.25, 2., 3.}) {
+      CHECK_NOTHROW(dynamics.setDt(dt));
+      CHECK_EQ(dynamics.dt(), dt);
+    }
+    dynamics.setDt(2.);
+    CHECK_EQ(dynamics.secondsToTimeSteps(10.), 5);
+    CHECK_EQ(dynamics.timeStepsToSeconds(5), 10.);
+    CHECK_THROWS_AS(dynamics.secondsToTimeSteps(3.), std::invalid_argument);
+    dynamics.setDt(0.25);
+    CHECK_EQ(dynamics.secondsToTimeSteps(3.), 12);
+    // 1/3 and 1/10 are not exact in binary: exact multiples must not be rounded up
+    dynamics.setDt(1. / 3.);
+    CHECK_EQ(dynamics.secondsToTimeSteps(10.), 30);
+    // 5/3 / (1/3) = 5.000000000000001 in floating point
+    CHECK_EQ(dynamics.ceilTimeSteps(5. / 3.), 5);
+    CHECK_EQ(dynamics.ceilTimeSteps(10.5), 32);
+    // 18 m at 14 m/s: (18/14) / (1/7) = 9.000000000000002 in floating point
+    dynamics.setDt(1. / 7.);
+    CHECK_EQ(dynamics.ceilTimeSteps(18. / 14.), 9);
+    dynamics.setDt(0.1);
+    CHECK_EQ(dynamics.ceilTimeSteps(10.), 100);
+
+    GIVEN("A data update period") {
+      dynamics.setDt(2.);
+      THEN("It must be a multiple of dt") {
+        CHECK_THROWS_AS(dynamics.setDataUpdatePeriod(3), std::invalid_argument);
+        CHECK_NOTHROW(dynamics.setDataUpdatePeriod(4));
+      }
+      THEN("A period set before dt is checked before the first time step") {
+        dynamics.setDt(1.);
+        dynamics.setDataUpdatePeriod(3);
+        dynamics.setDt(2.);
+        CHECK_THROWS_AS(dynamics.evolve(), std::invalid_argument);
+        CHECK_EQ(dynamics.time_step(), 0);
+      }
+    }
+    WHEN("The simulation has started") {
+      dynamics.evolve();
+      THEN("dt cannot be changed anymore") {
+        CHECK_THROWS_AS(dynamics.setDt(1.), std::runtime_error);
+      }
+    }
+  }
+  SUBCASE("Agent travel is measured in physical units") {
+    for (auto const dt : {1., 2., 0.5, 1. / 3., 0.1}) {
+      CAPTURE(dt);
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
+      dynamics.setDt(dt);
+      dynamics.addItinerary(2, 2);
+      dynamics.updatePaths();
+      dynamics.addAgent(dynamics.itineraries().at(2), 0);
+      auto const& movingAgents{dynamics.graph().edge(0).movingAgents()};
+      // The agent goes from its origin node onto s0 (stochastically if dt < 1)
+      for (auto i{0}; i < 50 && movingAgents.empty(); ++i) {
+        dynamics.evolve();
+      }
+      REQUIRE_FALSE(movingAgents.empty());
+      // 100 m at 10 m/s take 10 s, i.e. 10 / dt time steps from the insertion step
+      CHECK_EQ(movingAgents.top()->freeTime() - (dynamics.time_step() - 1),
+               static_cast<std::time_t>(std::round(10. / dt)));
+      if (dt < 1.) {
+        // With dt < 1 the release from a lane (1 agent/s) is stochastic
+        continue;
+      }
+
+      std::optional<double> firstMeanSpeed;
+      for (auto i{0}; i < 100 && dynamics.nAgents() > 0; ++i) {
+        auto const stepData{dynamics.evolve(StepDataRequest{true})};
+        if (!firstMeanSpeed.has_value() && stepData.averageStats.has_value() &&
+            stepData.averageStats->nValidEdges > 0) {
+          firstMeanSpeed = stepData.averageStats->meanSpeed;
+        }
+      }
+      REQUIRE_EQ(dynamics.nAgents(), 0);
+      // The first street left is s0, travelled at 10 m/s
+      REQUIRE(firstMeanSpeed.has_value());
+      CHECK_EQ(*firstMeanSpeed, doctest::Approx(10. * 3.6));
+      // s0 and s1 take 10 s each, plus the time step spent entering s0
+      CHECK_EQ(dynamics.meanTravelTime().mean, doctest::Approx(20. + dt));
+      CHECK_EQ(dynamics.meanTravelSpeed().mean, doctest::Approx(300. / (20. + dt)));
+    }
+  }
+  SUBCASE("Transport capacity is a rate per second") {
+    // Maximum number of agents entering s1 in one time step
+    auto const maxInflow = [&](double const dt) {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
+      dynamics.setDt(dt);
+      dynamics.prepareNetwork(true, false, false, false);
+      dynamics.addItinerary(2, 2);
+      dynamics.updatePaths();
+      for (auto i{0}; i < 10; ++i) {
+        dynamics.addAgent(dynamics.itineraries().at(2), 0);
+      }
+      std::int64_t maxIncrease{0};
+      auto previous{static_cast<std::int64_t>(dynamics.graph().edge(1).nAgents())};
+      for (auto i{0}; i < static_cast<int>(25. / dt); ++i) {
+        dynamics.evolve();
+        auto const current{static_cast<std::int64_t>(dynamics.graph().edge(1).nAgents())};
+        maxIncrease = std::max(maxIncrease, current - previous);
+        previous = current;
+      }
+      return maxIncrease;
+    };
+    CHECK_EQ(maxInflow(1.), 1);
+    CHECK_EQ(maxInflow(2.), 2);
+    CHECK_EQ(maxInflow(0.5), 1);
+  }
+  SUBCASE("Node capacities host the agents entering in one time step") {
+    // 3 lanes at 0.5 agents/s enter node 1 and leave node 0, which has no ingoing
+    // streets and falls back to its outgoing ones: 1.5 agents per second
+    auto const nodeCapacity = [](double const dt) {
+      RoadNetwork graph;
+      graph.addStreets(Street{0, std::make_pair(0, 1), 100., 10., 3},
+                       Street{1, std::make_pair(1, 2), 100., 10.});
+      graph.edge(0).setTransportCapacity(0.5);
+      FirstOrderDynamics dynamics{std::move(graph), false, 42};
+      dynamics.setDt(dt);
+      dynamics.prepareNetwork(true, false, false, false);
+      return std::make_pair(dynamics.graph().node(1).capacity(),
+                            dynamics.graph().node(0).capacity());
+    };
+    // The capacity is scaled before rounding down: floor(1.5 * 2) = 3, not 2
+    CHECK_EQ(nodeCapacity(1.), std::make_pair(std::size_t{1}, std::size_t{1}));
+    CHECK_EQ(nodeCapacity(2.), std::make_pair(std::size_t{3}, std::size_t{3}));
+    // Sub-second time steps keep the per-second capacity
+    CHECK_EQ(nodeCapacity(0.5), std::make_pair(std::size_t{1}, std::size_t{1}));
+    // The same scaling applies when the network is adjusted directly
+    RoadNetwork graph;
+    graph.addStreets(Street{0, std::make_pair(0, 1), 100., 10., 3},
+                     Street{1, std::make_pair(1, 2), 100., 10.});
+    graph.edge(0).setTransportCapacity(0.5);
+    graph.adjustNodeCapacities(2.);
+    CHECK_EQ(graph.node(1).capacity(), 3);
+  }
+  SUBCASE("Traffic lights advance by dt seconds per time step") {
+    auto const makeDynamics = [&](Delay const phaseDuration, double const dt) {
+      auto graph{makeNetwork()};
+      auto& tl = graph.makeTrafficLight(1);
+      TrafficLightPhase phase0{phaseDuration};
+      phase0.addGreen(0);
+      TrafficLightPhase phase1{phaseDuration};
+      phase1.addGreen(1);
+      tl.setPhases({phase0, phase1});
+      auto pDynamics{std::make_unique<FirstOrderDynamics>(std::move(graph), false, 42)};
+      pDynamics->setDt(dt);
+      return pDynamics;
+    };
+    auto const phaseIndex = [](FirstOrderDynamics const& dynamics) {
+      return dynamic_cast<TrafficLight const&>(dynamics.graph().node(1))
+          .currentPhaseIndex();
+    };
+    GIVEN("Phases of 10 s and time steps of 2 s") {
+      auto pDynamics{makeDynamics(10, 2.)};
+      for (auto i{0}; i < 4; ++i) {
+        pDynamics->evolve();
+      }
+      CHECK_EQ(phaseIndex(*pDynamics), 0);
+      pDynamics->evolve();
+      CHECK_EQ(phaseIndex(*pDynamics), 1);
+    }
+    GIVEN("Phases of 5 s and time steps of 2 s") {
+      auto pDynamics{makeDynamics(5, 2.)};
+      // The phases are checked before the first time step changes any state
+      CHECK_THROWS_AS(pDynamics->evolve(), std::invalid_argument);
+      CHECK_EQ(pDynamics->time_step(), 0);
+      CHECK_EQ(phaseIndex(*pDynamics), 0);
+      CHECK_EQ(dynamic_cast<TrafficLight const&>(pDynamics->graph().node(1)).counter(),
+               0.);
+    }
+  }
+  SUBCASE("Stagnant agents tolerance is scaled by dt") {
+    // Street 0 (4 s long) is never green: its agent is killed after
+    // ceil(length / (maxSpeed * dt)) time steps of stillness
+    auto const killTimeStep = [](double const dt) {
+      RoadNetwork graph;
+      graph.setEdgeWeight("length");
+      graph.addStreets(Street{0, std::make_pair(0, 1), 4 * 13.8888888889},
+                       Street{1, std::make_pair(1, 2), 13.8888888889},
+                       Street{2, std::make_pair(3, 1), 13.8888888889});
+      auto& tl = graph.makeTrafficLight(1);
+      TrafficLightPhase phase{10};
+      phase.addGreen(2);
+      tl.addPhase(phase);
+      FirstOrderDynamics dynamics{std::move(graph), false, 69};
+      dynamics.setDt(dt);
+      dynamics.addItinerary(1, 1);
+      dynamics.updatePaths();
+      dynamics.addAgent(dynamics.itineraries().at(1), 0);
+      dynamics.killStagnantAgents(1.);
+      for (auto i{0}; i < 20; ++i) {
+        dynamics.evolve();
+        if (std::get<3>(dynamics.agentStats()) > 0) {
+          return dynamics.time_step() - 1;
+        }
+      }
+      return std::time_t{-1};
+    };
+    // The agent enters street 0 at step 1
+    // dt = 1: free at step 5, still for more than 4 steps -> killed at step 10
+    CHECK_EQ(killTimeStep(1.), 10);
+    // dt = 2: free at step 3, still for more than 2 steps -> killed at step 6
+    CHECK_EQ(killTimeStep(2.), 6);
+  }
+  SUBCASE("Maximum travel time is converted to time steps") {
+    auto const maxTimes = [&](double const dt) {
+      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      dynamics.setDt(dt);
+      dynamics.setMeanTravelTime(3600);
+      dynamics.addAgents(10, AgentInsertionMethod::RANDOM);
+      std::vector<std::time_t> result;
+      for (auto const& pAgent : dynamics.agents()) {
+        result.push_back(pAgent->maxTime());
+      }
+      return result;
+    };
+    auto const maxTimesSeconds{maxTimes(1.)};
+    auto const maxTimesSteps{maxTimes(2.)};
+    REQUIRE_EQ(maxTimesSeconds.size(), maxTimesSteps.size());
+    for (std::size_t i{0}; i < maxTimesSeconds.size(); ++i) {
+      CHECK_EQ(maxTimesSteps[i], maxTimesSeconds[i] / 2);
+    }
+  }
+}

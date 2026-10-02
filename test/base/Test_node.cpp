@@ -256,6 +256,20 @@ TEST_CASE("TrafficLight") {
           CHECK_FALSE(tl.isGreen(0, dsf::Direction::LEFTANDSTRAIGHT));
           CHECK(tl.isDefault());
         }
+        THEN("A sub-second time step switches phase after duration / dt ticks") {
+          for (auto i{0}; i < 5; ++i) {
+            tl.advance(0.5);
+          }
+          CHECK_EQ(tl.currentPhaseIndex(), 0);
+          CHECK_EQ(tl.counter(), doctest::Approx(2.5));
+          tl.advance(0.5);
+          CHECK_EQ(tl.currentPhaseIndex(), 1);
+          CHECK_EQ(tl.counter(), 0.);
+        }
+        THEN("A time step overshooting the phase duration throws") {
+          tl.advance(2.);
+          CHECK_THROWS_AS(tl.advance(2.), std::invalid_argument);
+        }
         THEN("A modified phase is reset to its default") {
           tl.phase(0).setDuration(5);
           CHECK_FALSE(tl.isDefault());
@@ -451,7 +465,7 @@ TEST_CASE("TrafficLight formatting") {
     phase.addGreen(5, dsf::Direction::LEFT);
 
     std::string formatted = std::format("{}", phase);
-    CHECK(formatted.find("Phase (duration: 30 ticks)") != std::string::npos);
+    CHECK(formatted.find("Phase (duration: 30 s)") != std::string::npos);
     CHECK(formatted.find("street 5:") != std::string::npos);
     CHECK(formatted.find("STRAIGHT") != std::string::npos);
     CHECK(formatted.find("LEFT") != std::string::npos);
@@ -464,7 +478,7 @@ TEST_CASE("TrafficLight formatting") {
     std::string formatted = std::format("{}", tl);
     CHECK(formatted.find("TrafficLight \"Intersection A\"") != std::string::npos);
     CHECK(formatted.find("(id 10)") != std::string::npos);
-    CHECK(formatted.find("cycle=0 ticks") != std::string::npos);
+    CHECK(formatted.find("cycle=0 s") != std::string::npos);
     CHECK(formatted.find("phase 0/0") != std::string::npos);
     CHECK(formatted.find("counter=0") != std::string::npos);
   }
@@ -486,10 +500,10 @@ TEST_CASE("TrafficLight formatting") {
     std::string formatted = std::format("{}", tl);
     CHECK(formatted.find("TrafficLight \"Main Intersection\"") != std::string::npos);
     CHECK(formatted.find("(id 20)") != std::string::npos);
-    CHECK(formatted.find("cycle=90 ticks") != std::string::npos);
+    CHECK(formatted.find("cycle=90 s") != std::string::npos);
     CHECK(formatted.find("phase 0/2") != std::string::npos);
-    CHECK(formatted.find("Phase (duration: 40 ticks)") != std::string::npos);
-    CHECK(formatted.find("Phase (duration: 50 ticks)") != std::string::npos);
+    CHECK(formatted.find("Phase (duration: 40 s)") != std::string::npos);
+    CHECK(formatted.find("Phase (duration: 50 s)") != std::string::npos);
     CHECK(formatted.find("street 1:") != std::string::npos);
     CHECK(formatted.find("street 2:") != std::string::npos);
     CHECK(formatted.find("STRAIGHT") != std::string::npos);

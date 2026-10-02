@@ -879,37 +879,29 @@ namespace dsf::mobility {
       pStreet->enqueue(laneDist(this->m_generator));
     }
     auto const& transportCapacity{pStreet->transportCapacity()};
+    // Transport capacity is a rate in agents per second per lane, capped at 1
+    auto const expectedReleases{std::min(transportCapacity, 1.) * this->dt()};
     std::uniform_real_distribution<double> uniformDist{0., 1.};
-    for (auto queueIndex = 0; queueIndex < nLanes; ++queueIndex) {
-      if (pStreet->queue(queueIndex).empty()) {
-        continue;
-      }
-      {
-        auto const rndValue{uniformDist(this->m_generator)};
-        if (rndValue > transportCapacity) {
-          spdlog::trace("Skipping due to transport capacity {} < random {}",
-                        transportCapacity,
-                        rndValue);
-          continue;
-        }
-      }
+    // Try to release the front agent of a lane, returning true if it left the lane
+    auto const releaseFront = [&](int const queueIndex) -> bool {
       // Logger::debug("Taking temp agent");
       auto const& pAgentTemp{pStreet->queue(queueIndex).front()};
       if (pAgentTemp->freeTime() > this->time_step()) {
         spdlog::trace("Skipping due to time {} < free time {}",
                       this->time_step(),
                       pAgentTemp->freeTime());
-        continue;
+        return false;
       }
 
       if (m_timeToleranceFactor.has_value()) {
         auto const timeDiff{this->time_step() - pAgentTemp->freeTime()};
         auto const timeTolerance{*m_timeToleranceFactor *
-                                 std::ceil(pStreet->length() / pStreet->maxSpeed())};
+                                 static_cast<double>(m_travelTimeSteps(
+                                     pStreet->length(), pStreet->maxSpeed()))};
         if (timeDiff > timeTolerance) {
           spdlog::debug(
               "Time-step {} - {} currently on {} ({} turn - Traffic Light? {}), "
-              "has been still for more than {} seconds ({} seconds). Killing it.",
+              "has been still for more than {} time steps ({} time steps). Killing it.",
               this->time_step(),
               *pAgentTemp,
               *pStreet,
@@ -919,14 +911,14 @@ namespace dsf::mobility {
               timeDiff);
           // Kill the agent
           this->m_removeAgent<false>(pStreet->dequeue(queueIndex, this->time_step()));
-          continue;
+          return true;
         }
       }
       pAgentTemp->setSpeed(0.);
       auto* destinationNode{&this->graph().node(pStreet->target())};
       if (destinationNode->isFull()) {
         spdlog::trace("Skipping due to full destination node {}", *destinationNode);
-        continue;
+        return false;
       }
       if (destinationNode->isTrafficLight()) {
         auto& tl = dynamic_cast<TrafficLight&>(*destinationNode);
@@ -935,7 +927,7 @@ namespace dsf::mobility {
           spdlog::trace("Skipping due to red light on street {} and direction {}",
                         pStreet->id(),
                         directionToString.at(direction));
-          continue;
+          return false;
         }
         spdlog::debug("Green light on street {} and direction {}",
                       pStreet->id(),
@@ -1038,7 +1030,7 @@ namespace dsf::mobility {
               "Skipping agent emission from street {} -> {} due to right of way",
               pStreet->source(),
               pStreet->target());
-          continue;
+          return false;
         }
       }
       bool bArrived{false};
@@ -1052,7 +1044,7 @@ namespace dsf::mobility {
               "probability",
               pStreet->source(),
               pStreet->target());
-          continue;
+          return false;
         }
       }
       if (!pAgentTemp->isRandom()) {
@@ -1082,7 +1074,7 @@ namespace dsf::mobility {
           pAgent->reset(this->time_step());
           m_agentsToReinsert.push_back(std::move(pAgent));
         }
-        continue;
+        return true;
       }
       if (!pAgentTemp->streetId().has_value()) {
         throw std::runtime_error(
@@ -1098,7 +1090,7 @@ namespace dsf::mobility {
             pStreet->source(),
             pStreet->target(),
             *nextStreet);
-        continue;
+        return false;
       }
       auto pAgent{pStreet->dequeue(queueIndex, this->time_step())};
       spdlog::debug(
@@ -1125,11 +1117,36 @@ namespace dsf::mobility {
             pStreet->id());
         this->m_removeAgent<false>(std::move(pAgent));
       }
+      return true;
+    };
+    for (auto queueIndex = 0; queueIndex < nLanes; ++queueIndex) {
+      if (pStreet->queue(queueIndex).empty()) {
+        continue;
+      }
+      auto nReleases{static_cast<std::size_t>(std::floor(expectedReleases))};
+      {
+        auto const rndValue{uniformDist(this->m_generator)};
+        if (rndValue < expectedReleases - static_cast<double>(nReleases)) {
+          ++nReleases;
+        }
+      }
+      if (nReleases == 0) {
+        spdlog::trace("Skipping due to transport capacity {} on street {}",
+                      transportCapacity,
+                      pStreet->id());
+        continue;
+      }
+      for (std::size_t i{0}; i < nReleases; ++i) {
+        if (pStreet->queue(queueIndex).empty() || !releaseFront(queueIndex)) {
+          break;
+        }
+      }
     }
   }
 
   void FirstOrderDynamics::m_evolveNode(RoadJunction* pNode) {
-    auto const transportCapacity{pNode->transportCapacity()};
+    // Transport capacity is a rate in agents per second: scale it to one time step
+    auto const transportCapacity{pNode->transportCapacity() * this->dt()};
     for (auto i{0}; i < std::ceil(transportCapacity); ++i) {
       if (i == std::ceil(transportCapacity) - 1) {
         std::uniform_real_distribution<double> uniformDist{0., 1.};
@@ -1173,7 +1190,7 @@ namespace dsf::mobility {
           pAgent->setStreetId();
           pAgent->setSpeed(this->m_speedFunction(*nextStreet));
           pAgent->setFreeTime(this->time_step() +
-                              std::ceil(nextStreet->length() / pAgent->speed()));
+                              m_travelTimeSteps(nextStreet->length(), pAgent->speed()));
           spdlog::debug(
               "{} at time {} has been dequeued from intersection {} and "
               "enqueued on street {} with free time {}.",
@@ -1211,7 +1228,7 @@ namespace dsf::mobility {
           pAgent->setStreetId();
           pAgent->setSpeed(this->m_speedFunction(*nextStreet));
           pAgent->setFreeTime(this->time_step() +
-                              std::ceil(nextStreet->length() / pAgent->speed()));
+                              m_travelTimeSteps(nextStreet->length(), pAgent->speed()));
           spdlog::debug(
               "An agent at time {} has been dequeued from roundabout {} and "
               "enqueued on street {} with free time {}: {}",
@@ -1300,7 +1317,8 @@ namespace dsf::mobility {
                                           bool const bAutoAssignRoadPriorities,
                                           bool const bAutoInitTrafficLights) {
     if (bAdjustNodeCapacities) {
-      m_graph->adjustNodeCapacities();
+      // A node must host all the agents entering it in one time step
+      m_graph->adjustNodeCapacities(this->dt());
     }
     if (bAutoMapStreetLanes) {
       m_graph->autoMapStreetLanes();
@@ -1855,7 +1873,7 @@ namespace dsf::mobility {
       pAgent->setStreetId();
       pAgent->setSpeed(this->m_speedFunction(*streetIt->second));
       pAgent->setFreeTime(this->time_step() +
-                          std::ceil(street->length() / pAgent->speed()));
+                          m_travelTimeSteps(street->length(), pAgent->speed()));
       street->addAgent(std::move(pAgent), this->time_step());
       this->m_agents.pop_back();
     }
@@ -1947,7 +1965,37 @@ namespace dsf::mobility {
     m_itineraries.emplace(itinerary->id(), std::move(itinerary));
   }
 
+  void FirstOrderDynamics::m_validateTimeInputs() {
+    if (m_dataUpdatePeriod.has_value()) {
+      m_dataUpdatePeriodSteps = this->secondsToTimeSteps(*m_dataUpdatePeriod);
+    }
+    for (auto const& [nodeId, pNode] : this->graph().nodes()) {
+      if (!pNode->isTrafficLight()) {
+        continue;
+      }
+      auto const& tl = dynamic_cast<TrafficLight const&>(*pNode);
+      for (std::size_t i{0}; i < tl.phases().size(); ++i) {
+        auto const duration{tl.phases()[i].duration()};
+        try {
+          this->secondsToTimeSteps(duration);
+        } catch (std::invalid_argument const&) {
+          throw std::invalid_argument(
+              std::format("TrafficLight {}: phase {} duration ({} s) is not a multiple "
+                          "of the time step duration dt ({} s).",
+                          nodeId,
+                          i,
+                          duration,
+                          this->dt()));
+        }
+      }
+    }
+  }
+
   StepDataResult FirstOrderDynamics::evolve(StepDataRequest const& dataRequest) {
+    // Time inputs are validated once, before any state changes
+    if (this->time_step() == 0) {
+      m_validateTimeInputs();
+    }
     StepDataResult stepData;
     stepData.timeStep = this->time_step();
     auto const n_threads{std::max<std::size_t>(1, this->concurrency())};
@@ -1962,8 +2010,8 @@ namespace dsf::mobility {
 
     spdlog::debug("Init evolve at time {}", this->time_step());
     // move the first agent of each street queue, if possible, putting it in the next node
-    bool const bUpdateData =
-        m_dataUpdatePeriod.has_value() && this->time_step() % *m_dataUpdatePeriod == 0;
+    bool const bUpdateData = m_dataUpdatePeriodSteps.has_value() &&
+                             this->time_step() % *m_dataUpdatePeriodSteps == 0;
     auto const numNodes{this->graph().nNodes()};
     auto const numEdges{this->graph().nEdges()};
     spdlog::debug("Init evolving streets at time {}", this->time_step());
@@ -2006,15 +2054,18 @@ namespace dsf::mobility {
                   auto const& density{pStreet->density<false>() * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};
 
+                  // Street speed samples are in meters per time step: convert to m/s
                   auto const speedMeasure = pStreet->meanSpeed<true>();
+                  auto const meanSpeed{speedMeasure.mean / this->dt()};
+                  auto const stdSpeed{speedMeasure.std / this->dt()};
                   if (speedMeasure.is_valid) {
-                    auto const speed = speedMeasure.mean * MS_TO_KMH;  // to kph
-                    auto const speed_std = speedMeasure.std * MS_TO_KMH;
+                    auto const speed = meanSpeed * MS_TO_KMH;  // to kph
+                    auto const speed_std = stdSpeed * MS_TO_KMH;
                     if (dataRequest.saveAverageStats) {
                       mean_speed.fetch_add(speed, std::memory_order_relaxed);
                       std_speed.fetch_add(speed * speed + speed_std * speed_std,
                                           std::memory_order_relaxed);
-                      mean_traveltime.fetch_add(pStreet->length() / speedMeasure.mean,
+                      mean_traveltime.fetch_add(pStreet->length() / meanSpeed,
                                                 std::memory_order_relaxed);
                       ++nValidEdges;
                     }
@@ -2035,8 +2086,8 @@ namespace dsf::mobility {
                       pStreet->resetCounter();
                     }
                     if (speedMeasure.is_valid) {
-                      record.avgSpeed = speedMeasure.mean * MS_TO_KMH;  // to kph
-                      record.stdSpeed = speedMeasure.std * MS_TO_KMH;
+                      record.avgSpeed = meanSpeed * MS_TO_KMH;  // to kph
+                      record.stdSpeed = stdSpeed * MS_TO_KMH;
                       record.nObservations = speedMeasure.n;
                     }
                     record.queueLength = queueLength;
@@ -2074,7 +2125,7 @@ namespace dsf::mobility {
               m_evolveNode(pNode);
               if (pNode->isTrafficLight()) {
                 auto& tl = dynamic_cast<TrafficLight&>(*pNode);
-                ++tl;
+                tl.advance(this->dt());
               }
             }
           },
@@ -2150,7 +2201,10 @@ namespace dsf::mobility {
         continue;
 
       auto const nPhases = tl.phases().size();
-      auto const currentCycle = tl.cycleTime();
+      // Durations are redistributed in units of max(1 s, dt) so that they stay
+      // multiples of the time step duration
+      auto const unit{static_cast<Delay>(std::max(1., this->dt()))};
+      auto const currentCycle = static_cast<Delay>(tl.cycleTime() / unit);
       if (currentCycle == 0)
         continue;
 
@@ -2257,15 +2311,15 @@ namespace dsf::mobility {
 
       // ── Step 6: apply durations in-place ───────────────────────────────
       for (std::size_t i = 0; i < nPhases; ++i)
-        tl.phase(i).setDuration(newDurations[i]);
+        tl.phase(i).setDuration(newDurations[i] * unit);
 
       if (logStream.has_value()) {
         *logStream << std::format("\nNew phases for {}", tl);
       }
-      spdlog::debug("TrafficLight {}: optimised {} phases (cycle={} ticks).",
+      spdlog::debug("TrafficLight {}: optimised {} phases (cycle={} s).",
                     nodeId,
                     nPhases,
-                    currentCycle);
+                    tl.cycleTime());
     }
 
     if (logStream.has_value()) {
@@ -2335,9 +2389,11 @@ namespace dsf::mobility {
           }
           // Try to green-wave the situation
           auto& tl{dynamic_cast<TrafficLight&>(this->graph().node(sourceId))};
-          auto const travelTimeTicks =
-              static_cast<Delay>(std::round(pStreet->estimatedTravelTime()));
-          tl.advanceBy(travelTimeTicks);
+          // Offset in seconds, rounded to a multiple of max(1 s, dt)
+          auto const unit{std::max(1., this->dt())};
+          auto const offset = static_cast<Delay>(
+              std::round(pStreet->estimatedTravelTime() / unit) * unit);
+          tl.advanceBy(offset);
           optimizedNodes.insert(sourceId);
           if (logStream.has_value()) {
             *logStream << std::format("\nNew cycles for {}", tl);
@@ -2436,7 +2492,7 @@ namespace dsf::mobility {
     for (const auto& [streetId, pStreet] : this->graph().edges()) {
       auto const speedMeasure = pStreet->meanSpeed<false>();
       if (speedMeasure.is_valid) {
-        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
+        flows.push_back(pStreet->density<false>() * speedMeasure.mean / this->dt());
       }
     }
     return Measurement<double>(flows);
@@ -2452,9 +2508,9 @@ namespace dsf::mobility {
         continue;
       }
       if (above && (pStreet->density<true>() > threshold)) {
-        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
+        flows.push_back(pStreet->density<false>() * speedMeasure.mean / this->dt());
       } else if (!above && (pStreet->density<true>() < threshold)) {
-        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
+        flows.push_back(pStreet->density<false>() * speedMeasure.mean / this->dt());
       }
     }
     return Measurement<double>(flows);

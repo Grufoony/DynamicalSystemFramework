@@ -4,14 +4,14 @@
 /// Design overview
 /// ───────────────
 /// A TrafficLight cycles through an ordered sequence of TrafficLightPhase
-/// objects.  Each phase has a fixed duration (in simulation ticks) and an
+/// objects.  Each phase has a fixed duration (in seconds) and an
 /// explicit *green set*: the collection of (streetId, Direction) pairs that
 /// are green while that phase is active.  Every street/direction pair that
 /// is absent from the green set is implicitly red — no arithmetic offsets or
 /// wraparound logic is required.
 ///
-/// State-machine transition (operator++):
-///   m_counter is incremented every tick.
+/// State-machine transition (advance(dt) / operator++):
+///   m_counter is incremented by the time step duration dt (seconds) every tick.
 ///   When m_counter reaches m_phases[m_currentPhaseIndex].duration() the
 ///   machine moves to the next phase (wrapping) and resets m_counter to 0.
 ///
@@ -30,7 +30,7 @@
 ///   phase(i).setDuration(d) — mutates a single phase duration in-place.
 ///   defaultPhases()         — read-only view of baseline durations.
 ///   advanceBy(offset)       — fast-forwards the state machine by `offset`
-///                             ticks (used for green-wave synchronisation).
+///                             seconds (used for green-wave synchronisation).
 
 #pragma once
 
@@ -49,7 +49,7 @@ namespace dsf::mobility {
   /// @brief One phase in a TrafficLight program.
   ///
   /// A phase owns:
-  ///   - a duration  : how many ticks it stays active.
+  ///   - a duration  : how many seconds it stays active.
   ///   - a green set : unordered_map<streetId, unordered_set<Direction>>
   ///                   listing every (street, direction) that is green.
   ///
@@ -63,10 +63,10 @@ namespace dsf::mobility {
 
   public:
     /// @brief Construct a phase with the given duration and an empty green set.
-    /// @param duration Duration of the phase in ticks.
+    /// @param duration Duration of the phase in seconds.
     explicit TrafficLightPhase(Delay const duration) : m_duration{duration} {}
     /// @brief Construct a phase with a duration and a pre-built green set.
-    /// @param duration Duration of the phase in ticks.
+    /// @param duration Duration of the phase in seconds.
     /// @param greenSet Unordered map of streetId to the set of green directions for that street.
     TrafficLightPhase(Delay const duration,
                       std::unordered_map<Id, std::unordered_set<Direction>> greenSet)
@@ -108,12 +108,12 @@ namespace dsf::mobility {
       return it != m_greenSet.end() && it->second.contains(direction);
     }
 
-    /// @brief Get the phase duration in ticks.
-    /// @return Duration of the phase in ticks.
+    /// @brief Get the phase duration in seconds.
+    /// @return Duration of the phase in seconds.
     inline auto duration() const { return m_duration; }
     /// @brief Set the phase duration (used by the optimiser — does not affect
     /// the green set or the running state machine counter).
-    /// @param duration New duration for the phase in ticks.
+    /// @param duration New duration for the phase in seconds.
     inline void setDuration(Delay const duration) { m_duration = duration; }
     /// @brief Get a read-only view of the green set.
     /// @return Read-only view of the green set.
@@ -132,7 +132,7 @@ namespace dsf::mobility {
     std::optional<std::vector<TrafficLightPhase>> m_snapshot;  // Saved by snapshot().
 
     std::size_t m_currentPhaseIndex{0};
-    Delay m_counter{0};  // Ticks elapsed within the current phase.
+    double m_counter{0.};  // Seconds elapsed within the current phase.
 
     bool m_allowFreeTurns{false};
 
@@ -155,10 +155,16 @@ namespace dsf::mobility {
     explicit TrafficLight(RoadJunction const& node) : Intersection{node} {}
     ~TrafficLight() = default;
 
-    /// @brief Advance by one simulation tick.
+    /// @brief Advance by one simulation tick of the given duration.
     /// When the counter reaches the current phase's duration the machine
     /// moves to the next phase (wrapping) and resets the counter to 0.
-    TrafficLight& operator++();
+    /// @param dt The duration of the tick in seconds
+    void advance(double const dt);
+    /// @brief Advance by one simulation tick of one second.
+    inline TrafficLight& operator++() {
+      advance(1.);
+      return *this;
+    }
 
     /// @brief When true, a street absent from the active phase's green set is treated as green
     /// (free turn).
@@ -199,10 +205,10 @@ namespace dsf::mobility {
 
     // ── Timing ────────────────────────────────────────────────────────────
 
-    /// @brief Total cycle time = sum of all phase durations.
+    /// @brief Total cycle time (seconds) = sum of all phase durations.
     Delay cycleTime() const;
 
-    /// @brief Mean green time (ticks) across priority or non-priority streets.
+    /// @brief Mean green time (seconds) across priority or non-priority streets.
     /// A street's green time = sum of durations of phases that list it.
     double meanGreenTime(bool priorityStreets) const;
 
@@ -211,14 +217,15 @@ namespace dsf::mobility {
 
     // ── Green-wave helper ─────────────────────────────────────────────────
 
-    /// @brief Fast-forward the state machine by `offset` ticks.
+    /// @brief Fast-forward the state machine by `offset` seconds.
     /// offset is taken modulo cycleTime() so large values are safe.
     /// Used by the DOUBLE_TAIL optimiser.
     void advanceBy(Delay offset);
 
     // ── Accessors ─────────────────────────────────────────────────────────
 
-    inline Delay counter() const { return m_counter; }
+    /// @brief Seconds elapsed within the current phase.
+    inline double counter() const { return m_counter; }
     inline std::size_t currentPhaseIndex() const { return m_currentPhaseIndex; }
 
     /// @brief Read-only view of the live phase sequence.
@@ -253,8 +260,7 @@ struct std::formatter<dsf::mobility::TrafficLightPhase> {
         body += std::format(" {}", dsf::directionToString.at(dir));
       body += "\n";
     }
-    return std::format_to(
-        ctx.out(), "Phase (duration: {} ticks)\n{}", p.duration(), body);
+    return std::format_to(ctx.out(), "Phase (duration: {} s)\n{}", p.duration(), body);
   }
 };
 
@@ -269,7 +275,7 @@ struct std::formatter<dsf::mobility::TrafficLight> {
           "  [{}]{} {}", i, (i == tl.currentPhaseIndex()) ? '*' : ' ', tl.phases()[i]);
     }
     return std::format_to(ctx.out(),
-                          "TrafficLight \"{}\" (id {}): cycle={} ticks, "
+                          "TrafficLight \"{}\" (id {}): cycle={} s, "
                           "phase {}/{}, counter={}\n{}",
                           tl.name(),
                           tl.id(),
