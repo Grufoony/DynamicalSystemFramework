@@ -79,7 +79,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["dsf*"]
+include = ["dsf", "dsf.*"]
 namespaces = true
 
 [tool.setuptools.package-data]
@@ -151,6 +151,8 @@ CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_PREFIX_PATH=/opt/homebrew;/us
 before-all = """
 vcpkg install tbb:x64-windows
 """
+
+repair-wheel-command = ""
 
 [tool.cibuildwheel.windows.environment]
 CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows"

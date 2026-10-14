@@ -70,12 +70,20 @@ class CMakeBuild(build_ext):
         """
         Run nanobind.stubgen with the freshly built extension on sys.path.
         Stubs land next to the compiled extension so they're picked up by the wheel.
+        Generation is recursive: the bindings live in the dsf_cpp.mobility, dsf_cpp.mdt
+        and dsf_cpp.logging submodules, which get their own stub files inside a
+        dsf_cpp/ stub package (it does not shadow the extension at runtime, since it
+        has no __init__.py).
         """
         env = os.environ.copy()
         # Prepend extdir so the newly built dsf_cpp module is importable
         env["PYTHONPATH"] = str(extdir) + os.pathsep + env.get("PYTHONPATH", "")
 
-        out_stub = extdir / "dsf_cpp.pyi"
+        # Remove the single-file stub left by older builds: it would take precedence
+        # over the stub package and hide the submodules from type checkers.
+        (extdir / "dsf_cpp.pyi").unlink(missing_ok=True)
+
+        out_stub = extdir / "dsf_cpp" / "mobility.pyi"
 
         result = subprocess.run(
             [
@@ -84,8 +92,12 @@ class CMakeBuild(build_ext):
                 "nanobind.stubgen",
                 "-m",
                 "dsf_cpp",
-                "-o",
-                str(out_stub),
+                "-r",
+                "-O",
+                str(extdir),
+                # mypy ignores installed stub packages without a py.typed marker
+                "-M",
+                str(extdir / "dsf_cpp" / "py.typed"),
             ],
             env=env,
             check=False,
