@@ -152,5 +152,7 @@ before-all = """
 vcpkg install tbb:x64-windows
 """
 
+repair-wheel-command = ""
+
 [tool.cibuildwheel.windows.environment]
 CMAKE_ARGS = "-DDSF_COMPATIBILITY_BUILD=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows"
