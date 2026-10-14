@@ -262,6 +262,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   "dynamics": {
     "seed": 42,
     "max_concurrency": 2,
+    "dt": 0.5,
     "agent_insertion_method": "RANDOM_ODS",
     "error_probability": 0.05,
     "kill_stagnant_agents": 10.0,
@@ -284,8 +285,11 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   // The streets have no capacity column: it follows from the mean vehicle length
   CHECK_EQ(Road::meanVehicleLength(), 2.5);
   CHECK_EQ(simulator.dynamics()->graph().edge(0).capacity(), 6);
+  CHECK_EQ(simulator.dynamics()->dt(), 0.5);
 
   simulator.run(std::vector<std::size_t>{2, 2, 2, 2});
+  // 20 s with time steps of 0.5 s
+  CHECK_EQ(simulator.dynamics()->time_step(), 40);
   CHECK_EQ(simulator.dynamics()->freeflowItineraries().size(),
            simulator.dynamics()->itineraries().size());
 
@@ -460,6 +464,20 @@ TEST_CASE("TrafficSimulator - dynamic ODs") {
 
         CHECK_NOTHROW(simulator.run(1, 1, 5));
         CHECK_EQ(simulator.dynamics()->time_step(), 10);
+      }
+
+      WHEN("A dynamic OD update time is not a multiple of dt") {
+        auto const configPath = (DATA_FOLDER / "dynamic_ods_two_phases.json").string();
+        TrafficSimulator simulator;
+        simulator.importConfig(configPath);
+        // The second update is at 5 s
+        simulator.dynamics()->setDt(2.);
+        simulator.setTimeFrame(0, 10);
+
+        THEN("Running throws before the simulation starts") {
+          CHECK_THROWS_AS(simulator.run({1, 1, 1, 1, 1}), std::invalid_argument);
+          CHECK_EQ(simulator.dynamics()->time_step(), 0);
+        }
       }
 
       WHEN("The OD file referenced in dynamic_ods does not exist") {
@@ -840,6 +858,66 @@ TEST_CASE("TrafficSimulator run schedule") {
     CHECK_EQ(nLines, 2);  // header + one snapshot
     avgFile.close();
     std::filesystem::remove(avgCsv);
+  }
+  SUBCASE("Time inputs are in seconds and converted into time steps with dt") {
+    simulator.dynamics()->setDt(2.);
+    GIVEN("An explicit insertion delta time") {
+      simulator.setTimeFrame(0, 100);
+      // 3 insertions every 4 s: 12 s, i.e. 6 time steps
+      simulator.run(std::vector<std::size_t>{1, 1, 1}, 4);
+      CHECK_EQ(simulator.endTime(), 12);
+      CHECK_EQ(simulator.dynamics()->time_step(), 6);
+      CHECK_EQ(std::get<0>(simulator.dynamics()->agentStats()), 3);
+    }
+    GIVEN("An insertion delta time derived from the time frame") {
+      simulator.setTimeFrame(0, 12);
+      simulator.run(std::vector<std::size_t>{1, 1, 1});
+      CHECK_EQ(simulator.dynamics()->time_step(), 6);
+      CHECK_EQ(std::get<0>(simulator.dynamics()->agentStats()), 3);
+    }
+    GIVEN("A slow charge run") {
+      simulator.setTimeFrame(0, 20);
+      simulator.run(1, 4, 8);
+      CHECK_EQ(simulator.dynamics()->time_step(), 10);
+    }
+    GIVEN("Saved data") {
+      simulator.setTimeFrame(0, 10);
+      simulator.saveData(2, true);
+      simulator.run(std::vector<std::size_t>{1, 0, 0, 0, 0});
+      auto const avgCsv = std::filesystem::current_path() /
+                          (std::to_string(static_cast<std::uint64_t>(simulator.id())) +
+                           "_traffic_simulator_schedule_test_avg_stats.csv");
+      REQUIRE(std::filesystem::exists(avgCsv));
+      std::ifstream avgFile(avgCsv);
+      std::string line;
+      REQUIRE(std::getline(avgFile, line));  // header
+      // Rows are saved every time step (2 s): the datetime is init + time_step * dt
+      for (auto const& [timeStep, seconds] :
+           std::vector<std::pair<std::string, std::string>>{{"0", "00"}, {"1", "02"}}) {
+        REQUIRE(std::getline(avgFile, line));
+        auto const datetime{line.substr(0, line.find(';'))};
+        auto const rest{line.substr(line.find(';') + 1)};
+        CHECK_EQ(datetime.substr(datetime.size() - 2), seconds);
+        CHECK_EQ(rest.substr(0, rest.find(';')), timeStep);
+      }
+      avgFile.close();
+      std::filesystem::remove(avgCsv);
+    }
+    GIVEN("Time inputs that are not multiples of dt") {
+      simulator.setTimeFrame(0, 12);
+      CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1, 1}, 3),
+                      std::invalid_argument);
+      simulator.setTimeFrame(0, 13);
+      CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}), std::invalid_argument);
+      CHECK_THROWS_AS(simulator.run(1, 2, 4), std::invalid_argument);
+      simulator.setTimeFrame(0, 12);
+      CHECK_THROWS_AS(simulator.run(1, 3, 4), std::invalid_argument);
+      simulator.saveData(3, true);
+      CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}), std::invalid_argument);
+      simulator.saveData(2, true);
+      simulator.updatePaths(5);
+      CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}), std::invalid_argument);
+    }
   }
 
   std::filesystem::remove(edgesPath);

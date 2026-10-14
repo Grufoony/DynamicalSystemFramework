@@ -200,7 +200,7 @@ NB_MODULE(dsf_cpp, m) {
                R"doc(Get the transport capacity of this street.
 
     Returns:
-        float: Transport capacity (units: vehicles or payload).)doc")
+        float: Transport capacity, in vehicles per second per lane.)doc")
           .def("roadStatus",
                &dsf::mobility::Street::roadStatus,
                R"doc(Get the current status of the road.
@@ -299,7 +299,7 @@ NB_MODULE(dsf_cpp, m) {
            R"doc(Get the transport capacity of the junction.
 
     Returns:
-        float: Transport capacity.)doc")
+        float: Transport capacity, in vehicles per second.)doc")
       .def("attributes",
            &dsf::mobility::RoadJunction::attributes,
            R"doc(Get the attribute dictionary for this junction.
@@ -360,7 +360,7 @@ NB_MODULE(dsf_cpp, m) {
            R"doc(Get the duration of this traffic light phase.
 
         Returns:
-          Delay: Phase duration in simulation time units.)doc")
+          Delay: Phase duration in seconds.)doc")
       .def("setDuration",
            &dsf::mobility::TrafficLightPhase::setDuration,
            R"doc(Set the duration of this traffic light phase.
@@ -458,7 +458,7 @@ NB_MODULE(dsf_cpp, m) {
           R"doc(Get the total cycle time of the traffic light (sum of all phase durations).
 
       Returns:
-          Delay: Cycle time in simulation units.)doc")
+          Delay: Cycle time in seconds.)doc")
       .def("meanGreenTime",
            &dsf::mobility::TrafficLight::meanGreenTime,
            nb::arg("priorityStreets"),
@@ -481,16 +481,26 @@ NB_MODULE(dsf_cpp, m) {
            R"doc(Advance the internal phase clock by the given offset.
 
       Args:
-          offset (Delay): Amount to advance the clock by.
+          offset (Delay): Amount to advance the clock by, in seconds.
+
+      Returns:
+          None)doc")
+      .def("advance",
+           &dsf::mobility::TrafficLight::advance,
+           nb::arg("dt"),
+           R"doc(Advance the traffic light by one time step.
+
+      Args:
+          dt (float): The duration of the time step, in seconds.
 
       Returns:
           None)doc")
       .def("counter",
            &dsf::mobility::TrafficLight::counter,
-           R"doc(Get the internal event counter used for optimizations or statistics.
+           R"doc(Get the time elapsed within the current phase.
 
       Returns:
-          size_t: Counter value.)doc")
+          float: Seconds elapsed within the current phase.)doc")
       .def("currentPhaseIndex",
            &dsf::mobility::TrafficLight::currentPhaseIndex,
            R"doc(Get the index of the currently active phase.
@@ -680,12 +690,19 @@ NB_MODULE(dsf_cpp, m) {
 
       Returns:
         int: Capacity.)doc")
-      .def("adjustNodeCapacities",
-           &dsf::mobility::RoadNetwork::adjustNodeCapacities,
-           R"doc(Adjust capacities of nodes according to provided factors.
+      .def(
+          "adjustNodeCapacities",
+          &dsf::mobility::RoadNetwork::adjustNodeCapacities,
+          nb::arg("dt") = 1.,
+          R"doc(Adjust the capacities of nodes from the transport capacities of their streets.
 
       Args:
-        (See C++ API) Adjusts node capacities in-place.)doc")
+        dt (float): Duration of a simulation time step, in seconds. The capacities are
+          scaled by max(1, dt) before rounding down, so that a node can host the agents
+          entering it in one time step. Default 1.
+
+      Returns:
+        None)doc")
       .def("autoInitTrafficLights",
            &dsf::mobility::RoadNetwork::autoInitTrafficLights,
            nb::arg("mainRoadPercentage") = 0.6,
@@ -694,7 +711,7 @@ NB_MODULE(dsf_cpp, m) {
 
       Args:
         mainRoadPercentage (float, optional): Fraction used to identify main roads. Default 0.6
-        defaultCycleDuration (int, optional): Default cycle duration in ticks. Default 90)doc")
+        defaultCycleDuration (int, optional): Default cycle duration in seconds. Default 90)doc")
       .def(
           "autoMapStreetLanes",
           &dsf::mobility::RoadNetwork::autoMapStreetLanes,
@@ -1126,6 +1143,69 @@ Returns:
 
       Returns:
         None)doc")
+      .def("setDt",
+           &dsf::mobility::FirstOrderDynamics::setDt,
+           nb::arg("dt"),
+           R"doc(Set the duration of a simulation time step.
+
+      Args:
+        dt (float): Duration of a time step in seconds. It must be a positive integer (n)
+          or the inverse of a positive integer (1/n).
+
+      Returns:
+        None)doc")
+      .def("dt",
+           &dsf::mobility::FirstOrderDynamics::dt,
+           R"doc(Get the duration of a simulation time step.
+
+      Returns:
+        float: Duration of a time step in seconds.)doc")
+      .def("secondsToTimeSteps",
+           &dsf::mobility::FirstOrderDynamics::secondsToTimeSteps,
+           nb::arg("seconds"),
+           R"doc(Convert a duration in seconds into a number of time steps.
+
+      Args:
+        seconds (float): The duration in seconds. It must be a multiple of dt.
+
+      Returns:
+        int: The number of time steps.)doc")
+      .def("timeStepsToSeconds",
+           &dsf::mobility::FirstOrderDynamics::timeStepsToSeconds,
+           nb::arg("timeSteps"),
+           R"doc(Convert a number of time steps into a duration in seconds.
+
+      Args:
+        timeSteps (int): The number of time steps.
+
+      Returns:
+        float: The duration in seconds.)doc")
+      .def("prepareNetwork",
+           &dsf::mobility::FirstOrderDynamics::prepareNetwork,
+           nb::arg("adjustNodeCapacities") = true,
+           nb::arg("autoMapStreetLanes") = false,
+           nb::arg("autoAssignRoadPriorities") = true,
+           nb::arg("autoInitTrafficLights") = true,
+           R"doc(Prepare the network for the simulation.
+
+      Args:
+        adjustNodeCapacities (bool): Adjust the node capacities from the streets' transport
+          capacities, scaled by dt if dt > 1. Default True.
+        autoMapStreetLanes (bool): Map the streets' lanes from the network topology.
+          Default False.
+        autoAssignRoadPriorities (bool): Assign the road priorities from the network
+          topology. Default True.
+        autoInitTrafficLights (bool): Initialise the traffic light phases from the
+          streets' geometry. Default True.
+
+      Returns:
+        None)doc")
+      .def("time_step",
+           &dsf::mobility::FirstOrderDynamics::time_step,
+           R"doc(Get the current simulation time step.
+
+      Returns:
+        int: The number of time steps elapsed since the start of the simulation.)doc")
       .def("setForcePriorities",
            &dsf::mobility::FirstOrderDynamics::setForcePriorities,
            nb::arg("forcePriorities"),
@@ -1155,7 +1235,7 @@ Returns:
           R"doc(Set the interval between data updates.
 
       Args:
-          dataUpdatePeriod (int): Update period in simulation time units.
+          dataUpdatePeriod (int): Update period in seconds (a multiple of dt).
 
       Returns:
           None)doc")

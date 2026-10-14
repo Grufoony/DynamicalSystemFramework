@@ -47,16 +47,30 @@ namespace dsf::mobility {
     }
   }
 
-  TrafficLight& TrafficLight::operator++() {
+  void TrafficLight::advance(double const dt) {
     if (m_phases.empty())
-      return *this;
+      return;
 
-    ++m_counter;
-    if (m_counter >= m_phases[m_currentPhaseIndex].duration()) {
-      m_counter = 0;
+    // Tolerance absorbs the rounding of sub-second time steps (dt = 1/n)
+    constexpr double tolerance{1e-9};
+    auto const duration{static_cast<double>(m_phases[m_currentPhaseIndex].duration())};
+    auto const previousCounter{m_counter};
+    m_counter += dt;
+    // Stepping over the end of the phase means that its duration is not a multiple of dt.
+    // A counter already past the end (e.g. after the optimiser shortened the phase) is fine.
+    if (previousCounter + tolerance < duration && m_counter > duration + tolerance) {
+      throw std::invalid_argument(
+          std::format("TrafficLight {}: phase {} duration ({} s) is not a multiple of "
+                      "the time step duration ({} s).",
+                      m_id,
+                      m_currentPhaseIndex,
+                      duration,
+                      dt));
+    }
+    if (m_counter + tolerance >= duration) {
+      m_counter = 0.;
       m_currentPhaseIndex = (m_currentPhaseIndex + 1) % m_phases.size();
     }
-    return *this;
   }
 
   void TrafficLight::addPhase(TrafficLightPhase phase) {
@@ -68,7 +82,7 @@ namespace dsf::mobility {
     m_defaultPhases.push_back(std::move(phase));
     // Reset state machine so the index cannot go stale.
     m_currentPhaseIndex = 0;
-    m_counter = 0;
+    m_counter = 0.;
   }
   void TrafficLight::setPhases(std::vector<TrafficLightPhase> phases) {
     for (auto const& phase : phases) {
@@ -80,14 +94,14 @@ namespace dsf::mobility {
     m_phases = phases;
     m_defaultPhases = std::move(phases);
     m_currentPhaseIndex = 0;
-    m_counter = 0;
+    m_counter = 0.;
   }
   void TrafficLight::clearPhases() {
     m_phases.clear();
     m_defaultPhases.clear();
     m_snapshot.reset();
     m_currentPhaseIndex = 0;
-    m_counter = 0;
+    m_counter = 0.;
   }
 
   void TrafficLight::snapshot() {
@@ -103,14 +117,14 @@ namespace dsf::mobility {
     }
     m_phases = *m_snapshot;
     m_currentPhaseIndex = 0;
-    m_counter = 0;
+    m_counter = 0.;
     spdlog::debug(
         "TrafficLight {}: restored to snapshot ({} phases).", m_id, m_phases.size());
   }
   void TrafficLight::reset() {
     m_phases = m_defaultPhases;
     m_currentPhaseIndex = 0;
-    m_counter = 0;
+    m_counter = 0.;
     spdlog::debug(
         "TrafficLight {}: reset to defaults ({} phases).", m_id, m_phases.size());
   }
@@ -197,17 +211,18 @@ namespace dsf::mobility {
       return;
     offset %= total;
 
-    // Walk forward phase-by-phase consuming `offset` ticks.
-    while (offset > 0) {
+    // Walk forward phase-by-phase consuming `offset` seconds.
+    auto remainingOffset{static_cast<double>(offset)};
+    while (remainingOffset > 0.) {
       auto const remaining = m_phases[m_currentPhaseIndex].duration() - m_counter;
 
-      if (offset < remaining) {
-        m_counter += offset;
+      if (remainingOffset < remaining) {
+        m_counter += remainingOffset;
         break;
       }
       // Consume the rest of this phase and move to the next.
-      offset -= remaining;
-      m_counter = 0;
+      remainingOffset -= remaining;
+      m_counter = 0.;
       m_currentPhaseIndex = (m_currentPhaseIndex + 1) % m_phases.size();
     }
 
