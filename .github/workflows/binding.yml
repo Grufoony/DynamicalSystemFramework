@@ -82,20 +82,21 @@ jobs:
 
     - name: Test stub files generation
       run: |
+        cd "$RUNNER_TEMP"
         python -c "
-        import os
-        # Check if stub files were generated
-        if os.path.exists('dsf.pyi'):
-            print('Stub files found: dsf.pyi exists')
-            with open('dsf.pyi', 'r') as f:
-                content = f.read()
-                if content.strip():
-                    print('Stub file contains content')
-                else:
-                    print('Warning: Stub file is empty')
-        else:
-            print('Note: Stub files not found (may be expected)')
+        import pathlib, sysconfig
+        site = pathlib.Path(sysconfig.get_paths()['purelib'])
+        platsite = pathlib.Path(sysconfig.get_paths()['platlib'])
+        expected = ['dsf_cpp/__init__.pyi', 'dsf_cpp/mobility.pyi', 'dsf_cpp/mdt.pyi',
+                    'dsf_cpp/logging.pyi', 'dsf_cpp/py.typed', 'dsf/py.typed', 'dsf/mobility.pyi',
+                    'dsf/mdt.pyi']
+        missing = [f for f in expected if not (site / f).exists() and not (platsite / f).exists()]
+        assert not missing, f'Missing typing files in the installed package: {missing}'
+        stub = next(p / 'dsf_cpp/mobility.pyi' for p in (site, platsite) if (p / 'dsf_cpp/mobility.pyi').exists())
+        assert 'class RoadNetwork' in stub.read_text(), 'dsf_cpp/mobility.pyi lacks RoadNetwork'
+        print('Stub files found:', expected)
         "
+      shell: bash
 
     - name: Test installation in virtual environment
       run: |
