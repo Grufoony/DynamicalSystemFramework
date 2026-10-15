@@ -84,7 +84,7 @@ jobs:
           key: vcpkg-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'CMakeLists.txt', '.github/workflows/pypi.yml') }}
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.2.1
+        uses: pypa/cibuildwheel@v4.3.1
         env:
           DSF_PACKAGE_VERSION: ${{ needs.extract-version.outputs.publish-version }}
 
