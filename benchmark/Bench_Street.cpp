@@ -1,19 +1,24 @@
+#include "dsf/mobility/Intersection.hpp"
 #include "dsf/mobility/Street.hpp"
 
 #include <benchmark/benchmark.h>
 #include <memory>
 
+// The junctions every benchmarked street goes between
+static dsf::mobility::Intersection SOURCE{0};
+static dsf::mobility::Intersection TARGET{1};
+
 static void BM_Street_Construction(benchmark::State& state) {
   for (auto _ : state) {
     dsf::mobility::Street street(
-        0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, std::nullopt, 1.0);
+        0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, std::nullopt, 1.0);
     benchmark::DoNotOptimize(street);
   }
 }
 
 static void BM_Street_AddAgent(benchmark::State& state) {
   dsf::mobility::Street street(0,
-                               {0, 1},
+                               {&SOURCE, &TARGET},
                                100.0,
                                13.8888888889,
                                2,
@@ -30,7 +35,7 @@ static void BM_Street_AddAgent(benchmark::State& state) {
 }
 
 static void BM_Street_Enqueue(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
   for (int i = 0; i < 50; ++i) {
@@ -47,7 +52,7 @@ static void BM_Street_Enqueue(benchmark::State& state) {
 }
 
 static void BM_Street_Dequeue(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
   for (int i = 0; i < 50; ++i) {
@@ -65,7 +70,7 @@ static void BM_Street_Dequeue(benchmark::State& state) {
 }
 
 static void BM_Street_nAgents(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
   for (int i = 0; i < 50; ++i) {
@@ -81,7 +86,7 @@ static void BM_Street_nAgents(benchmark::State& state) {
 }
 
 static void BM_Street_Density(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
   for (int i = 0; i < 50; ++i) {
@@ -97,7 +102,7 @@ static void BM_Street_Density(benchmark::State& state) {
 }
 
 static void BM_Street_nMovingAgents(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
   for (int i = 0; i < 50; ++i) {
@@ -111,7 +116,7 @@ static void BM_Street_nMovingAgents(benchmark::State& state) {
 }
 
 static void BM_Street_nExitingAgents(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
   for (int i = 0; i < 50; ++i) {
@@ -127,7 +132,7 @@ static void BM_Street_nExitingAgents(benchmark::State& state) {
 
 static void BM_Street_SetLaneMapping(benchmark::State& state) {
   dsf::mobility::Street street(
-      0, {0, 1}, 100.0, 13.8888888889, 3, "test", {}, std::nullopt, 1.0);
+      0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 3, "test", {}, std::nullopt, 1.0);
   std::vector<dsf::Direction> laneMapping = {
       dsf::Direction::RIGHTANDSTRAIGHT, dsf::Direction::STRAIGHT, dsf::Direction::LEFT};
   for (auto _ : state) {
@@ -136,7 +141,7 @@ static void BM_Street_SetLaneMapping(benchmark::State& state) {
 }
 
 static void BM_CoilStreet_AddAgent(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   street.enableCounter();
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
@@ -147,7 +152,7 @@ static void BM_CoilStreet_AddAgent(benchmark::State& state) {
 }
 
 static void BM_CoilStreet_MeanFlow(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   street.enableCounter();
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
@@ -166,7 +171,7 @@ static void BM_CoilStreet_MeanFlow(benchmark::State& state) {
 }
 
 static void BM_CoilStreet_Dequeue(benchmark::State& state) {
-  dsf::mobility::Street street(0, {0, 1}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
+  dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   street.enableCounter();
   std::time_t spawnTime = 0;
   auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);

@@ -18,19 +18,23 @@
 #include <map>
 #include <format>
 #include <cassert>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <variant>
+#include <vector>
 
 namespace dsf {
+  class Edge;
+
   /// @brief The Node class represents the concept of a node in the network.
   class Node {
   protected:
     Id m_id;
     std::optional<geometry::Point> m_geometry;
     std::string m_name;
-    std::vector<Id> m_ingoingEdges;
-    std::vector<Id> m_outgoingEdges;
+    std::vector<Edge*> m_ingoingEdges;
+    std::vector<Edge*> m_outgoingEdges;
     std::unordered_map<
         std::string,
         std::variant<std::monostate, bool, std::int64_t, double, std::string>>
@@ -79,31 +83,15 @@ namespace dsf {
     /// @param name The node's name
     inline void setName(const std::string& name) noexcept { m_name = name; }
     /// @brief Add an ingoing edge to the node
-    /// @param edgeId The edge's id
-    /// @throws std::invalid_argument if the edge already exists in the ingoing edges
-    inline void addIngoingEdge(Id edgeId) {
-      if (std::find(m_ingoingEdges.cbegin(), m_ingoingEdges.cend(), edgeId) !=
-          m_ingoingEdges.cend()) {
-        throw std::invalid_argument(std::format(
-            "Edge with id {} already exists in the incoming edges of node with id {}.",
-            edgeId,
-            m_id));
-      }
-      m_ingoingEdges.push_back(edgeId);
-    }
+    /// @param pEdge A pointer to the edge, owned by the network
+    /// @throws std::invalid_argument if the edge is null, does not end in this node or
+    /// already exists in the ingoing edges
+    void addIngoingEdge(Edge* pEdge);
     /// @brief Add an outgoing edge to the node
-    /// @param edgeId The edge's id
-    /// @throws std::invalid_argument if the edge already exists in the outgoing edges
-    inline void addOutgoingEdge(Id const edgeId) {
-      if (std::find(m_outgoingEdges.cbegin(), m_outgoingEdges.cend(), edgeId) !=
-          m_outgoingEdges.cend()) {
-        throw std::invalid_argument(std::format(
-            "Edge with id {} already exists in the outgoing edges of node with id {}.",
-            edgeId,
-            m_id));
-      }
-      m_outgoingEdges.push_back(edgeId);
-    }
+    /// @param pEdge A pointer to the edge, owned by the network
+    /// @throws std::invalid_argument if the edge is null, does not start from this node
+    /// or already exists in the outgoing edges
+    void addOutgoingEdge(Edge* pEdge);
     /// @brief Set an attribute for the node
     /// @param name The attribute's name
     /// @param value The attribute's value
@@ -124,11 +112,13 @@ namespace dsf {
     /// @return std::string The node's name
     inline auto const& name() const noexcept { return m_name; }
     /// @brief Get the node's ingoing edges
-    /// @return std::vector<Id> A vector of the node's ingoing edge ids
-    inline auto const& ingoingEdges() const noexcept { return m_ingoingEdges; }
+    /// @return std::span<Edge* const> The node's ingoing edges, in insertion order
+    inline std::span<Edge* const> ingoingEdges() const noexcept { return m_ingoingEdges; }
     /// @brief Get the node's outgoing edges
-    /// @return std::vector<Id> A vector of the node's outgoing edge ids
-    inline auto const& outgoingEdges() const noexcept { return m_outgoingEdges; }
+    /// @return std::span<Edge* const> The node's outgoing edges, in insertion order
+    inline std::span<Edge* const> outgoingEdges() const noexcept {
+      return m_outgoingEdges;
+    }
     /// @brief Get the node's attributes
     /// @return std::unordered_map<std::string, std::variant<std::monostate, bool, std::int64_t, double, std::string>> A map of the node's attributes, where the key is the attribute's name and the value is the attribute's value
     inline auto const& attributes() const noexcept { return m_attributes; }
@@ -147,3 +137,5 @@ namespace dsf {
     }
   };
 };  // namespace dsf
+
+#include "Edge.hpp"

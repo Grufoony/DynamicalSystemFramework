@@ -57,15 +57,27 @@ TEST_CASE("RoadNetwork") {
     CHECK_NOTHROW(graph.edge(0, 2));
     CHECK_NOTHROW(graph.edge(0, 3));
     CHECK_NOTHROW(graph.edge(2, 3));
+    // Streets are linked to the junctions owned by the network
+    CHECK_EQ(graph.edge(1).source(), &graph.node(0));
+    CHECK_EQ(graph.edge(1).target(), &graph.node(1));
+    CHECK_EQ(graph.edge(5).source(), &graph.node(2));
+    CHECK_EQ(graph.edge(5).target(), &graph.node(3));
+    // Edge ids are unique
+    CHECK_THROWS_AS(graph.addEdge<Street>(1, std::make_pair(3, 0)),
+                    std::invalid_argument);
+    // An edge which cannot be built leaves no node behind
+    CHECK_THROWS_AS(graph.addEdge<Street>(6, std::make_pair(7, 8), 0.),
+                    std::invalid_argument);
+    CHECK_EQ(graph.nEdges(), 5);
+    CHECK_EQ(graph.nNodes(), 4);
   }
-  SUBCASE("Construction with addStreets") {
-    Street s1(1, std::make_pair(0, 1));
-    Street s2(2, std::make_pair(1, 2));
-    Street s3(3, std::make_pair(0, 2));
-    Street s4(4, std::make_pair(0, 3));
-    Street s5(5, std::make_pair(2, 3));
+  SUBCASE("Construction with addStreet") {
     RoadNetwork graph;
-    graph.addStreets(s1, s2, s3, s4, s5);
+    graph.addStreet(1, std::make_pair(0, 1));
+    graph.addStreet(2, std::make_pair(1, 2));
+    graph.addStreet(3, std::make_pair(0, 2));
+    graph.addStreet(4, std::make_pair(0, 3));
+    graph.addStreet(5, std::make_pair(2, 3));
     CHECK_EQ(graph.nEdges(), 5);
     CHECK_EQ(graph.nNodes(), 4);
     CHECK_NOTHROW(graph.edge(0, 1));
@@ -130,9 +142,9 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A graph object with a legacy traffic light CSV") {
       RoadNetwork graph;
       graph.addNDefaultNodes(4);
-      graph.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
-                       Street{101, std::make_pair(2, 1), 50., 13.8888888889},
-                       Street{102, std::make_pair(3, 1), 50., 13.8888888889});
+      graph.addStreet(100, std::make_pair(0, 1), 50., 13.8888888889);
+      graph.addStreet(101, std::make_pair(2, 1), 50., 13.8888888889);
+      graph.addStreet(102, std::make_pair(3, 1), 50., 13.8888888889);
 
       auto const csvPath =
           std::filesystem::temp_directory_path() / "dsf_import_traffic_lights.csv";
@@ -167,8 +179,8 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A graph object and other traffic light CSVs") {
       RoadNetwork graph;
       graph.addNDefaultNodes(4);
-      graph.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
-                       Street{101, std::make_pair(2, 1), 50., 13.8888888889});
+      graph.addStreet(100, std::make_pair(0, 1), 50., 13.8888888889);
+      graph.addStreet(101, std::make_pair(2, 1), 50., 13.8888888889);
 
       auto const csvPath =
           std::filesystem::temp_directory_path() / "dsf_import_traffic_lights_other.csv";
@@ -203,9 +215,9 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A graph object with a two-phase traffic light") {
       RoadNetwork graph;
       graph.addNDefaultNodes(4);
-      graph.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
-                       Street{101, std::make_pair(2, 1), 50., 13.8888888889},
-                       Street{102, std::make_pair(3, 1), 50., 13.8888888889});
+      graph.addStreet(100, std::make_pair(0, 1), 50., 13.8888888889);
+      graph.addStreet(101, std::make_pair(2, 1), 50., 13.8888888889);
+      graph.addStreet(102, std::make_pair(3, 1), 50., 13.8888888889);
 
       graph.makeTrafficLight(1);
       auto& tl = graph.node<TrafficLight>(1);
@@ -270,9 +282,9 @@ TEST_CASE("RoadNetwork") {
         THEN("Re-importing the exported CSV reconstructs an equivalent traffic light") {
           RoadNetwork roundTrip;
           roundTrip.addNDefaultNodes(4);
-          roundTrip.addStreets(Street{100, std::make_pair(0, 1), 50., 13.8888888889},
-                               Street{101, std::make_pair(2, 1), 50., 13.8888888889},
-                               Street{102, std::make_pair(3, 1), 50., 13.8888888889});
+          roundTrip.addStreet(100, std::make_pair(0, 1), 50., 13.8888888889);
+          roundTrip.addStreet(101, std::make_pair(2, 1), 50., 13.8888888889);
+          roundTrip.addStreet(102, std::make_pair(3, 1), 50., 13.8888888889);
 
           roundTrip.importTrafficLights(csvPath.string());
           auto& tl2 = roundTrip.node<TrafficLight>(1);
@@ -780,16 +792,15 @@ TEST_CASE("RoadNetwork") {
     }
     SUBCASE("make trafficlight") {
       GIVEN("A graph with a traffic light with no parameters") {
-        Street s1{1, std::make_pair(0, 1), 30., 15., 3};
-        s1.setPriority();
-        Street s2{11, std::make_pair(2, 1), 30., 15., 3};
-        s2.setPriority();
-        Street s3{16, std::make_pair(3, 1), 30., 15., 1};
-        Street s4{21, std::make_pair(4, 1), 30., 15., 2};
         RoadNetwork graph2;
         graph2.addNDefaultNodes(5);
         graph2.makeTrafficLight(1);
-        graph2.addStreets(s1, s2, s3, s4);
+        auto& s1 = graph2.addStreet(1, std::make_pair(0, 1), 30., 15., 3);
+        s1.setPriority();
+        auto& s2 = graph2.addStreet(11, std::make_pair(2, 1), 30., 15., 3);
+        s2.setPriority();
+        graph2.addStreet(16, std::make_pair(3, 1), 30., 15., 1);
+        graph2.addStreet(21, std::make_pair(4, 1), 30., 15., 2);
         for (auto const& [streetId, pStreet] : graph2.edges()) {
           pStreet->setCapacity(2 * pStreet->nLanes());
         }
@@ -819,10 +830,9 @@ TEST_CASE("RoadNetwork") {
         graph.addNDefaultNodes(4);
         graph.makeTrafficLight(0);
         // Constructor: id, nodePair, length, maxSpeed, nLanes, name
-        Street s1{1, std::make_pair(1, 0), 50., 15., 1, "Main Street"};
-        Street s2{2, std::make_pair(2, 0), 50., 15., 1, "Main Street"};
-        Street s3{3, std::make_pair(3, 0), 50., 15., 1, "Side Street"};
-        graph.addStreets(s1, s2, s3);
+        graph.addStreet(1, std::make_pair(1, 0), 50., 15., 1, "Main Street");
+        graph.addStreet(2, std::make_pair(2, 0), 50., 15., 1, "Main Street");
+        graph.addStreet(3, std::make_pair(3, 0), 50., 15., 1, "Side Street");
 
         WHEN("We auto-init Traffic Lights") {
           graph.autoInitTrafficLights();
@@ -841,10 +851,12 @@ TEST_CASE("RoadNetwork") {
         graph.addNDefaultNodes(4);
         graph.makeTrafficLight(0);
         // All streets have unique names (no name-based priority) but different speeds
-        Street s1{1, std::make_pair(1, 0), 50., 50., 1, "Road A"};  // Higher speed
-        Street s2{2, std::make_pair(2, 0), 50., 50., 1, "Road B"};  // Higher speed
-        Street s3{3, std::make_pair(3, 0), 50., 30., 1, "Road C"};  // Lower speed
-        graph.addStreets(s1, s2, s3);
+        // Higher speed
+        // Higher speed
+        // Lower speed
+        graph.addStreet(1, std::make_pair(1, 0), 50., 50., 1, "Road A");
+        graph.addStreet(2, std::make_pair(2, 0), 50., 50., 1, "Road B");
+        graph.addStreet(3, std::make_pair(3, 0), 50., 30., 1, "Road C");
 
         WHEN("We auto-init Traffic Lights") {
           graph.autoInitTrafficLights();
@@ -863,10 +875,12 @@ TEST_CASE("RoadNetwork") {
         graph.addNDefaultNodes(4);
         graph.makeTrafficLight(0);
         // All unique names, same speed, different lane counts
-        Street s1{1, std::make_pair(1, 0), 50., 30., 2, "Road A"};  // Higher lanes
-        Street s2{2, std::make_pair(2, 0), 50., 30., 2, "Road B"};  // Higher lanes
-        Street s3{3, std::make_pair(3, 0), 50., 30., 1, "Road C"};  // Lower lanes
-        graph.addStreets(s1, s2, s3);
+        // Higher lanes
+        // Higher lanes
+        // Lower lanes
+        graph.addStreet(1, std::make_pair(1, 0), 50., 30., 2, "Road A");
+        graph.addStreet(2, std::make_pair(2, 0), 50., 30., 2, "Road B");
+        graph.addStreet(3, std::make_pair(3, 0), 50., 30., 1, "Road C");
 
         WHEN("We auto-init Traffic Lights") {
           graph.autoInitTrafficLights();
@@ -884,15 +898,17 @@ TEST_CASE("RoadNetwork") {
         RoadNetwork graph;
         graph.addNDefaultNodes(3);
         graph.makeTrafficLight(0);
-        Street s1{1, std::make_pair(1, 0), 50., 30., 1};
-        Street s2{2, std::make_pair(2, 0), 50., 30., 1};
-        graph.addStreets(s1, s2);
+        graph.addStreet(1, std::make_pair(1, 0), 50., 30., 1);
+        graph.addStreet(2, std::make_pair(2, 0), 50., 30., 1);
 
         WHEN("We auto-init Traffic Lights") {
           graph.autoInitTrafficLights();
           THEN("Node is converted to intersection") {
             CHECK_FALSE(graph.node(0).isTrafficLight());
             CHECK(graph.node(0).isIntersection());
+            // The streets are re-linked to the new node
+            CHECK_EQ(graph.edge(1).target(), &graph.node(0));
+            CHECK_EQ(graph.edge(2).target(), &graph.node(0));
           }
         }
       }
@@ -900,12 +916,11 @@ TEST_CASE("RoadNetwork") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
         graph.makeTrafficLight(0);
-        Street s1{1, std::make_pair(1, 0), 50., 15., 1};
+        auto& s1 = graph.addStreet(1, std::make_pair(1, 0), 50., 15., 1);
         s1.setPriority();
-        Street s2{2, std::make_pair(2, 0), 50., 15., 1};
+        auto& s2 = graph.addStreet(2, std::make_pair(2, 0), 50., 15., 1);
         s2.setPriority();
-        Street s3{3, std::make_pair(3, 0), 50., 15., 1};
-        graph.addStreets(s1, s2, s3);
+        graph.addStreet(3, std::make_pair(3, 0), 50., 15., 1);
 
         WHEN("We auto-init Traffic Lights with 70% main road percentage") {
           graph.autoInitTrafficLights(0.7);
@@ -925,10 +940,9 @@ TEST_CASE("RoadNetwork") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
         auto& tl = graph.makeTrafficLight(0);
-        Street s1{1, std::make_pair(1, 0), 50., 15., 1};
-        Street s2{2, std::make_pair(2, 0), 50., 15., 1};
-        Street s3{3, std::make_pair(3, 0), 50., 15., 1};
-        graph.addStreets(s1, s2, s3);
+        graph.addStreet(1, std::make_pair(1, 0), 50., 15., 1);
+        graph.addStreet(2, std::make_pair(2, 0), 50., 15., 1);
+        graph.addStreet(3, std::make_pair(3, 0), 50., 15., 1);
         // Pre-initialize phases so auto-init should skip this traffic light
         tl.setPhases(std::vector<TrafficLightPhase>{TrafficLightPhase{50}});
 
@@ -946,11 +960,10 @@ TEST_CASE("RoadNetwork") {
         graph.addNDefaultNodes(5);
         graph.makeTrafficLight(0);
         // All streets identical with unique names - will fall back to angle or capacity-based selection
-        Street s1{1, std::make_pair(1, 0), 50., 30., 1, "Road A"};
-        Street s2{2, std::make_pair(2, 0), 50., 30., 1, "Road B"};
-        Street s3{3, std::make_pair(3, 0), 50., 30., 1, "Road C"};
-        Street s4{4, std::make_pair(4, 0), 50., 30., 1, "Road D"};
-        graph.addStreets(s1, s2, s3, s4);
+        graph.addStreet(1, std::make_pair(1, 0), 50., 30., 1, "Road A");
+        graph.addStreet(2, std::make_pair(2, 0), 50., 30., 1, "Road B");
+        graph.addStreet(3, std::make_pair(3, 0), 50., 30., 1, "Road C");
+        graph.addStreet(4, std::make_pair(4, 0), 50., 30., 1, "Road D");
         for (auto const& [streetId, pStreet] : graph.edges()) {
           pStreet->setCapacity(10);
         }
@@ -971,12 +984,11 @@ TEST_CASE("RoadNetwork") {
         RoadNetwork graph;
         graph.addNDefaultNodes(4);
         graph.makeTrafficLight(0);
-        Street s1{1, std::make_pair(1, 0), 50., 15., 3};
+        auto& s1 = graph.addStreet(1, std::make_pair(1, 0), 50., 15., 3);
         s1.setPriority();
-        Street s2{2, std::make_pair(2, 0), 50., 15., 3};
+        auto& s2 = graph.addStreet(2, std::make_pair(2, 0), 50., 15., 3);
         s2.setPriority();
-        Street s3{3, std::make_pair(3, 0), 50., 15., 3};
-        graph.addStreets(s1, s2, s3);
+        graph.addStreet(3, std::make_pair(3, 0), 50., 15., 3);
 
         graph.autoMapStreetLanes();
 
@@ -997,7 +1009,7 @@ TEST_CASE("RoadNetwork") {
     }
     GIVEN("A graph object with two nodes and one street") {
       RoadNetwork graph{};
-      graph.addStreet(Street{1, std::make_pair(0, 1)});
+      graph.addStreet(1, std::make_pair(0, 1));
       WHEN("We make node 0 a traffic light") {
         auto& tl = graph.makeTrafficLight(0);
         THEN("The node 0 is a traffic light") { CHECK(graph.node(0).isTrafficLight()); }
@@ -1011,10 +1023,13 @@ TEST_CASE("RoadNetwork") {
   SUBCASE("make roundabout") {
     GIVEN("A graph object with two nodes and one street") {
       RoadNetwork graph{};
-      graph.addStreet(Street{1, std::make_pair(0, 1)});
+      graph.addStreet(1, std::make_pair(0, 1));
       WHEN("We make node 0 a roundabout") {
-        graph.makeRoundabout(0);
-        THEN("The node 0 is a roundabout") { CHECK(graph.node(0).isRoundabout()); }
+        auto& roundabout = graph.makeRoundabout(0);
+        THEN("The node 0 is a roundabout and the street leaves from it") {
+          CHECK(graph.node(0).isRoundabout());
+          CHECK_EQ(graph.edge(1).source(), &roundabout);
+        }
       }
       WHEN("We make node 1 a station") {
         auto& station = graph.makeStation(1, 5);
@@ -1022,6 +1037,8 @@ TEST_CASE("RoadNetwork") {
           CHECK(station.isStation());
           CHECK_EQ(station.managementTime(), 5);
           CHECK_EQ(station.ingoingEdges().size(), 1);
+          CHECK_EQ(station.ingoingEdges().front(), &graph.edge(1));
+          CHECK_EQ(graph.edge(1).target(), &station);
         }
       }
     }
@@ -1029,7 +1046,7 @@ TEST_CASE("RoadNetwork") {
   SUBCASE("add coil on a street") {
     GIVEN("A graph object with two nodes and one street") {
       RoadNetwork graph{};
-      graph.addEdge(Street{0, std::make_pair(0, 1)});
+      graph.addStreet(0, std::make_pair(0, 1));
       WHEN("We add a coil to the street") {
         graph.addCoil(0);
         THEN("The street has a coil") { CHECK(graph.edge(0).hasCoil()); }
@@ -1039,10 +1056,9 @@ TEST_CASE("RoadNetwork") {
   SUBCASE("street and oppositeStreet") {
     GIVEN("A RoadNetwork object with two streets") {
       RoadNetwork graph{};
-      Street street{1, std::make_pair(0, 1), 1.};
-      Street opposite{2, std::make_pair(1, 0), 1.};
       graph.addNDefaultNodes(2);
-      graph.addStreets(street, opposite);
+      graph.addStreet(1, std::make_pair(0, 1), 1.);
+      graph.addStreet(2, std::make_pair(1, 0), 1.);
       WHEN("We search for a street") {
         auto result = graph.street(0, 1);
         THEN("The street is found and has correct values") {
@@ -1073,8 +1089,8 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A RoadNetwork object with a path of two streets") {
       RoadNetwork graph{};
       graph.addNDefaultNodes(3);
-      graph.addStreets(Street{1, std::make_pair(0, 1), 1.},
-                       Street{2, std::make_pair(1, 2), 1.});
+      graph.addStreet(1, std::make_pair(0, 1), 1.);
+      graph.addStreet(2, std::make_pair(1, 2), 1.);
       WHEN("We search for streets by their endpoints") {
         THEN("Existing streets are found") {
           CHECK_EQ(graph.street(1, 2)->id(), 2);
@@ -1092,12 +1108,11 @@ TEST_CASE("RoadNetwork") {
 
   SUBCASE("adjustNodeCapacities and normalizeStreetCapacities") {
     GIVEN("A graph composed of three streets with a different lane number") {
-      Street s1(0, std::make_pair(0, 1), 10., 30., 1);
-      Street s2(1, std::make_pair(1, 2), 40., 30., 2);
-      Street s3(2, std::make_pair(3, 1), 75., 30., 3);
-      Street s4(3, std::make_pair(1, 4), 55., 30., 1);
       RoadNetwork graph{};
-      graph.addStreets(s1, s2, s3, s4);
+      graph.addStreet(0, std::make_pair(0, 1), 10., 30., 1);
+      graph.addStreet(1, std::make_pair(1, 2), 40., 30., 2);
+      graph.addStreet(2, std::make_pair(3, 1), 75., 30., 3);
+      graph.addStreet(3, std::make_pair(1, 4), 55., 30., 1);
       WHEN("We adjust node capacities") {
         graph.adjustNodeCapacities();
         THEN("The node capacities are correct") {
@@ -1132,18 +1147,17 @@ TEST_CASE("RoadNetwork") {
       RoadNetwork graph{};
       // Node 1 is the intersection
       // Edge 1: 0 -> 1 (HIGHWAY)
-      Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setMobilityClass(128u);  // HIGHWAY
 
       // Edge 2: 2 -> 1 (HIGHWAY)
-      Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setMobilityClass(128u);  // HIGHWAY
 
       // Edge 3: 3 -> 1 (SECONDARY)
-      Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setMobilityClass(32u);  // SECONDARY
 
-      graph.addStreets(s1, s2, s3);
+      auto& s1 = graph.addStreet(1, std::make_pair(0, 1), 100., 30., 1);
+      s1.setMobilityClass(128u);  // HIGHWAY
+      auto& s2 = graph.addStreet(2, std::make_pair(2, 1), 100., 30., 1);
+      s2.setMobilityClass(128u);  // HIGHWAY
+      auto& s3 = graph.addStreet(3, std::make_pair(3, 1), 100., 30., 1);
+      s3.setMobilityClass(32u);  // SECONDARY
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
@@ -1157,9 +1171,8 @@ TEST_CASE("RoadNetwork") {
 
     GIVEN("A node with only one incoming edge") {
       RoadNetwork graph{};
-      Street s1(1, std::make_pair(0, 1), 100., 30., 1);
+      auto& s1 = graph.addStreet(1, std::make_pair(0, 1), 100., 30., 1);
       s1.setMobilityClass(128u);  // HIGHWAY
-      graph.addStreets(s1);
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
@@ -1169,13 +1182,12 @@ TEST_CASE("RoadNetwork") {
 
     GIVEN("A node with 3 incoming edges of the same road type") {
       RoadNetwork graph{};
-      Street s1(1, std::make_pair(0, 1), 100., 30., 1);
+      auto& s1 = graph.addStreet(1, std::make_pair(0, 1), 100., 30., 1);
       s1.setMobilityClass(64u);  // PRIMARY
-      Street s2(2, std::make_pair(2, 1), 100., 30., 1);
+      auto& s2 = graph.addStreet(2, std::make_pair(2, 1), 100., 30., 1);
       s2.setMobilityClass(64u);  // PRIMARY
-      Street s3(3, std::make_pair(3, 1), 100., 30., 1);
+      auto& s3 = graph.addStreet(3, std::make_pair(3, 1), 100., 30., 1);
       s3.setMobilityClass(64u);  // PRIMARY
-      graph.addStreets(s1, s2, s3);
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
@@ -1189,10 +1201,9 @@ TEST_CASE("RoadNetwork") {
 
     GIVEN("A node with edges without road type set") {
       RoadNetwork graph{};
-      Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      graph.addStreets(s1, s2, s3);
+      graph.addStreet(1, std::make_pair(0, 1), 100., 30., 1);
+      graph.addStreet(2, std::make_pair(2, 1), 100., 30., 1);
+      graph.addStreet(3, std::make_pair(3, 1), 100., 30., 1);
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
@@ -1207,18 +1218,17 @@ TEST_CASE("RoadNetwork") {
     GIVEN("A node where highest type has 3 roads but lower type has exactly 2") {
       RoadNetwork graph{};
       // 3 HIGHWAY roads (won't match count == 2)
-      Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setMobilityClass(128u);  // HIGHWAY
-      Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setMobilityClass(128u);  // HIGHWAY
-      Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setMobilityClass(128u);  // HIGHWAY
       // 2 SECONDARY roads (will match count == 2)
-      Street s4(4, std::make_pair(4, 1), 100., 30., 1);
+      auto& s1 = graph.addStreet(1, std::make_pair(0, 1), 100., 30., 1);
+      s1.setMobilityClass(128u);  // HIGHWAY
+      auto& s2 = graph.addStreet(2, std::make_pair(2, 1), 100., 30., 1);
+      s2.setMobilityClass(128u);  // HIGHWAY
+      auto& s3 = graph.addStreet(3, std::make_pair(3, 1), 100., 30., 1);
+      s3.setMobilityClass(128u);  // HIGHWAY
+      auto& s4 = graph.addStreet(4, std::make_pair(4, 1), 100., 30., 1);
       s4.setMobilityClass(32u);  // SECONDARY
-      Street s5(5, std::make_pair(5, 1), 100., 30., 1);
+      auto& s5 = graph.addStreet(5, std::make_pair(5, 1), 100., 30., 1);
       s5.setMobilityClass(32u);  // SECONDARY
-      graph.addStreets(s1, s2, s3, s4, s5);
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
@@ -1234,13 +1244,12 @@ TEST_CASE("RoadNetwork") {
 
     GIVEN("A node with exactly 2 PRIMARY and 1 TERTIARY road") {
       RoadNetwork graph{};
-      Street s1(1, std::make_pair(0, 1), 100., 30., 1);
+      auto& s1 = graph.addStreet(1, std::make_pair(0, 1), 100., 30., 1);
       s1.setMobilityClass(64u);  // PRIMARY
-      Street s2(2, std::make_pair(2, 1), 100., 30., 1);
+      auto& s2 = graph.addStreet(2, std::make_pair(2, 1), 100., 30., 1);
       s2.setMobilityClass(64u);  // PRIMARY
-      Street s3(3, std::make_pair(3, 1), 100., 30., 1);
+      auto& s3 = graph.addStreet(3, std::make_pair(3, 1), 100., 30., 1);
       s3.setMobilityClass(16u);  // TERTIARY
-      graph.addStreets(s1, s2, s3);
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
@@ -1254,15 +1263,14 @@ TEST_CASE("RoadNetwork") {
 
     GIVEN("A node with 1 HIGHWAY, 1 PRIMARY, and 2 RESIDENTIAL roads") {
       RoadNetwork graph{};
-      Street s1(1, std::make_pair(0, 1), 100., 30., 1);
+      auto& s1 = graph.addStreet(1, std::make_pair(0, 1), 100., 30., 1);
       s1.setMobilityClass(128u);  // HIGHWAY
-      Street s2(2, std::make_pair(2, 1), 100., 30., 1);
+      auto& s2 = graph.addStreet(2, std::make_pair(2, 1), 100., 30., 1);
       s2.setMobilityClass(64u);  // PRIMARY
-      Street s3(3, std::make_pair(3, 1), 100., 30., 1);
+      auto& s3 = graph.addStreet(3, std::make_pair(3, 1), 100., 30., 1);
       s3.setMobilityClass(8u);  // RESIDENTIAL
-      Street s4(4, std::make_pair(4, 1), 100., 30., 1);
+      auto& s4 = graph.addStreet(4, std::make_pair(4, 1), 100., 30., 1);
       s4.setMobilityClass(8u);  // RESIDENTIAL
-      graph.addStreets(s1, s2, s3, s4);
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
@@ -1278,20 +1286,19 @@ TEST_CASE("RoadNetwork") {
     GIVEN("Multiple nodes with different priority scenarios") {
       RoadNetwork graph{};
       // Node 1: 2 HIGHWAY + 1 SECONDARY
-      Street s1(1, std::make_pair(0, 1), 100., 30., 1);
-      s1.setMobilityClass(128u);  // HIGHWAY
-      Street s2(2, std::make_pair(2, 1), 100., 30., 1);
-      s2.setMobilityClass(128u);  // HIGHWAY
-      Street s3(3, std::make_pair(3, 1), 100., 30., 1);
-      s3.setMobilityClass(32u);  // SECONDARY
       // Node 5: 2 TERTIARY + 1 RESIDENTIAL
-      Street s4(4, std::make_pair(1, 5), 100., 30., 1);
+      auto& s1 = graph.addStreet(1, std::make_pair(0, 1), 100., 30., 1);
+      s1.setMobilityClass(128u);  // HIGHWAY
+      auto& s2 = graph.addStreet(2, std::make_pair(2, 1), 100., 30., 1);
+      s2.setMobilityClass(128u);  // HIGHWAY
+      auto& s3 = graph.addStreet(3, std::make_pair(3, 1), 100., 30., 1);
+      s3.setMobilityClass(32u);  // SECONDARY
+      auto& s4 = graph.addStreet(4, std::make_pair(1, 5), 100., 30., 1);
       s4.setMobilityClass(16u);  // TERTIARY
-      Street s5(5, std::make_pair(4, 5), 100., 30., 1);
+      auto& s5 = graph.addStreet(5, std::make_pair(4, 5), 100., 30., 1);
       s5.setMobilityClass(16u);  // TERTIARY
-      Street s6(6, std::make_pair(6, 5), 100., 30., 1);
+      auto& s6 = graph.addStreet(6, std::make_pair(6, 5), 100., 30., 1);
       s6.setMobilityClass(8u);  // RESIDENTIAL
-      graph.addStreets(s1, s2, s3, s4, s5, s6);
 
       WHEN("We auto assign road priorities") {
         graph.autoAssignRoadPriorities();
@@ -1313,18 +1320,17 @@ TEST_CASE("RoadNetwork") {
     graph.addNode(0, dsf::geometry::Point(8.0, 45.0));
     graph.addNode(1, dsf::geometry::Point(8.1, 45.1));
 
-    Street s{42,
-             std::make_pair(0, 1),
-             123.0,
-             36.0 / 3.6,
-             2,
-             "Exported Street",
-             dsf::geometry::PolyLine{
-                 {dsf::geometry::Point(8.0, 45.0), dsf::geometry::Point(8.1, 45.1)}}};
+    auto& s = graph.addStreet(42,
+                              std::make_pair(0, 1),
+                              123.0,
+                              36.0 / 3.6,
+                              2,
+                              "Exported Street",
+                              dsf::geometry::PolyLine{{dsf::geometry::Point(8.0, 45.0),
+                                                       dsf::geometry::Point(8.1, 45.1)}});
     s.setMobilityClass(64u);  // PRIMARY
     s.setPriority();
     s.setTransportCapacity(0.5);
-    graph.addStreet(std::move(s));
     graph.addCoil(42, "coil_42");
 
     auto const outputDir =
@@ -1444,14 +1450,13 @@ TEST_CASE("RoadNetwork") {
 
 TEST_CASE("Dijkstra") {
   SUBCASE("Case 1") {
-    Street s1{0, std::make_pair(0, 1), 3.};
-    Street s2{1, std::make_pair(1, 2), 2.};
-    Street s3{2, std::make_pair(2, 3), 4.};
-    Street s4{3, std::make_pair(3, 0), 5.};
-    Street s5{4, std::make_pair(0, 2), 6.};
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    graph.addStreets(s1, s2, s3, s4, s5);
+    graph.addStreet(0, std::make_pair(0, 1), 3.);
+    graph.addStreet(1, std::make_pair(1, 2), 2.);
+    graph.addStreet(2, std::make_pair(2, 3), 4.);
+    graph.addStreet(3, std::make_pair(3, 0), 5.);
+    graph.addStreet(4, std::make_pair(0, 2), 6.);
 
     auto const pathMap = graph.allPathsTo(2);
     CHECK_FALSE(pathMap.contains(2));
@@ -1464,12 +1469,11 @@ TEST_CASE("Dijkstra") {
   }
 
   SUBCASE("Case 2") {
-    Street s1(0, std::make_pair(0, 1), 1.);
-    Street s2(1, std::make_pair(1, 2), 1.);
-    Street s3(2, std::make_pair(0, 2), 6.);
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    graph.addStreets(s1, s2, s3);
+    graph.addStreet(0, std::make_pair(0, 1), 1.);
+    graph.addStreet(1, std::make_pair(1, 2), 1.);
+    graph.addStreet(2, std::make_pair(0, 2), 6.);
 
     auto const pathMap = graph.allPathsTo(2);
     CHECK_FALSE(pathMap.contains(2));
@@ -1480,12 +1484,11 @@ TEST_CASE("Dijkstra") {
   }
 
   SUBCASE("Case 3") {
-    Street s1(0, std::make_pair(0, 1), 5.);
-    Street s2(1, std::make_pair(1, 2), 4.);
-    Street s3(2, std::make_pair(0, 2), 6.);
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    graph.addStreets(s1, s2, s3);
+    graph.addStreet(0, std::make_pair(0, 1), 5.);
+    graph.addStreet(1, std::make_pair(1, 2), 4.);
+    graph.addStreet(2, std::make_pair(0, 2), 6.);
 
     auto const pathMap = graph.allPathsTo(2);
     CHECK_FALSE(pathMap.contains(2));
@@ -1496,23 +1499,22 @@ TEST_CASE("Dijkstra") {
   }
 
   SUBCASE("Case 4") {
-    Street s1(0, std::make_pair(0, 1), 3.);
-    Street s2(1, std::make_pair(0, 2), 1.);
-    Street s3(2, std::make_pair(1, 2), 7.);
-    Street s4(3, std::make_pair(2, 3), 2.);
-    Street s5(4, std::make_pair(1, 4), 1.);
-    Street s6(5, std::make_pair(1, 3), 5.);
-    Street s7(6, std::make_pair(3, 4), 7.);
-    Street s8(7, std::make_pair(1, 0), 3.);
-    Street s9(8, std::make_pair(2, 0), 1.);
-    Street s10(9, std::make_pair(2, 1), 7.);
-    Street s11(10, std::make_pair(3, 2), 2.);
-    Street s12(11, std::make_pair(4, 1), 1.);
-    Street s13(12, std::make_pair(3, 1), 5.);
-    Street s14(13, std::make_pair(4, 3), 7.);
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    graph.addStreets(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14);
+    graph.addStreet(0, std::make_pair(0, 1), 3.);
+    graph.addStreet(1, std::make_pair(0, 2), 1.);
+    graph.addStreet(2, std::make_pair(1, 2), 7.);
+    graph.addStreet(3, std::make_pair(2, 3), 2.);
+    graph.addStreet(4, std::make_pair(1, 4), 1.);
+    graph.addStreet(5, std::make_pair(1, 3), 5.);
+    graph.addStreet(6, std::make_pair(3, 4), 7.);
+    graph.addStreet(7, std::make_pair(1, 0), 3.);
+    graph.addStreet(8, std::make_pair(2, 0), 1.);
+    graph.addStreet(9, std::make_pair(2, 1), 7.);
+    graph.addStreet(10, std::make_pair(3, 2), 2.);
+    graph.addStreet(11, std::make_pair(4, 1), 1.);
+    graph.addStreet(12, std::make_pair(3, 1), 5.);
+    graph.addStreet(13, std::make_pair(4, 3), 7.);
 
     auto const pathMap = graph.allPathsTo(4);
     CHECK_FALSE(pathMap.contains(4));
@@ -1527,28 +1529,26 @@ TEST_CASE("Dijkstra") {
   }
 
   SUBCASE("Case 5") {
-    Street s1(0, std::make_pair(0, 1), 2.);
-    Street s2(1, std::make_pair(0, 2), 6.);
-    Street s3(2, std::make_pair(1, 3), 5.);
-    Street s4(3, std::make_pair(2, 3), 8.);
-    Street s5(4, std::make_pair(3, 5), 15.);
-    Street s6(5, std::make_pair(3, 4), 10.);
-    Street s7(6, std::make_pair(4, 5), 6.);
-    Street s8(7, std::make_pair(4, 6), 2.);
-    Street s9(8, std::make_pair(5, 6), 6.);
-    Street s10(9, std::make_pair(1, 0), 2.);
-    Street s11(10, std::make_pair(2, 0), 6.);
-    Street s12(11, std::make_pair(3, 1), 5.);
-    Street s13(12, std::make_pair(3, 2), 8.);
-    Street s14(13, std::make_pair(5, 3), 15.);
-    Street s15(14, std::make_pair(4, 3), 10.);
-    Street s16(15, std::make_pair(5, 4), 6.);
-    Street s17(16, std::make_pair(6, 4), 2.);
-    Street s18(17, std::make_pair(6, 5), 6.);
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    graph.addStreets(
-        s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17, s18);
+    graph.addStreet(0, std::make_pair(0, 1), 2.);
+    graph.addStreet(1, std::make_pair(0, 2), 6.);
+    graph.addStreet(2, std::make_pair(1, 3), 5.);
+    graph.addStreet(3, std::make_pair(2, 3), 8.);
+    graph.addStreet(4, std::make_pair(3, 5), 15.);
+    graph.addStreet(5, std::make_pair(3, 4), 10.);
+    graph.addStreet(6, std::make_pair(4, 5), 6.);
+    graph.addStreet(7, std::make_pair(4, 6), 2.);
+    graph.addStreet(8, std::make_pair(5, 6), 6.);
+    graph.addStreet(9, std::make_pair(1, 0), 2.);
+    graph.addStreet(10, std::make_pair(2, 0), 6.);
+    graph.addStreet(11, std::make_pair(3, 1), 5.);
+    graph.addStreet(12, std::make_pair(3, 2), 8.);
+    graph.addStreet(13, std::make_pair(5, 3), 15.);
+    graph.addStreet(14, std::make_pair(4, 3), 10.);
+    graph.addStreet(15, std::make_pair(5, 4), 6.);
+    graph.addStreet(16, std::make_pair(6, 4), 2.);
+    graph.addStreet(17, std::make_pair(6, 5), 6.);
 
     auto const pathMap = graph.allPathsTo(6);
     CHECK_FALSE(pathMap.contains(6));
@@ -1567,28 +1567,26 @@ TEST_CASE("Dijkstra") {
   }
 
   SUBCASE("Case 6") {
-    Street s1(0, std::make_pair(0, 1), 7.);
-    Street s2(1, std::make_pair(0, 2), 9.);
-    Street s3(2, std::make_pair(0, 5), 14.);
-    Street s4(3, std::make_pair(1, 3), 15.);
-    Street s5(4, std::make_pair(1, 2), 10.);
-    Street s6(5, std::make_pair(2, 3), 11.);
-    Street s7(6, std::make_pair(2, 5), 2.);
-    Street s8(7, std::make_pair(3, 4), 6.);
-    Street s9(8, std::make_pair(5, 4), 9.);
-    Street s10(9, std::make_pair(1, 0), 7.);
-    Street s11(10, std::make_pair(2, 0), 9.);
-    Street s12(11, std::make_pair(5, 0), 14.);
-    Street s13(12, std::make_pair(3, 1), 15.);
-    Street s14(13, std::make_pair(2, 1), 10.);
-    Street s15(14, std::make_pair(3, 2), 11.);
-    Street s16(15, std::make_pair(5, 2), 2.);
-    Street s17(16, std::make_pair(4, 3), 6.);
-    Street s18(17, std::make_pair(4, 5), 9.);
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    graph.addStreets(
-        s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16, s17, s18);
+    graph.addStreet(0, std::make_pair(0, 1), 7.);
+    graph.addStreet(1, std::make_pair(0, 2), 9.);
+    graph.addStreet(2, std::make_pair(0, 5), 14.);
+    graph.addStreet(3, std::make_pair(1, 3), 15.);
+    graph.addStreet(4, std::make_pair(1, 2), 10.);
+    graph.addStreet(5, std::make_pair(2, 3), 11.);
+    graph.addStreet(6, std::make_pair(2, 5), 2.);
+    graph.addStreet(7, std::make_pair(3, 4), 6.);
+    graph.addStreet(8, std::make_pair(5, 4), 9.);
+    graph.addStreet(9, std::make_pair(1, 0), 7.);
+    graph.addStreet(10, std::make_pair(2, 0), 9.);
+    graph.addStreet(11, std::make_pair(5, 0), 14.);
+    graph.addStreet(12, std::make_pair(3, 1), 15.);
+    graph.addStreet(13, std::make_pair(2, 1), 10.);
+    graph.addStreet(14, std::make_pair(3, 2), 11.);
+    graph.addStreet(15, std::make_pair(5, 2), 2.);
+    graph.addStreet(16, std::make_pair(4, 3), 6.);
+    graph.addStreet(17, std::make_pair(4, 5), 9.);
 
     auto const pathMap = graph.allPathsTo(4);
     CHECK_FALSE(pathMap.contains(4));
@@ -1606,24 +1604,22 @@ TEST_CASE("Dijkstra") {
   }
 
   SUBCASE("Case 7") {
-    Street s1(0, std::make_pair(1, 2), 1.);
-    Street s2(1, std::make_pair(0, 2), 6.);
-    Street s3(2, std::make_pair(2, 0), 6.);
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    graph.addStreets(s1, s2, s3);
+    graph.addStreet(0, std::make_pair(1, 2), 1.);
+    graph.addStreet(1, std::make_pair(0, 2), 6.);
+    graph.addStreet(2, std::make_pair(2, 0), 6.);
 
     auto const pathMap = graph.allPathsTo(1);
     CHECK(pathMap.empty());
   }
 
   SUBCASE("Case 8") {
-    Street s1(0, std::make_pair(1, 2), 1.);
-    Street s2(1, std::make_pair(0, 2), 6.);
-    Street s3(2, std::make_pair(2, 0), 6.);
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    graph.addStreets(s1, s2, s3);
+    graph.addStreet(0, std::make_pair(1, 2), 1.);
+    graph.addStreet(1, std::make_pair(0, 2), 6.);
+    graph.addStreet(2, std::make_pair(2, 0), 6.);
 
     CHECK_THROWS_AS(graph.allPathsTo(3), std::out_of_range);
   }
@@ -1655,11 +1651,10 @@ TEST_CASE("ShortestPath") {
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
     graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    Street s12(1, std::make_pair(1, 2), 100.0);
-    Street s03(2, std::make_pair(0, 3), 150.0);
-    Street s32(3, std::make_pair(3, 2), 150.0);
-    graph.addStreets(s01, s12, s03, s32);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
+    graph.addStreet(1, std::make_pair(1, 2), 100.0);
+    graph.addStreet(2, std::make_pair(0, 3), 150.0);
+    graph.addStreet(3, std::make_pair(3, 2), 150.0);
 
     auto pathMap = graph.shortestPath(0, 2);
 
@@ -1682,8 +1677,7 @@ TEST_CASE("ShortestPath") {
   SUBCASE("Same Source and Target") {
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(std::move(s01));
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
 
     auto pathMap = graph.shortestPath(0, 0);
 
@@ -1694,9 +1688,8 @@ TEST_CASE("ShortestPath") {
   SUBCASE("No Path Exists") {
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    Street s23(1, std::make_pair(2, 3), 100.0);
-    graph.addStreets(s01, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
+    graph.addStreet(1, std::make_pair(2, 3), 100.0);
 
     auto pathMap = graph.shortestPath(0, 3);
 
@@ -1707,8 +1700,7 @@ TEST_CASE("ShortestPath") {
   SUBCASE("Invalid Source Node") {
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(std::move(s01));
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
 
     CHECK_THROWS_AS(graph.shortestPath(99, 1), std::out_of_range);
   }
@@ -1716,8 +1708,7 @@ TEST_CASE("ShortestPath") {
   SUBCASE("Invalid Target Node") {
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(std::move(s01));
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
 
     CHECK_THROWS_AS(graph.shortestPath(0, 99), std::out_of_range);
   }
@@ -1726,11 +1717,10 @@ TEST_CASE("ShortestPath") {
     // Diamond-shaped network
     RoadNetwork graph{};
     graph.setEdgeWeight("length");
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s02(1, std::make_pair(0, 2), 100.0);
-    Street s13(2, std::make_pair(1, 3), 10.0);
-    Street s23(3, std::make_pair(2, 3), 10.0);
-    graph.addStreets(s01, s02, s13, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(0, 2), 100.0);
+    graph.addStreet(2, std::make_pair(1, 3), 10.0);
+    graph.addStreet(3, std::make_pair(2, 3), 10.0);
 
     auto pathMap = graph.shortestPath(0, 3);
 
@@ -1756,11 +1746,10 @@ TEST_CASE("ShortestPath") {
     graph.addNode(2, dsf::geometry::Point(0.0, 10.0));
     graph.addNode(3, dsf::geometry::Point(10.0, 10.0));
 
-    Street s01(0, std::make_pair(0, 1), 50.0);
-    Street s02(1, std::make_pair(0, 2), 50.0);
-    Street s13(2, std::make_pair(1, 3), 50.0);
-    Street s23(3, std::make_pair(2, 3), 50.0);
-    graph.addStreets(s01, s02, s13, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 50.0);
+    graph.addStreet(1, std::make_pair(0, 2), 50.0);
+    graph.addStreet(2, std::make_pair(1, 3), 50.0);
+    graph.addStreet(3, std::make_pair(2, 3), 50.0);
 
     auto pathMap = graph.shortestPath(0, 3);
 
@@ -1816,11 +1805,10 @@ TEST_CASE("ShortestPath") {
     // 0 -> 2 -> 3 (length 20)
     RoadNetwork graph{};
     graph.setEdgeWeight("length", 0.01);
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s02(1, std::make_pair(0, 2), 10.0);
-    Street s13(2, std::make_pair(1, 3), 10.0);
-    Street s23(3, std::make_pair(2, 3), 10.0);
-    graph.addStreets(s01, s02, s13, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(0, 2), 10.0);
+    graph.addStreet(2, std::make_pair(1, 3), 10.0);
+    graph.addStreet(3, std::make_pair(2, 3), 10.0);
 
     auto pathMap = graph.shortestPath(0, 3);
 
@@ -1870,13 +1858,12 @@ TEST_CASE("ShortestPath") {
       All edges have equal length, so there are multiple shortest paths */
     RoadNetwork graph{};
     graph.setEdgeWeight("length", 0.01);
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s02(1, std::make_pair(0, 2), 10.0);
-    Street s13(2, std::make_pair(1, 3), 10.0);
-    Street s24(3, std::make_pair(2, 4), 10.0);
-    Street s35(4, std::make_pair(3, 5), 10.0);
-    Street s45(5, std::make_pair(4, 5), 10.0);
-    graph.addStreets(s01, s02, s13, s24, s35, s45);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(0, 2), 10.0);
+    graph.addStreet(2, std::make_pair(1, 3), 10.0);
+    graph.addStreet(3, std::make_pair(2, 4), 10.0);
+    graph.addStreet(4, std::make_pair(3, 5), 10.0);
+    graph.addStreet(5, std::make_pair(4, 5), 10.0);
 
     auto pathMap = graph.shortestPath(0, 5);
 
@@ -1904,15 +1891,14 @@ TEST_CASE("ShortestPath") {
   }
 
   SUBCASE("Threshold - deep alternative paths") {
-    Street s0(999, std::make_pair(999, 0), 1.);
-    Street s1(0, std::make_pair(0, 1), 3.);
-    Street s2(1, std::make_pair(1, 2), 3.);
-    Street s3(2, std::make_pair(2, 4), 3.);
-    Street s4(3, std::make_pair(0, 3), 5.);
-    Street s5(4, std::make_pair(3, 4), 5.);
-    Street s6(5, std::make_pair(4, 5), 10.);
     RoadNetwork graph{};
-    graph.addStreets(s0, s1, s2, s3, s4, s5, s6);
+    graph.addStreet(999, std::make_pair(999, 0), 1.);
+    graph.addStreet(0, std::make_pair(0, 1), 3.);
+    graph.addStreet(1, std::make_pair(1, 2), 3.);
+    graph.addStreet(2, std::make_pair(2, 4), 3.);
+    graph.addStreet(3, std::make_pair(0, 3), 5.);
+    graph.addStreet(4, std::make_pair(3, 4), 5.);
+    graph.addStreet(5, std::make_pair(4, 5), 10.);
     graph.setEdgeWeight("length", 0.7);
 
     auto const pathMap = graph.allPathsTo(4);
@@ -1932,16 +1918,15 @@ TEST_CASE("ShortestPath") {
     // Best path: 0 -> 1 -> 2 -> 5 = 10.0
     // Alternative: 0 -> 1 -> 3 -> 5 = 10.89 (within 10%)
     // Over-budget path: 0 -> 1 -> 3 -> 4 -> 5 = 11.39 (must be excluded)
-    Street s01(0, std::make_pair(0, 1), 1.0);
-    Street s12(1, std::make_pair(1, 2), 4.0);
-    Street s25(2, std::make_pair(2, 5), 5.0);
-    Street s13(3, std::make_pair(1, 3), 4.89);
-    Street s35(4, std::make_pair(3, 5), 5.0);
-    Street s34(5, std::make_pair(3, 4), 0.5);
-    Street s45(6, std::make_pair(4, 5), 5.0);
 
     RoadNetwork graph{};
-    graph.addStreets(s01, s12, s25, s13, s35, s34, s45);
+    graph.addStreet(0, std::make_pair(0, 1), 1.0);
+    graph.addStreet(1, std::make_pair(1, 2), 4.0);
+    graph.addStreet(2, std::make_pair(2, 5), 5.0);
+    graph.addStreet(3, std::make_pair(1, 3), 4.89);
+    graph.addStreet(4, std::make_pair(3, 5), 5.0);
+    graph.addStreet(5, std::make_pair(3, 4), 0.5);
+    graph.addStreet(6, std::make_pair(4, 5), 5.0);
     graph.setEdgeWeight("length", 0.1);
 
     auto const pathMap = graph.shortestPath(0, 5);
@@ -1987,14 +1972,13 @@ TEST_CASE("ShortestPath") {
     //   3 -> 4 -> 5
     // All horizontal and vertical edges have equal length
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s12(1, std::make_pair(1, 2), 10.0);
-    Street s03(2, std::make_pair(0, 3), 10.0);
-    Street s14(3, std::make_pair(1, 4), 10.0);
-    Street s25(4, std::make_pair(2, 5), 10.0);
-    Street s34(5, std::make_pair(3, 4), 10.0);
-    Street s45(6, std::make_pair(4, 5), 10.0);
-    graph.addStreets(s01, s12, s03, s14, s25, s34, s45);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(1, 2), 10.0);
+    graph.addStreet(2, std::make_pair(0, 3), 10.0);
+    graph.addStreet(3, std::make_pair(1, 4), 10.0);
+    graph.addStreet(4, std::make_pair(2, 5), 10.0);
+    graph.addStreet(5, std::make_pair(3, 4), 10.0);
+    graph.addStreet(6, std::make_pair(4, 5), 10.0);
     graph.setEdgeWeight("length", 0.01);
 
     auto pathMap = graph.shortestPath(0, 5);
@@ -2016,10 +2000,9 @@ TEST_CASE("ShortestPath") {
   SUBCASE("PathCollection::explode - Single Path") {
     // Create a simple linear network
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s12(1, std::make_pair(1, 2), 10.0);
-    Street s23(2, std::make_pair(2, 3), 10.0);
-    graph.addStreets(s01, s12, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(1, 2), 10.0);
+    graph.addStreet(2, std::make_pair(2, 3), 10.0);
     graph.setEdgeWeight("length");
 
     auto pathMap = graph.shortestPath(0, 3);
@@ -2065,10 +2048,9 @@ TEST_CASE("ShortestPath") {
         [](Street const& street) { return street.length() / street.maxSpeed(); });
 
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 1.0, 1.0);
-    Street s12(1, std::make_pair(1, 2), 1.0, 1.0);
-    Street s02(2, std::make_pair(0, 2), 1.5, 1.0);
-    graph.addStreets(s01, s12, s02);
+    graph.addStreet(0, std::make_pair(0, 1), 1.0, 1.0);
+    graph.addStreet(1, std::make_pair(1, 2), 1.0, 1.0);
+    graph.addStreet(2, std::make_pair(0, 2), 1.5, 1.0);
 
     auto defaultPath = graph.shortestPath(0, 2);
     REQUIRE(defaultPath.contains(0));
@@ -2096,10 +2078,9 @@ TEST_CASE("ShortestPath") {
 
     RoadNetwork graph{};
     graph.setEdgeWeight("traveltime");
-    Street s01(0, std::make_pair(0, 1), 1.0, 1.0);
-    Street s12(1, std::make_pair(1, 2), 1.0, 1.0);
-    Street s02(2, std::make_pair(0, 2), 1.5, 1.0);
-    graph.addStreets(s01, s12, s02);
+    graph.addStreet(0, std::make_pair(0, 1), 1.0, 1.0);
+    graph.addStreet(1, std::make_pair(1, 2), 1.0, 1.0);
+    graph.addStreet(2, std::make_pair(0, 2), 1.5, 1.0);
 
     auto defaultPath = graph.shortestPath(0, 2);
     REQUIRE(defaultPath.contains(0));
@@ -2128,12 +2109,11 @@ TEST_CASE("ShortestPath") {
     RoadNetwork graph{};
     graph.setEdgeWeight("traveltime");
     // 0 -> 1 -> 2 takes 20 s, the two-lane 0 -> 2 takes 12 s plus its queue time
-    Street s01(0, std::make_pair(0, 1), 100., 10.);
-    Street s12(1, std::make_pair(1, 2), 100., 10.);
-    Street s02(2, std::make_pair(0, 2), 120., 10., 2);
-    Street s40(3, std::make_pair(4, 0), 100., 10.);
-    Street s23(4, std::make_pair(2, 3), 100., 10.);
-    graph.addStreets(s01, s12, s02, s40, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 100., 10.);
+    graph.addStreet(1, std::make_pair(1, 2), 100., 10.);
+    graph.addStreet(2, std::make_pair(0, 2), 120., 10., 2);
+    graph.addStreet(3, std::make_pair(4, 0), 100., 10.);
+    graph.addStreet(4, std::make_pair(2, 3), 100., 10.);
 
     auto& queuedStreet = graph.edge(2);
     queuedStreet.addAgent(std::make_unique<Agent>(0, 0), 0);
@@ -2174,9 +2154,8 @@ TEST_CASE("RoadStatus") {
     graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    Street s12(1, std::make_pair(1, 2), 100.0);
-    graph.addStreets(s01, s12);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
+    graph.addStreet(1, std::make_pair(1, 2), 100.0);
 
     // Initially all streets are OPEN
     CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::OPEN);
@@ -2202,10 +2181,9 @@ TEST_CASE("RoadStatus") {
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
     graph.addNode(3, dsf::geometry::Point(3.0, 0.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Main Street");
-    Street s12(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Street");
-    Street s23(2, std::make_pair(2, 3), 100.0, 13.8888, 1, "Side Road");
-    graph.addStreets(s01, s12, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Main Street");
+    graph.addStreet(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Street");
+    graph.addStreet(2, std::make_pair(2, 3), 100.0, 13.8888, 1, "Side Road");
 
     // Initially all streets are OPEN
     CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::OPEN);
@@ -2230,9 +2208,8 @@ TEST_CASE("RoadStatus") {
     graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Via Roma Nord");
-    Street s12(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Via Roma Sud");
-    graph.addStreets(s01, s12);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Via Roma Nord");
+    graph.addStreet(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Via Roma Sud");
 
     // Close all streets containing "Roma" in the name
     graph.setStreetStatusByName("Roma", RoadStatus::CLOSED);
@@ -2254,11 +2231,10 @@ TEST_CASE("ShortestPath with closed roads") {
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
     graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    Street s12(1, std::make_pair(1, 2), 100.0);
-    Street s03(2, std::make_pair(0, 3), 150.0);
-    Street s32(3, std::make_pair(3, 2), 150.0);
-    graph.addStreets(s01, s12, s03, s32);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
+    graph.addStreet(1, std::make_pair(1, 2), 100.0);
+    graph.addStreet(2, std::make_pair(0, 3), 150.0);
+    graph.addStreet(3, std::make_pair(3, 2), 150.0);
     graph.setEdgeWeight("length");
 
     // Initially, shortest path is 0 -> 1 -> 2
@@ -2287,9 +2263,8 @@ TEST_CASE("ShortestPath with closed roads") {
     graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    Street s12(1, std::make_pair(1, 2), 100.0);
-    graph.addStreets(s01, s12);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
+    graph.addStreet(1, std::make_pair(1, 2), 100.0);
     graph.setEdgeWeight("length");
 
     // Close the middle street
@@ -2306,9 +2281,8 @@ TEST_CASE("ShortestPath with closed roads") {
     graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    Street s12(1, std::make_pair(1, 2), 100.0);
-    graph.addStreets(s01, s12);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
+    graph.addStreet(1, std::make_pair(1, 2), 100.0);
     graph.setEdgeWeight("length", 0.);
 
     // Close and then reopen
@@ -2335,12 +2309,11 @@ TEST_CASE("allPathsTo with closed roads") {
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
     graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    Street s12(1, std::make_pair(1, 2), 100.0);
-    Street s03(2, std::make_pair(0, 3), 150.0);
-    Street s32(3, std::make_pair(3, 2), 150.0);
-    Street s24(4, std::make_pair(2, 4), 100.0);
-    graph.addStreets(s01, s12, s03, s32, s24);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
+    graph.addStreet(1, std::make_pair(1, 2), 100.0);
+    graph.addStreet(2, std::make_pair(0, 3), 150.0);
+    graph.addStreet(3, std::make_pair(3, 2), 150.0);
+    graph.addStreet(4, std::make_pair(2, 4), 100.0);
     graph.setEdgeWeight("length");
 
     // Close street 0->1
@@ -2383,10 +2356,9 @@ TEST_CASE("allPathsTo with closed roads") {
     graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0);
-    Street s12(1, std::make_pair(1, 2), 100.0);
-    Street s23(2, std::make_pair(2, 3), 100.0);
-    graph.addStreets(s01, s12, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0);
+    graph.addStreet(1, std::make_pair(1, 2), 100.0);
+    graph.addStreet(2, std::make_pair(2, 3), 100.0);
     graph.setEdgeWeight("length");
 
     // Close the only path to node 2
@@ -2407,12 +2379,11 @@ TEST_CASE("allPathsTo with closed roads") {
     graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
     graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
 
-    Street s01(0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Main Road");
-    Street s12(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Road");
-    Street s03(2, std::make_pair(0, 3), 150.0, 13.8888, 1, "Side Road");
-    Street s32(3, std::make_pair(3, 2), 150.0, 13.8888, 1, "Side Road");
-    Street s24(4, std::make_pair(2, 4), 100.0, 13.8888, 1, "Unknown Road");
-    graph.addStreets(s01, s12, s03, s32, s24);
+    graph.addStreet(0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Main Road");
+    graph.addStreet(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Road");
+    graph.addStreet(2, std::make_pair(0, 3), 150.0, 13.8888, 1, "Side Road");
+    graph.addStreet(3, std::make_pair(3, 2), 150.0, 13.8888, 1, "Side Road");
+    graph.addStreet(4, std::make_pair(2, 4), 100.0, 13.8888, 1, "Unknown Road");
     graph.setEdgeWeight("length");
 
     // Close all "Main Road" streets
@@ -2453,9 +2424,8 @@ TEST_CASE("Change Street Lanes") {
       graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
       graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
 
-      Street s01(10, std::make_pair(0, 1), 100.0, 20.0, 2);
-      Street s12(11, std::make_pair(1, 2), 150.0, 25.0, 3);
-      graph.addStreets(s01, s12);
+      graph.addStreet(10, std::make_pair(0, 1), 100.0, 20.0, 2);
+      graph.addStreet(11, std::make_pair(1, 2), 150.0, 25.0, 3);
 
       auto const* pStreet01 = graph.street(0, 1);
       REQUIRE(pStreet01 != nullptr);
@@ -2505,11 +2475,10 @@ TEST_CASE("Change Street Lanes") {
       graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
       graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
 
-      Street s01(10, std::make_pair(0, 1), 100.0, 20.0, 2, "Main Street");
-      Street s12(11, std::make_pair(1, 2), 150.0, 25.0, 3, "Main Street");
-      Street s03(12, std::make_pair(0, 3), 120.0, 15.0, 1, "Side Road");
-      Street s32(13, std::make_pair(3, 2), 130.0, 18.0, 2, "Side Road");
-      graph.addStreets(s01, s12, s03, s32);
+      graph.addStreet(10, std::make_pair(0, 1), 100.0, 20.0, 2, "Main Street");
+      graph.addStreet(11, std::make_pair(1, 2), 150.0, 25.0, 3, "Main Street");
+      graph.addStreet(12, std::make_pair(0, 3), 120.0, 15.0, 1, "Side Road");
+      graph.addStreet(13, std::make_pair(3, 2), 130.0, 18.0, 2, "Side Road");
 
       auto const* pMainStreet1 = graph.street(0, 1);
       auto const* pMainStreet2 = graph.street(1, 2);
@@ -2581,9 +2550,9 @@ TEST_CASE("Change Street Lanes") {
 
 TEST_CASE("Change Street Capacity") {
   RoadNetwork graph{};
-  graph.addStreets(Street{0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Main Street"},
-                   Street{1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Street"},
-                   Street{2, std::make_pair(2, 3), 100.0, 13.8888, 1, "Side Road"});
+  graph.addStreet(0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Main Street");
+  graph.addStreet(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Street");
+  graph.addStreet(2, std::make_pair(2, 3), 100.0, 13.8888, 1, "Side Road");
   auto const initialCapacity = graph.edge(0).capacity();
   auto const initialTotalCapacity = graph.capacity();
 
@@ -2610,10 +2579,9 @@ TEST_CASE("BetweennessCentrality") {
     // through the intermediate nodes. Node 1 and 2 should have BC > 0,
     // while endpoints 0 and 3 should have BC = 0.
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s12(1, std::make_pair(1, 2), 10.0);
-    Street s23(2, std::make_pair(2, 3), 10.0);
-    graph.addStreets(s01, s12, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(1, 2), 10.0);
+    graph.addStreet(2, std::make_pair(2, 3), 10.0);
     graph.setEdgeWeight("uniform");
     graph.computeBetweennessCentralities();
 
@@ -2642,10 +2610,9 @@ TEST_CASE("BetweennessCentrality") {
     // Star: 0 -> 1, 0 -> 2, 0 -> 3
     // No node is intermediate (all paths have length 1), so all BC = 0.
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s02(1, std::make_pair(0, 2), 10.0);
-    Street s03(2, std::make_pair(0, 3), 10.0);
-    graph.addStreets(s01, s02, s03);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(0, 2), 10.0);
+    graph.addStreet(2, std::make_pair(0, 3), 10.0);
     graph.setEdgeWeight("uniform");
     graph.computeBetweennessCentralities();
 
@@ -2666,11 +2633,10 @@ TEST_CASE("BetweennessCentrality") {
        0->2 weight 1, 2->3 weight 3 (total 4)
        Shortest path 0->3 goes through node 1 only */
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s02(1, std::make_pair(0, 2), 10.0);
-    Street s13(2, std::make_pair(1, 3), 10.0);
-    Street s23(3, std::make_pair(2, 3), 30.0);
-    graph.addStreets(s01, s02, s13, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(0, 2), 10.0);
+    graph.addStreet(2, std::make_pair(1, 3), 10.0);
+    graph.addStreet(3, std::make_pair(2, 3), 30.0);
     graph.setEdgeWeight("length");
     graph.computeBetweennessCentralities();
 
@@ -2687,8 +2653,7 @@ TEST_CASE("BetweennessCentrality") {
 
   SUBCASE("Single edge") {
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    graph.addStreet(std::move(s01));
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
     graph.setEdgeWeight("uniform");
     graph.computeBetweennessCentralities();
 
@@ -2704,9 +2669,8 @@ TEST_CASE("BetweennessCentrality") {
     // Two separate components: 0->1, 2->3
     // No intermediate nodes possible -> all BC = 0
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s23(1, std::make_pair(2, 3), 10.0);
-    graph.addStreets(s01, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(2, 3), 10.0);
     graph.setEdgeWeight("uniform");
     graph.computeBetweennessCentralities();
 
@@ -2726,10 +2690,9 @@ TEST_CASE("EdgeBetweennessCentrality") {
     // Edge 1->2 (id=1): used by paths 0->2, 1->2, 0->3, 1->3 => EBC = 4
     // Edge 2->3 (id=2): used by paths 0->3, 1->3, 2->3 => EBC = 3
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s12(1, std::make_pair(1, 2), 10.0);
-    Street s23(2, std::make_pair(2, 3), 10.0);
-    graph.addStreets(s01, s12, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(1, 2), 10.0);
+    graph.addStreet(2, std::make_pair(2, 3), 10.0);
     graph.setEdgeWeight("uniform");
     graph.computeEdgeBetweennessCentralities();
 
@@ -2768,11 +2731,10 @@ TEST_CASE("EdgeBetweennessCentrality") {
        0->2 length 10, 2->3 length 30 (total 40)
        Shortest path 0->3 goes 0->1->3 */
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s02(1, std::make_pair(0, 2), 10.0);
-    Street s13(2, std::make_pair(1, 3), 10.0);
-    Street s23(3, std::make_pair(2, 3), 30.0);
-    graph.addStreets(s01, s02, s13, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(0, 2), 10.0);
+    graph.addStreet(2, std::make_pair(1, 3), 10.0);
+    graph.addStreet(3, std::make_pair(2, 3), 30.0);
     graph.setEdgeWeight("length");
     graph.computeEdgeBetweennessCentralities();
 
@@ -2811,8 +2773,7 @@ TEST_CASE("EdgeBetweennessCentrality") {
 
   SUBCASE("Single edge") {
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    graph.addStreet(std::move(s01));
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
     graph.setEdgeWeight("uniform");
     graph.computeEdgeBetweennessCentralities();
 
@@ -2831,10 +2792,9 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
 
   SUBCASE("K=1 matches normalized standard edge BC on linear chain") {
     RoadNetwork standardGraph{};
-    Street stdS01(0, std::make_pair(0, 1), 10.0);
-    Street stdS12(1, std::make_pair(1, 2), 10.0);
-    Street stdS23(2, std::make_pair(2, 3), 10.0);
-    standardGraph.addStreets(stdS01, stdS12, stdS23);
+    standardGraph.addStreet(0, std::make_pair(0, 1), 10.0);
+    standardGraph.addStreet(1, std::make_pair(1, 2), 10.0);
+    standardGraph.addStreet(2, std::make_pair(2, 3), 10.0);
     standardGraph.setEdgeWeight("uniform");
     standardGraph.computeEdgeBetweennessCentralities();
 
@@ -2857,10 +2817,9 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     double const expected2 = *stdBc2 / norm;
 
     RoadNetwork yenGraph{};
-    Street yenS01(0, std::make_pair(0, 1), 10.0);
-    Street yenS12(1, std::make_pair(1, 2), 10.0);
-    Street yenS23(2, std::make_pair(2, 3), 10.0);
-    yenGraph.addStreets(yenS01, yenS12, yenS23);
+    yenGraph.addStreet(0, std::make_pair(0, 1), 10.0);
+    yenGraph.addStreet(1, std::make_pair(1, 2), 10.0);
+    yenGraph.addStreet(2, std::make_pair(2, 3), 10.0);
     yenGraph.setEdgeWeight("uniform");
     yenGraph.computeEdgeKBetweennessCentralities(1);
 
@@ -2881,20 +2840,18 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
 
   SUBCASE("K=2 captures additional shortest-path alternatives") {
     RoadNetwork graphK1{};
-    Street k1S01(0, std::make_pair(0, 1), 10.0);
-    Street k1S02(1, std::make_pair(0, 2), 10.0);
-    Street k1S13(2, std::make_pair(1, 3), 10.0);
-    Street k1S23(3, std::make_pair(2, 3), 10.0);
-    graphK1.addStreets(k1S01, k1S02, k1S13, k1S23);
+    graphK1.addStreet(0, std::make_pair(0, 1), 10.0);
+    graphK1.addStreet(1, std::make_pair(0, 2), 10.0);
+    graphK1.addStreet(2, std::make_pair(1, 3), 10.0);
+    graphK1.addStreet(3, std::make_pair(2, 3), 10.0);
     graphK1.setEdgeWeight("uniform");
     graphK1.computeEdgeKBetweennessCentralities(1);
 
     RoadNetwork graphK2{};
-    Street k2S01(0, std::make_pair(0, 1), 10.0);
-    Street k2S02(1, std::make_pair(0, 2), 10.0);
-    Street k2S13(2, std::make_pair(1, 3), 10.0);
-    Street k2S23(3, std::make_pair(2, 3), 10.0);
-    graphK2.addStreets(k2S01, k2S02, k2S13, k2S23);
+    graphK2.addStreet(0, std::make_pair(0, 1), 10.0);
+    graphK2.addStreet(1, std::make_pair(0, 2), 10.0);
+    graphK2.addStreet(2, std::make_pair(1, 3), 10.0);
+    graphK2.addStreet(3, std::make_pair(2, 3), 10.0);
     graphK2.setEdgeWeight("uniform");
     graphK2.computeEdgeKBetweennessCentralities(2);
 
@@ -2921,11 +2878,10 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
 
   SUBCASE("K=1 matches Brandes on a diamond graph with tied shortest paths") {
     RoadNetwork standardGraph{};
-    Street stdS01(0, std::make_pair(0, 1), 10.0);
-    Street stdS02(1, std::make_pair(0, 2), 10.0);
-    Street stdS13(2, std::make_pair(1, 3), 10.0);
-    Street stdS23(3, std::make_pair(2, 3), 10.0);
-    standardGraph.addStreets(stdS01, stdS02, stdS13, stdS23);
+    standardGraph.addStreet(0, std::make_pair(0, 1), 10.0);
+    standardGraph.addStreet(1, std::make_pair(0, 2), 10.0);
+    standardGraph.addStreet(2, std::make_pair(1, 3), 10.0);
+    standardGraph.addStreet(3, std::make_pair(2, 3), 10.0);
     standardGraph.setEdgeWeight("uniform");
     standardGraph.computeEdgeBetweennessCentralities();
 
@@ -2934,11 +2890,10 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     REQUIRE(norm > 0.0);
 
     RoadNetwork yenGraph{};
-    Street yenS01(0, std::make_pair(0, 1), 10.0);
-    Street yenS02(1, std::make_pair(0, 2), 10.0);
-    Street yenS13(2, std::make_pair(1, 3), 10.0);
-    Street yenS23(3, std::make_pair(2, 3), 10.0);
-    yenGraph.addStreets(yenS01, yenS02, yenS13, yenS23);
+    yenGraph.addStreet(0, std::make_pair(0, 1), 10.0);
+    yenGraph.addStreet(1, std::make_pair(0, 2), 10.0);
+    yenGraph.addStreet(2, std::make_pair(1, 3), 10.0);
+    yenGraph.addStreet(3, std::make_pair(2, 3), 10.0);
     yenGraph.setEdgeWeight("uniform");
     yenGraph.computeEdgeKBetweennessCentralities(1);
 
@@ -2958,11 +2913,10 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
 
   SUBCASE("K=2 counts both equal shortest paths exactly on a diamond graph") {
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s02(1, std::make_pair(0, 2), 10.0);
-    Street s13(2, std::make_pair(1, 3), 10.0);
-    Street s23(3, std::make_pair(2, 3), 10.0);
-    graph.addStreets(s01, s02, s13, s23);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(0, 2), 10.0);
+    graph.addStreet(2, std::make_pair(1, 3), 10.0);
+    graph.addStreet(3, std::make_pair(2, 3), 10.0);
     graph.setEdgeWeight("uniform");
     graph.computeEdgeKBetweennessCentralities(2);
 
@@ -2987,13 +2941,12 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     // This tests that the global candidate heap persists across rank iterations
     // and correctly accumulates spur candidates from earlier ranks.
     RoadNetwork graph{};
-    Street s01(0, std::make_pair(0, 1), 10.0);
-    Street s14(1, std::make_pair(1, 4), 10.0);
-    Street s02(2, std::make_pair(0, 2), 10.0);
-    Street s24(3, std::make_pair(2, 4), 10.0);
-    Street s03(4, std::make_pair(0, 3), 10.0);
-    Street s34(5, std::make_pair(3, 4), 10.0);
-    graph.addStreets(s01, s14, s02, s24, s03, s34);
+    graph.addStreet(0, std::make_pair(0, 1), 10.0);
+    graph.addStreet(1, std::make_pair(1, 4), 10.0);
+    graph.addStreet(2, std::make_pair(0, 2), 10.0);
+    graph.addStreet(3, std::make_pair(2, 4), 10.0);
+    graph.addStreet(4, std::make_pair(0, 3), 10.0);
+    graph.addStreet(5, std::make_pair(3, 4), 10.0);
     graph.setEdgeWeight("uniform");
     graph.computeEdgeKBetweennessCentralities(3);
 
@@ -3020,13 +2973,12 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     // from other pairs. So contribution = 1/12.
     // Actually, let's verify that all edges contribute positively and K=3 >= K=2
     RoadNetwork graphK2{};
-    Street k2_s01(0, std::make_pair(0, 1), 10.0);
-    Street k2_s14(1, std::make_pair(1, 4), 10.0);
-    Street k2_s02(2, std::make_pair(0, 2), 10.0);
-    Street k2_s24(3, std::make_pair(2, 4), 10.0);
-    Street k2_s03(4, std::make_pair(0, 3), 10.0);
-    Street k2_s34(5, std::make_pair(3, 4), 10.0);
-    graphK2.addStreets(k2_s01, k2_s14, k2_s02, k2_s24, k2_s03, k2_s34);
+    graphK2.addStreet(0, std::make_pair(0, 1), 10.0);
+    graphK2.addStreet(1, std::make_pair(1, 4), 10.0);
+    graphK2.addStreet(2, std::make_pair(0, 2), 10.0);
+    graphK2.addStreet(3, std::make_pair(2, 4), 10.0);
+    graphK2.addStreet(4, std::make_pair(0, 3), 10.0);
+    graphK2.addStreet(5, std::make_pair(3, 4), 10.0);
     graphK2.setEdgeWeight("uniform");
     graphK2.computeEdgeKBetweennessCentralities(2);
 

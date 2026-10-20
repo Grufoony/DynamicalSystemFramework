@@ -10,7 +10,7 @@ namespace dsf::mobility {
   double Road::m_meanVehicleLength = 5.;
 
   Road::Road(Id id,
-             std::pair<Id, Id> nodePair,
+             std::pair<Node*, Node*> nodePair,
              double length,
              double maxSpeed,
              int nLanes,

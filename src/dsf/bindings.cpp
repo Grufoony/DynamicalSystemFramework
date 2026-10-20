@@ -147,15 +147,17 @@ NB_MODULE(dsf_cpp, m) {
 
     Returns:
       int: The street id.)doc")
-          .def("source",
-               &dsf::mobility::Street::source,
-               R"doc(Get the source node id of this street.
+          .def(
+              "source",
+              [](dsf::mobility::Street const& self) { return self.source()->id(); },
+              R"doc(Get the source node id of this street.
 
     Returns:
         int: Source node id.)doc")
-          .def("target",
-               &dsf::mobility::Street::target,
-               R"doc(Get the target node id of this street.
+          .def(
+              "target",
+              [](dsf::mobility::Street const& self) { return self.target()->id(); },
+              R"doc(Get the target node id of this street.
 
     Returns:
         int: Target node id.)doc")
@@ -624,8 +626,8 @@ NB_MODULE(dsf_cpp, m) {
              double maxSpeed,
              int nLanes,
              std::string name) {
-            self.addStreet(dsf::mobility::Street(
-                id, std::make_pair(source, target), length, maxSpeed, nLanes, name));
+            self.addStreet(
+                id, std::make_pair(source, target), length, maxSpeed, nLanes, name);
           },
           nb::arg("id"),
           nb::arg("source"),

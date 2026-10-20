@@ -157,28 +157,44 @@ namespace dsf::mobility {
 
     /// @brief Extract a street from the given transition probabilities
     /// @tparam AllowTermination A boolean indicating whether the agent is allowed to terminate its trip
-    /// @param transitionProbabilities A map of candidate street ids to their (unnormalized) weights
+    /// @param transitionProbabilities A map of candidate street ids to the street and its (unnormalized) weight
     /// @param cumulativeProbability The sum of the weights in transitionProbabilities
     ///   the missing mass (1 - cumulativeProbability) is the probability of ending the trip, in which
-    ///   case std::nullopt is returned
-    /// @return std::optional<Id> The id of the selected street, or std::nullopt if no street was selected
+    ///   case nullptr is returned
+    /// @return Street const* The selected street, or nullptr if no street was selected
     template <bool AllowTermination>
-    std::optional<Id> m_extractStreet(
-        std::unordered_map<Id, double> const& transitionProbabilities,
+    Street const* m_extractStreet(
+        std::unordered_map<Id, std::pair<Street const*, double>> const&
+            transitionProbabilities,
         double const cumulativeProbability);
 
-    std::optional<Id> m_nextRandomStreetId(const std::unique_ptr<Agent>& pAgent,
-                                           RoadJunction const* pNode);
-    /// @brief Get the next street id
+    /// @brief Get the next street of a random agent (uniform or transition-matrix choice)
     /// @param pAgent A std::unique_ptr to the agent
-    /// @param pNode A std::unique_ptr to the current node
-    /// @return Id The id of the randomly selected next street
-    std::optional<Id> m_nextStreetId(const std::unique_ptr<Agent>& pAgent,
-                                     RoadJunction const* pNode);
+    /// @param pNode The current node
+    /// @param pCurrentStreet The street the agent is expected to be on (see m_currentStreet)
+    /// @return Street const* The selected next street, nullptr if the agent has none
+    Street const* m_nextRandomStreet(const std::unique_ptr<Agent>& pAgent,
+                                     RoadJunction const* pNode,
+                                     Street const* pCurrentStreet);
+    /// @brief Get the next street of an agent
+    /// @param pAgent A std::unique_ptr to the agent
+    /// @param pNode The current node
+    /// @param pCurrentStreet The street the agent is expected to be on (see m_currentStreet)
+    /// @return Street const* The selected next street, nullptr if the agent has none
+    Street const* m_nextStreet(const std::unique_ptr<Agent>& pAgent,
+                               RoadJunction const* pNode,
+                               Street const* pCurrentStreet);
+    /// @brief Get the agent's current street, if any
+    /// @param pAgent A std::unique_ptr to the agent
+    /// @param pHint The street the agent is expected to be on, to avoid a lookup
+    /// @return Street const* The agent's current street, nullptr if it has none
+    Street const* m_currentStreet(const std::unique_ptr<Agent>& pAgent,
+                                  Street const* pHint) const;
     /// @brief Evolve a street
-    /// @param pStreet A std::unique_ptr to the street
+    /// @param pStreet A pointer to the street
+    /// @param pNode A pointer to the street's target node
     /// @details If possible, removes the first agent of the street's queue, putting it in the destination node.
-    void m_evolveStreet(Street* pStreet);
+    void m_evolveStreet(Street* pStreet, RoadJunction* pNode);
     /// @brief If possible, removes one agent from the node, putting it on the next street.
     /// @param pNode A std::unique_ptr to the node
     void m_evolveNode(RoadJunction* pNode);
@@ -582,17 +598,18 @@ namespace dsf::mobility {
   }
 
   template <bool AllowTermination>
-  std::optional<Id> FirstOrderDynamics::m_extractStreet(
-      std::unordered_map<Id, double> const& transitionProbabilities,
+  Street const* FirstOrderDynamics::m_extractStreet(
+      std::unordered_map<Id, std::pair<Street const*, double>> const&
+          transitionProbabilities,
       double const cumulativeProbability) {
     // Select street based on weighted probabilities
     if (transitionProbabilities.empty()) {
-      return std::nullopt;
+      return nullptr;
     }
     if (!AllowTermination && transitionProbabilities.size() == 1) {
-      auto const& onlyStreetId = transitionProbabilities.cbegin()->first;
-      spdlog::trace("This transition is to {}", this->graph().edge(onlyStreetId));
-      return onlyStreetId;
+      auto const* pOnlyStreet = transitionProbabilities.cbegin()->second.first;
+      spdlog::trace("This transition is to {}", *pOnlyStreet);
+      return pOnlyStreet;
     }
 
     // When termination is allowed the weights are probabilities in [0, 1] and the missing
@@ -600,22 +617,23 @@ namespace dsf::mobility {
     std::uniform_real_distribution<double> uniformDist{
         0., AllowTermination ? 1. : cumulativeProbability};
     auto const randValue = uniformDist(this->m_generator);
-    Id fallbackStreetId{transitionProbabilities.cbegin()->first};
+    Street const* pFallbackStreet{transitionProbabilities.cbegin()->second.first};
     double accumulated = 0.0;
-    for (const auto& [targetStreetId, probability] : transitionProbabilities) {
+    for (auto const& [_, candidate] : transitionProbabilities) {
+      auto const& [pTargetStreet, probability] = candidate;
       accumulated += probability;
-      fallbackStreetId = targetStreetId;
+      pFallbackStreet = pTargetStreet;
       if (randValue < accumulated) {
-        return targetStreetId;
+        return pTargetStreet;
       }
     }
     if (AllowTermination) {
       spdlog::trace("Transition matrix ends the trip (random value {} >= {})",
                     randValue,
                     cumulativeProbability);
-      return std::nullopt;
+      return nullptr;
     }
-    return fallbackStreetId;
+    return pFallbackStreet;
   }
 
   template <typename... TArgs>

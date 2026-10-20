@@ -13,11 +13,15 @@
 #include <vector>
 
 namespace dsf {
+  class Node;
+
+  /// @brief The Edge class represents the concept of an edge (u -> v) in the network.
+  /// @details An edge is linked to its source and target nodes, which it does not own.
   class Edge {
   protected:
     geometry::PolyLine m_geometry;
     Id m_id;
-    std::pair<Id, Id> m_nodePair;
+    std::pair<Node*, Node*> m_nodePair;
     double m_angle;
     std::unordered_map<
         std::string,
@@ -30,10 +34,11 @@ namespace dsf {
   public:
     /// @brief Construct a new Edge object
     /// @param id The edge's id
-    /// @param nodePair The edge's node pair (u, v) with the edge u -> v
+    /// @param nodePair The edge's node pointers pair (u, v) with the edge u -> v
     /// @param geometry The edge's geometry, a vector of pairs of doubles representing the coordinates of the edge's
     /// geometry. Default is an empty vector.
-    Edge(Id id, std::pair<Id, Id> nodePair, geometry::PolyLine geometry = {});
+    /// @throws std::invalid_argument if a node is null
+    Edge(Id id, std::pair<Node*, Node*> nodePair, geometry::PolyLine geometry = {});
     Edge(Edge&&) = default;
     Edge(const Edge&) = delete;
     virtual ~Edge() = default;
@@ -48,20 +53,27 @@ namespace dsf {
         std::string const& name,
         std::variant<std::monostate, bool, std::int64_t, double, std::string> const&
             value);
+    /// @brief Replace the edge's source node, e.g. when the network changes its type
+    /// @param pNode A pointer to the new source node
+    /// @throws std::invalid_argument if the node is null or does not have the source id
+    void setSource(Node* pNode);
+    /// @brief Replace the edge's target node, e.g. when the network changes its type
+    /// @param pNode A pointer to the new target node
+    /// @throws std::invalid_argument if the node is null or does not have the target id
+    void setTarget(Node* pNode);
 
     /// @brief Get the edge's id
     /// @return Id The edge's id
-    inline auto id() const { return m_id; }
-    /// @brief Get the edge's source node id
-    /// @return Id The edge's source node id
-    inline auto source() const { return m_nodePair.first; }
-    /// @brief Get the edge's target node id
-    /// @return Id The edge's target node id
-    inline auto target() const { return m_nodePair.second; }
-    /// @brief Get the edge's node pair
-    /// @return std::pair<Id, Id> The edge's node pair, where the first element is the source node id and the second
-    /// element is the target node id. The pair is (u, v) with the edge u -> v.
-    inline auto const& nodePair() const { return m_nodePair; }
+    inline auto id() const { return m_id; };
+    /// @brief Get the edge's nodes
+    /// @return std::pair<Node*, Node*> The edge's (source, target) nodes, with the edge u -> v
+    inline auto const& nodePair() const noexcept { return m_nodePair; }
+    /// @brief Get the edge's source node
+    /// @return Node* A pointer to the source node
+    inline Node* source() const noexcept { return m_nodePair.first; }
+    /// @brief Get the edge's target node
+    /// @return Node* A pointer to the target node
+    inline Node* target() const noexcept { return m_nodePair.second; }
     /// @brief Get the edge's geometry
     /// @return dsf::geometry::PolyLine The edge's geometry, a vector of pairs of doubles representing the coordinates of the edge's geometry
     inline auto const& geometry() const { return m_geometry; }
@@ -94,6 +106,8 @@ namespace dsf {
   };
 };  // namespace dsf
 
+#include "Node.hpp"
+
 template <>
 struct std::formatter<dsf::Edge> {
   constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
@@ -116,8 +130,8 @@ struct std::formatter<dsf::Edge> {
     return std::format_to(ctx.out(),
                           "Edge(id={}, source={}, target={}{})",
                           edge.id(),
-                          edge.source(),
-                          edge.target(),
+                          edge.source()->id(),
+                          edge.target()->id(),
                           strAttributes);
   }
 };

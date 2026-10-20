@@ -68,8 +68,8 @@ namespace dsf::mobility {
           spdlog::info("Importing ODs from CSV with RANDOM_ODS method (compat format).");
           for (auto const& row : reader) {
             auto const nodeId = row["id"].get<Id>();
-            auto const oId = this->graph().node(nodeId).outgoingEdges().front();
-            auto const dId = this->graph().node(nodeId).ingoingEdges().front();
+            auto const oId = this->graph().node(nodeId).outgoingEdges().front()->id();
+            auto const dId = this->graph().node(nodeId).ingoingEdges().front()->id();
             // try to get o_prob as double
             try {
               auto oProb = row["o_prob"].get<double>();
@@ -89,8 +89,8 @@ namespace dsf::mobility {
               "Importing ODs from CSV with RANDOM_ODS method (extended format).");
           for (auto const& row : reader) {
             auto const nodeId = row["id"].get<Id>();
-            auto const oId = this->graph().node(nodeId).outgoingEdges().front();
-            auto const dId = this->graph().node(nodeId).ingoingEdges().front();
+            auto const oId = this->graph().node(nodeId).outgoingEdges().front()->id();
+            auto const dId = this->graph().node(nodeId).ingoingEdges().front()->id();
             auto const type = row["type"].get<std::string>();
             auto const weight = row["weight"].get<double>();
             if (type == "O") {
@@ -131,7 +131,7 @@ namespace dsf::mobility {
         for (auto const& row : reader) {
           auto const originNodeId = row["origin_id"].get<Id>();
           auto const originEdgeId =
-              this->graph().node(originNodeId).outgoingEdges().front();
+              this->graph().node(originNodeId).outgoingEdges().front()->id();
           auto const originWeight = row["weight"].get<double>();
           // Get destination nodes as id:weight,id:weight,...
           auto const destinationsStr = row["destinations"].get<std::string>();
@@ -156,7 +156,7 @@ namespace dsf::mobility {
             auto const destinationNodeId =
                 static_cast<Id>(std::stoul(destinationPair.substr(0, colonPos)));
             auto const destinationEdgeId =
-                this->graph().node(destinationNodeId).ingoingEdges().front();
+                this->graph().node(destinationNodeId).ingoingEdges().front()->id();
             auto const destinationWeight =
                 std::stod(destinationPair.substr(colonPos + 1));
             auto& [weight, destinations] = conditionalODs.at(originEdgeId);
@@ -579,22 +579,37 @@ namespace dsf::mobility {
     }
   }
 
-  std::optional<Id> FirstOrderDynamics::m_nextRandomStreetId(
-      const std::unique_ptr<Agent>& pAgent, RoadJunction const* pNode) {
-    spdlog::trace("Computing m_nextRandomStreetId for {}", *pAgent);
+  Street const* FirstOrderDynamics::m_currentStreet(const std::unique_ptr<Agent>& pAgent,
+                                                    Street const* pHint) const {
+    auto const currentStreetIdOpt{pAgent->streetId()};
+    if (!currentStreetIdOpt.has_value()) {
+      return nullptr;
+    }
+    if (pHint != nullptr && pHint->id() == *currentStreetIdOpt) {
+      return pHint;
+    }
+    return &this->graph().edge(*currentStreetIdOpt);
+  }
+
+  Street const* FirstOrderDynamics::m_nextRandomStreet(
+      const std::unique_ptr<Agent>& pAgent,
+      RoadJunction const* pNode,
+      Street const* pCurrentStreet) {
+    spdlog::trace("Computing m_nextRandomStreet for {}", *pAgent);
     auto const& outgoingEdges = pNode->outgoingEdges();
 
     // Calculate transition probabilities for all valid outgoing edges
-    std::unordered_map<Id, double> transitionProbabilities;
+    std::unordered_map<Id, std::pair<Street const*, double>> transitionProbabilities;
     double cumulativeProbability = 0.0;
 
-    std::set<Id> forbiddenTurns;
-    std::optional<Id> previousNodeId{std::nullopt};
+    static std::set<Id> const noForbiddenTurns;
+    auto const* pForbiddenTurns{&noForbiddenTurns};
+    Node const* pPreviousNode{nullptr};
     auto const currentStreetIdOpt{pAgent->streetId()};
-    if (currentStreetIdOpt.has_value()) {
-      auto const& streetCurrent{this->graph().edge(*currentStreetIdOpt)};
-      forbiddenTurns = streetCurrent.forbiddenTurns();
-      previousNodeId = streetCurrent.source();
+    auto const* pStreetCurrent{m_currentStreet(pAgent, pCurrentStreet)};
+    if (pStreetCurrent != nullptr) {
+      pForbiddenTurns = &pStreetCurrent->forbiddenTurns();
+      pPreviousNode = pStreetCurrent->source();
     }
 
     auto const itRow{currentStreetIdOpt.has_value()
@@ -604,17 +619,18 @@ namespace dsf::mobility {
     auto const collectCandidates = [&](bool const bUseMatrix) -> void {
       transitionProbabilities.clear();
       cumulativeProbability = 0.0;
-      for (const auto outEdgeId : outgoingEdges) {
-        if (forbiddenTurns.contains(outEdgeId)) {
+      for (auto const* pStreetOut : outgoingEdges) {
+        auto const outEdgeId{pStreetOut->id()};
+        if (pForbiddenTurns->contains(outEdgeId)) {
           spdlog::trace("Forbidden turn from street {} to street {}. Skipping.",
                         pAgent->streetId().value_or(0),
                         outEdgeId);
           continue;
         }
-        auto const& streetOut{this->graph().edge(outEdgeId)};
+        auto const& streetOut{*pStreetOut};
 
         // Handle U-turns
-        if ((previousNodeId.has_value()) && (streetOut.target() == *previousNodeId)) {
+        if (pPreviousNode != nullptr && streetOut.target() == pPreviousNode) {
           continue;
         }
 
@@ -627,7 +643,8 @@ namespace dsf::mobility {
           probability = itWeight->second;
         }
 
-        transitionProbabilities.emplace(streetOut.id(), probability);
+        transitionProbabilities.emplace(streetOut.id(),
+                                        std::make_pair(pStreetOut, probability));
         cumulativeProbability += probability;
       }
     };
@@ -655,24 +672,25 @@ namespace dsf::mobility {
     return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
   }
 
-  std::optional<Id> FirstOrderDynamics::m_nextStreetId(
-      const std::unique_ptr<Agent>& pAgent, RoadJunction const* pNode) {
+  Street const* FirstOrderDynamics::m_nextStreet(const std::unique_ptr<Agent>& pAgent,
+                                                 RoadJunction const* pNode,
+                                                 Street const* pCurrentStreet) {
     if (pAgent->isRandom()) {
-      return m_nextRandomStreetId(pAgent, pNode);
+      return m_nextRandomStreet(pAgent, pNode, pCurrentStreet);
     }
-    spdlog::trace("Computing m_nextStreetId for {}", *pAgent);
+    spdlog::trace("Computing m_nextStreet for {}", *pAgent);
     auto const& outgoingEdges = pNode->outgoingEdges();
 
     // Get current street information
-    std::optional<Id> previousNodeId = std::nullopt;
-    std::set<Id> forbiddenTurns;
-    std::vector<Id> pathTargets;
-    auto const currentStreetIdOpt{pAgent->streetId()};
+    Node const* pPreviousNode{nullptr};
+    static std::set<Id> const noForbiddenTurns;
+    auto const* pForbiddenTurns{&noForbiddenTurns};
+    std::span<Id const> pathTargets;
 
-    if (currentStreetIdOpt.has_value()) {
-      auto const* pStreetCurrent{&this->graph().edge(*currentStreetIdOpt)};
-      previousNodeId = pStreetCurrent->source();
-      forbiddenTurns = pStreetCurrent->forbiddenTurns();
+    if (auto const* pStreetCurrent{m_currentStreet(pAgent, pCurrentStreet)};
+        pStreetCurrent != nullptr) {
+      pPreviousNode = pStreetCurrent->source();
+      pForbiddenTurns = &pStreetCurrent->forbiddenTurns();
 
       // Get path targets for non-random agents
       auto const* pItinerary{pAgent->itinerary().get()};
@@ -688,30 +706,29 @@ namespace dsf::mobility {
         spdlog::debug("No itinerary path entry for {} at {}. Returning no transition.",
                       *pAgent,
                       *pStreetCurrent);
-        return std::nullopt;
+        return nullptr;
       }
       pathTargets = pathIt->second;
     }
 
     // Calculate transition probabilities for all valid outgoing edges
-    std::unordered_map<Id, double> transitionProbabilities;
+    std::unordered_map<Id, std::pair<Street const*, double>> transitionProbabilities;
     double cumulativeProbability = 0.0;
 
-    for (const auto outEdgeId : outgoingEdges) {
-      if (forbiddenTurns.contains(outEdgeId)) {
+    for (auto const* pStreetOut : outgoingEdges) {
+      auto const outEdgeId{pStreetOut->id()};
+      if (pForbiddenTurns->contains(outEdgeId)) {
         spdlog::trace("Forbidden turn from street {} to street {}. Skipping.",
                       pAgent->streetId().value_or(0),
                       outEdgeId);
         continue;
       }
 
-      auto const& streetOut{this->graph().edge(outEdgeId)};
+      auto const& streetOut{*pStreetOut};
 
       // Check if this is a valid path target for non-random agents
       bool bIsPathTarget = false;
-      bIsPathTarget =
-          std::find(pathTargets.cbegin(), pathTargets.cend(), streetOut.id()) !=
-          pathTargets.cend();
+      bIsPathTarget = std::ranges::find(pathTargets, streetOut.id()) != pathTargets.end();
 
       if (!this->m_errorProbability.has_value() && !bIsPathTarget) {
         continue;
@@ -730,7 +747,7 @@ namespace dsf::mobility {
       }
 
       // Handle U-turns
-      if ((previousNodeId.has_value()) && streetOut.target() == *previousNodeId) {
+      if (pPreviousNode != nullptr && streetOut.target() == pPreviousNode) {
         if (pNode->isRoundabout()) {
           probability *= m_uturnPenaltyFactor;  // Penalize U-turns in roundabouts
         } else if (!bIsPathTarget) {
@@ -738,14 +755,16 @@ namespace dsf::mobility {
         }
       }
 
-      transitionProbabilities.emplace(streetOut.id(), probability);
+      transitionProbabilities.emplace(streetOut.id(),
+                                      std::make_pair(pStreetOut, probability));
       cumulativeProbability += probability;
     }
 
     return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
   }
 
-  void FirstOrderDynamics::m_evolveStreet(Street* pStreet) {
+  void FirstOrderDynamics::m_evolveStreet(Street* pStreet, RoadJunction* pNode) {
+    assert(pStreet->target() == pNode);
     auto const nLanes = pStreet->nLanes();
     // Enqueue moving agents if their free time is up
     while (!pStreet->movingAgents().empty()) {
@@ -757,15 +776,13 @@ namespace dsf::mobility {
       }
       pAgent->setSpeed(0.);
       bool bArrived{false};
-      if (!pAgent->isRandom()) {
-        if (this->graph().edge(pAgent->itinerary()->destination()).source() ==
-            pStreet->target()) {
-          pAgent->updateItinerary();
-        }
-        if (this->graph().edge(pAgent->itinerary()->destination()).source() ==
-            pStreet->target()) {
-          bArrived = true;
-        }
+      if (!pAgent->isRandom() &&
+          this->graph().edge(pAgent->itinerary()->destination()).source() == pNode) {
+        // Move on to the next itinerary of the trip, if any: the agent has arrived
+        // only if this street still leads to the destination
+        pAgent->updateItinerary();
+        bArrived =
+            this->graph().edge(pAgent->itinerary()->destination()).source() == pNode;
       }
       if (bArrived) {
         std::uniform_int_distribution<size_t> laneDist{0,
@@ -773,11 +790,11 @@ namespace dsf::mobility {
         pStreet->enqueue(laneDist(this->m_generator));
         continue;
       }
-      auto const nextStreetId =
-          this->m_nextStreetId(pAgent, &this->graph().node(pStreet->target()));
-      if (!nextStreetId.has_value()) {
-        spdlog::debug(
-            "No next street found for agent {} at node {}", *pAgent, pStreet->target());
+      auto const* pNextStreet{this->m_nextStreet(pAgent, pNode, pStreet)};
+      if (pNextStreet == nullptr) {
+        spdlog::debug("No next street found for agent {} at node {}",
+                      *pAgent,
+                      pStreet->target()->id());
         if (pAgent->isRandom()) {
           std::uniform_int_distribution<size_t> laneDist{0,
                                                          static_cast<size_t>(nLanes - 1)};
@@ -792,7 +809,6 @@ namespace dsf::mobility {
         // throw std::runtime_error(std::format(
         //     "No next street found for agent {} at node {}", *pAgent, pStreet->target()));
       }
-      auto const* pNextStreet{&this->graph().edge(*nextStreetId)};
       pAgent->setNextStreetId(pNextStreet->id());
       if (nLanes == 1) {
         pStreet->enqueue(0);
@@ -914,7 +930,7 @@ namespace dsf::mobility {
               *pAgentTemp,
               *pStreet,
               directionToString.at(pStreet->laneMapping().at(queueIndex)),
-              this->graph().node(pStreet->target()).isTrafficLight(),
+              pNode->isTrafficLight(),
               timeTolerance,
               timeDiff);
           // Kill the agent
@@ -923,7 +939,7 @@ namespace dsf::mobility {
         }
       }
       pAgentTemp->setSpeed(0.);
-      auto* destinationNode{&this->graph().node(pStreet->target())};
+      auto* destinationNode{pNode};
       if (destinationNode->isFull()) {
         spdlog::trace("Skipping due to full destination node {}", *destinationNode);
         continue;
@@ -945,28 +961,22 @@ namespace dsf::mobility {
         auto& intersection = static_cast<Intersection&>(*destinationNode);
         bool bCanPass{true};
         if (!intersection.streetPriorities().empty()) {
-          spdlog::debug("Checking priorities for street {} -> {}",
-                        pStreet->source(),
-                        pStreet->target());
+          spdlog::debug("Checking priorities for {}", *pStreet);
           auto const& thisDirection{this->graph()
                                         .edge(*(pAgentTemp->nextStreetId()))
                                         .turnDirection(pStreet->angle())};
           if (!intersection.streetPriorities().contains(pStreet->id())) {
             // I have to check if the agent has right of way
-            auto const& inNeighbours{destinationNode->ingoingEdges()};
-            for (auto const& inEdgeId : inNeighbours) {
-              auto const* pStreetTemp{&this->graph().edge(inEdgeId)};
-              if (pStreetTemp->id() == pStreet->id()) {
+            for (auto const* pStreetTemp : destinationNode->ingoingEdges()) {
+              if (pStreetTemp == pStreet) {
                 continue;
               }
               if (pStreetTemp->nExitingAgents() == 0) {
                 continue;
               }
               if (intersection.streetPriorities().contains(pStreetTemp->id())) {
-                spdlog::debug(
-                    "Skipping agent emission from street {} -> {} due to right of way.",
-                    pStreet->source(),
-                    pStreet->target());
+                spdlog::debug("Skipping agent emission from {} due to right of way.",
+                              *pStreet);
                 bCanPass = false;
                 break;
               } else if (thisDirection >= Direction::LEFT) {
@@ -983,16 +993,16 @@ namespace dsf::mobility {
                   if (!nextStreetIdOpt2.has_value() || !streetIdOpt2.has_value()) {
                     continue;
                   }
-                  auto const& otherDirection{
-                      this->graph()
-                          .edge(*nextStreetIdOpt2)
-                          .turnDirection(this->graph().edge(*streetIdOpt2).angle())};
+                  // Queued agents are on the street they are queued on
+                  assert(*streetIdOpt2 == pStreetTemp->id());
+                  auto const& otherDirection{this->graph()
+                                                 .edge(*nextStreetIdOpt2)
+                                                 .turnDirection(pStreetTemp->angle())};
                   if (otherDirection < Direction::LEFT) {
                     spdlog::debug(
-                        "Skipping agent emission from street {} -> {} due to right of "
+                        "Skipping agent emission from {} due to right of "
                         "way with other agents.",
-                        pStreet->source(),
-                        pStreet->target());
+                        *pStreet);
                     bCanPass = false;
                     break;
                   }
@@ -1016,16 +1026,16 @@ namespace dsf::mobility {
                 if (!streetIdOpt2.has_value() || !nextStreetIdOpt2.has_value()) {
                   continue;
                 }
-                auto const& otherDirection{
-                    this->graph()
-                        .edge(*nextStreetIdOpt2)
-                        .turnDirection(this->graph().edge(*streetIdOpt2).angle())};
+                // Queued agents are on the street they are queued on
+                assert(*streetIdOpt2 == pStreetTemp->id());
+                auto const& otherDirection{this->graph()
+                                               .edge(*nextStreetIdOpt2)
+                                               .turnDirection(pStreetTemp->angle())};
                 if (otherDirection < thisDirection) {
                   spdlog::debug(
-                      "Skipping agent emission from street {} -> {} due to right of "
+                      "Skipping agent emission from {} due to right of "
                       "way with other agents.",
-                      pStreet->source(),
-                      pStreet->target());
+                      *pStreet);
                   bCanPass = false;
                   break;
                 }
@@ -1034,10 +1044,7 @@ namespace dsf::mobility {
           }
         }
         if (!bCanPass) {
-          spdlog::debug(
-              "Skipping agent emission from street {} -> {} due to right of way",
-              pStreet->source(),
-              pStreet->target());
+          spdlog::debug("Skipping agent emission from {} due to right of way", *pStreet);
           continue;
         }
       }
@@ -1048,16 +1055,15 @@ namespace dsf::mobility {
           bArrived = true;
         } else {
           spdlog::debug(
-              "Skipping agent emission from street {} -> {} due to passage "
+              "Skipping agent emission from {} due to passage "
               "probability",
-              pStreet->source(),
-              pStreet->target());
+              *pStreet);
           continue;
         }
       }
       if (!pAgentTemp->isRandom()) {
         auto const& dstStreet{this->graph().edge(pAgentTemp->itinerary()->destination())};
-        if (destinationNode->id() == dstStreet.source()) {
+        if (dstStreet.source() == destinationNode) {
           bArrived = true;
           pAgentTemp->setNextStreetId(dstStreet.id());
           spdlog::debug("Agent {} has arrived at destination node {}",
@@ -1093,10 +1099,9 @@ namespace dsf::mobility {
       auto* nextStreet{&this->graph().edge(*(pAgentTemp->nextStreetId()))};
       if (nextStreet->isFull()) {
         spdlog::debug(
-            "Skipping agent emission from street {} -> {} due to full "
+            "Skipping agent emission from {} due to full "
             "next street: {}",
-            pStreet->source(),
-            pStreet->target(),
+            *pStreet,
             *nextStreet);
         continue;
       }
@@ -1109,7 +1114,7 @@ namespace dsf::mobility {
           pStreet->id(),
           nextStreet->id(),
           pAgent->freeTime());
-      assert(destinationNode->id() == nextStreet->source());
+      assert(nextStreet->source() == destinationNode);
       if (destinationNode->isIntersection()) {
         auto& intersection = dynamic_cast<Intersection&>(*destinationNode);
         auto const delta{nextStreet->deltaAngle(pStreet->angle())};
@@ -1164,11 +1169,11 @@ namespace dsf::mobility {
             continue;
           }
           if (!m_turnCounts.empty() && pAgent->streetId().has_value()) {
-            ++m_turnCounts[*(pAgent->streetId())][nextStreet->id()];
+            auto const count{++m_turnCounts[*(pAgent->streetId())][nextStreet->id()]};
             spdlog::trace("Incremented turn count for {} -> {}: {}",
                           *(pAgent->streetId()),
                           nextStreet->id(),
-                          m_turnCounts[*(pAgent->streetId())][nextStreet->id()]);
+                          count);
           }
           pAgent->setStreetId();
           pAgent->setSpeed(this->m_speedFunction(*nextStreet));
@@ -1201,11 +1206,11 @@ namespace dsf::mobility {
         auto* nextStreet{&this->graph().edge(*(pAgentTemp->nextStreetId()))};
         if (!(nextStreet->isFull())) {
           if (!m_turnCounts.empty() && pAgentTemp->streetId().has_value()) {
-            ++m_turnCounts[*(pAgentTemp->streetId())][nextStreet->id()];
+            auto const count{++m_turnCounts[*(pAgentTemp->streetId())][nextStreet->id()]};
             spdlog::trace("Incremented turn count for {} -> {}: {}",
                           *(pAgentTemp->streetId()),
                           nextStreet->id(),
-                          m_turnCounts[*(pAgentTemp->streetId())][nextStreet->id()]);
+                          count);
           }
           auto pAgent{roundabout.dequeue()};
           pAgent->setStreetId();
@@ -1238,9 +1243,16 @@ namespace dsf::mobility {
     for (auto itAgent{m_agents.begin()}; itAgent != m_agents.end();) {
       auto& pAgent{*itAgent};
       if (!pAgent->srcNodeId().has_value()) {
-        auto nodeIt{this->graph().nodes().begin()};
-        std::advance(nodeIt, nodeDist(this->m_generator));
-        pAgent->setSrcNodeId(nodeIt->second->id());
+        auto const nodeIndex{nodeDist(this->m_generator)};
+        if (m_nodeIndices.size() == this->graph().nNodes()) {
+          // Nodes are never removed, so m_nodeIndices still follows the nodes'
+          // iteration order: no need to walk the map
+          pAgent->setSrcNodeId(m_nodeIndices[nodeIndex]);
+        } else {
+          auto nodeIt{this->graph().nodes().begin()};
+          std::advance(nodeIt, nodeIndex);
+          pAgent->setSrcNodeId(nodeIt->second->id());
+        }
       }
       auto* pSourceNode{&this->graph().node(*(pAgent->srcNodeId()))};
       if (pSourceNode->isFull()) {
@@ -1248,24 +1260,26 @@ namespace dsf::mobility {
         ++itAgent;
         continue;
       }
+      Street const* nextStreet{nullptr};
       if (!pAgent->nextStreetId().has_value()) {
         spdlog::debug("No next street id, generating a new one");
-        auto const nextStreetId{this->m_nextStreetId(pAgent, pSourceNode)};
-        if (!nextStreetId.has_value()) {
+        nextStreet = this->m_nextStreet(pAgent, pSourceNode, nullptr);
+        if (nextStreet == nullptr) {
           spdlog::debug(
               "No next street found for agent {} at node {}", *pAgent, pSourceNode->id());
           auto pAgentRemoved{this->m_removeAgent<false>(std::move(*itAgent))};
           itAgent = m_agents.erase(itAgent);
           continue;
         }
-        pAgent->setNextStreetId(*nextStreetId);
+        pAgent->setNextStreetId(nextStreet->id());
+      } else {
+        nextStreet = &this->graph().edge(*(pAgent->nextStreetId()));
       }
       if (!pAgent->srcStreetId().has_value()) {
         // Remember where the trip starts, to restart it from there on reinsertion
         pAgent->setSrcStreetId(*pAgent->nextStreetId());
       }
       spdlog::debug("Checking next street for {}", *pAgent);
-      auto* nextStreet{&this->graph().edge(*(pAgent->nextStreetId()))};
       if (nextStreet->isFull()) {
         ++itAgent;
         spdlog::debug("Skipping {} due to full input {}", *pAgent, *nextStreet);
@@ -1428,7 +1442,7 @@ namespace dsf::mobility {
         continue;
       }
       auto const& srcStreet{this->graph().edge(srcStreetId)};
-      auto const& outgoingEdges{this->graph().node(srcStreet.target()).outgoingEdges()};
+      auto const outgoingEdges{srcStreet.target()->outgoingEdges()};
       std::unordered_map<Id, double> validatedRow;
       validatedRow.reserve(row.size());
       double sumWeights{0.};
@@ -1450,13 +1464,13 @@ namespace dsf::mobility {
               srcStreetId);
           continue;
         }
-        if (std::find(outgoingEdges.cbegin(), outgoingEdges.cend(), dstStreetId) ==
-            outgoingEdges.cend()) {
+        if (std::ranges::find(outgoingEdges, dstStreetId, &Street::id) ==
+            outgoingEdges.end()) {
           spdlog::warn(
               "Transition matrix: street {} is not an outgoing edge of node {}, i.e. the "
               "target of street {}. Ignoring this transition.",
               dstStreetId,
-              srcStreet.target(),
+              srcStreet.target()->id(),
               srcStreetId);
           continue;
         }
@@ -1596,10 +1610,10 @@ namespace dsf::mobility {
                       m_turnCounts.size()));
     }
     for (auto const& [edgeId, pEdge] : this->graph().edges()) {
-      auto const* pTargetNode{&this->graph().node(pEdge->target())};
-      for (auto const& nextEdgeId : pTargetNode->outgoingEdges()) {
-        spdlog::debug("Initializing turn count for edge {} -> {}", edgeId, nextEdgeId);
-        m_turnCounts[edgeId][nextEdgeId] = 0;
+      for (auto const* pNextEdge : pEdge->target()->outgoingEdges()) {
+        spdlog::debug(
+            "Initializing turn count for edge {} -> {}", edgeId, pNextEdge->id());
+        m_turnCounts[edgeId][pNextEdge->id()] = 0;
       }
     }
   }
@@ -1612,9 +1626,8 @@ namespace dsf::mobility {
       throw std::runtime_error("Turn counts have not been initialized.");
     }
     for (auto const& [edgeId, pEdge] : this->graph().edges()) {
-      auto const* pTargetNode{&this->graph().node(pEdge->target())};
-      for (auto const& nextEdgeId : pTargetNode->outgoingEdges()) {
-        m_turnCounts[edgeId][nextEdgeId] = 0;
+      for (auto const* pNextEdge : pEdge->target()->outgoingEdges()) {
+        m_turnCounts[edgeId][pNextEdge->id()] = 0;
       }
     }
   }
@@ -1869,7 +1882,7 @@ namespace dsf::mobility {
     } else {
       auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
       pAgent = std::make_unique<Agent>(
-          m_nInsertedAgents, this->time_step(), trip, srcStreet.source());
+          m_nInsertedAgents, this->time_step(), trip, srcStreet.source()->id());
       pAgent->setSrcStreetId(srcStreet.id());
       pAgent->setNextStreetId(srcStreet.id());
     }
@@ -1885,7 +1898,7 @@ namespace dsf::mobility {
     } else {
       auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
       pAgent = std::make_unique<Agent>(
-          m_nInsertedAgents, this->time_step(), pItinerary, srcStreet.source());
+          m_nInsertedAgents, this->time_step(), pItinerary, srcStreet.source()->id());
       pAgent->setSrcStreetId(srcStreet.id());
       pAgent->setNextStreetId(srcStreet.id());
     }
@@ -1974,8 +1987,8 @@ namespace dsf::mobility {
           [&](const tbb::blocked_range<std::size_t>& range) {
             for (std::size_t i = range.begin(); i != range.end(); ++i) {
               auto* pNode = &this->graph().node(m_nodeIndices[i]);
-              for (auto const& inEdgeId : pNode->ingoingEdges()) {
-                auto* pStreet{&this->graph().edge(inEdgeId)};
+              for (auto* pStreet : pNode->ingoingEdges()) {
+                auto const inEdgeId{pStreet->id()};
                 if (bUpdateData && pNode->isTrafficLight()) {
                   if (!m_queuesAtTrafficLights.contains(inEdgeId)) {
                     auto& tl = dynamic_cast<TrafficLight&>(*pNode);
@@ -2001,7 +2014,7 @@ namespace dsf::mobility {
                     }
                   }
                 }
-                m_evolveStreet(pStreet);
+                m_evolveStreet(pStreet, pNode);
                 if (bComputeStats) {
                   auto const& density{pStreet->density<false>() * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};
@@ -2295,11 +2308,8 @@ namespace dsf::mobility {
           continue;
         }
         double density{0.}, n{0.};
-        auto const& inNeighbours{pNode->ingoingEdges()};
-        for (auto const& inEdgeId : inNeighbours) {
-          auto* pStreet{&this->graph().edge(inEdgeId)};
-          auto* pSourceNode{&this->graph().node(pStreet->source())};
-          if (!pSourceNode->isTrafficLight()) {
+        for (auto const* pStreet : pNode->ingoingEdges()) {
+          if (!pStreet->source()->isTrafficLight()) {
             continue;
           }
           density += pStreet->density<true>();
@@ -2322,10 +2332,8 @@ namespace dsf::mobility {
       std::unordered_set<Id> optimizedNodes;
 
       for (auto const& [nodeId, density] : sortedDensities) {
-        auto const& inNeighbours{this->graph().node(nodeId).ingoingEdges()};
-        for (auto const& inEdgeId : inNeighbours) {
-          auto* pStreet{&this->graph().edge(inEdgeId)};
-          auto const& sourceId{pStreet->source()};
+        for (auto* pStreet : this->graph().node(nodeId).ingoingEdges()) {
+          auto const sourceId{pStreet->source()->id()};
           if (!densities.contains(sourceId) || optimizedNodes.contains(sourceId)) {
             continue;
           }
@@ -2334,7 +2342,7 @@ namespace dsf::mobility {
             continue;
           }
           // Try to green-wave the situation
-          auto& tl{dynamic_cast<TrafficLight&>(this->graph().node(sourceId))};
+          auto& tl{dynamic_cast<TrafficLight&>(*pStreet->source())};
           auto const travelTimeTicks =
               static_cast<Delay>(std::round(pStreet->estimatedTravelTime()));
           tl.advanceBy(travelTimeTicks);
