@@ -192,13 +192,13 @@ static void BM_FirstOrderDynamics_Evolve_TransitionMatrix(benchmark::State& stat
     auto const& graph = scenario.pDynamics->graph();
     std::unordered_map<dsf::Id, std::unordered_map<dsf::Id, double>> transitionMatrix;
     for (auto const& [streetId, pStreet] : graph.edges()) {
-      auto const& nextStreets = graph.node(pStreet->target()).outgoingEdges();
+      auto const nextStreets = pStreet->target()->outgoingEdges();
       if (nextStreets.empty()) {
         continue;
       }
       auto& row = transitionMatrix[streetId];
-      for (auto const& nextStreetId : nextStreets) {
-        row[nextStreetId] = 0.9 / static_cast<double>(nextStreets.size());
+      for (auto const* pNextStreet : nextStreets) {
+        row[pNextStreet->id()] = 0.9 / static_cast<double>(nextStreets.size());
       }
     }
     scenario.pDynamics->setTransitionMatrix(transitionMatrix);

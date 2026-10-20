@@ -89,10 +89,9 @@ int main(int argc, char** argv) {
   dynamics->setSeed(SEED);
   {
     std::vector<dsf::Id> destinations;
-    for (auto const& edgePair : dynamics->graph().edges()) {
-      auto const& node{dynamics->graph().node(edgePair.second->target())};
-      if (node.outgoingEdges().size() < 4) {
-        destinations.push_back(edgePair.first);
+    for (auto const& [edgeId, pEdge] : dynamics->graph().edges()) {
+      if (pEdge->target()->outgoingEdges().size() < 4) {
+        destinations.push_back(edgeId);
       }
     }
     dynamics->setDestinations(destinations);

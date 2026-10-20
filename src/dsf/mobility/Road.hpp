@@ -42,7 +42,7 @@ namespace dsf::mobility {
     /// @param capacity The road's capacity (default is the maximum number of vehicles that can fit in the road)
     /// @param transportCapacity The road's transport capacity (default is 1)
     Road(Id id,
-         std::pair<Id, Id> nodePair,
+         std::pair<Node*, Node*> nodePair,
          double length = m_meanVehicleLength,
          double maxSpeed = 13.8888888889,
          int nLanes = 1,

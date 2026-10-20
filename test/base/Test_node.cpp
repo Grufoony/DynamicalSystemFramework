@@ -15,6 +15,7 @@
 using Intersection = dsf::mobility::Intersection;
 using TrafficLight = dsf::mobility::TrafficLight;
 using Station = dsf::mobility::Station;
+using Street = dsf::mobility::Street;
 
 TEST_CASE("Node basic") {
   SUBCASE("Constructors and getters") {
@@ -35,8 +36,11 @@ TEST_CASE("Node basic") {
   SUBCASE("Copy and assignment") {
     dsf::Node n1{7, dsf::geometry::Point{3.0, 4.0}};
     n1.setName("A node");
-    n1.addIngoingEdge(10);
-    n1.addOutgoingEdge(11);
+    dsf::Node other{0};
+    Street in{10, {&other, &n1}};
+    Street out{11, {&n1, &other}};
+    n1.addIngoingEdge(&in);
+    n1.addOutgoingEdge(&out);
 
     dsf::Node n2 = n1;  // copy ctor
     CHECK_EQ(n2.id(), 7);
@@ -50,8 +54,9 @@ TEST_CASE("Node basic") {
     n3 = n1;  // assignment
     CHECK_EQ(n3.id(), 7);
     CHECK_EQ(n3.name(), "A node");
-    CHECK_EQ(n3.ingoingEdges().front(), 10);
-    CHECK_EQ(n3.outgoingEdges().front(), 11);
+    // Copies share the (non-owned) edges
+    CHECK_EQ(n3.ingoingEdges().front(), &in);
+    CHECK_EQ(n3.outgoingEdges().front(), &out);
   }
 
   SUBCASE("Setters and edge additions") {
@@ -64,17 +69,23 @@ TEST_CASE("Node basic") {
     n.setName("Test node");
     CHECK_EQ(n.name(), "Test node");
 
-    n.addIngoingEdge(20);
+    dsf::Node other{0};
+    Street in{20, {&other, &n}};
+    Street out{30, {&n, &other}};
+    n.addIngoingEdge(&in);
     CHECK_EQ(n.ingoingEdges().size(), 1);
-    CHECK_EQ(n.ingoingEdges().front(), 20);
+    CHECK_EQ(n.ingoingEdges().front(), &in);
 
-    n.addOutgoingEdge(30);
+    n.addOutgoingEdge(&out);
     CHECK_EQ(n.outgoingEdges().size(), 1);
-    CHECK_EQ(n.outgoingEdges().front(), 30);
+    CHECK_EQ(n.outgoingEdges().front(), &out);
 
     // adding duplicate should throw
-    CHECK_THROWS_AS(n.addIngoingEdge(20), std::invalid_argument);
-    CHECK_THROWS_AS(n.addOutgoingEdge(30), std::invalid_argument);
+    CHECK_THROWS_AS(n.addIngoingEdge(&in), std::invalid_argument);
+    CHECK_THROWS_AS(n.addOutgoingEdge(&out), std::invalid_argument);
+    // and so should adding a null edge or one not linked to this node
+    CHECK_THROWS_AS(n.addIngoingEdge(nullptr), std::invalid_argument);
+    CHECK_THROWS_AS(n.addOutgoingEdge(&in), std::invalid_argument);
   }
 }
 
@@ -115,8 +126,11 @@ TEST_CASE("Intersection") {
     CHECK_EQ(intersection.density(), doctest::Approx(1.0));
     // Street priorities
     std::set<dsf::Id> priorities{100, 101};
-    intersection.addIngoingEdge(100);
-    intersection.addIngoingEdge(101);
+    Intersection other{0};
+    Street street100{100, {&other, &intersection}};
+    Street street101{101, {&other, &intersection}};
+    intersection.addIngoingEdge(&street100);
+    intersection.addIngoingEdge(&street101);
     intersection.setStreetPriorities(priorities);
     CHECK_EQ(intersection.streetPriorities(), priorities);
     intersection.addStreetPriority(100);
@@ -523,8 +537,11 @@ TEST_CASE("RoadJunction and Intersection formatting") {
 
   SUBCASE("std::format Intersection with edges and coordinates") {
     Intersection intersection{9, dsf::geometry::Point{1., 2.}};
-    intersection.addIngoingEdge(3);
-    intersection.addOutgoingEdge(4);
+    Intersection other{0};
+    Street in{3, {&other, &intersection}};
+    Street out{4, {&intersection, &other}};
+    intersection.addIngoingEdge(&in);
+    intersection.addOutgoingEdge(&out);
     std::string formatted = std::format("{}", intersection);
     CHECK(formatted.find("ingoing edges: 3 ") != std::string::npos);
     CHECK(formatted.find("outgoing edges: 4 ") != std::string::npos);

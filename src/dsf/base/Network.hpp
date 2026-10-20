@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <ranges>
 #include <span>
 #include <set>
 #include <stack>
@@ -55,16 +56,51 @@ namespace dsf {
     /// @details Only the source node's outgoing edges are scanned, instead of all edges
     /// @return edge_t* A pointer to the edge, or nullptr if it does not exist
     edge_t* m_findEdge(Id const source, Id const target) const;
+    // Typed access to the links between nodes and edges: the network only links its own
+    // node_t and edge_t objects, so the casts are safe.
+    static auto m_inEdges(node_t const& node) noexcept {
+      return node.Node::ingoingEdges() | std::views::transform([](Edge* pEdge) {
+               return static_cast<edge_t*>(pEdge);
+             });
+    }
+    static auto m_outEdges(node_t const& node) noexcept {
+      return node.Node::outgoingEdges() | std::views::transform([](Edge* pEdge) {
+               return static_cast<edge_t*>(pEdge);
+             });
+    }
+    static node_t* m_targetOf(edge_t const& edge) noexcept {
+      return static_cast<node_t*>(edge.Edge::target());
+    }
+    /// @brief Replace a node with a new object of type TNode, built from the old one
+    /// @details The new node keeps the old node's edges, whose source/target node
+    ///          pointers are re-linked to it. Any other reference to the old node dangles.
+    ///          Safe to call concurrently for different nodes: for an edge u -> v, u only
+    ///          writes the edge's source node and v only its target node.
+    /// @param pNode The network's owning pointer to the node to replace
+    /// @param args Extra arguments forwarded to TNode's constructor, after the old node
+    /// @return TNode& A reference to the new node
+    template <typename TNode, typename... TArgs>
+      requires(std::is_base_of_v<node_t, TNode> &&
+               std::constructible_from<TNode, node_t const&, TArgs...>)
+    TNode& m_replaceNode(std::unique_ptr<node_t>& pNode, TArgs&&... args) {
+      auto pNewNode =
+          std::make_unique<TNode>(std::as_const(*pNode), std::forward<TArgs>(args)...);
+      for (auto* pEdge : pNewNode->Node::ingoingEdges()) {
+        pEdge->setTarget(pNewNode.get());
+      }
+      for (auto* pEdge : pNewNode->Node::outgoingEdges()) {
+        pEdge->setSource(pNewNode.get());
+      }
+      auto& newNode{*pNewNode};
+      pNode = std::move(pNewNode);
+      return newNode;
+    }
 
   private:
     std::unordered_map<Id, double> m_computeDistancesToTarget(Id const targetNodeId) const;
-    virtual std::unordered_map<Id, double> m_computeEdgeDistancesToTarget(
-        Id const targetEdgeId) const;
 
     std::unordered_map<Id, double> m_computeDistancesFromSource(
         Id const sourceNodeId) const;
-    std::unordered_map<Id, double> m_computeEdgeDistancesFromSource(
-        Id const sourceEdgeId) const;
 
   public:
     /// @brief Construct a new empty Network object
@@ -88,10 +124,18 @@ namespace dsf {
       requires(std::is_base_of_v<node_t, TNode>)
     void addNDefaultNodes(std::size_t const n);
 
-    template <typename TEdge = edge_t, typename... TArgs>
-      requires(std::is_base_of_v<edge_t, TEdge> &&
-               std::constructible_from<TEdge, TArgs...>)
-    void addEdge(TArgs&&... args);
+    /// @brief Add an edge between two nodes, creating the missing ones
+    /// @tparam TEdge The type of the edge
+    /// @tparam TNode The type of the nodes created for the edge
+    /// @param edgeId The edge's id
+    /// @param nodeIds The ids of the edge's (source, target) nodes
+    /// @param args Extra arguments forwarded to TEdge's constructor, after the nodes
+    /// @return TEdge& A reference to the new edge
+    /// @throws std::invalid_argument if an edge with the same id already exists
+    template <typename TEdge = edge_t, typename TNode = node_t, typename... TArgs>
+      requires(std::is_base_of_v<edge_t, TEdge> && std::is_base_of_v<node_t, TNode> &&
+               std::constructible_from<TEdge, Id, std::pair<Node*, Node*>, TArgs...>)
+    TEdge& addEdge(Id const edgeId, std::pair<Id, Id> const nodeIds, TArgs&&... args);
 
     virtual void setEdgeWeight(std::string_view const strv_weight,
                                std::optional<double> const threshold = std::nullopt) = 0;
@@ -141,14 +185,6 @@ namespace dsf {
     ///          shortest distance to target. This makes the hop graph acyclic,
     ///          so PathCollection::explode remains finite.
     PathCollection allPathsTo(Id const targetId) const;
-    /// @brief Perform a global Dijkstra search to a target edge from all other edges in the graph (like allPathsTo but working on the dual graph)
-    /// @param targetEdgeId The id of the target edge
-    /// @return A map where each key is an edge id and the value is a vector of next hop edge ids toward the target
-    /// @throws std::out_of_range if the target edge does not exist
-    /// @details Keeps only transitions that strictly decrease the precomputed
-    ///          shortest distance to target. This makes the hop graph acyclic,
-    ///          so PathCollection::explode remains finite.
-    virtual PathCollection allEdgePathsTo(Id const targetEdgeId) const;
 
     /// @brief Find the shortest path between two nodes using Dijkstra's algorithm
     /// @param sourceId The id of the source node
@@ -214,57 +250,73 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  template <typename TEdge, typename... TArgs>
-    requires(std::is_base_of_v<edge_t, TEdge> && std::constructible_from<TEdge, TArgs...>)
-  void Network<node_t, edge_t>::addEdge(TArgs&&... args) {
-    TEdge tmpEdge(std::forward<TArgs>(args)...);
-    if (m_edges.contains(tmpEdge.id())) {
+  template <typename TEdge, typename TNode, typename... TArgs>
+    requires(std::is_base_of_v<edge_t, TEdge> && std::is_base_of_v<node_t, TNode> &&
+             std::constructible_from<TEdge, Id, std::pair<Node*, Node*>, TArgs...>)
+  TEdge& Network<node_t, edge_t>::addEdge(Id const edgeId,
+                                          std::pair<Id, Id> const nodeIds,
+                                          TArgs&&... args) {
+    if (m_edges.contains(edgeId)) {
       throw std::invalid_argument(
-          std::format("Edge with id {} already exists in the network.", tmpEdge.id()));
+          std::format("Edge with id {} already exists in the network.", edgeId));
     }
-    auto const& geometry{tmpEdge.geometry()};
-    auto const& sourceNodeId = tmpEdge.source();
-    auto const& targetNodeId = tmpEdge.target();
-
-    if (!m_nodes.contains(sourceNodeId)) {
-      if (!geometry.empty()) {
-        addNode(tmpEdge.source(), geometry.front());
-      } else {
-        addNode(tmpEdge.source());
-      }
+    auto const [sourceNodeId, targetNodeId] = nodeIds;
+    bool const bNewSource{!m_nodes.contains(sourceNodeId)};
+    if (bNewSource) {
+      addNode<TNode>(sourceNodeId);
     }
-
-    if (!m_nodes.contains(targetNodeId)) {
-      if (!geometry.empty()) {
-        addNode(tmpEdge.target(), geometry.back());
-      } else {
-        addNode(tmpEdge.target());
-      }
+    bool const bNewTarget{!m_nodes.contains(targetNodeId)};
+    if (bNewTarget) {
+      addNode<TNode>(targetNodeId);
     }
-
     auto& sourceNode = node(sourceNodeId);
     auto& targetNode = node(targetNodeId);
-    sourceNode.addOutgoingEdge(tmpEdge.id());
-    targetNode.addIngoingEdge(tmpEdge.id());
-    if (geometry.empty()) {
-      if (sourceNode.geometry().has_value() && targetNode.geometry().has_value()) {
-        tmpEdge.setGeometry(
-            dsf::geometry::PolyLine{*sourceNode.geometry(), *targetNode.geometry()});
+
+    std::unique_ptr<TEdge> pEdge;
+    try {
+      pEdge = std::make_unique<TEdge>(edgeId,
+                                      std::pair<Node*, Node*>{&sourceNode, &targetNode},
+                                      std::forward<TArgs>(args)...);
+    } catch (...) {
+      // Leave the network unchanged
+      if (bNewSource) {
+        m_nodes.erase(sourceNodeId);
       }
+      if (bNewTarget) {
+        m_nodes.erase(targetNodeId);
+      }
+      throw;
     }
-    m_edges.emplace(tmpEdge.id(), std::make_unique<TEdge>(std::move(tmpEdge)));
+    auto const& geometry{pEdge->geometry()};
+    if (!geometry.empty()) {
+      // Nodes created for this edge are placed at its ends
+      if (bNewSource) {
+        sourceNode.setGeometry(geometry.front());
+      }
+      if (bNewTarget) {
+        targetNode.setGeometry(geometry.back());
+      }
+    } else if (sourceNode.geometry().has_value() && targetNode.geometry().has_value()) {
+      pEdge->setGeometry(
+          dsf::geometry::PolyLine{*sourceNode.geometry(), *targetNode.geometry()});
+    }
+    auto& newEdge{*pEdge};
+    m_edges.emplace(edgeId, std::move(pEdge));
+    sourceNode.addOutgoingEdge(&newEdge);
+    targetNode.addIngoingEdge(&newEdge);
+    return newEdge;
   }
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   edge_t* Network<node_t, edge_t>::m_findEdge(Id const source, Id const target) const {
     auto const itNode = m_nodes.find(source);
-    if (itNode == m_nodes.cend()) {
+    auto const itTarget = m_nodes.find(target);
+    if (itNode == m_nodes.cend() || itTarget == m_nodes.cend()) {
       return nullptr;
     }
-    for (auto const& edgeId : itNode->second->outgoingEdges()) {
-      auto* pEdge{m_edges.at(edgeId).get()};
-      if (pEdge->target() == target) {
+    for (auto* pEdge : m_outEdges(*itNode->second)) {
+      if (m_targetOf(*pEdge) == itTarget->second.get()) {
         return pEdge;
       }
     }
@@ -308,13 +360,13 @@ namespace dsf {
         continue;
       }
 
-      for (auto const& inEdgeId : this->node(currentNode).ingoingEdges()) {
-        auto const& inEdge = this->edge(inEdgeId);
+      for (auto const* pInEdge : m_inEdges(this->node(currentNode))) {
+        auto const& inEdge{*pInEdge};
         if (!inEdge.isActive()) {
           continue;
         }
 
-        auto const neighborId = inEdge.source();
+        auto const neighborId = inEdge.source()->id();
         auto const candidateDistance = currentDist + m_weightFunction(inEdge);
         auto& neighborDist = distToTarget.at(neighborId);
         if (candidateDistance < neighborDist) {
@@ -326,52 +378,6 @@ namespace dsf {
 
     return distToTarget;
   }
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline std::unordered_map<Id, double>
-  Network<node_t, edge_t>::m_computeEdgeDistancesToTarget(Id const targetEdgeId) const {
-    std::unordered_map<Id, double> distToTarget;
-    distToTarget.reserve(nEdges());
-    for (auto const& pair : m_edges) {
-      distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
-    }
-
-    std::priority_queue<std::pair<double, Id>,
-                        std::vector<std::pair<double, Id>>,
-                        std::greater<>>
-        pq;
-
-    distToTarget[targetEdgeId] = 0.0;
-    pq.push({0.0, targetEdgeId});
-
-    while (!pq.empty()) {
-      auto const [currentDist, currentEdgeId] = pq.top();
-      pq.pop();
-
-      if (currentDist > distToTarget.at(currentEdgeId)) {
-        continue;
-      }
-
-      for (auto const& inEdgeId :
-           this->node(this->edge(currentEdgeId).source()).ingoingEdges()) {
-        auto const& inEdge = this->edge(inEdgeId);
-        if (!inEdge.isActive() || inEdge.forbiddenTurns().contains(currentEdgeId)) {
-          continue;
-        }
-
-        auto const candidateDistance =
-            currentDist + m_weightFunction(this->edge(currentEdgeId));
-        auto& neighborDist = distToTarget.at(inEdgeId);
-        if (candidateDistance < neighborDist) {
-          neighborDist = candidateDistance;
-          pq.push({candidateDistance, inEdgeId});
-        }
-      }
-    }
-
-    return distToTarget;
-  }
-
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   inline std::unordered_map<Id, double>
@@ -398,64 +404,18 @@ namespace dsf {
         continue;
       }
 
-      for (auto const& outEdgeId : this->node(currentNode).outgoingEdges()) {
-        auto const& outEdge = this->edge(outEdgeId);
+      for (auto const* pOutEdge : m_outEdges(this->node(currentNode))) {
+        auto const& outEdge{*pOutEdge};
         if (!outEdge.isActive()) {
           continue;
         }
 
-        auto const neighborId = outEdge.target();
+        auto const neighborId = outEdge.target()->id();
         auto const candidateDistance = currentDist + m_weightFunction(outEdge);
         auto& neighborDist = distFromSource.at(neighborId);
         if (candidateDistance < neighborDist) {
           neighborDist = candidateDistance;
           pq.push({candidateDistance, neighborId});
-        }
-      }
-    }
-
-    return distFromSource;
-  }
-
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline std::unordered_map<Id, double>
-  Network<node_t, edge_t>::m_computeEdgeDistancesFromSource(Id const sourceEdgeId) const {
-    std::unordered_map<Id, double> distFromSource;
-    distFromSource.reserve(nEdges());
-    for (auto const& pair : m_edges) {
-      distFromSource.emplace(pair.first, std::numeric_limits<double>::infinity());
-    }
-
-    std::priority_queue<std::pair<double, Id>,
-                        std::vector<std::pair<double, Id>>,
-                        std::greater<>>
-        pq;
-
-    distFromSource[sourceEdgeId] = 0.0;
-    pq.push({0.0, sourceEdgeId});
-
-    while (!pq.empty()) {
-      auto const [currentDist, currentEdgeId] = pq.top();
-      pq.pop();
-
-      if (currentDist > distFromSource.at(currentEdgeId)) {
-        continue;
-      }
-
-      for (auto const& outEdgeId :
-           this->node(this->edge(currentEdgeId).target()).outgoingEdges()) {
-        auto const& outEdge = this->edge(outEdgeId);
-        if (!outEdge.isActive() ||
-            this->edge(currentEdgeId).forbiddenTurns().contains(outEdgeId)) {
-          continue;
-        }
-
-        auto const candidateDistance = currentDist + m_weightFunction(outEdge);
-        auto& neighborDist = distFromSource.at(outEdgeId);
-        if (candidateDistance < neighborDist) {
-          neighborDist = candidateDistance;
-          pq.push({candidateDistance, outEdgeId});
         }
       }
     }
@@ -482,16 +442,17 @@ namespace dsf {
       if (m_weightThreshold.has_value()) {
         nodeBudget *= (1.0 + *m_weightThreshold);
       }
+      auto const outgoingEdges{m_outEdges(*pNode)};
       std::vector<Id> hops;
-      hops.reserve(pNode->outgoingEdges().size());
+      hops.reserve(outgoingEdges.size());
 
-      for (auto const& outEdgeId : pNode->outgoingEdges()) {
-        auto const& outEdge = this->edge(outEdgeId);
+      for (auto const* pOutEdge : outgoingEdges) {
+        auto const& outEdge{*pOutEdge};
         if (!outEdge.isActive()) {
           continue;
         }
 
-        auto const nextNodeId = outEdge.target();
+        auto const nextNodeId = outEdge.target()->id();
         auto const nextDistToTarget = distToTarget.at(nextNodeId);
         if (nextDistToTarget == std::numeric_limits<double>::infinity()) {
           continue;
@@ -516,63 +477,6 @@ namespace dsf {
 
     return result;
   }
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline PathCollection Network<node_t, edge_t>::allEdgePathsTo(
-      Id const targetEdgeId) const {
-    spdlog::debug("Computing all edge paths to target edge {}", targetEdgeId);
-    auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
-    PathCollection result;
-    for (auto const& [edgeId, pEdge] : m_edges) {
-      if (edgeId == targetEdgeId) {
-        continue;
-      }
-
-      auto const edgeDistToTarget = distToTarget.at(edgeId);
-      if (edgeDistToTarget == std::numeric_limits<double>::infinity()) {
-        continue;
-      }
-
-      double edgeBudget = edgeDistToTarget;
-      if (m_weightThreshold.has_value()) {
-        edgeBudget *= (1.0 + *m_weightThreshold);
-      }
-
-      auto const& outgoingEdges = this->node(pEdge->target()).outgoingEdges();
-      std::vector<Id> hops;
-      hops.reserve(outgoingEdges.size());
-
-      for (auto const& nextEdgeId : outgoingEdges) {
-        auto const& pNextEdge = this->edge(nextEdgeId);
-        if (!pNextEdge.isActive() || pEdge->forbiddenTurns().contains(nextEdgeId)) {
-          continue;
-        }
-
-        auto const nextDistToTarget = distToTarget.at(nextEdgeId);
-        if (nextDistToTarget == std::numeric_limits<double>::infinity()) {
-          continue;
-        }
-
-        // Keep hop transitions acyclic so path expansion remains finite.
-        if (nextDistToTarget + PATH_COST_EPS >= edgeDistToTarget) {
-          continue;
-        }
-
-        auto const fullPathCost = m_weightFunction(pNextEdge) + nextDistToTarget;
-        if (fullPathCost <= edgeBudget + PATH_COST_EPS &&
-            std::find(hops.begin(), hops.end(), nextEdgeId) == hops.end()) {
-          hops.push_back(nextEdgeId);
-        }
-      }
-
-      if (!hops.empty()) {
-        result[edgeId] = hops;
-      }
-    }
-
-    return result;
-  }
-
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   inline PathCollection Network<node_t, edge_t>::shortestPath(Id const sourceId,
@@ -613,13 +517,13 @@ namespace dsf {
         continue;
       }
 
-      for (auto const& outEdgeId : pNode->outgoingEdges()) {
-        auto const& outEdge = this->edge(outEdgeId);
+      for (auto const* pOutEdge : m_outEdges(*pNode)) {
+        auto const& outEdge{*pOutEdge};
         if (!outEdge.isActive()) {
           continue;
         }
 
-        auto const nextNodeId = outEdge.target();
+        auto const nextNodeId = outEdge.target()->id();
         auto const nextDistToTarget = distToTarget.at(nextNodeId);
         if (nextDistToTarget == std::numeric_limits<double>::infinity()) {
           continue;
@@ -795,12 +699,12 @@ namespace dsf {
         S.push(v);
 
         auto const& vData = pathData.at(v);
-        for (auto const& edgeId : m_nodes.at(v)->outgoingEdges()) {
-          auto const& edgeObj = *m_edges.at(edgeId);
+        for (auto const* pEdgeObj : m_outEdges(*m_nodes.at(v))) {
+          auto const& edgeObj{*pEdgeObj};
           if (!edgeObj.isActive()) {
             continue;
           }
-          auto const w = edgeObj.target();
+          auto const w = edgeObj.target()->id();
           auto& wData = pathData.at(w);
           if (visited.contains(w)) {
             continue;
@@ -910,12 +814,13 @@ namespace dsf {
         S.push(v);
 
         auto const& vData = pathData.at(v);
-        for (auto const& eId : m_nodes.at(v)->outgoingEdges()) {
-          auto const& edgeObj = *m_edges.at(eId);
+        for (auto const* pEdgeObj : m_outEdges(*m_nodes.at(v))) {
+          auto const& edgeObj{*pEdgeObj};
+          auto const eId{edgeObj.id()};
           if (!edgeObj.isActive()) {
             continue;
           }
-          auto const w = edgeObj.target();
+          auto const w = edgeObj.target()->id();
           auto& wData = pathData.at(w);
           if (visited.contains(w)) {
             continue;
@@ -941,7 +846,7 @@ namespace dsf {
         auto& wData = pathData.at(w);
         S.pop();
         for (auto const eId : wData.P) {
-          auto& vData = pathData.at(m_edges.at(eId)->source());
+          auto& vData = pathData.at(m_edges.at(eId)->source()->id());
           double const contrib = (vData.sigma / wData.sigma) * (1.0 + wData.delta);
           vData.delta += contrib;
           local[eId] += contrib;
@@ -1057,12 +962,13 @@ namespace dsf {
           }
 
           auto const currentNodeId = nodeIds[currentIndex];
-          for (auto const edgeId : m_nodes.at(currentNodeId)->outgoingEdges()) {
-            auto const& edgeObj = this->edge(edgeId);
+          for (auto const* pEdgeObj : m_outEdges(*m_nodes.at(currentNodeId))) {
+            auto const& edgeObj{*pEdgeObj};
+            auto const edgeId{edgeObj.id()};
             if (!edgeObj.isActive()) {
               continue;
             }
-            auto const nextIdx = nodeIndex.at(edgeObj.target());
+            auto const nextIdx = nodeIndex.at(edgeObj.target()->id());
             auto const nd = currentDist + m_weightFunction(edgeObj);
             if (nd < dist[nextIdx]) {
               dist[nextIdx] = nd;
@@ -1082,7 +988,7 @@ namespace dsf {
         for (size_t cursor = targetIndex; cursor != sourceIndex;) {
           Id const eId = parentEdge[cursor];
           firstPath.edges.push_back(eId);
-          cursor = nodeIndex.at(m_edges.at(eId)->source());
+          cursor = nodeIndex.at(m_edges.at(eId)->source()->id());
         }
         std::reverse(firstPath.edges.begin(), firstPath.edges.end());
         acceptedPaths.push_back(std::move(firstPath));
@@ -1099,7 +1005,7 @@ namespace dsf {
             // Determine spur node.
             Id spurNodeId = nodeIds[sourceIndex];
             for (auto const eId : rootPath) {
-              spurNodeId = m_edges.at(eId)->target();
+              spurNodeId = m_edges.at(eId)->target()->id();
             }
             size_t const spurIndex = nodeIndex.at(spurNodeId);
 
@@ -1108,7 +1014,7 @@ namespace dsf {
             Id visitedNodeId = nodeIds[sourceIndex];
             for (auto const eId : rootPath) {
               Id const srcNodeId = visitedNodeId;
-              visitedNodeId = m_edges.at(eId)->target();
+              visitedNodeId = m_edges.at(eId)->target()->id();
               if (srcNodeId != spurNodeId) {
                 bannedNodes.insert(srcNodeId);
               }
@@ -1163,15 +1069,16 @@ namespace dsf {
                 continue;
               }
 
-              for (auto const eId : m_nodes.at(curNodeId)->outgoingEdges()) {
+              for (auto const* pEdgeObj : m_outEdges(*m_nodes.at(curNodeId))) {
+                auto const eId{pEdgeObj->id()};
                 if (bannedEdges.contains(eId)) {
                   continue;
                 }
-                auto const& edgeObj = *m_edges.at(eId);
+                auto const& edgeObj{*pEdgeObj};
                 if (!edgeObj.isActive()) {
                   continue;
                 }
-                Id const nextNode = edgeObj.target();
+                Id const nextNode = edgeObj.target()->id();
                 if (bannedNodes.contains(nextNode)) {
                   continue;
                 }
@@ -1201,7 +1108,7 @@ namespace dsf {
             for (std::size_t cursor = targetIndex; cursor != spurIndex;) {
               Id const eId = spurParentEdge[cursor];
               spurPath.push_back(eId);
-              cursor = nodeIndex.at(m_edges.at(eId)->source());
+              cursor = nodeIndex.at(m_edges.at(eId)->source()->id());
             }
             std::reverse(spurPath.begin(), spurPath.end());
 

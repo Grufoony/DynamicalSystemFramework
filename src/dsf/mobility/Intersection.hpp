@@ -70,8 +70,8 @@ namespace dsf::mobility {
     /// @brief Add a street to the node street priorities
     /// @param streetId The street's id
     void addStreetPriority(Id streetId) {
-      auto const& it{std::find(m_ingoingEdges.cbegin(), m_ingoingEdges.cend(), streetId)};
-      if (it == m_ingoingEdges.cend()) {
+      if (std::ranges::find(m_ingoingEdges, streetId, &Edge::id) ==
+          m_ingoingEdges.cend()) {
         throw std::invalid_argument(std::format(
             "Street with id {} is not ingoing edge of intersection with id {}.",
             streetId,
@@ -113,11 +113,11 @@ struct std::formatter<dsf::mobility::Intersection> {
   auto format(dsf::mobility::Intersection const& intersection,
               FormatContext&& ctx) const {
     std::string strIngoingEdges, strOutgoingEdges;
-    for (const auto& edgeId : intersection.ingoingEdges()) {
-      strIngoingEdges += std::format("{} ", edgeId);
+    for (auto const* pStreet : intersection.ingoingEdges()) {
+      strIngoingEdges += std::format("{} ", pStreet->id());
     }
-    for (const auto& edgeId : intersection.outgoingEdges()) {
-      strOutgoingEdges += std::format("{} ", edgeId);
+    for (auto const* pStreet : intersection.outgoingEdges()) {
+      strOutgoingEdges += std::format("{} ", pStreet->id());
     }
     auto out = std::format_to(
         ctx.out(),

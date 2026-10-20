@@ -44,9 +44,11 @@ static void BM_RoadNetwork_AddNode(benchmark::State& state) {
 }
 static void BM_RoadNetwork_AddEdge(benchmark::State& state) {
   dsf::mobility::RoadNetwork network;
-  dsf::Id source{0}, target{1};
+  dsf::Id edgeId{0};
   for (auto _ : state) {
-    network.addEdge(source, std::make_pair(source++, target++));
+    // Edge i goes from node i to node i + 1
+    network.addEdge(edgeId, std::make_pair(edgeId, edgeId + 1));
+    ++edgeId;
   }
 }
 static void BM_RoadNetwork_CSVImport(benchmark::State& state) {
@@ -162,7 +164,7 @@ static void BM_RoadNetwork_StreetLookup(benchmark::State& state) {
   std::vector<std::pair<dsf::Id, dsf::Id>> endpoints;
   endpoints.reserve(network.nEdges());
   for (auto const& [edgeId, pEdge] : network.edges()) {
-    endpoints.emplace_back(pEdge->source(), pEdge->target());
+    endpoints.emplace_back(pEdge->source()->id(), pEdge->target()->id());
   }
   std::sort(endpoints.begin(), endpoints.end());
   std::size_t i{0};
