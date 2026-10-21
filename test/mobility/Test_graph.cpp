@@ -8,7 +8,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <ranges>
 #include <sstream>
+#include <type_traits>
+#include <utility>
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
@@ -70,6 +73,31 @@ TEST_CASE("RoadNetwork") {
                     std::invalid_argument);
     CHECK_EQ(graph.nEdges(), 5);
     CHECK_EQ(graph.nNodes(), 4);
+  }
+  SUBCASE("nodes() and edges() views") {
+    RoadNetwork graph;
+    graph.addEdge<Street>(1, std::make_pair(0, 1));
+    graph.addEdge<Street>(2, std::make_pair(1, 2));
+    auto const& constGraph{graph};
+    // The views only give const access through a const network
+    static_assert(std::is_same_v<std::ranges::range_value_t<decltype(constGraph.nodes())>,
+                                 std::pair<Id, RoadJunction const*>>);
+    static_assert(std::is_same_v<std::ranges::range_value_t<decltype(constGraph.edges())>,
+                                 std::pair<Id, Street const*>>);
+    static_assert(std::is_same_v<std::ranges::range_value_t<decltype(graph.nodes())>,
+                                 std::pair<Id, RoadJunction*>>);
+    static_assert(std::is_same_v<std::ranges::range_value_t<decltype(graph.edges())>,
+                                 std::pair<Id, Street*>>);
+    CHECK_EQ(constGraph.nodes().size(), 3);
+    CHECK_EQ(constGraph.edges().size(), 2);
+    CHECK(constGraph.nodes().contains(2));
+    CHECK_FALSE(constGraph.edges().contains(3));
+    for (auto const& [nodeId, pNode] : constGraph.nodes()) {
+      CHECK_EQ(pNode, &constGraph.node(nodeId));
+    }
+    for (auto const& [edgeId, pEdge] : constGraph.edges()) {
+      CHECK_EQ(pEdge, &constGraph.edge(edgeId));
+    }
   }
   SUBCASE("Construction with addStreet") {
     RoadNetwork graph;

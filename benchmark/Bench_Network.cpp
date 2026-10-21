@@ -69,8 +69,10 @@ static void BM_RoadNetwork_NodesLooping(benchmark::State& state) {
   auto& network = sharedForliNetwork();
   for (auto _ : state) {
     for (auto const& [id, node] : network.nodes()) {
-      benchmark::DoNotOptimize(static_cast<dsf::Id>(id));
-      benchmark::DoNotOptimize(node.get());
+      auto nodeId{static_cast<dsf::Id>(id)};
+      auto* pNode{node};
+      benchmark::DoNotOptimize(nodeId);
+      benchmark::DoNotOptimize(pNode);
     }
   }
 }
@@ -78,8 +80,10 @@ static void BM_RoadNetwork_EdgesLooping(benchmark::State& state) {
   auto& network = sharedForliNetwork();
   for (auto _ : state) {
     for (auto const& [id, edge] : network.edges()) {
-      benchmark::DoNotOptimize(static_cast<dsf::Id>(id));
-      benchmark::DoNotOptimize(edge.get());
+      auto edgeId{static_cast<dsf::Id>(id)};
+      auto* pEdge{edge};
+      benchmark::DoNotOptimize(edgeId);
+      benchmark::DoNotOptimize(pEdge);
     }
   }
 }
@@ -87,7 +91,7 @@ static void BM_RoadNetwork_NodeRandomAccess(benchmark::State& state) {
   auto& network = sharedForliNetwork();
   auto itNode = network.nodes().cbegin();
   for (auto _ : state) {
-    benchmark::DoNotOptimize(network.node(itNode->first));
+    benchmark::DoNotOptimize(network.node((*itNode).first));
     ++itNode;
     if (itNode == network.nodes().cend()) {
       itNode = network.nodes().cbegin();
@@ -98,7 +102,7 @@ static void BM_RoadNetwork_EdgeRandomAccess(benchmark::State& state) {
   auto& network = sharedForliNetwork();
   auto itEdge = network.edges().cbegin();
   for (auto _ : state) {
-    benchmark::DoNotOptimize(network.edge(itEdge->first));
+    benchmark::DoNotOptimize(network.edge((*itEdge).first));
     ++itEdge;
     if (itEdge == network.edges().cend()) {
       itEdge = network.edges().cbegin();
@@ -109,7 +113,7 @@ static void BM_RoadNetwork_AllPathsTo(benchmark::State& state) {
   auto& network = sharedForliNetwork();
   auto itNode = network.nodes().cbegin();
   for (auto _ : state) {
-    auto paths = network.allPathsTo(itNode->first);
+    auto paths = network.allPathsTo((*itNode).first);
     ++itNode;
     if (itNode == network.nodes().cend()) {
       itNode = network.nodes().cbegin();
@@ -120,7 +124,7 @@ static void BM_RoadNetwork_AllEdgePathsTo(benchmark::State& state) {
   auto& network = sharedForliNetwork();
   auto itEdge = network.edges().cbegin();
   for (auto _ : state) {
-    auto paths = network.allEdgePathsTo(itEdge->first);
+    auto paths = network.allEdgePathsTo((*itEdge).first);
     ++itEdge;
     if (itEdge == network.edges().cend()) {
       itEdge = network.edges().cbegin();
@@ -132,7 +136,7 @@ static void BM_RoadNetwork_ShortestPath(benchmark::State& state) {
   auto itSource = network.nodes().cbegin();
   auto itTarget = std::next(network.nodes().cbegin(), network.nodes().size() / 2);
   for (auto _ : state) {
-    auto path = network.shortestPath(itSource->first, itTarget->first);
+    auto path = network.shortestPath((*itSource).first, (*itTarget).first);
     benchmark::DoNotOptimize(path);
     ++itSource;
     ++itTarget;

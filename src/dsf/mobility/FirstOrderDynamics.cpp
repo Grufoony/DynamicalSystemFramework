@@ -1251,7 +1251,7 @@ namespace dsf::mobility {
         } else {
           auto nodeIt{this->graph().nodes().begin()};
           std::advance(nodeIt, nodeIndex);
-          pAgent->setSrcNodeId(nodeIt->second->id());
+          pAgent->setSrcNodeId((*nodeIt).first);
         }
       }
       auto* pSourceNode{&this->graph().node(*(pAgent->srcNodeId()))};
@@ -1857,16 +1857,16 @@ namespace dsf::mobility {
       while (true) {
         auto step = streetDist(this->m_generator);
         std::advance(streetIt, step);
-        if (!(streetIt->second->isFull())) {
+        if (!((*streetIt).second->isFull())) {
           break;
         }
         streetIt = this->graph().edges().begin();
       }
-      auto const& street{streetIt->second};
-      this->addAgent(pItinerary, streetIt->first);
+      auto const [streetId, street] = *streetIt;
+      this->addAgent(pItinerary, streetId);
       auto& pAgent{this->m_agents.back()};
       pAgent->setStreetId();
-      pAgent->setSpeed(this->m_speedFunction(*streetIt->second));
+      pAgent->setSpeed(this->m_speedFunction(*street));
       pAgent->setFreeTime(this->time_step() +
                           std::ceil(street->length() / pAgent->speed()));
       street->addAgent(std::move(pAgent), this->time_step());
