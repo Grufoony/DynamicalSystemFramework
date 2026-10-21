@@ -209,6 +209,10 @@ namespace dsf::mobility {
     /// @tparam Reset If true, the average speed data is reset after the computation
     /// @return Measurement<double> The (mean, std) speed of the agents that have passed through the street
     template <bool Reset>
+      requires(!Reset)
+    Measurement<double> meanSpeed() const;
+    template <bool Reset>
+      requires(Reset)
     Measurement<double> meanSpeed();
 
     /// @brief Get the street's lane mapping
@@ -245,11 +249,16 @@ namespace dsf::mobility {
   }
 
   template <bool Reset>
+    requires(!Reset)
+  inline Measurement<double> Street::meanSpeed() const {
+    return Measurement<double>{m_avgSpeeds};
+  }
+
+  template <bool Reset>
+    requires(Reset)
   inline Measurement<double> Street::meanSpeed() {
     Measurement<double> measurement{m_avgSpeeds};
-    if constexpr (Reset) {
-      m_avgSpeeds.clear();
-    }
+    m_avgSpeeds.clear();
     return measurement;
   }
 }  // namespace dsf::mobility

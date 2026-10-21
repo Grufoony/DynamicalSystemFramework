@@ -3,6 +3,7 @@
 #include "Edge.hpp"
 #include "Node.hpp"
 #include "PathCollection.hpp"
+#include "../utility/PtrMapView.hpp"
 #include "../utility/Typedef.hpp"
 
 #include <cassert>
@@ -106,10 +107,14 @@ namespace dsf {
     /// @brief Construct a new empty Network object
     Network() = default;
 
-    /// @brief Get the nodes as an unordered map
-    inline auto const& nodes() const noexcept { return m_nodes; }
-    /// @brief Get the edges as an unordered map
-    inline auto const& edges() const noexcept { return m_edges; }
+    /// @brief Get the nodes as a view of (id, pointer to const node) pairs
+    inline auto nodes() const noexcept { return PtrMapView<node_t const>{m_nodes}; }
+    /// @brief Get the nodes as a view of (id, pointer to node) pairs
+    inline auto nodes() noexcept { return PtrMapView<node_t>{m_nodes}; }
+    /// @brief Get the edges as a view of (id, pointer to const edge) pairs
+    inline auto edges() const noexcept { return PtrMapView<edge_t const>{m_edges}; }
+    /// @brief Get the edges as a view of (id, pointer to edge) pairs
+    inline auto edges() noexcept { return PtrMapView<edge_t>{m_edges}; }
     /// @brief Get the number of nodes
     inline auto nNodes() const noexcept { return m_nodes.size(); }
     /// @brief Get the number of edges
