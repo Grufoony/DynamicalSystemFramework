@@ -53,7 +53,15 @@ namespace dsf::detail {
 inline constexpr std::string_view DSF_VERSION{dsf::detail::VERSION_BUFFER.data(),
                                               dsf::detail::VERSION_BUFFER.size() - 1};
 
+/// @brief Core of the DynamicalSystemFramework: generic networks, nodes, edges and dynamics.
 namespace dsf {
+  /// @brief Traffic model: road networks, junctions, agents and dynamics.
+  namespace mobility {}
+  /// @brief Geometric primitives: points and polylines.
+  namespace geometry {}
+  /// @brief Mobile-Data Trajectories: trajectory collections, stop detection and point clustering.
+  namespace mdt {}
+
   /// @brief Returns the version of the DSF library
   /// @return The version of the DSF library
   constexpr std::string_view version() noexcept { return DSF_VERSION; };
