@@ -20,6 +20,7 @@
 #include <numeric>
 #include <optional>
 #include <random>
+#include <ranges>
 #include <span>
 #include <sstream>
 #include <iostream>
@@ -149,6 +150,26 @@ namespace dsf::mobility {
     /// @param pAgent A std::unique_ptr to the agent
     void m_assignIntelligence(std::unique_ptr<Agent> const& pAgent);
 
+    /// @brief Get the cumulative sums of the weights of a weighted list of ids
+    /// @param weightedIds The (id, weight) pairs
+    /// @return std::vector<double> The cumulative weights, to be used with m_pickWeighted
+    static std::vector<double> m_cumulativeWeights(
+        std::vector<std::tuple<Id, double>> const& weightedIds);
+    /// @brief Pick an id from a weighted list, in O(log n)
+    /// @param weightedIds The (id, weight) pairs
+    /// @param cumulativeWeights The cumulative weights of weightedIds (see m_cumulativeWeights)
+    /// @param randValue A random value in [0, 1)
+    /// @return Id The first id whose cumulative weight exceeds randValue, or the last id if
+    ///   there is none (e.g. for weights not summing exactly to 1)
+    static Id m_pickWeighted(std::vector<std::tuple<Id, double>> const& weightedIds,
+                             std::span<double const> cumulativeWeights,
+                             double randValue);
+    /// @brief Find an itinerary with the given destination
+    /// @param destinationId The destination street id
+    /// @return An iterator to the itinerary, or itineraries().cend() if there is none
+    std::unordered_map<Id, std::shared_ptr<Itinerary>>::const_iterator m_findItinerary(
+        Id destinationId) const;
+
     template <bool Uniformly>
     void m_addAgentsRandom(std::size_t nAgents);
     void m_addAgentsODs(std::size_t nAgents);
@@ -157,15 +178,14 @@ namespace dsf::mobility {
 
     /// @brief Extract a street from the given transition probabilities
     /// @tparam AllowTermination A boolean indicating whether the agent is allowed to terminate its trip
-    /// @param transitionProbabilities A map of candidate street ids to the street and its (unnormalized) weight
+    /// @param transitionProbabilities The candidate streets, each with its (unnormalized) weight
     /// @param cumulativeProbability The sum of the weights in transitionProbabilities
     ///   the missing mass (1 - cumulativeProbability) is the probability of ending the trip, in which
     ///   case nullptr is returned
     /// @return Street const* The selected street, or nullptr if no street was selected
     template <bool AllowTermination>
     Street const* m_extractStreet(
-        std::unordered_map<Id, std::pair<Street const*, double>> const&
-            transitionProbabilities,
+        std::span<std::pair<Street const*, double> const> transitionProbabilities,
         double const cumulativeProbability);
 
     /// @brief Get the next street of a random agent (uniform or transition-matrix choice)
@@ -599,15 +619,14 @@ namespace dsf::mobility {
 
   template <bool AllowTermination>
   Street const* FirstOrderDynamics::m_extractStreet(
-      std::unordered_map<Id, std::pair<Street const*, double>> const&
-          transitionProbabilities,
+      std::span<std::pair<Street const*, double> const> transitionProbabilities,
       double const cumulativeProbability) {
     // Select street based on weighted probabilities
     if (transitionProbabilities.empty()) {
       return nullptr;
     }
     if (!AllowTermination && transitionProbabilities.size() == 1) {
-      auto const* pOnlyStreet = transitionProbabilities.cbegin()->second.first;
+      auto const* pOnlyStreet = transitionProbabilities.front().first;
       spdlog::trace("This transition is to {}", *pOnlyStreet);
       return pOnlyStreet;
     }
@@ -617,10 +636,9 @@ namespace dsf::mobility {
     std::uniform_real_distribution<double> uniformDist{
         0., AllowTermination ? 1. : cumulativeProbability};
     auto const randValue = uniformDist(this->m_generator);
-    Street const* pFallbackStreet{transitionProbabilities.cbegin()->second.first};
+    Street const* pFallbackStreet{transitionProbabilities.front().first};
     double accumulated = 0.0;
-    for (auto const& [_, candidate] : transitionProbabilities) {
-      auto const& [pTargetStreet, probability] = candidate;
+    for (auto const& [pTargetStreet, probability] : transitionProbabilities) {
       accumulated += probability;
       pFallbackStreet = pTargetStreet;
       if (randValue < accumulated) {
@@ -710,6 +728,31 @@ namespace dsf::mobility {
     }
   }
 
+  inline std::vector<double> FirstOrderDynamics::m_cumulativeWeights(
+      std::vector<std::tuple<Id, double>> const& weightedIds) {
+    std::vector<double> cumulativeWeights;
+    cumulativeWeights.reserve(weightedIds.size());
+    double cumulativeWeight{0.};
+    for (auto const& [id, weight] : weightedIds) {
+      cumulativeWeight += weight;
+      cumulativeWeights.push_back(cumulativeWeight);
+    }
+    return cumulativeWeights;
+  }
+
+  inline Id FirstOrderDynamics::m_pickWeighted(
+      std::vector<std::tuple<Id, double>> const& weightedIds,
+      std::span<double const> cumulativeWeights,
+      double const randValue) {
+    assert(!weightedIds.empty() && weightedIds.size() == cumulativeWeights.size());
+    auto const it{std::ranges::upper_bound(cumulativeWeights, randValue)};
+    if (it == cumulativeWeights.end()) {
+      return std::get<0>(weightedIds.back());
+    }
+    return std::get<0>(weightedIds[static_cast<std::size_t>(
+        std::distance(cumulativeWeights.begin(), it))]);
+  }
+
   template <bool Uniformly>
   inline void FirstOrderDynamics::m_addAgentsRandom(std::size_t nAgents) {
     m_nAddedAgents += nAgents;
@@ -732,17 +775,10 @@ namespace dsf::mobility {
         throw std::runtime_error(
             "FirstOrderDynamics::m_addAgentsRandom: No origin nodes set");
       }
+      auto const cumulativeWeights{m_cumulativeWeights(m_origins)};
       while (nAgents--) {
-        auto randValue{uniformDist(this->m_generator)};
-        // Fall back to the last origin
-        Id selectedOrigin{std::get<0>(m_origins.back())};
-        for (auto const& [origin, weight] : m_origins) {
-          if (randValue < weight) {
-            selectedOrigin = origin;
-            break;
-          }
-          randValue -= weight;
-        }
+        auto const selectedOrigin{
+            m_pickWeighted(m_origins, cumulativeWeights, uniformDist(this->m_generator))};
         this->addAgent(nullptr, selectedOrigin);
         if (m_meanTravelDistance.has_value()) {
           this->m_agents.back()->setMaxDistance(distDist(this->m_generator));
@@ -781,28 +817,23 @@ namespace dsf::mobility {
 
   template <bool Normalized>
   inline Measurement<double> FirstOrderDynamics::streetMeanDensity() const {
-    if (this->graph().edges().empty()) {
-      return Measurement<double>();
-    }
-    std::vector<double> densities;
-    densities.reserve(this->graph().nEdges());
     if constexpr (Normalized) {
-      for (const auto& [streetId, pStreet] : this->graph().edges()) {
-        densities.push_back(pStreet->density<true>());
-      }
+      return Measurement<double>(this->graph().edges() | std::views::values |
+                                 std::views::transform([](Street const* pStreet) {
+                                   return pStreet->density<true>();
+                                 }));
     } else {
-      double sum{0.};
-      for (const auto& [streetId, pStreet] : this->graph().edges()) {
-        densities.push_back(pStreet->density<false>() * pStreet->length());
-        sum += pStreet->length();
+      // Length-weighted mean: the vehicles on the network over its total length
+      double nAgents{0.}, totalLength{0.};
+      for (auto const* pStreet : this->graph().edges() | std::views::values) {
+        nAgents += pStreet->density<false>() * pStreet->length();
+        totalLength += pStreet->length();
       }
-      if (sum == 0) {
+      if (totalLength == 0) {
         return Measurement<double>();
       }
-      auto meanDensity{std::accumulate(densities.begin(), densities.end(), 0.) / sum};
-      return Measurement<double>(meanDensity, 0., densities.size());
+      return Measurement<double>(nAgents / totalLength, 0., this->graph().nEdges());
     }
-    return Measurement<double>(densities);
   }
 
 }  // namespace dsf::mobility

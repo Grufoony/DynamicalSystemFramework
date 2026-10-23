@@ -445,6 +445,10 @@ namespace dsf::mobility {
     spdlog::debug("Computing all edge paths to target edge {}", targetEdgeId);
     auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
     PathCollection result;
+    result.reserve(m_edges.size());
+
+    std::vector<Id> hops;
+
     for (auto const& [edgeId, pEdge] : m_edges) {
       if (edgeId == targetEdgeId) {
         continue;
@@ -462,8 +466,7 @@ namespace dsf::mobility {
 
       auto const& targetNode = *pEdge->target();
       auto const outgoingEdges = targetNode.outgoingEdges();
-      std::vector<Id> hops;
-      hops.reserve(outgoingEdges.size());
+      hops.clear();
 
       for (auto const* pNextEdge : outgoingEdges) {
         auto const nextEdgeId{pNextEdge->id()};
@@ -504,15 +507,15 @@ namespace dsf::mobility {
           continue;
         }
 
+        // Outgoing edges are distinct, so each id is pushed at most once
         auto const fullPathCost = m_weightFunction(*pNextEdge) + nextDistToTarget;
-        if (fullPathCost <= edgeBudget + PATH_COST_EPS &&
-            std::find(hops.begin(), hops.end(), nextEdgeId) == hops.end()) {
+        if (fullPathCost <= edgeBudget + PATH_COST_EPS) {
           hops.push_back(nextEdgeId);
         }
       }
 
       if (!hops.empty()) {
-        result[edgeId] = hops;
+        result.emplace(edgeId, hops);
       }
     }
 

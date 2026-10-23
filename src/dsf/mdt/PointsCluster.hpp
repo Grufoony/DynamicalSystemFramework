@@ -25,13 +25,6 @@ namespace dsf::mdt {
   public:
     /// @brief Default constructor for PointsCluster.
     PointsCluster() = default;
-    /// @brief Copy constructor for PointsCluster.
-    /// @param other The PointsCluster to copy from.
-    PointsCluster(PointsCluster const& other) = default;
-    /// @brief Copy assignment operator for PointsCluster.
-    /// @param other The PointsCluster to copy from.
-    /// @return Reference to this PointsCluster.
-    PointsCluster& operator=(PointsCluster const& other) = default;
     /// @brief Add an activity point to the cluster.
     /// @param activityPoint The activity point to add.
     void addActivityPoint(ActivityPoint const& activityPoint);

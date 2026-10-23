@@ -1,6 +1,7 @@
 #include "PointsCluster.hpp"
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include <tbb/parallel_sort.h>
@@ -14,9 +15,6 @@ namespace dsf::mdt {
       m_centroid = m_points.begin()->point;
       return;
     }
-    // Ensure points are sorted by timestamp
-    this->sort();
-
     // Collect x and y coordinates
     std::vector<double> xs;
     std::vector<double> ys;
@@ -27,7 +25,7 @@ namespace dsf::mdt {
       ys.push_back(activityPoint.point.y());
     }
 
-    // Helper to compute median; take vector by value so we can modify it
+    // Helper to compute median; takes the vector by value so it can be reordered in place
     auto compute_median = [](std::vector<double> v) -> double {
       auto const n = v.size();
       auto const mid = static_cast<std::size_t>(n * 0.5);
@@ -37,13 +35,14 @@ namespace dsf::mdt {
       if (n % 2 == 1) {
         return high;
       }
-      // even: need the lower middle as well
-      std::nth_element(v.begin(), v.begin() + (mid - 1), v.end());
-      double low = v[mid - 1];
+      // even: need the lower middle as well, i.e. the largest of the elements that
+      // nth_element left before mid (they are all <= v[mid])
+      double low = *std::ranges::max_element(v.begin(), v.begin() + mid);
       return (low + high) * 0.5;
     };
 
-    m_centroid = dsf::geometry::Point(compute_median(xs), compute_median(ys));
+    m_centroid = dsf::geometry::Point(compute_median(std::move(xs)),
+                                      compute_median(std::move(ys)));
   }
 
   void PointsCluster::addActivityPoint(ActivityPoint const& activityPoint) {
