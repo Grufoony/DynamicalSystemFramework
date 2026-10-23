@@ -1611,11 +1611,13 @@ Returns:
   // Bind TrafficSimulator class to mobility submodule
   nb::class_<dsf::mobility::TrafficSimulator>(mobility, "TrafficSimulator")
       .def(nb::init<>())
-      .def(nb::init<std::string const&>(),
+        .def(nb::init<std::string const&, bool>(),
            nb::arg("jsonConfigFile"),
+           nb::arg("pedestrian") = false,
            R"doc(Create a TrafficSimulator instance from a JSON configuration file.
       Args:
           jsonConfigFile (str): Path to the JSON configuration file.
+          pedestrian (bool): Enable pedestrian mode.
 
       Returns:
           TrafficSimulator: A new instance of the traffic simulator initialized with the provided configuration.)doc")
@@ -1642,6 +1644,16 @@ Returns:
 
       Args:
         prefix (str): The prefix for the output files.
+
+      Returns:
+        None)doc")
+      .def("setPedestrianMode",
+           &dsf::mobility::TrafficSimulator::setPedestrianMode,
+           nb::arg("pedestrianMode"),
+           R"doc(Enable or disable pedestrian mode.
+
+      Args:
+        pedestrianMode (bool): Set True to enable pedestrian mode.
 
       Returns:
         None)doc")

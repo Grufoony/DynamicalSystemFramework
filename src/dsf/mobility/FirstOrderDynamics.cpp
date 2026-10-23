@@ -8,10 +8,36 @@
 #include <spdlog/spdlog.h>
 
 namespace dsf::mobility {
+  namespace {
+    template <bool Normalized>
+    double combinedDensity(FirstOrderDynamics const& dynamics, Street const& street) {
+      auto density = street.density<Normalized>();
+      if (!dynamics.pedestrianMode()) {
+        return density;
+      }
+
+      auto const pairedEdgeId = street.getAttribute<std::int64_t>("paired_edge_id");
+      if (!pairedEdgeId.has_value()) {
+        return density;
+      }
+
+      auto const pairedId = static_cast<Id>(*pairedEdgeId);
+      if (pairedId == street.id()) {
+        return density;
+      }
+
+      auto const& pairedStreet = dynamics.graph().edge(pairedId);
+      return density + pairedStreet.density<Normalized>();
+    }
+  }  // namespace
+
   FirstOrderDynamics::FirstOrderDynamics(RoadNetwork&& graph,
                                          bool useCache,
-                                         std::optional<unsigned int> seed)
-      : Dynamics<RoadNetwork>(std::move(graph), seed), m_bCacheEnabled{useCache} {
+                                         std::optional<unsigned int> seed,
+                                         bool pedestrianMode)
+      : Dynamics<RoadNetwork>(std::move(graph), seed),
+        m_bCacheEnabled{useCache},
+        m_pedestrianMode{pedestrianMode} {
     // Set defaults for speed function
     this->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
     if (m_bCacheEnabled) {
@@ -696,6 +722,7 @@ namespace dsf::mobility {
     // Calculate transition probabilities for all valid outgoing edges
     std::unordered_map<Id, double> transitionProbabilities;
     double cumulativeProbability = 0.0;
+    bool const allowRerouting = !m_pedestrianMode && this->m_errorProbability.has_value();
 
     for (const auto outEdgeId : outgoingEdges) {
       if (forbiddenTurns.contains(outEdgeId)) {
@@ -713,7 +740,7 @@ namespace dsf::mobility {
           std::find(pathTargets.cbegin(), pathTargets.cend(), streetOut.id()) !=
           pathTargets.cend();
 
-      if (!this->m_errorProbability.has_value() && !bIsPathTarget) {
+      if (!allowRerouting && !bIsPathTarget) {
         continue;
       }
 
@@ -721,7 +748,7 @@ namespace dsf::mobility {
       //std::exp(-0.5 * pStreetOut->maxSpeed() / (this->m_speedFunction(*pStreetOut)));
 
       // Apply error probability for non-random agents
-      if (this->m_errorProbability.has_value()) {
+      if (allowRerouting) {
         probability *=
             (bIsPathTarget
                  ? (1. - *m_errorProbability)
@@ -1299,16 +1326,17 @@ namespace dsf::mobility {
                                           bool const bAutoMapStreetLanes,
                                           bool const bAutoAssignRoadPriorities,
                                           bool const bAutoInitTrafficLights) {
+    bool const pedestrianMode = m_pedestrianMode;
     if (bAdjustNodeCapacities) {
       m_graph->adjustNodeCapacities();
     }
-    if (bAutoMapStreetLanes) {
+    if (!pedestrianMode && bAutoMapStreetLanes) {
       m_graph->autoMapStreetLanes();
     }
-    if (bAutoAssignRoadPriorities) {
+    if (!pedestrianMode && bAutoAssignRoadPriorities) {
       m_graph->autoAssignRoadPriorities();
     }
-    if (bAutoInitTrafficLights) {
+    if (!pedestrianMode && bAutoInitTrafficLights) {
       m_graph->autoInitTrafficLights();
     }
   }
@@ -2003,7 +2031,7 @@ namespace dsf::mobility {
                 }
                 m_evolveStreet(pStreet);
                 if (bComputeStats) {
-                  auto const& density{pStreet->density<false>() * 1e3};
+                  auto const density{combinedDensity<false>(*this, *pStreet) * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};
 
                   auto const speedMeasure = pStreet->meanSpeed<true>();
@@ -2302,7 +2330,7 @@ namespace dsf::mobility {
           if (!pSourceNode->isTrafficLight()) {
             continue;
           }
-          density += pStreet->density<true>();
+          density += combinedDensity<true>(*this, *pStreet);
           ++n;
         }
         if (n == 0.) {
@@ -2436,7 +2464,7 @@ namespace dsf::mobility {
     for (const auto& [streetId, pStreet] : this->graph().edges()) {
       auto const speedMeasure = pStreet->meanSpeed<false>();
       if (speedMeasure.is_valid) {
-        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
+        flows.push_back(combinedDensity<false>(*this, *pStreet) * speedMeasure.mean);
       }
     }
     return Measurement<double>(flows);
@@ -2451,10 +2479,10 @@ namespace dsf::mobility {
       if (!speedMeasure.is_valid) {
         continue;
       }
-      if (above && (pStreet->density<true>() > threshold)) {
-        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
-      } else if (!above && (pStreet->density<true>() < threshold)) {
-        flows.push_back(pStreet->density<false>() * speedMeasure.mean);
+      if (above && (combinedDensity<true>(*this, *pStreet) > threshold)) {
+        flows.push_back(combinedDensity<false>(*this, *pStreet) * speedMeasure.mean);
+      } else if (!above && (combinedDensity<true>(*this, *pStreet) < threshold)) {
+        flows.push_back(combinedDensity<false>(*this, *pStreet) * speedMeasure.mean);
       }
     }
     return Measurement<double>(flows);

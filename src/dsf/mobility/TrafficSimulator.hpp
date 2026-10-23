@@ -38,6 +38,7 @@ namespace dsf::mobility {
     bool m_saveTravelData{false};
     bool m_saveAgentData{false};
     bool m_saveTurnCounts{false};
+    bool m_pedestrianMode{false};
     std::queue<std::tuple<std::time_t, std::string>> m_dynamicODsUpdate;
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
@@ -234,7 +235,8 @@ namespace dsf::mobility {
     TrafficSimulator();
     /// @brief Construct a new TrafficSimulator and import its configuration from JSON.
     /// @param jsonConfigFile The path to the JSON configuration file.
-    explicit TrafficSimulator(std::string_view const jsonConfigFile);
+    explicit TrafficSimulator(std::string_view const jsonConfigFile,
+                 bool pedestrianMode = false);
 
     /// @brief Import a JSON configuration file and apply it to the simulator.
     /// @param jsonConfigFile The path to the JSON configuration file.
@@ -273,6 +275,10 @@ namespace dsf::mobility {
     /// @brief Set the output prefix used for generated CSV files and database paths.
     /// @param prefix The prefix or directory path.
     void setOutputPrefix(std::string_view const prefix);
+
+    /// @brief Enable or disable pedestrian mode.
+    /// @param pedestrianMode Whether pedestrian mode should be enabled.
+    void setPedestrianMode(bool pedestrianMode) noexcept { m_pedestrianMode = pedestrianMode; }
 
     /// @brief Set the simulation time frame.
     /// @param initTime The simulation start time.

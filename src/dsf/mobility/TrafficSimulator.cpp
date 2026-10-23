@@ -78,7 +78,9 @@ namespace dsf::mobility {
   }
 
   TrafficSimulator::TrafficSimulator() { m_createId(); }
-  TrafficSimulator::TrafficSimulator(std::string_view const jsonConfigPath) {
+  TrafficSimulator::TrafficSimulator(std::string_view const jsonConfigPath,
+                                     bool pedestrianMode)
+      : m_pedestrianMode{pedestrianMode} {
     m_createId();
     importConfig(jsonConfigPath);
   }
@@ -644,7 +646,8 @@ namespace dsf::mobility {
     if (!nodePropertiesFile.empty()) {
       network.importNodeProperties(std::string(nodePropertiesFile));
     }
-    m_dynamics = std::make_unique<FirstOrderDynamics>(std::move(network));
+    m_dynamics = std::make_unique<FirstOrderDynamics>(
+        std::move(network), false, std::nullopt, m_pedestrianMode);
     spdlog::info("Road network imported successfully with {} nodes and {} edges.",
                  m_dynamics->graph().nNodes(),
                  m_dynamics->graph().nEdges());

@@ -134,6 +134,7 @@ namespace dsf::mobility {
     bool m_bCacheEnabled;
     std::optional<double> m_timeToleranceFactor{std::nullopt};
     bool m_forcePriorities{false};
+    bool m_pedestrianMode{false};
 
   private:
     /// @brief Kill an agent from the dynamics
@@ -203,7 +204,8 @@ namespace dsf::mobility {
     /// @param seed The seed for the random number generator (default is std::nullopt)
     FirstOrderDynamics(RoadNetwork&& graph,
                        bool useCache = false,
-                       std::optional<unsigned int> seed = std::nullopt);
+                       std::optional<unsigned int> seed = std::nullopt,
+                       bool pedestrianMode = false);
 
     /// @brief Automatically prepare the network for the simulation. This method calls the following methods in order:
     /// - RoadNetwork::adjustNodeCapacities()
@@ -218,6 +220,8 @@ namespace dsf::mobility {
                         bool const bAutoMapStreetLanes = false,
                         bool const bAutoAssignRoadPriorities = true,
                         bool const bAutoInitTrafficLights = true);
+    /// @brief Check whether the dynamics run in pedestrian mode.
+    inline bool pedestrianMode() const noexcept { return m_pedestrianMode; }
     /// @brief Set the error probability
     /// @param errorProbability The error probability
     /// @throw std::invalid_argument If the error probability is not between 0 and 1

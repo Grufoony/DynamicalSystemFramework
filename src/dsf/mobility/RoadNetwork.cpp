@@ -31,6 +31,8 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "lane_mapping",
                                      "geometry"});
 
+static constexpr auto PAIRED_EDGE_ID_ATTRIBUTE = "paired_edge_id";
+
 namespace dsf::mobility {
   void RoadNetwork::m_updateMaxAgentCapacity() {
     m_capacity = 0;
@@ -334,6 +336,7 @@ namespace dsf::mobility {
         }
       }
     }
+    m_pairOppositeEdges();
     this->m_nodes.rehash(0);
     this->m_edges.rehash(0);
   }
@@ -661,6 +664,7 @@ namespace dsf::mobility {
         }
       }
     }
+    m_pairOppositeEdges();
     this->m_nodes.rehash(0);
     this->m_edges.rehash(0);
   }
@@ -1448,6 +1452,35 @@ namespace dsf::mobility {
       }
     }
     addEdge<Street>(std::move(street));
+  }
+
+  void RoadNetwork::m_pairOppositeEdges() {
+    std::unordered_map<Id, std::unordered_map<Id, Id>> edgeIndex;
+    for (auto const& [edgeId, pStreet] : m_edges) {
+      edgeIndex[pStreet->source()][pStreet->target()] = edgeId;
+    }
+
+    for (auto const& [edgeId, pStreet] : m_edges) {
+      auto const sourceId = pStreet->source();
+      auto const targetId = pStreet->target();
+      auto const reverseOuterIt = edgeIndex.find(targetId);
+      if (reverseOuterIt == edgeIndex.end()) {
+        continue;
+      }
+      auto const reverseInnerIt = reverseOuterIt->second.find(sourceId);
+      if (reverseInnerIt == reverseOuterIt->second.end()) {
+        continue;
+      }
+      auto const reverseEdgeId = reverseInnerIt->second;
+      if (reverseEdgeId == edgeId || edgeId > reverseEdgeId) {
+        continue;
+      }
+
+      pStreet->setAttribute(PAIRED_EDGE_ID_ATTRIBUTE,
+                            static_cast<std::int64_t>(reverseEdgeId));
+      this->edge(reverseEdgeId).setAttribute(PAIRED_EDGE_ID_ATTRIBUTE,
+                                             static_cast<std::int64_t>(edgeId));
+    }
   }
 
   void RoadNetwork::setStreetStatusById(Id const streetId, RoadStatus const status) {

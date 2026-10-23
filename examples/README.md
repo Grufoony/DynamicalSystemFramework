@@ -29,3 +29,16 @@ Also in this case, once compiled one can run it using the Makefile:
 ```shell
 make stalingrado
 ```
+
+### Pedestrian city simulation
+This Python example runs the same city cartography pipeline as `simulate_city.py`, but
+initializes the simulator in pedestrian mode, so bidirectional street pairs are treated
+as a coupled segment and traffic lights / junction priority logic are disabled.
+
+From the `examples/` directory, run:
+```shell
+uv run simulate_city_pedestrian.py --city Bologna --country Italy --seed 69
+```
+
+The script will generate pedestrian-specific CSV, pickle, map and database files with
+the `_pedestrian` suffix.

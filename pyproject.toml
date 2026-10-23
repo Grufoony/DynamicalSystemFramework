@@ -63,7 +63,9 @@ dependencies = [
     "numpy",
     "geopandas",
     "shapely",
-    "folium"
+    "folium",
+    "matplotlib>=3.11.2",
+    "mapclassify>=2.11.0",
 ]
 
 dynamic = ["version"]

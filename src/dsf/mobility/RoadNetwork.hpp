@@ -58,6 +58,7 @@ namespace dsf::mobility {
                                      const char separator = ';');
 
     void m_jsonEdgesImporter(std::ifstream& file);
+    void m_pairOppositeEdges();
 
   public:
     RoadNetwork();

@@ -57,3 +57,8 @@ test/data/*dsf
 
 # Jupyter Notebook (temporary checks)
 *.ipynb
+
+# geojson pro pnt
+*.geojson
+*.pro
+*.pnt
