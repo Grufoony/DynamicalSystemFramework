@@ -36,4 +36,4 @@ jobs:
     
     - name: Run tests with pytest
       run: |
-        pytest test -v --cov=src/dsf --cov-report=term-missing -o "python_files=Test_*.py test_*.py Bind_*.py"
+        pytest test -v -rs --cov=src/dsf --cov-report=term-missing -o "python_files=Test_*.py test_*.py Bind_*.py"

@@ -165,23 +165,21 @@ namespace dsf::mobility {
           }
         }
         // Erase all conditional ODs with empty destination lists
-        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
-            filteredConditionalODs;
-        filteredConditionalODs.reserve(conditionalODs.size());
-        for (auto [id, tuple] : conditionalODs) {
-          if (std::get<1>(tuple).empty()) {
+        std::erase_if(conditionalODs, [](auto const& pair) {
+          if (std::get<1>(pair.second).empty()) {
             spdlog::debug(
                 "Origin node {} has no valid destinations in CSV. Skipping this origin.",
-                id);
-          } else {
-            // Divide weights by the size of destination
-            filteredConditionalODs.emplace(
-                id,
-                std::make_tuple(std::get<0>(tuple) / std::get<1>(tuple).size(),
-                                std::get<1>(tuple)));
+                pair.first);
+            return true;
           }
+          return false;
+        });
+        // Divide weights by the size of destination
+        for (auto& [id, tuple] : conditionalODs) {
+          auto& [weight, destinations] = tuple;
+          weight /= destinations.size();
         }
-        this->setConditionalODs(std::move(filteredConditionalODs));
+        this->setConditionalODs(conditionalODs);
         break;
       }
       default:
@@ -340,8 +338,7 @@ namespace dsf::mobility {
     }
     auto const oldSize{pItinerary->path().size()};
 
-    auto const path{this->graph().allEdgePathsTo(pItinerary->destination())};
-    pItinerary->setPath(path);
+    pItinerary->setPath(this->graph().allEdgePathsTo(pItinerary->destination()));
     auto const newSize{pItinerary->path().size()};
     spdlog::debug("Updated path for itinerary {}: old size = {}, new size = {}",
                   pItinerary->id(),
@@ -447,6 +444,8 @@ namespace dsf::mobility {
                       std::get<Id>(m_origins.at(0))));
     }
     std::uniform_real_distribution<double> uniformDist{0., 1.};
+    auto const originCumulativeWeights{m_cumulativeWeights(m_origins)};
+    auto const destinationCumulativeWeights{m_cumulativeWeights(m_destinations)};
     spdlog::debug("Adding {} agents at time {}.", nAgents, this->time_step());
     while (nAgents--) {
       std::optional<Id> srcId{std::nullopt}, dstId{std::nullopt};
@@ -457,38 +456,20 @@ namespace dsf::mobility {
       if (nSources == 1) {
         srcId = std::get<Id>(m_origins.at(0));
       } else {
-        auto randValue = uniformDist(this->m_generator);
-        srcId = std::get<Id>(m_origins.back());
-        for (const auto& [id, weight] : m_origins) {
-          if (randValue < weight) {
-            srcId = id;
-            break;
-          }
-          randValue -= weight;
-        }
+        srcId = m_pickWeighted(
+            m_origins, originCumulativeWeights, uniformDist(this->m_generator));
       }
 
       // Select destination using weighted random selection
       if (nDestinations == 1) {
         dstId = std::get<Id>(m_destinations.at(0));
       } else {
-        auto randValue = uniformDist(this->m_generator);
-        dstId = std::get<Id>(m_destinations.back());
-        for (const auto& [id, weight] : m_destinations) {
-          if (randValue < weight) {
-            dstId = id;
-            break;
-          }
-          randValue -= weight;
-        }
+        dstId = m_pickWeighted(
+            m_destinations, destinationCumulativeWeights, uniformDist(this->m_generator));
       }
 
       // Find the itinerary with the given destination
-      auto itineraryIt{std::find_if(this->itineraries().cbegin(),
-                                    this->itineraries().cend(),
-                                    [dstId](const auto& itinerary) {
-                                      return itinerary.second->destination() == *dstId;
-                                    })};
+      auto const itineraryIt{m_findItinerary(*dstId)};
       if (itineraryIt == this->itineraries().cend()) {
         spdlog::error("Itinerary with destination {} not found. Skipping agent.", *dstId);
         continue;
@@ -505,6 +486,18 @@ namespace dsf::mobility {
 
       this->addAgent(itineraryIt->second, *srcId);
     }
+  }
+  std::unordered_map<Id, std::shared_ptr<Itinerary>>::const_iterator
+  FirstOrderDynamics::m_findItinerary(Id const destinationId) const {
+    // Itineraries built from destinations or ODs are keyed by their destination: try that
+    // O(1) lookup before scanning for user-added ones with a different id
+    auto const it{m_itineraries.find(destinationId)};
+    if (it != m_itineraries.cend() && it->second->destination() == destinationId) {
+      return it;
+    }
+    return std::ranges::find_if(m_itineraries, [destinationId](auto const& itinerary) {
+      return itinerary.second->destination() == destinationId;
+    });
   }
   void FirstOrderDynamics::m_addAgentsConditionalRandomODs(std::size_t nAgents) {
     m_nAddedAgents += nAgents;
@@ -523,19 +516,12 @@ namespace dsf::mobility {
           "FirstOrderDynamics::m_addAgentsConditionalRandomODs: Origins must be set");
     }
     std::uniform_real_distribution<double> uniformDist{0., 1.};
+    auto const originCumulativeWeights{m_cumulativeWeights(m_origins)};
     spdlog::debug("Adding {} agents at time {}.", nAgents, this->time_step());
     while (nAgents--) {
       // Select origin using weighted random selection
-      auto randValue = uniformDist(this->m_generator);
-      Id originId{
-          std::get<0>(m_origins.back())};  // fallback to last for numerical stability
-      for (const auto& [id, weight] : m_origins) {
-        if (randValue < weight) {
-          originId = id;
-          break;
-        }
-        randValue -= weight;
-      }
+      auto const originId{m_pickWeighted(
+          m_origins, originCumulativeWeights, uniformDist(this->m_generator))};
       // Select destination conditionally based on the selected origin
       auto originToDestIt = m_originToDestinations.find(originId);
       if (originToDestIt == m_originToDestinations.end() ||
@@ -545,7 +531,7 @@ namespace dsf::mobility {
             originId));
       }
       const auto& destinations = originToDestIt->second;
-      randValue = uniformDist(this->m_generator);
+      auto randValue = uniformDist(this->m_generator);
       Id destinationId{
           std::get<0>(destinations.back())};  // fallback to last for numerical stability
       for (const auto& [id, weight] : destinations) {
@@ -556,12 +542,7 @@ namespace dsf::mobility {
         randValue -= weight;
       }
       // Find the itinerary with the given destination
-      auto itineraryIt{std::find_if(this->itineraries().cbegin(),
-                                    this->itineraries().cend(),
-                                    [destinationId](const auto& itinerary) {
-                                      return itinerary.second->destination() ==
-                                             destinationId;
-                                    })};
+      auto const itineraryIt{m_findItinerary(destinationId)};
       if (itineraryIt == this->itineraries().cend()) {
         spdlog::error("Itinerary with destination {} not found. Skipping agent.",
                       destinationId);
@@ -598,8 +579,11 @@ namespace dsf::mobility {
     spdlog::trace("Computing m_nextRandomStreet for {}", *pAgent);
     auto const& outgoingEdges = pNode->outgoingEdges();
 
-    // Calculate transition probabilities for all valid outgoing edges
-    std::unordered_map<Id, std::pair<Street const*, double>> transitionProbabilities;
+    // Calculate transition probabilities for all valid outgoing edges. The buffer is reused
+    // across calls (one per thread, as nodes evolve in parallel) to avoid an allocation per
+    // routing decision
+    thread_local std::vector<std::pair<Street const*, double>> transitionProbabilities;
+    transitionProbabilities.clear();
     double cumulativeProbability = 0.0;
 
     static std::set<Id> const noForbiddenTurns;
@@ -643,8 +627,7 @@ namespace dsf::mobility {
           probability = itWeight->second;
         }
 
-        transitionProbabilities.emplace(streetOut.id(),
-                                        std::make_pair(pStreetOut, probability));
+        transitionProbabilities.emplace_back(pStreetOut, probability);
         cumulativeProbability += probability;
       }
     };
@@ -711,8 +694,11 @@ namespace dsf::mobility {
       pathTargets = pathIt->second;
     }
 
-    // Calculate transition probabilities for all valid outgoing edges
-    std::unordered_map<Id, std::pair<Street const*, double>> transitionProbabilities;
+    // Calculate transition probabilities for all valid outgoing edges. The buffer is reused
+    // across calls (one per thread, as nodes evolve in parallel) to avoid an allocation per
+    // routing decision
+    thread_local std::vector<std::pair<Street const*, double>> transitionProbabilities;
+    transitionProbabilities.clear();
     double cumulativeProbability = 0.0;
 
     for (auto const* pStreetOut : outgoingEdges) {
@@ -755,8 +741,7 @@ namespace dsf::mobility {
         }
       }
 
-      transitionProbabilities.emplace(streetOut.id(),
-                                      std::make_pair(pStreetOut, probability));
+      transitionProbabilities.emplace_back(pStreetOut, probability);
       cumulativeProbability += probability;
     }
 
@@ -1240,8 +1225,9 @@ namespace dsf::mobility {
     std::uniform_int_distribution<Id> nodeDist{
         0, static_cast<Id>(this->graph().nNodes() - 1)};
     spdlog::debug("Processing {} agents", m_agents.size());
-    for (auto itAgent{m_agents.begin()}; itAgent != m_agents.end();) {
-      auto& pAgent{*itAgent};
+    // Agents leaving the list are moved out, leaving a null slot: the list is compacted once
+    // at the end instead of erasing (and shifting the tail) for each of them
+    for (auto& pAgent : m_agents) {
       if (!pAgent->srcNodeId().has_value()) {
         auto const nodeIndex{nodeDist(this->m_generator)};
         if (m_nodeIndices.size() == this->graph().nNodes()) {
@@ -1257,7 +1243,6 @@ namespace dsf::mobility {
       auto* pSourceNode{&this->graph().node(*(pAgent->srcNodeId()))};
       if (pSourceNode->isFull()) {
         spdlog::debug("Skipping {} due to full source {}", *pAgent, *pSourceNode);
-        ++itAgent;
         continue;
       }
       Street const* nextStreet{nullptr};
@@ -1267,8 +1252,7 @@ namespace dsf::mobility {
         if (nextStreet == nullptr) {
           spdlog::debug(
               "No next street found for agent {} at node {}", *pAgent, pSourceNode->id());
-          auto pAgentRemoved{this->m_removeAgent<false>(std::move(*itAgent))};
-          itAgent = m_agents.erase(itAgent);
+          this->m_removeAgent<false>(std::move(pAgent));
           continue;
         }
         pAgent->setNextStreetId(nextStreet->id());
@@ -1281,7 +1265,6 @@ namespace dsf::mobility {
       }
       spdlog::debug("Checking next street for {}", *pAgent);
       if (nextStreet->isFull()) {
-        ++itAgent;
         spdlog::debug("Skipping {} due to full input {}", *pAgent, *nextStreet);
         continue;
       }
@@ -1304,8 +1287,8 @@ namespace dsf::mobility {
             pAgent->id());
         this->m_removeAgent<false>(std::move(pAgent));
       }
-      itAgent = m_agents.erase(itAgent);
     }
+    std::erase(m_agents, nullptr);
     spdlog::debug("There are {} agents left in the list.", m_agents.size());
   }
 
@@ -2062,19 +2045,15 @@ namespace dsf::mobility {
           tbb::auto_partitioner{});
     });
     if (!m_agentsToReinsert.empty()) {
-      // Sort by id, so that the insertion order does not depend on thread scheduling
-      std::vector<std::unique_ptr<Agent>> agentsToReinsert;
-      agentsToReinsert.reserve(m_agentsToReinsert.size());
-      for (auto& pAgent : m_agentsToReinsert) {
-        agentsToReinsert.push_back(std::move(pAgent));
-      }
-      m_agentsToReinsert.clear();
-      std::sort(agentsToReinsert.begin(),
-                agentsToReinsert.end(),
+      // Sort by id, so that the insertion order does not depend on thread scheduling.
+      // Sorted in place: the parallel section is over, so nothing else is appending to it
+      std::sort(m_agentsToReinsert.begin(),
+                m_agentsToReinsert.end(),
                 [](auto const& lhs, auto const& rhs) { return lhs->id() < rhs->id(); });
-      for (auto& pAgent : agentsToReinsert) {
+      for (auto& pAgent : m_agentsToReinsert) {
         this->addAgent(std::move(pAgent));
       }
+      m_agentsToReinsert.clear();
     }
     spdlog::debug("Init evolving nodes at time {}", this->time_step());
     // Move transport capacity agents from each node
@@ -2232,11 +2211,13 @@ namespace dsf::mobility {
 
       // Distribute remaining ticks to phases with the largest fractional parts.
       Delay remainder = currentCycle - allocatedTotal;
+      // Only the first `remainder` phases of the ordering are used
       std::vector<std::size_t> order(nPhases);
       std::iota(order.begin(), order.end(), 0u);
-      std::sort(order.begin(), order.end(), [&](auto a, auto b) {
-        return fractionals[a] > fractionals[b];
-      });
+      std::ranges::partial_sort(order,
+                                order.begin() + std::min<std::size_t>(remainder, nPhases),
+                                std::ranges::greater{},
+                                [&fractionals](auto const i) { return fractionals[i]; });
       for (Delay r = 0; r < remainder; ++r)
         ++newDurations[order[r % nPhases]];
 
@@ -2366,42 +2347,28 @@ namespace dsf::mobility {
   }
 
   Measurement<double> FirstOrderDynamics::meanTravelTime(bool clearData) {
-    std::vector<double> travelTimes;
-    if (!m_travelDTs.empty()) {
-      travelTimes.reserve(m_travelDTs.size());
-      for (auto const& [distance, time] : m_travelDTs) {
-        travelTimes.push_back(time);
-      }
-      if (clearData) {
-        m_travelDTs.clear();
-      }
+    Measurement<double> const travelTimes{m_travelDTs | std::views::values};
+    if (clearData) {
+      m_travelDTs.clear();
     }
-    return Measurement<double>(travelTimes);
+    return travelTimes;
   }
   Measurement<double> FirstOrderDynamics::meanTravelDistance(bool clearData) {
-    if (m_travelDTs.empty()) {
-      return Measurement<double>();
-    }
-    std::vector<double> travelDistances;
-    travelDistances.reserve(m_travelDTs.size());
-    for (auto const& [distance, time] : m_travelDTs) {
-      travelDistances.push_back(distance);
-    }
+    Measurement<double> const travelDistances{m_travelDTs | std::views::keys};
     if (clearData) {
       m_travelDTs.clear();
     }
-    return Measurement<double>(travelDistances);
+    return travelDistances;
   }
   Measurement<double> FirstOrderDynamics::meanTravelSpeed(bool clearData) {
-    std::vector<double> travelSpeeds;
-    travelSpeeds.reserve(m_travelDTs.size());
-    for (auto const& [distance, time] : m_travelDTs) {
-      travelSpeeds.push_back(distance / time);
-    }
+    Measurement<double> const travelSpeeds{
+        m_travelDTs | std::views::transform([](auto const& travelDT) {
+          return travelDT.first / travelDT.second;
+        })};
     if (clearData) {
       m_travelDTs.clear();
     }
-    return Measurement<double>(travelSpeeds);
+    return travelSpeeds;
   }
   std::unordered_map<Id, std::unordered_map<Id, double>> const
   FirstOrderDynamics::normalizedTurnCounts() const noexcept {

@@ -1,5 +1,7 @@
 #include "Trajectory.hpp"
 
+#include <utility>
+
 #include <tbb/parallel_sort.h>
 
 namespace dsf::mdt {
@@ -46,7 +48,7 @@ namespace dsf::mdt {
       } else {
         // Distance exceeds threshold - finalize current cluster and start new one
         if (!currentCluster.empty()) {
-          clusterCandidates.push_back(currentCluster);
+          clusterCandidates.push_back(std::move(currentCluster));
         }
 
         // Start new cluster with current point
@@ -57,15 +59,15 @@ namespace dsf::mdt {
 
     // Handle the last cluster
     if (!currentCluster.empty()) {
-      clusterCandidates.push_back(currentCluster);
+      clusterCandidates.push_back(std::move(currentCluster));
     }
 
     // Apply speed filtering: only keep clusters with average speed below maxSpeed
     // Speed is computed from first to last point in the cluster
-    for (auto const& cluster : clusterCandidates) {
+    for (auto& cluster : clusterCandidates) {
       if (cluster.size() < 2) {
         // Single point cluster - always consider it a stop point (speed = 0)
-        m_points.push_back(cluster);
+        m_points.push_back(std::move(cluster));
         continue;
       }
       cluster.sort();
@@ -88,11 +90,11 @@ namespace dsf::mdt {
         // Only add clusters where average speed is below maxSpeed threshold
         // These represent stop points or slow-moving areas
         if (avgSpeedKPH < max_speed_kph) {
-          m_points.push_back(cluster);
+          m_points.push_back(std::move(cluster));
         }
       } else {
         // Duration is 0 - all points have same timestamp, treat as stopped
-        m_points.push_back(cluster);
+        m_points.push_back(std::move(cluster));
       }
     }
   }

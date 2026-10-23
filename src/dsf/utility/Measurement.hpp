@@ -1,7 +1,8 @@
 #pragma once
 
-#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <ranges>
 
 namespace dsf {
   /// @brief The Measurement struct represents the mean of a quantity and its standard deviation
@@ -20,19 +21,20 @@ namespace dsf {
     Measurement() = default;
     Measurement(T mean, T std, std::size_t n)
         : mean{mean}, std{std}, n{n}, is_valid{true} {}
-    template <typename TContainer>
-    Measurement(TContainer const& data) {
-      if (data.empty()) {
-        return;
-      }
-      n = data.size();
-      is_valid = true;
+    /// @brief Build the measurement from any input range (container, span or view) in a
+    /// single pass, so lazy views such as std::views::filter can be used directly
+    template <std::ranges::input_range TRange>
+    Measurement(TRange&& data) {
       auto x_mean = static_cast<T>(0), x2_mean = static_cast<T>(0);
-
-      std::for_each(data.begin(), data.end(), [&x_mean, &x2_mean](auto value) -> void {
+      for (auto const value : data) {
         x_mean += value;
         x2_mean += value * value;
-      });
+        ++n;
+      }
+      if (n == 0) {
+        return;
+      }
+      is_valid = true;
       mean = x_mean / n;
       auto const variance = x2_mean / n - mean * mean;
       std = variance > static_cast<T>(0) ? std::sqrt(variance) : static_cast<T>(0);

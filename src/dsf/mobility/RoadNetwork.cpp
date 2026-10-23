@@ -1174,10 +1174,7 @@ namespace dsf::mobility {
     } else {  // Custom attribute
       // Own the name: the caller's buffer (e.g. the JSON config parser) may not outlive the lambda
       m_weightFunction = [attribute = std::string{strv_weight}](Street const& street) {
-        auto it = std::find_if(
-            street.attributes().cbegin(),
-            street.attributes().cend(),
-            [&attribute](auto const& pair) { return pair.first == attribute; });
+        auto it = street.attributes().find(attribute);
         if (it == street.attributes().end()) {
           throw std::runtime_error(
               std::format("Attribute {} not found in street {}", attribute, street.id()));
