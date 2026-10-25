@@ -86,7 +86,7 @@ namespace dsf::mobility {
     std::size_t nTrafficLights() const;
 
     /// @brief Adjust the nodes' transport capacity
-    /// @details The nodes' capacity is adjusted using the graph's streets transport capacity, which may vary basing on the number of lanes. The node capacity will be set to the sum of the incoming streets' transport capacity.
+    /// @details The nodes' capacity is adjusted using the graph's streets transport capacity, which may vary basing on the number of lanes. The node capacity will be set to the sum of the incoming streets' transport capacity, the node transport capacity to the sum of the outgoing ones. An intersection (not a traffic light) with street priorities gets instead the sum over its main (priority) roads as transport capacity, so set the priorities before calling this method.
     void adjustNodeCapacities();
     /// @brief Auto-initialise traffic light phases from street geometry.
     /// @param mainRoadPercentage Fraction of the cycle time allocated to

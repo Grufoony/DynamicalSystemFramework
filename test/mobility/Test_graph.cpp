@@ -1158,6 +1158,14 @@ TEST_CASE("RoadNetwork") {
           CHECK_EQ(graph.node(4).transportCapacity(), 1);
         }
       }
+      WHEN("We set a main road on an intersection and adjust node capacities") {
+        dynamic_cast<Intersection&>(graph.node(1)).addStreetPriority(0);
+        graph.adjustNodeCapacities();
+        THEN("Its transport capacity is the number of lanes of the main road") {
+          CHECK_EQ(graph.node(1).capacity(), 4);
+          CHECK_EQ(graph.node(1).transportCapacity(), 1);
+        }
+      }
       WHEN("We normalize street capacities") {
         // graph.normalizeStreetCapacities();
         THEN("The street capacities are correct") {

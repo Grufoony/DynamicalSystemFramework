@@ -1163,6 +1163,21 @@ namespace dsf::mobility {
         pNode->setCapacity(value > 0. ? static_cast<std::size_t>(value)
                                       : static_cast<std::size_t>(1));
       }
+      // Agents from main roads enter an intersection first, so their lanes set its
+      // throughput. Traffic lights are regulated by their phases instead.
+      if (pNode->isIntersection() && !pNode->isTrafficLight()) {
+        auto const& streetPriorities{
+            static_cast<Intersection const&>(*pNode).streetPriorities()};
+        value = 0.;
+        for (auto const* pStreet : pNode->ingoingEdges()) {
+          if (streetPriorities.contains(pStreet->id())) {
+            value += pStreet->nLanes() * pStreet->transportCapacity();
+          }
+        }
+        if (value > 0.) {
+          pNode->setTransportCapacity(value);
+        }
+      }
     }
   }
 

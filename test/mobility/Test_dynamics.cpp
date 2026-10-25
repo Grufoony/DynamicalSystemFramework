@@ -2370,6 +2370,23 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
         }
       }
+      WHEN("Two agents queue on the same lane and the intersection keeps the first") {
+        // A negligible transport capacity keeps the agents in the intersection
+        nodeO.setTransportCapacity(1e-9);
+        dynamics.addAgent(dynamics.itineraries().at(2), 20);
+        dynamics.addAgent(dynamics.itineraries().at(2), 20);
+        for (auto i{0}; i < 5; ++i) {
+          dynamics.evolve();
+        }
+        THEN(
+            "The second agent waits on the street, although the intersection is not "
+            "full") {
+          CHECK_FALSE(nodeO.isFull());
+          CHECK_EQ(nodeO.agents().size(), 1);
+          CHECK(nodeO.isLaneOccupied(20, 0));
+          CHECK_EQ(dynamics.graph().edge(20).nExitingAgents(), 1);
+        }
+      }
     }
   }
   SUBCASE("Transition probabilities") {
