@@ -4,6 +4,7 @@
 #include <format>
 #include <limits>
 #include <string>
+#include <string_view>
 
 namespace dsf::geometry {
   class Point {
@@ -20,7 +21,7 @@ namespace dsf::geometry {
     /// @param strPoint The string representation of the point.
     /// @param format The format of the string representation. Default is "WKT".
     /// @throws std::invalid_argument if the format is not supported or the string is invalid.
-    Point(std::string const& strPoint, std::string const& format = "WKT");
+    Point(std::string const& strPoint, std::string_view const format = "WKT");
     /// @brief Equality operator for Point
     inline bool operator==(const Point& other) const {
       return std::abs(m_x - other.m_x) < std::numeric_limits<double>::epsilon() &&

@@ -121,13 +121,10 @@ namespace dsf::mobility {
         std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
             conditionalODs;
         conditionalODs.reserve(nEdges);
-        std::for_each(this->graph().edges().begin(),
-                      this->graph().edges().end(),
-                      [&](auto const& edgePair) {
-                        conditionalODs.emplace(
-                            edgePair.first,
-                            std::make_tuple(0., std::vector<std::tuple<Id, double>>{}));
-                      });
+        for (auto const edgeId : this->graph().edges() | std::views::keys) {
+          conditionalODs.emplace(
+              edgeId, std::make_tuple(0., std::vector<std::tuple<Id, double>>{}));
+        }
         for (auto const& row : reader) {
           auto const originNodeId = row["origin_id"].get<Id>();
           auto const originEdgeId =
@@ -402,8 +399,7 @@ namespace dsf::mobility {
     while (nAgents--) {
       auto randValue = uniformDist(this->m_generator);
       auto selectedOdIdx = static_cast<std::size_t>(
-          std::lower_bound(
-              m_ODCumulativeWeights.cbegin(), m_ODCumulativeWeights.cend(), randValue) -
+          std::ranges::lower_bound(m_ODCumulativeWeights, randValue) -
           m_ODCumulativeWeights.cbegin());
       if (selectedOdIdx >= m_ODs.size()) {
         selectedOdIdx = m_ODs.size() - 1;
@@ -857,7 +853,7 @@ namespace dsf::mobility {
         continue;
       }
       // If all weights are the same, make the last 0
-      if (std::all_of(weights.begin(), weights.end(), [&](double w) {
+      if (std::ranges::all_of(weights, [&](double w) {
             return std::abs(w - weights.front()) < std::numeric_limits<double>::epsilon();
           })) {
         weights.back() = 0.;
@@ -1363,15 +1359,14 @@ namespace dsf::mobility {
           std::format("The sum of the weights ({}) must be positive", sumWeights));
     }
     if (sumWeights == 1.) {
-      std::copy(origins.begin(), origins.end(), std::back_inserter(m_origins));
+      std::ranges::copy(origins, std::back_inserter(m_origins));
       return;
     }
-    std::transform(origins.begin(),
-                   origins.end(),
-                   std::back_inserter(m_origins),
-                   [sumWeights](auto const& pair) -> std::pair<Id, double> {
-                     return {pair.first, pair.second / sumWeights};
-                   });
+    std::ranges::transform(origins,
+                           std::back_inserter(m_origins),
+                           [sumWeights](auto const& pair) -> std::pair<Id, double> {
+                             return {pair.first, pair.second / sumWeights};
+                           });
   }
   void FirstOrderDynamics::setDestinations(
       std::unordered_map<Id, double> const& destinations) {
@@ -1379,27 +1374,23 @@ namespace dsf::mobility {
     m_destinations.clear();
     m_destinations.reserve(destinations.size());
     double sumWeights{0.};
-    std::for_each(destinations.begin(),
-                  destinations.end(),
-                  [this, &sumWeights](auto const& pair) -> void {
-                    sumWeights += pair.second;
-                    this->addItinerary(pair.first, pair.first);
-                  });
+    for (auto const& [destinationId, weight] : destinations) {
+      sumWeights += weight;
+      this->addItinerary(destinationId, destinationId);
+    }
     if (sumWeights <= 0.) {
       throw std::invalid_argument(
           std::format("The sum of the weights ({}) must be positive", sumWeights));
     }
     if (sumWeights == 1.) {
-      std::copy(
-          destinations.begin(), destinations.end(), std::back_inserter(m_destinations));
+      std::ranges::copy(destinations, std::back_inserter(m_destinations));
       return;
     }
-    std::transform(destinations.begin(),
-                   destinations.end(),
-                   std::back_inserter(m_destinations),
-                   [sumWeights](auto const& pair) -> std::pair<Id, double> {
-                     return {pair.first, pair.second / sumWeights};
-                   });
+    std::ranges::transform(destinations,
+                           std::back_inserter(m_destinations),
+                           [sumWeights](auto const& pair) -> std::pair<Id, double> {
+                             return {pair.first, pair.second / sumWeights};
+                           });
   }
   void FirstOrderDynamics::importODsFromCSV(std::string_view const fileName,
                                             char const separator,
@@ -1639,12 +1630,10 @@ namespace dsf::mobility {
     }
     m_destinations.reserve(N);
     double const UNIFORM_WEIGHT{1. / N};
-    std::for_each(destinations.begin(),
-                  destinations.end(),
-                  [this, UNIFORM_WEIGHT](auto const& id) -> void {
-                    this->m_destinations.push_back({id, UNIFORM_WEIGHT});
-                    this->addItinerary(id, id);
-                  });
+    for (auto const& id : destinations) {
+      m_destinations.push_back({id, UNIFORM_WEIGHT});
+      this->addItinerary(id, id);
+    }
   }
   void FirstOrderDynamics::setODs(std::vector<std::tuple<Id, Id, double>> const& ODs) {
     m_ODs.clear();
@@ -1663,17 +1652,14 @@ namespace dsf::mobility {
           std::format("The sum of the weights ({}) must be positive", sumWeights));
     }
     if (sumWeights == 1.) {
-      std::copy(ODs.begin(), ODs.end(), std::back_inserter(m_ODs));
+      std::ranges::copy(ODs, std::back_inserter(m_ODs));
     } else {
       // Copy but divide by weights sum
-      std::transform(ODs.begin(),
-                     ODs.end(),
-                     std::back_inserter(m_ODs),
-                     [sumWeights](auto const& tuple) {
-                       return std::make_tuple(std::get<0>(tuple),
-                                              std::get<1>(tuple),
-                                              std::get<2>(tuple) / sumWeights);
-                     });
+      std::ranges::transform(
+          ODs, std::back_inserter(m_ODs), [sumWeights](auto const& tuple) {
+            return std::make_tuple(
+                std::get<0>(tuple), std::get<1>(tuple), std::get<2>(tuple) / sumWeights);
+          });
     }
   }
   void FirstOrderDynamics::setConditionalODs(
@@ -2047,9 +2033,7 @@ namespace dsf::mobility {
     if (!m_agentsToReinsert.empty()) {
       // Sort by id, so that the insertion order does not depend on thread scheduling.
       // Sorted in place: the parallel section is over, so nothing else is appending to it
-      std::sort(m_agentsToReinsert.begin(),
-                m_agentsToReinsert.end(),
-                [](auto const& lhs, auto const& rhs) { return lhs->id() < rhs->id(); });
+      std::ranges::sort(m_agentsToReinsert, {}, &Agent::id);
       for (auto& pAgent : m_agentsToReinsert) {
         this->addAgent(std::move(pAgent));
       }
@@ -2234,9 +2218,9 @@ namespace dsf::mobility {
         if (extraTicksNeeded > 0) {
           std::vector<std::size_t> donors(nPhases);
           std::iota(donors.begin(), donors.end(), 0u);
-          std::sort(donors.begin(), donors.end(), [&](auto a, auto b) {
-            return newDurations[a] > newDurations[b];
-          });
+          std::ranges::sort(donors,
+                            std::ranges::greater{},
+                            [&newDurations](auto const i) { return newDurations[i]; });
           for (auto idx : donors) {
             while (extraTicksNeeded > 0 && newDurations[idx] > Delay{1}) {
               --newDurations[idx];
@@ -2307,9 +2291,8 @@ namespace dsf::mobility {
                                                          densities.end());
 
       // Sort by density descending
-      std::sort(sortedDensities.begin(),
-                sortedDensities.end(),
-                [](auto const& a, auto const& b) { return a.second > b.second; });
+      std::ranges::sort(
+          sortedDensities, std::ranges::greater{}, &std::pair<Id, double>::second);
       std::unordered_set<Id> optimizedNodes;
 
       for (auto const& [nodeId, density] : sortedDensities) {
@@ -2374,10 +2357,9 @@ namespace dsf::mobility {
   FirstOrderDynamics::normalizedTurnCounts() const noexcept {
     std::unordered_map<Id, std::unordered_map<Id, double>> normalizedTurnCounts;
     for (auto const& [fromId, map] : m_turnCounts) {
-      auto const sum{
-          std::accumulate(map.begin(), map.end(), 0., [](auto const sum, auto const& p) {
-            return sum + static_cast<double>(p.second);
-          })};
+      auto const counts{map | std::views::values};
+      auto const sum{static_cast<double>(
+          std::accumulate(counts.begin(), counts.end(), std::size_t{0}))};
       for (auto const& [toId, count] : map) {
         normalizedTurnCounts[fromId][toId] =
             sum == 0. ? 0. : static_cast<double>(count) / sum;
