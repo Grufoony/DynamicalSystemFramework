@@ -1,6 +1,7 @@
 #include "RoadNetwork.hpp"
 #include "../geometry/Point.hpp"
 #include "../geometry/PolyLine.hpp"
+#include "../utility/string_utils.hpp"
 
 #include <algorithm>
 #include <array>
@@ -31,6 +32,11 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "lane_mapping",
                                      "geometry"});
 
+static bool isDefaultEdgeAttribute(std::string_view const attribute) {
+  return std::ranges::find(EDGE_DEFAULT_ATTRIBUTES, attribute) !=
+         EDGE_DEFAULT_ATTRIBUTES.end();
+}
+
 namespace dsf::mobility {
   void RoadNetwork::m_updateMaxAgentCapacity() {
     m_capacity = 0;
@@ -49,39 +55,28 @@ namespace dsf::mobility {
     // Create a vector of attributes not in EDGE_DEFAULT_ATTRIBUTES
     std::vector<std::string_view> additionalAttributes;
     for (auto const& colName : colNames) {
-      if (std::find(EDGE_DEFAULT_ATTRIBUTES.begin(),
-                    EDGE_DEFAULT_ATTRIBUTES.end(),
-                    colName) == EDGE_DEFAULT_ATTRIBUTES.end()) {
+      if (!isDefaultEdgeAttribute(colName)) {
         additionalAttributes.push_back(colName);
       }
     }
-    bool const bHasGeometry =
-        (std::find(colNames.begin(), colNames.end(), "geometry") != colNames.end());
+    auto const hasColumn = [&colNames](std::string_view const colName) {
+      return std::ranges::find(colNames, colName) != colNames.end();
+    };
+    bool const bHasGeometry = hasColumn("geometry");
     if (!bHasGeometry) {
       spdlog::warn(
           "No geometry column found in the CSV file. Streets will be imported without "
           "geometry.");
     }
-    bool const bHasLanes =
-        (std::find(colNames.begin(), colNames.end(), "nlanes") != colNames.end());
-    bool const bHasCoilcode =
-        (std::find(colNames.begin(), colNames.end(), "coilcode") != colNames.end());
-    bool const bHasPriority =
-        (std::find(colNames.begin(), colNames.end(), "priority") != colNames.end());
-    bool const bHasCapacity =
-        (std::find(colNames.begin(), colNames.end(), "capacity") != colNames.end());
-    bool const bHasTransportCapacity =
-        (std::find(colNames.begin(), colNames.end(), "transport_capacity") !=
-         colNames.end());
-    bool const bHasStatus =
-        (std::find(colNames.begin(), colNames.end(), "status") != colNames.end());
-    bool const bHasForbiddenTurns =
-        (std::find(colNames.begin(), colNames.end(), "forbidden_turns") !=
-         colNames.end());
-    bool const bHasMobilityClass =
-        (std::find(colNames.begin(), colNames.end(), "mobility_class") != colNames.end());
-    bool const bHasLaneMapping =
-        (std::find(colNames.begin(), colNames.end(), "lane_mapping") != colNames.end());
+    bool const bHasLanes = hasColumn("nlanes");
+    bool const bHasCoilcode = hasColumn("coilcode");
+    bool const bHasPriority = hasColumn("priority");
+    bool const bHasCapacity = hasColumn("capacity");
+    bool const bHasTransportCapacity = hasColumn("transport_capacity");
+    bool const bHasStatus = hasColumn("status");
+    bool const bHasForbiddenTurns = hasColumn("forbidden_turns");
+    bool const bHasMobilityClass = hasColumn("mobility_class");
+    bool const bHasLaneMapping = hasColumn("lane_mapping");
 
     for (auto& row : reader) {
       auto const sourceId = row["source"].get<Id>();
@@ -130,10 +125,7 @@ namespace dsf::mobility {
                 polyline);
 
       if (!strType.empty() && !bHasMobilityClass) {
-        std::transform(
-            strType.begin(), strType.end(), strType.begin(), [](unsigned char c) {
-              return std::tolower(c);
-            });
+        to_lower(strType);
         if (strType.find("motorway") != std::string::npos) {
           edge(streetId).setMobilityClass(128u);
         } else if (strType.find("primary") != std::string::npos) {
@@ -159,11 +151,7 @@ namespace dsf::mobility {
 
       if (bHasCoilcode) {
         auto strCoilCode = row["coilcode"].get<std::string>();
-        // Make this lowercase
-        std::transform(strCoilCode.begin(),
-                       strCoilCode.end(),
-                       strCoilCode.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
+        to_lower(strCoilCode);
         // Do not warn if the coilcode contains null or nan
         if (!strCoilCode.empty() && strCoilCode != "null" && strCoilCode != "nan") {
           addCoil(streetId, strCoilCode);
@@ -184,10 +172,7 @@ namespace dsf::mobility {
       if (bHasStatus) {
         try {
           auto statusStr = row["status"].get<std::string>();
-          std::transform(
-              statusStr.begin(), statusStr.end(), statusStr.begin(), [](unsigned char c) {
-                return std::tolower(c);
-              });
+          to_lower(statusStr);
           if (statusStr == "closed") {
             edge(streetId).setStatus(RoadStatus::CLOSED);
           } else if (statusStr == "open" || statusStr.empty()) {
@@ -221,9 +206,9 @@ namespace dsf::mobility {
         // Expect a string of the form [edgeId1, edgeId2, ...]
         try {
           auto forbiddenTurnsStr = row["forbidden_turns"].get<std::string>();
-          std::replace(forbiddenTurnsStr.begin(), forbiddenTurnsStr.end(), '[', ' ');
-          std::replace(forbiddenTurnsStr.begin(), forbiddenTurnsStr.end(), ']', ' ');
-          std::replace(forbiddenTurnsStr.begin(), forbiddenTurnsStr.end(), ',', ' ');
+          std::ranges::replace(forbiddenTurnsStr, '[', ' ');
+          std::ranges::replace(forbiddenTurnsStr, ']', ' ');
+          std::ranges::replace(forbiddenTurnsStr, ',', ' ');
 
           std::set<Id> forbiddenTurnsSet;
 
@@ -245,17 +230,15 @@ namespace dsf::mobility {
         // Expect a string of the form [straight, left, right, ...]
         try {
           auto laneMappingStr = row["lane_mapping"].get<std::string>();
-          std::replace(laneMappingStr.begin(), laneMappingStr.end(), '[', ' ');
-          std::replace(laneMappingStr.begin(), laneMappingStr.end(), ']', ' ');
-          std::replace(laneMappingStr.begin(), laneMappingStr.end(), ',', ' ');
+          std::ranges::replace(laneMappingStr, '[', ' ');
+          std::ranges::replace(laneMappingStr, ']', ' ');
+          std::ranges::replace(laneMappingStr, ',', ' ');
 
           std::vector<Direction> laneMappingVec;
           std::stringstream ss(laneMappingStr);
           std::string lane;
           while (ss >> lane) {
-            std::transform(lane.begin(), lane.end(), lane.begin(), [](unsigned char c) {
-              return std::tolower(c);
-            });
+            to_lower(lane);
             // Check if "straight" is substring of lane
             if (lane.find("straight") != std::string::npos) {
               if (lane.find("left") != std::string::npos) {
@@ -274,7 +257,7 @@ namespace dsf::mobility {
             }
           }
           if (!laneMappingVec.empty()) {
-            std::sort(laneMappingVec.begin(), laneMappingVec.end());
+            std::ranges::sort(laneMappingVec);
             auto& e = edge(streetId);
             if (e.nLanes() != static_cast<int>(laneMappingVec.size())) {
               e.changeNLanes(static_cast<int>(laneMappingVec.size()));
@@ -351,10 +334,7 @@ namespace dsf::mobility {
         continue;
       }
       auto strType = row["type"].get<std::string>();
-      std::transform(
-          strType.begin(), strType.end(), strType.begin(), [](unsigned char c) {
-            return std::tolower(c);
-          });
+      to_lower(strType);
       if (strType.find("traffic_signals") != std::string::npos) {
         makeTrafficLight(nodeId);
       } else if (strType.find("roundabout") != std::string::npos) {
@@ -499,10 +479,7 @@ namespace dsf::mobility {
           edge(edge_id).setMobilityClass(0u);
         }
       } else if (!strType.empty()) {
-        std::transform(
-            strType.begin(), strType.end(), strType.begin(), [](unsigned char c) {
-              return std::tolower(c);
-            });
+        to_lower(strType);
         if (strType.find("motorway") != std::string::npos) {
           edge(edge_id).setMobilityClass(128u);
         } else if (strType.find("primary") != std::string::npos) {
@@ -580,10 +557,7 @@ namespace dsf::mobility {
           for (auto const lane : laneMappingArray) {
             if (lane.is_string()) {
               std::string laneStr{lane.get_string().value()};
-              std::transform(
-                  laneStr.begin(), laneStr.end(), laneStr.begin(), [](unsigned char c) {
-                    return std::tolower(c);
-                  });
+              to_lower(laneStr);
               if (laneStr.find("straight") != std::string::npos) {
                 if (laneStr.find("left") != std::string::npos) {
                   laneMappingVec.push_back(Direction::LEFTANDSTRAIGHT);
@@ -607,7 +581,7 @@ namespace dsf::mobility {
             }
           }
           if (!laneMappingVec.empty()) {
-            std::sort(laneMappingVec.begin(), laneMappingVec.end());
+            std::ranges::sort(laneMappingVec);
             edge(edge_id).setLaneMapping(laneMappingVec);
           }
         } else {
@@ -635,9 +609,7 @@ namespace dsf::mobility {
       }
       // Handle additional attributes
       for (auto const& [attrName, attrValue] : edge_properties.get_object()) {
-        if (std::find(EDGE_DEFAULT_ATTRIBUTES.begin(),
-                      EDGE_DEFAULT_ATTRIBUTES.end(),
-                      attrName) != EDGE_DEFAULT_ATTRIBUTES.end()) {
+        if (isDefaultEdgeAttribute(attrName)) {
           continue;  // Skip default attributes
         }
         auto const strAttrName{std::string(attrName)};
@@ -668,25 +640,20 @@ namespace dsf::mobility {
   RoadNetwork::RoadNetwork() { this->setEdgeWeight("traveltime"); }
 
   std::size_t RoadNetwork::nCoils() const {
-    return std::count_if(m_edges.cbegin(), m_edges.cend(), [](auto const& pair) {
-      return pair.second->hasCoil();
-    });
+    return std::ranges::count_if(m_edges | std::views::values, &Street::hasCoil);
   }
 
   std::size_t RoadNetwork::nIntersections() const {
-    return std::count_if(m_nodes.cbegin(), m_nodes.cend(), [](auto const& pair) {
-      return pair.second->isIntersection();
-    });
+    return std::ranges::count_if(m_nodes | std::views::values,
+                                 &RoadJunction::isIntersection);
   }
   std::size_t RoadNetwork::nRoundabouts() const {
-    return std::count_if(m_nodes.cbegin(), m_nodes.cend(), [](auto const& pair) {
-      return pair.second->isRoundabout();
-    });
+    return std::ranges::count_if(m_nodes | std::views::values,
+                                 &RoadJunction::isRoundabout);
   }
   std::size_t RoadNetwork::nTrafficLights() const {
-    return std::count_if(m_nodes.cbegin(), m_nodes.cend(), [](auto const& pair) {
-      return pair.second->isTrafficLight();
-    });
+    return std::ranges::count_if(m_nodes | std::views::values,
+                                 &RoadJunction::isTrafficLight);
   }
 
   void RoadNetwork::autoInitTrafficLights(const double mainRoadPercentage,
@@ -799,13 +766,9 @@ namespace dsf::mobility {
             /*************************************************************
              * 3. Check for streets with opposite angles
              * ***********************************************************/
-            std::vector<std::pair<Id, double>> sortedAngles;
-            std::copy(streetAngles.begin(),
-                      streetAngles.end(),
-                      std::back_inserter(sortedAngles));
-            std::sort(sortedAngles.begin(),
-                      sortedAngles.end(),
-                      [](auto const& a, auto const& b) { return a.second < b.second; });
+            std::vector<std::pair<Id, double>> sortedAngles(streetAngles.cbegin(),
+                                                            streetAngles.cend());
+            std::ranges::sort(sortedAngles, {}, &std::pair<Id, double>::second);
 
             // Iterate the *sorted* sequence: streetAngles is unordered, so its
             // begin() would hand back an arbitrary street.
@@ -834,14 +797,11 @@ namespace dsf::mobility {
             }
             std::vector<Id> byCapacity;
             byCapacity.reserve(capacities.size());
-            for (auto const& [streetId, capacity] : capacities) {
-              byCapacity.push_back(streetId);
-            }
-            std::sort(byCapacity.begin(),
-                      byCapacity.end(),
-                      [&capacities](Id const a, Id const b) {
-                        return capacities.at(a) > capacities.at(b);
-                      });
+            std::ranges::copy(capacities | std::views::keys,
+                              std::back_inserter(byCapacity));
+            std::ranges::sort(byCapacity,
+                              std::ranges::greater{},
+                              [&capacities](Id const id) { return capacities.at(id); });
             tl.setStreetPriorities({});
             tl.addStreetPriority(byCapacity[0]);
             tl.addStreetPriority(byCapacity[2]);
@@ -856,20 +816,19 @@ namespace dsf::mobility {
           TrafficLightPhase priorityPhase{mainGreenTime};
           TrafficLightPhase nonPriorityPhase{secondaryGreenTime};
 
-          std::for_each(
-              inNeighbours.begin(), inNeighbours.end(), [&](auto const* pStreet) {
-                auto const streetId{pStreet->id()};
-                auto const nLane{nLanes.at(streetId)};
-                bool const isPriority{tl.streetPriorities().contains(streetId)};
-                auto& targetPhase{isPriority ? priorityPhase : nonPriorityPhase};
+          for (auto const* pStreet : inNeighbours) {
+            auto const streetId{pStreet->id()};
+            auto const nLane{nLanes.at(streetId)};
+            bool const isPriority{tl.streetPriorities().contains(streetId)};
+            auto& targetPhase{isPriority ? priorityPhase : nonPriorityPhase};
 
-                spdlog::debug("Adding street {} to {} phase (nLanes={})",
-                              streetId,
-                              isPriority ? "priority" : "non-priority",
-                              nLane);
+            spdlog::debug("Adding street {} to {} phase (nLanes={})",
+                          streetId,
+                          isPriority ? "priority" : "non-priority",
+                          nLane);
 
-                targetPhase.addGreen(streetId);  // Direction::ANY
-              });
+            targetPhase.addGreen(streetId);  // Direction::ANY
+          }
 
           tl.setPhases({priorityPhase, nonPriorityPhase});
         });
@@ -878,9 +837,7 @@ namespace dsf::mobility {
     spdlog::warn(
         "NOTE: this function is still experimental and may not work correctly on real "
         "road networks. Use with caution.");
-    auto const& nodes = this->nodes();
-    std::for_each(nodes.cbegin(), nodes.cend(), [this](auto const& pair) {
-      auto const& pNode{pair.second};
+    for (auto const& [_, pNode] : this->nodes()) {
       auto const& inNeighbours{pNode->ingoingEdges()};
       auto const& outNeighbours{pNode->outgoingEdges()};
       double maxEstimatedFlow{0.0};
@@ -892,209 +849,191 @@ namespace dsf::mobility {
         auto const estFlow{pStreet->maxSpeed() * pStreet->nLanes()};
         maxEstimatedFlow = std::max(maxEstimatedFlow, estFlow);
       }
-      std::for_each(
-          inNeighbours.begin(),
-          inNeighbours.end(),
-          [this, &pNode, &outNeighbours, &maxEstimatedFlow](auto* pInStreet) {
-            auto const nLanes{pInStreet->nLanes()};
-            if (nLanes == 1) {
-              return;
+      for (auto* pInStreet : inNeighbours) {
+        auto const nLanes{pInStreet->nLanes()};
+        if (nLanes == 1) {
+          continue;
+        }
+        std::multiset<Direction> allowedTurns;
+        for (auto const* pOutStreet : outNeighbours) {
+          if (pOutStreet->target() == pInStreet->source() ||
+              pInStreet->forbiddenTurns().contains(pOutStreet->id())) {
+            continue;
+          }
+          auto const deltaAngle{pOutStreet->deltaAngle(pInStreet->angle())};
+          auto const& outOppositeStreet{
+              this->street(pOutStreet->target()->id(), pOutStreet->source()->id())};
+          if (!outOppositeStreet) {
+            continue;
+          }
+          // Actually going straight means remain on the same road, thus...
+          auto const inEstFlow{pInStreet->maxSpeed() * pInStreet->nLanes()};
+          auto const outEstFlow{outOppositeStreet->maxSpeed() *
+                                outOppositeStreet->nLanes()};
+          if (((inEstFlow == maxEstimatedFlow) == (outEstFlow == maxEstimatedFlow)) &&
+              !allowedTurns.contains(Direction::STRAIGHT)) {
+            spdlog::debug("Street {} prioritized STRAIGHT", pInStreet->id());
+            if (allowedTurns.contains(Direction::STRAIGHT) &&
+                !allowedTurns.contains(Direction::RIGHT)) {
+              allowedTurns.emplace(Direction::RIGHT);
+            } else {
+              allowedTurns.emplace(Direction::STRAIGHT);
             }
-            std::multiset<Direction> allowedTurns;
-            std::for_each(
-                outNeighbours.begin(),
-                outNeighbours.end(),
-                [this, &pInStreet, &allowedTurns, &maxEstimatedFlow](
-                    auto const* pOutStreet) {
-                  if (pOutStreet->target() == pInStreet->source() ||
-                      pInStreet->forbiddenTurns().contains(pOutStreet->id())) {
-                    return;
-                  }
-                  auto const deltaAngle{pOutStreet->deltaAngle(pInStreet->angle())};
-                  auto const& outOppositeStreet{this->street(pOutStreet->target()->id(),
-                                                             pOutStreet->source()->id())};
-                  if (!outOppositeStreet) {
-                    return;
-                  }
-                  // Actually going straight means remain on the same road, thus...
-                  auto const inEstFlow{pInStreet->maxSpeed() * pInStreet->nLanes()};
-                  auto const outEstFlow{outOppositeStreet->maxSpeed() *
-                                        outOppositeStreet->nLanes()};
-                  if (((inEstFlow == maxEstimatedFlow) ==
-                       (outEstFlow == maxEstimatedFlow)) &&
-                      !allowedTurns.contains(Direction::STRAIGHT)) {
-                    spdlog::debug("Street {} prioritized STRAIGHT", pInStreet->id());
-                    if (allowedTurns.contains(Direction::STRAIGHT) &&
-                        !allowedTurns.contains(Direction::RIGHT)) {
-                      allowedTurns.emplace(Direction::RIGHT);
-                    } else {
-                      allowedTurns.emplace(Direction::STRAIGHT);
-                    }
-                    // if (!allowedTurns.contains(Direction::STRAIGHT)) {
-                    // allowedTurns.emplace(Direction::STRAIGHT);
-                    // return;
-                    // }
-                  } else if (std::abs(deltaAngle) < std::numbers::pi) {
-                    // Logger::debug(std::format("Angle in {} - angle out {}",
-                    //                           pInStreet->angle(),
-                    //                           pOutStreet->angle()));
-                    // Logger::debug(std::format("Delta: {}", deltaAngle));
-                    if (std::abs(deltaAngle) < std::numbers::pi / 8) {
-                      spdlog::debug("{} can turn STRAIGHT", *pInStreet);
-                      allowedTurns.emplace(Direction::STRAIGHT);
-                    } else if (deltaAngle < 0.) {
-                      spdlog::debug("{} can turn RIGHT", *pInStreet);
-                      allowedTurns.emplace(Direction::RIGHT);
-                    } else if (deltaAngle > 0.) {
-                      spdlog::debug("{} can turn LEFT", *pInStreet);
-                      allowedTurns.emplace(Direction::LEFT);
-                    }
-                  }
-                });
-            while (allowedTurns.size() < static_cast<size_t>(nLanes)) {
-              if (allowedTurns.contains(Direction::STRAIGHT)) {
-                allowedTurns.emplace(Direction::STRAIGHT);
-              } else if (allowedTurns.contains(Direction::RIGHT)) {
-                allowedTurns.emplace(Direction::RIGHT);
-              } else if (allowedTurns.contains(Direction::LEFT)) {
-                allowedTurns.emplace(Direction::LEFT);
-              } else {
-                allowedTurns.emplace(Direction::ANY);
+            // if (!allowedTurns.contains(Direction::STRAIGHT)) {
+            // allowedTurns.emplace(Direction::STRAIGHT);
+            // return;
+            // }
+          } else if (std::abs(deltaAngle) < std::numbers::pi) {
+            // Logger::debug(std::format("Angle in {} - angle out {}",
+            //                           pInStreet->angle(),
+            //                           pOutStreet->angle()));
+            // Logger::debug(std::format("Delta: {}", deltaAngle));
+            if (std::abs(deltaAngle) < std::numbers::pi / 8) {
+              spdlog::debug("{} can turn STRAIGHT", *pInStreet);
+              allowedTurns.emplace(Direction::STRAIGHT);
+            } else if (deltaAngle < 0.) {
+              spdlog::debug("{} can turn RIGHT", *pInStreet);
+              allowedTurns.emplace(Direction::RIGHT);
+            } else if (deltaAngle > 0.) {
+              spdlog::debug("{} can turn LEFT", *pInStreet);
+              allowedTurns.emplace(Direction::LEFT);
+            }
+          }
+        }
+        while (allowedTurns.size() < static_cast<size_t>(nLanes)) {
+          if (allowedTurns.contains(Direction::STRAIGHT)) {
+            allowedTurns.emplace(Direction::STRAIGHT);
+          } else if (allowedTurns.contains(Direction::RIGHT)) {
+            allowedTurns.emplace(Direction::RIGHT);
+          } else if (allowedTurns.contains(Direction::LEFT)) {
+            allowedTurns.emplace(Direction::LEFT);
+          } else {
+            allowedTurns.emplace(Direction::ANY);
+          }
+        }
+        // If allowedTurns contains all RIGHT, STRAIGHT and LEFT, transform RIGHT into RIGHTANDSTRAIGHT
+        if (allowedTurns.size() > static_cast<size_t>(nLanes)) {
+          if (pNode->isTrafficLight()) {
+            auto& tl = static_cast<TrafficLight&>(*pNode);
+            // Collect all directions configured for this street across all phases.
+            std::unordered_set<Direction> tlDirs;
+            for (auto const& phase : tl.phases()) {
+              auto const streetIt = phase.greenSet().find(pInStreet->id());
+              if (streetIt == phase.greenSet().end())
+                continue;
+              for (auto const dir : streetIt->second)
+                tlDirs.insert(dir);
+            }
+            if (!tlDirs.empty()) {
+              if (tlDirs.size() == static_cast<std::size_t>(nLanes)) {
+                // Phase directions match lane count — use them directly.
+                spdlog::debug("Using {} phase directions for {}", tl, *pInStreet);
+                allowedTurns.clear();
+                for (auto const dir : tlDirs)
+                  allowedTurns.emplace(dir);
+              } else if (tlDirs.contains(Direction::LEFTANDSTRAIGHT)) {
+                allowedTurns.erase(Direction::LEFT);
+                allowedTurns.erase(Direction::STRAIGHT);
+                allowedTurns.emplace(Direction::LEFTANDSTRAIGHT);
+              } else if (tlDirs.contains(Direction::RIGHTANDSTRAIGHT)) {
+                allowedTurns.erase(Direction::RIGHT);
+                allowedTurns.erase(Direction::STRAIGHT);
+                allowedTurns.emplace(Direction::RIGHTANDSTRAIGHT);
               }
             }
-            // If allowedTurns contains all RIGHT, STRAIGHT and LEFT, transform RIGHT into RIGHTANDSTRAIGHT
-            if (allowedTurns.size() > static_cast<size_t>(nLanes)) {
+          }
+        }
+        if (allowedTurns.size() > static_cast<size_t>(nLanes)) {
+          // if one is duplicate, remove it
+          std::set<Direction> const uniqueDirections{allowedTurns.cbegin(),
+                                                     allowedTurns.cend()};
+          allowedTurns = {uniqueDirections.cbegin(), uniqueDirections.cend()};
+        }
+        while (allowedTurns.size() < static_cast<size_t>(nLanes)) {
+          if (allowedTurns.contains(Direction::STRAIGHT)) {
+            allowedTurns.emplace(Direction::STRAIGHT);
+          } else if (allowedTurns.contains(Direction::RIGHT)) {
+            allowedTurns.emplace(Direction::RIGHT);
+          } else if (allowedTurns.contains(Direction::LEFT)) {
+            allowedTurns.emplace(Direction::LEFT);
+          } else {
+            allowedTurns.emplace(Direction::ANY);
+          }
+        }
+        switch (nLanes) {
+          case 1:
+            // Leaving Direction::ANY for one lane streets is the less painful option
+            break;
+          case 2:
+            if (allowedTurns.contains(Direction::STRAIGHT) &&
+                allowedTurns.contains(Direction::RIGHT) &&
+                allowedTurns.contains(Direction::LEFT)) {
               if (pNode->isTrafficLight()) {
                 auto& tl = static_cast<TrafficLight&>(*pNode);
-                // Collect all directions configured for this street across all phases.
-                std::unordered_set<Direction> tlDirs;
+                // Check if any phase configures LEFTANDSTRAIGHT+RIGHT for this street.
+                bool hasLeftAndStraight{false}, hasRight{false};
                 for (auto const& phase : tl.phases()) {
                   auto const streetIt = phase.greenSet().find(pInStreet->id());
                   if (streetIt == phase.greenSet().end())
                     continue;
-                  for (auto const dir : streetIt->second)
-                    tlDirs.insert(dir);
+                  hasLeftAndStraight |=
+                      streetIt->second.contains(Direction::LEFTANDSTRAIGHT);
+                  hasRight |= streetIt->second.contains(Direction::RIGHT);
                 }
-                if (!tlDirs.empty()) {
-                  if (tlDirs.size() == static_cast<std::size_t>(nLanes)) {
-                    // Phase directions match lane count — use them directly.
-                    spdlog::debug("Using {} phase directions for {}", tl, *pInStreet);
-                    allowedTurns.clear();
-                    for (auto const dir : tlDirs)
-                      allowedTurns.emplace(dir);
-                  } else if (tlDirs.contains(Direction::LEFTANDSTRAIGHT)) {
-                    allowedTurns.erase(Direction::LEFT);
-                    allowedTurns.erase(Direction::STRAIGHT);
-                    allowedTurns.emplace(Direction::LEFTANDSTRAIGHT);
-                  } else if (tlDirs.contains(Direction::RIGHTANDSTRAIGHT)) {
-                    allowedTurns.erase(Direction::RIGHT);
-                    allowedTurns.erase(Direction::STRAIGHT);
-                    allowedTurns.emplace(Direction::RIGHTANDSTRAIGHT);
-                  }
+                if (hasLeftAndStraight && hasRight) {
+                  allowedTurns.erase(Direction::LEFT);
+                  allowedTurns.erase(Direction::STRAIGHT);
+                  allowedTurns.emplace(Direction::LEFTANDSTRAIGHT);
+                  break;
                 }
               }
-            }
-            if (allowedTurns.size() > static_cast<size_t>(nLanes)) {
-              // if one is duplicate, remove it
-              std::set<Direction> uniqueDirections;
-              std::copy(allowedTurns.begin(),
-                        allowedTurns.end(),
-                        std::inserter(uniqueDirections, uniqueDirections.begin()));
               allowedTurns.clear();
-              std::copy(uniqueDirections.begin(),
-                        uniqueDirections.end(),
-                        std::inserter(allowedTurns, allowedTurns.begin()));
+              allowedTurns.emplace(Direction::RIGHTANDSTRAIGHT);
+              allowedTurns.emplace(Direction::LEFT);
             }
-            while (allowedTurns.size() < static_cast<size_t>(nLanes)) {
-              if (allowedTurns.contains(Direction::STRAIGHT)) {
-                allowedTurns.emplace(Direction::STRAIGHT);
-              } else if (allowedTurns.contains(Direction::RIGHT)) {
-                allowedTurns.emplace(Direction::RIGHT);
-              } else if (allowedTurns.contains(Direction::LEFT)) {
-                allowedTurns.emplace(Direction::LEFT);
-              } else {
-                allowedTurns.emplace(Direction::ANY);
-              }
+            if (allowedTurns.size() > 2) {
+              // Remove duplicates
+              std::set<Direction> const uniqueDirections{allowedTurns.cbegin(),
+                                                         allowedTurns.cend()};
+              allowedTurns = {uniqueDirections.cbegin(), uniqueDirections.cend()};
             }
-            switch (nLanes) {
-              case 1:
-                // Leaving Direction::ANY for one lane streets is the less painful option
-                break;
-              case 2:
-                if (allowedTurns.contains(Direction::STRAIGHT) &&
-                    allowedTurns.contains(Direction::RIGHT) &&
-                    allowedTurns.contains(Direction::LEFT)) {
-                  if (pNode->isTrafficLight()) {
-                    auto& tl = static_cast<TrafficLight&>(*pNode);
-                    // Check if any phase configures LEFTANDSTRAIGHT+RIGHT for this street.
-                    bool hasLeftAndStraight{false}, hasRight{false};
-                    for (auto const& phase : tl.phases()) {
-                      auto const streetIt = phase.greenSet().find(pInStreet->id());
-                      if (streetIt == phase.greenSet().end())
-                        continue;
-                      hasLeftAndStraight |=
-                          streetIt->second.contains(Direction::LEFTANDSTRAIGHT);
-                      hasRight |= streetIt->second.contains(Direction::RIGHT);
-                    }
-                    if (hasLeftAndStraight && hasRight) {
-                      allowedTurns.erase(Direction::LEFT);
-                      allowedTurns.erase(Direction::STRAIGHT);
-                      allowedTurns.emplace(Direction::LEFTANDSTRAIGHT);
-                      break;
-                    }
-                  }
-                  allowedTurns.clear();
-                  allowedTurns.emplace(Direction::RIGHTANDSTRAIGHT);
-                  allowedTurns.emplace(Direction::LEFT);
-                }
-                if (allowedTurns.size() > 2) {
-                  // Remove duplicates
-                  std::set<Direction> uniqueDirections;
-                  std::copy(allowedTurns.begin(),
-                            allowedTurns.end(),
-                            std::inserter(uniqueDirections, uniqueDirections.begin()));
-                  allowedTurns.clear();
-                  std::copy(uniqueDirections.begin(),
-                            uniqueDirections.end(),
-                            std::inserter(allowedTurns, allowedTurns.begin()));
-                }
-                [[fallthrough]];
-              default:
-                // Logger::info(std::format(
-                //     "Street {}->{} with {} lanes and {} allowed turns",
-                //     pInStreet->source(),
-                //     pInStreet->target(),
-                //     nLanes,
-                //     allowedTurns.size()));
-                if (allowedTurns.size() != static_cast<size_t>(nLanes)) {
-                  spdlog::warn(
-                      "{} has {} lanes but {} allowed turns: truncating the "
-                      "lane mapping to the lane count.",
-                      *pInStreet,
-                      nLanes,
-                      allowedTurns.size());
-                }
-                // Logger::info(
-                //     std::format("Street {}->{} with {} lanes and {} allowed turns",
-                //                 pInStreet->source(),
-                //                 pInStreet->target(),
-                //                 nLanes,
-                //                 allowedTurns.size()));
-                std::vector<Direction> newMapping(nLanes, Direction::ANY);
-                auto it{allowedTurns.cbegin()};
-                for (size_t i{0}; i < newMapping.size() && it != allowedTurns.cend();
-                     ++i, ++it) {
-                  newMapping[i] = *it;
-                }
-                // If the last one is RIGHTANDSTRAIGHT, move it in front
-                if (newMapping.back() == Direction::RIGHTANDSTRAIGHT) {
-                  std::rotate(
-                      newMapping.rbegin(), newMapping.rbegin() + 1, newMapping.rend());
-                }
-                pInStreet->setLaneMapping(newMapping);
+            [[fallthrough]];
+          default:
+            // Logger::info(std::format(
+            //     "Street {}->{} with {} lanes and {} allowed turns",
+            //     pInStreet->source(),
+            //     pInStreet->target(),
+            //     nLanes,
+            //     allowedTurns.size()));
+            if (allowedTurns.size() != static_cast<size_t>(nLanes)) {
+              spdlog::warn(
+                  "{} has {} lanes but {} allowed turns: truncating the "
+                  "lane mapping to the lane count.",
+                  *pInStreet,
+                  nLanes,
+                  allowedTurns.size());
             }
-          });
-    });
+            // Logger::info(
+            //     std::format("Street {}->{} with {} lanes and {} allowed turns",
+            //                 pInStreet->source(),
+            //                 pInStreet->target(),
+            //                 nLanes,
+            //                 allowedTurns.size()));
+            std::vector<Direction> newMapping(nLanes, Direction::ANY);
+            auto it{allowedTurns.cbegin()};
+            for (size_t i{0}; i < newMapping.size() && it != allowedTurns.cend();
+                 ++i, ++it) {
+              newMapping[i] = *it;
+            }
+            // If the last one is RIGHTANDSTRAIGHT, move it in front
+            if (newMapping.back() == Direction::RIGHTANDSTRAIGHT) {
+              std::rotate(
+                  newMapping.rbegin(), newMapping.rbegin() + 1, newMapping.rend());
+            }
+            pInStreet->setLaneMapping(newMapping);
+        }
+      }
+    }
   }
 
   void RoadNetwork::autoAssignRoadPriorities() {
@@ -1365,9 +1304,7 @@ namespace dsf::mobility {
       }
       std::vector<std::pair<Id, Delay>> sortedRows(greenTimePerStreet.begin(),
                                                    greenTimePerStreet.end());
-      std::sort(sortedRows.begin(), sortedRows.end(), [](auto const& a, auto const& b) {
-        return a.first < b.first;
-      });
+      std::ranges::sort(sortedRows, {}, &std::pair<Id, Delay>::first);
 
       for (auto const& [streetId, greenTime] : sortedRows) {
         file << std::format(
@@ -1514,13 +1451,10 @@ namespace dsf::mobility {
     std::vector<std::string> extraEdgeColumns;
     for (auto const& [_, pStreet] : m_edges) {
       for (auto const& [attrName, _] : pStreet->attributes()) {
-        if (std::find(EDGE_DEFAULT_ATTRIBUTES.begin(),
-                      EDGE_DEFAULT_ATTRIBUTES.end(),
-                      attrName) != EDGE_DEFAULT_ATTRIBUTES.end()) {
+        if (isDefaultEdgeAttribute(attrName)) {
           continue;
         }
-        if (std::find(extraEdgeColumns.begin(), extraEdgeColumns.end(), attrName) ==
-            extraEdgeColumns.end()) {
+        if (std::ranges::find(extraEdgeColumns, attrName) == extraEdgeColumns.end()) {
           extraEdgeColumns.push_back(attrName);
         }
       }

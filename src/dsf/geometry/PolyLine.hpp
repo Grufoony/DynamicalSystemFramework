@@ -2,6 +2,7 @@
 
 #include <format>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "Point.hpp"
@@ -15,7 +16,7 @@ namespace dsf::geometry {
     /// @param strLine The string representation of the polyline.
     /// @param format The format of the string representation. Default is "WKT".
     /// @throws std::invalid_argument if the format is not supported or the string is invalid.
-    PolyLine(std::string const& strLine, std::string const& format = "WKT");
+    PolyLine(std::string const& strLine, std::string_view const format = "WKT");
   };
 }  // namespace dsf::geometry
 

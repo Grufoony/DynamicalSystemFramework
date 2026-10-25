@@ -6,6 +6,7 @@
 #include "../utility/PtrMapView.hpp"
 #include "../utility/Typedef.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -470,7 +471,7 @@ namespace dsf {
 
         auto const fullPathCost = m_weightFunction(outEdge) + nextDistToTarget;
         if (fullPathCost <= nodeBudget + PATH_COST_EPS &&
-            std::find(hops.begin(), hops.end(), nextNodeId) == hops.end()) {
+            std::ranges::find(hops, nextNodeId) == hops.end()) {
           hops.push_back(nextNodeId);
         }
       }
@@ -557,12 +558,11 @@ namespace dsf {
         }
 
         auto& hops = candidate[nodeId];
-        if (std::find(hops.begin(), hops.end(), nextNodeId) == hops.end()) {
+        if (std::ranges::find(hops, nextNodeId) == hops.end()) {
           hops.push_back(nextNodeId);
 
           auto& reverseHops = reverseCandidate[nextNodeId];
-          if (std::find(reverseHops.begin(), reverseHops.end(), nodeId) ==
-              reverseHops.end()) {
+          if (std::ranges::find(reverseHops, nodeId) == reverseHops.end()) {
             reverseHops.push_back(nodeId);
           }
         }
@@ -628,8 +628,7 @@ namespace dsf {
       for (auto const nextNodeId : hops) {
         if (reachableFromSource.contains(nextNodeId) &&
             canReachTarget.contains(nextNodeId) &&
-            std::find(filteredHops.begin(), filteredHops.end(), nextNodeId) ==
-                filteredHops.end()) {
+            std::ranges::find(filteredHops, nextNodeId) == filteredHops.end()) {
           filteredHops.push_back(nextNodeId);
         }
       }
@@ -995,7 +994,7 @@ namespace dsf {
           firstPath.edges.push_back(eId);
           cursor = nodeIndex.at(m_edges.at(eId)->source()->id());
         }
-        std::reverse(firstPath.edges.begin(), firstPath.edges.end());
+        std::ranges::reverse(firstPath.edges);
         acceptedPaths.push_back(std::move(firstPath));
 
         // ── Yen's spur loop ───────────────────────────────────────────────
@@ -1115,7 +1114,7 @@ namespace dsf {
               spurPath.push_back(eId);
               cursor = nodeIndex.at(m_edges.at(eId)->source()->id());
             }
-            std::reverse(spurPath.begin(), spurPath.end());
+            std::ranges::reverse(spurPath);
 
             candidatePath.cost += spurDist[targetIndex];
             candidatePath.edges.insert(

@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 namespace dsf::geometry {
-  Point::Point(const std::string& strPoint, const std::string& format) {
+  Point::Point(const std::string& strPoint, std::string_view const format) {
     if (format == "WKT") {
       auto start = strPoint.find('(');
       auto end = strPoint.find(')');
@@ -22,7 +22,7 @@ namespace dsf::geometry {
       m_x = x;
       m_y = y;
     } else {
-      throw std::invalid_argument("Unsupported format: " + format);
+      throw std::invalid_argument(std::format("Unsupported format: {}", format));
     }
   }
 

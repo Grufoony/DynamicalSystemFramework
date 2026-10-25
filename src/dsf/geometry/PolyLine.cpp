@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 namespace dsf::geometry {
-  PolyLine::PolyLine(const std::string& strLine, const std::string& format) {
+  PolyLine::PolyLine(const std::string& strLine, std::string_view const format) {
     if (format == "WKT") {
       auto start = strLine.find('(');
       auto end = strLine.find(')');
@@ -15,7 +15,7 @@ namespace dsf::geometry {
       std::string coordsStr = strLine.substr(start + 1, end - start - 1);
       std::istringstream coordsStream(coordsStr);
       // Count the number of ',' to estimate points
-      std::size_t nPoints = std::count(coordsStr.begin(), coordsStr.end(), ',') + 1;
+      std::size_t nPoints = std::ranges::count(coordsStr, ',') + 1;
       this->reserve(nPoints);
       std::string pointStr;
       while (std::getline(coordsStream, pointStr, ',')) {
@@ -33,7 +33,7 @@ namespace dsf::geometry {
         this->push_back(Point{x, y});
       }
     } else {
-      throw std::invalid_argument("Unsupported PolyLine format: " + format);
+      throw std::invalid_argument(std::format("Unsupported PolyLine format: {}", format));
     }
   }
 }  // namespace dsf::geometry

@@ -801,12 +801,10 @@ namespace dsf::mobility {
     }
     m_destinations.reserve(N);
     double const UNIFORM_WEIGHT{1. / N};
-    std::for_each(destinations.begin(),
-                  destinations.end(),
-                  [this, UNIFORM_WEIGHT](auto const& id) -> void {
-                    this->m_destinations.push_back({id, UNIFORM_WEIGHT});
-                    this->addItinerary(id, id);
-                  });
+    for (auto const& id : destinations) {
+      m_destinations.push_back({id, UNIFORM_WEIGHT});
+      this->addItinerary(id, id);
+    }
   }
 
   template <typename... TArgs>
