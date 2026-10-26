@@ -1697,26 +1697,28 @@ namespace dsf::mobility {
   void FirstOrderDynamics::updatePaths() {
     spdlog::debug("Init updating paths...");
     tbb::concurrent_vector<Id> emptyItineraries;
-    tbb::parallel_for_each(
-        this->itineraries().cbegin(),
-        this->itineraries().cend(),
-        [this, &emptyItineraries](auto const& pair) -> void {
-          auto const& pItinerary{pair.second};
-          this->m_updatePath(pItinerary);
-          if (pItinerary->empty()) {
-            if (!this->m_updatepathsThrowOnEmpty) {
-              spdlog::warn("No path found for itinerary {} with destination node {}",
-                           pItinerary->id(),
-                           pItinerary->destination());
-              emptyItineraries.push_back(pItinerary->id());
-              return;
+    this->m_taskArena.execute([&] {
+      tbb::parallel_for_each(
+          this->itineraries().cbegin(),
+          this->itineraries().cend(),
+          [this, &emptyItineraries](auto const& pair) -> void {
+            auto const& pItinerary{pair.second};
+            this->m_updatePath(pItinerary);
+            if (pItinerary->empty()) {
+              if (!this->m_updatepathsThrowOnEmpty) {
+                spdlog::warn("No path found for itinerary {} with destination node {}",
+                             pItinerary->id(),
+                             pItinerary->destination());
+                emptyItineraries.push_back(pItinerary->id());
+                return;
+              }
+              throw std::runtime_error(
+                  std::format("No path found for itinerary {} with destination node {}",
+                              pItinerary->id(),
+                              pItinerary->destination()));
             }
-            throw std::runtime_error(
-                std::format("No path found for itinerary {} with destination node {}",
-                            pItinerary->id(),
-                            pItinerary->destination()));
-          }
-        });
+          });
+    });
     if (!emptyItineraries.empty()) {
       auto const strIds = std::accumulate(
           emptyItineraries.begin(),
@@ -1933,10 +1935,12 @@ namespace dsf::mobility {
     StepDataResult stepData;
     stepData.timeStep = this->time_step();
     auto const n_threads{std::max<std::size_t>(1, this->concurrency())};
-    std::atomic<double> mean_speed{0.}, mean_density{0.}, mean_traveltime{0.},
-        mean_queue_length{0.};
-    std::atomic<double> std_speed{0.}, std_density{0.};
-    std::atomic<std::size_t> nValidEdges{0};
+    // Sums for the average stats, accumulated per thread and merged after the parallel loop
+    struct StepStats {
+      double speed{0.}, speed2{0.}, travelTime{0.}, density{0.}, density2{0.}, queue{0.};
+      std::size_t nValidEdges{0};
+    };
+    tbb::combinable<StepStats> localStats;
     bool const bComputeStats = dataRequest.saveAverageStats ||
                                dataRequest.saveStreetData || dataRequest.saveTravelData ||
                                dataRequest.saveAgentData;
@@ -1954,6 +1958,7 @@ namespace dsf::mobility {
       tbb::parallel_for(
           tbb::blocked_range<std::size_t>(0, numNodes, grainSize),
           [&](const tbb::blocked_range<std::size_t>& range) {
+            auto& stats = localStats.local();
             for (std::size_t i = range.begin(); i != range.end(); ++i) {
               auto* pNode = &this->graph().node(m_nodeIndices[i]);
               for (auto* pStreet : pNode->ingoingEdges()) {
@@ -1993,18 +1998,16 @@ namespace dsf::mobility {
                     auto const speed = speedMeasure.mean * MS_TO_KMH;  // to kph
                     auto const speed_std = speedMeasure.std * MS_TO_KMH;
                     if (dataRequest.saveAverageStats) {
-                      mean_speed.fetch_add(speed, std::memory_order_relaxed);
-                      std_speed.fetch_add(speed * speed + speed_std * speed_std,
-                                          std::memory_order_relaxed);
-                      mean_traveltime.fetch_add(pStreet->length() / speedMeasure.mean,
-                                                std::memory_order_relaxed);
-                      ++nValidEdges;
+                      stats.speed += speed;
+                      stats.speed2 += speed * speed + speed_std * speed_std;
+                      stats.travelTime += pStreet->length() / speedMeasure.mean;
+                      ++stats.nValidEdges;
                     }
                   }
                   if (dataRequest.saveAverageStats) {
-                    mean_density.fetch_add(density, std::memory_order_relaxed);
-                    std_density.fetch_add(density * density, std::memory_order_relaxed);
-                    mean_queue_length.fetch_add(queueLength, std::memory_order_relaxed);
+                    stats.density += density;
+                    stats.density2 += density * density;
+                    stats.queue += queueLength;
                   }
 
                   if (dataRequest.saveStreetData) {
@@ -2074,24 +2077,34 @@ namespace dsf::mobility {
       }
 
       if (dataRequest.saveAverageStats) {
+        auto const totals = localStats.combine([](StepStats a, StepStats const& b) {
+          a.speed += b.speed;
+          a.speed2 += b.speed2;
+          a.travelTime += b.travelTime;
+          a.density += b.density;
+          a.density2 += b.density2;
+          a.queue += b.queue;
+          a.nValidEdges += b.nValidEdges;
+          return a;
+        });
         AverageStatsRecord averageStats;
-        averageStats.nValidEdges = nValidEdges.load();
+        averageStats.nValidEdges = totals.nValidEdges;
         auto const edgeCount = static_cast<double>(numEdges);
         if (averageStats.nValidEdges > 0) {
-          averageStats.meanSpeed = mean_speed.load() / averageStats.nValidEdges;
+          averageStats.meanSpeed = totals.speed / averageStats.nValidEdges;
           averageStats.stdSpeed =
               std::sqrt(std::max(0.0,
-                                 std_speed.load() / averageStats.nValidEdges -
+                                 totals.speed2 / averageStats.nValidEdges -
                                      averageStats.meanSpeed * averageStats.meanSpeed));
-          averageStats.meanTravelTime = mean_traveltime.load() / averageStats.nValidEdges;
+          averageStats.meanTravelTime = totals.travelTime / averageStats.nValidEdges;
         }
         if (edgeCount > 0.) {
-          averageStats.meanDensity = mean_density.load() / edgeCount;
+          averageStats.meanDensity = totals.density / edgeCount;
           averageStats.stdDensity = std::sqrt(
               std::max(0.0,
-                       std_density.load() / edgeCount -
+                       totals.density2 / edgeCount -
                            averageStats.meanDensity * averageStats.meanDensity));
-          averageStats.meanQueueLength = mean_queue_length.load() / edgeCount;
+          averageStats.meanQueueLength = totals.queue / edgeCount;
         }
         stepData.averageStats = averageStats;
       }

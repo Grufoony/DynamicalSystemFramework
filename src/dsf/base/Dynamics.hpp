@@ -31,7 +31,6 @@ namespace dsf {
 
   private:
     std::time_t m_timeStep = 0;
-    std::unique_ptr<tbb::global_control> m_globalControl;
 
   protected:
     tbb::task_arena m_taskArena;
@@ -94,11 +93,6 @@ namespace dsf {
           concurrency,
           maxConcurrency);
     }
-    // Limit the TBB global thread pool so the OS spawns only actualConcurrency
-    // worker threads, rather than the full hardware_concurrency() count.
-    m_globalControl.reset();
-    m_globalControl = std::make_unique<tbb::global_control>(
-        tbb::global_control::max_allowed_parallelism, actualConcurrency);
     m_taskArena.initialize(static_cast<int>(actualConcurrency));
   }
 };  // namespace dsf

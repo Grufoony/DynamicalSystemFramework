@@ -1341,19 +1341,16 @@ namespace dsf::mobility {
   }
   void RoadNetwork::setStreetStatusByName(std::string const& streetName,
                                           RoadStatus const status) {
-    std::atomic<std::size_t> nAffectedRoads{0};
-    std::for_each(DSF_EXECUTION m_edges.cbegin(),
-                  m_edges.cend(),
-                  [&streetName, &status, &nAffectedRoads](auto const& pair) {
-                    auto const& pStreet = pair.second;
-                    if (pStreet->name().find(streetName) != std::string::npos) {
-                      pStreet->setStatus(status);
-                      ++nAffectedRoads;
-                    }
-                  });
+    std::size_t nAffectedRoads{0};
+    for (auto const& pStreet : m_edges | std::views::values) {
+      if (pStreet->name().find(streetName) != std::string::npos) {
+        pStreet->setStatus(status);
+        ++nAffectedRoads;
+      }
+    }
     spdlog::info("Set status {} to {} streets with name containing \"{}\"",
                  status,
-                 nAffectedRoads.load(),
+                 nAffectedRoads,
                  streetName);
   }
   void RoadNetwork::changeStreetNLanesById(Id const streetId,
@@ -1369,23 +1366,19 @@ namespace dsf::mobility {
   void RoadNetwork::changeStreetNLanesByName(std::string const& streetName,
                                              int const nLanes,
                                              std::optional<double> const speedFactor) {
-    std::atomic<std::size_t> nAffectedRoads{0};
-    std::for_each(
-        DSF_EXECUTION m_edges.cbegin(),
-        m_edges.cend(),
-        [&streetName, &nLanes, &speedFactor, &nAffectedRoads](auto const& pair) {
-          auto const& pStreet = pair.second;
-          if (pStreet->name().find(streetName) != std::string::npos) {
-            pStreet->changeNLanes(nLanes, speedFactor);
-            ++nAffectedRoads;
-          }
-        });
+    std::size_t nAffectedRoads{0};
+    for (auto const& pStreet : m_edges | std::views::values) {
+      if (pStreet->name().find(streetName) != std::string::npos) {
+        pStreet->changeNLanes(nLanes, speedFactor);
+        ++nAffectedRoads;
+      }
+    }
     m_updateMaxAgentCapacity();
     spdlog::info(
         "Changed number of lanes to {} for {} streets with name containing "
         "\"{}\"",
         nLanes,
-        nAffectedRoads.load(),
+        nAffectedRoads,
         streetName);
   }
   void RoadNetwork::changeStreetCapacityById(Id const streetId, double const factor) {
@@ -1400,22 +1393,19 @@ namespace dsf::mobility {
   }
   void RoadNetwork::changeStreetCapacityByName(std::string const& streetName,
                                                double const factor) {
-    std::atomic<std::size_t> nAffectedRoads{0};
-    std::for_each(DSF_EXECUTION m_edges.cbegin(),
-                  m_edges.cend(),
-                  [&streetName, &factor, &nAffectedRoads](auto const& pair) {
-                    auto const& pStreet = pair.second;
-                    if (pStreet->name().find(streetName) != std::string::npos) {
-                      auto const& currentCapacity = pStreet->capacity();
-                      pStreet->setCapacity(std::ceil(currentCapacity * factor));
-                      ++nAffectedRoads;
-                    }
-                  });
+    std::size_t nAffectedRoads{0};
+    for (auto const& pStreet : m_edges | std::views::values) {
+      if (pStreet->name().find(streetName) != std::string::npos) {
+        auto const& currentCapacity = pStreet->capacity();
+        pStreet->setCapacity(std::ceil(currentCapacity * factor));
+        ++nAffectedRoads;
+      }
+    }
     m_updateMaxAgentCapacity();
     spdlog::info(
         "Changed capacity by factor {} to {} streets with name containing \"{}\"",
         factor,
-        nAffectedRoads.load(),
+        nAffectedRoads,
         streetName);
   }
 
