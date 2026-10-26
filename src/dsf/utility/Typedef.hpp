@@ -4,12 +4,6 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
-#ifndef __APPLE__
-#include <execution>
-#define DSF_EXECUTION std::execution::par_unseq,
-#else
-#define DSF_EXECUTION
-#endif
 #include <format>
 #include <optional>
 #include <string_view>

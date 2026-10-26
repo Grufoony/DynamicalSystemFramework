@@ -182,28 +182,34 @@ namespace dsf::mobility {
     /// @param cumulativeProbability The sum of the weights in transitionProbabilities
     ///   the missing mass (1 - cumulativeProbability) is the probability of ending the trip, in which
     ///   case nullptr is returned
+    /// @param rng The random engine to draw from
     /// @return Street const* The selected street, or nullptr if no street was selected
     template <bool AllowTermination>
     Street const* m_extractStreet(
         std::span<std::pair<Street const*, double> const> transitionProbabilities,
-        double const cumulativeProbability);
+        double const cumulativeProbability,
+        std::mt19937_64& rng);
 
     /// @brief Get the next street of a random agent (uniform or transition-matrix choice)
     /// @param pAgent A std::unique_ptr to the agent
     /// @param pNode The current node
     /// @param pCurrentStreet The street the agent is expected to be on (see m_currentStreet)
+    /// @param rng The random engine to draw from
     /// @return Street const* The selected next street, nullptr if the agent has none
     Street const* m_nextRandomStreet(const std::unique_ptr<Agent>& pAgent,
                                      RoadJunction const* pNode,
-                                     Street const* pCurrentStreet);
+                                     Street const* pCurrentStreet,
+                                     std::mt19937_64& rng);
     /// @brief Get the next street of an agent
     /// @param pAgent A std::unique_ptr to the agent
     /// @param pNode The current node
     /// @param pCurrentStreet The street the agent is expected to be on (see m_currentStreet)
+    /// @param rng The random engine to draw from
     /// @return Street const* The selected next street, nullptr if the agent has none
     Street const* m_nextStreet(const std::unique_ptr<Agent>& pAgent,
                                RoadJunction const* pNode,
-                               Street const* pCurrentStreet);
+                               Street const* pCurrentStreet,
+                               std::mt19937_64& rng);
     /// @brief Get the agent's current street, if any
     /// @param pAgent A std::unique_ptr to the agent
     /// @param pHint The street the agent is expected to be on, to avoid a lookup
@@ -213,11 +219,13 @@ namespace dsf::mobility {
     /// @brief Evolve a street
     /// @param pStreet A pointer to the street
     /// @param pNode A pointer to the street's target node
+    /// @param rng The random engine to draw from (one per thread, as nodes evolve in parallel)
     /// @details If possible, removes the first agent of the street's queue, putting it in the destination node.
-    void m_evolveStreet(Street* pStreet, RoadJunction* pNode);
+    void m_evolveStreet(Street* pStreet, RoadJunction* pNode, std::mt19937_64& rng);
     /// @brief If possible, removes one agent from the node, putting it on the next street.
     /// @param pNode A std::unique_ptr to the node
-    void m_evolveNode(RoadJunction* pNode);
+    /// @param rng The random engine to draw from (one per thread, as nodes evolve in parallel)
+    void m_evolveNode(RoadJunction* pNode, std::mt19937_64& rng);
     /// @brief Evolve the agents.
     /// @details Puts all new agents on a street, if possible, decrements all delays
     /// and increments all travel times.
@@ -620,7 +628,8 @@ namespace dsf::mobility {
   template <bool AllowTermination>
   Street const* FirstOrderDynamics::m_extractStreet(
       std::span<std::pair<Street const*, double> const> transitionProbabilities,
-      double const cumulativeProbability) {
+      double const cumulativeProbability,
+      std::mt19937_64& rng) {
     // Select street based on weighted probabilities
     if (transitionProbabilities.empty()) {
       return nullptr;
@@ -635,7 +644,7 @@ namespace dsf::mobility {
     // mass (1 - cumulativeProbability) is the probability of ending the trip here.
     std::uniform_real_distribution<double> uniformDist{
         0., AllowTermination ? 1. : cumulativeProbability};
-    auto const randValue = uniformDist(this->m_generator);
+    auto const randValue = uniformDist(rng);
     Street const* pFallbackStreet{transitionProbabilities.front().first};
     double accumulated = 0.0;
     for (auto const& [pTargetStreet, probability] : transitionProbabilities) {

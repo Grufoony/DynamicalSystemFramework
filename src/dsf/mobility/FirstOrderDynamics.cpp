@@ -571,7 +571,8 @@ namespace dsf::mobility {
   Street const* FirstOrderDynamics::m_nextRandomStreet(
       const std::unique_ptr<Agent>& pAgent,
       RoadJunction const* pNode,
-      Street const* pCurrentStreet) {
+      Street const* pCurrentStreet,
+      std::mt19937_64& rng) {
     spdlog::trace("Computing m_nextRandomStreet for {}", *pAgent);
     auto const& outgoingEdges = pNode->outgoingEdges();
 
@@ -646,16 +647,17 @@ namespace dsf::mobility {
                   *pAgent,
                   *pNode);
     if (bUseMatrix) {
-      return m_extractStreet<true>(transitionProbabilities, cumulativeProbability);
+      return m_extractStreet<true>(transitionProbabilities, cumulativeProbability, rng);
     }
-    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
+    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability, rng);
   }
 
   Street const* FirstOrderDynamics::m_nextStreet(const std::unique_ptr<Agent>& pAgent,
                                                  RoadJunction const* pNode,
-                                                 Street const* pCurrentStreet) {
+                                                 Street const* pCurrentStreet,
+                                                 std::mt19937_64& rng) {
     if (pAgent->isRandom()) {
-      return m_nextRandomStreet(pAgent, pNode, pCurrentStreet);
+      return m_nextRandomStreet(pAgent, pNode, pCurrentStreet, rng);
     }
     spdlog::trace("Computing m_nextStreet for {}", *pAgent);
     auto const& outgoingEdges = pNode->outgoingEdges();
@@ -741,10 +743,12 @@ namespace dsf::mobility {
       cumulativeProbability += probability;
     }
 
-    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
+    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability, rng);
   }
 
-  void FirstOrderDynamics::m_evolveStreet(Street* pStreet, RoadJunction* pNode) {
+  void FirstOrderDynamics::m_evolveStreet(Street* pStreet,
+                                          RoadJunction* pNode,
+                                          std::mt19937_64& rng) {
     assert(pStreet->target() == pNode);
     auto const nLanes = pStreet->nLanes();
     // Enqueue moving agents if their free time is up
@@ -768,10 +772,10 @@ namespace dsf::mobility {
       if (bArrived) {
         std::uniform_int_distribution<size_t> laneDist{0,
                                                        static_cast<size_t>(nLanes - 1)};
-        pStreet->enqueue(laneDist(this->m_generator));
+        pStreet->enqueue(laneDist(rng));
         continue;
       }
-      auto const* pNextStreet{this->m_nextStreet(pAgent, pNode, pStreet)};
+      auto const* pNextStreet{this->m_nextStreet(pAgent, pNode, pStreet, rng)};
       if (pNextStreet == nullptr) {
         spdlog::debug("No next street found for agent {} at node {}",
                       *pAgent,
@@ -779,7 +783,7 @@ namespace dsf::mobility {
         if (pAgent->isRandom()) {
           std::uniform_int_distribution<size_t> laneDist{0,
                                                          static_cast<size_t>(nLanes - 1)};
-          pStreet->enqueue(laneDist(this->m_generator));
+          pStreet->enqueue(laneDist(rng));
           continue;
         }
         this->m_removeAgent<false>(pStreet->dequeueMovingAgent());
@@ -849,7 +853,7 @@ namespace dsf::mobility {
             directionToString.at(static_cast<std::size_t>(direction)));
         std::uniform_int_distribution<size_t> fallbackDist{
             0, static_cast<size_t>(nLanes - 1)};
-        pStreet->enqueue(fallbackDist(this->m_generator));
+        pStreet->enqueue(fallbackDist(rng));
         continue;
       }
       // If all weights are the same, make the last 0
@@ -866,14 +870,14 @@ namespace dsf::mobility {
       if (!(sum > 0.)) {
         std::uniform_int_distribution<size_t> fallbackDist{
             0, static_cast<size_t>(nLanes - 1)};
-        pStreet->enqueue(fallbackDist(this->m_generator));
+        pStreet->enqueue(fallbackDist(rng));
         continue;
       }
       for (auto& w : weights) {
         w /= sum;
       }
       std::discrete_distribution<size_t> laneDist{weights.begin(), weights.end()};
-      pStreet->enqueue(laneDist(this->m_generator));
+      pStreet->enqueue(laneDist(rng));
     }
     auto const& transportCapacity{pStreet->transportCapacity()};
     std::uniform_real_distribution<double> uniformDist{0., 1.};
@@ -882,7 +886,7 @@ namespace dsf::mobility {
         continue;
       }
       {
-        auto const rndValue{uniformDist(this->m_generator)};
+        auto const rndValue{uniformDist(rng)};
         if (rndValue > transportCapacity) {
           spdlog::trace("Skipping due to transport capacity {} < random {}",
                         transportCapacity,
@@ -1030,7 +1034,7 @@ namespace dsf::mobility {
         }
       }
       bool bArrived{false};
-      if (!(uniformDist(this->m_generator) <
+      if (!(uniformDist(rng) <
             m_passageProbability.value_or(std::numeric_limits<double>::max()))) {
         if (pAgentTemp->isRandom()) {
           bArrived = true;
@@ -1114,14 +1118,14 @@ namespace dsf::mobility {
     }
   }
 
-  void FirstOrderDynamics::m_evolveNode(RoadJunction* pNode) {
+  void FirstOrderDynamics::m_evolveNode(RoadJunction* pNode, std::mt19937_64& rng) {
     auto const transportCapacity{pNode->transportCapacity()};
     for (auto i{0}; i < std::ceil(transportCapacity); ++i) {
       if (i == std::ceil(transportCapacity) - 1) {
         std::uniform_real_distribution<double> uniformDist{0., 1.};
         double integral;
         double fractional = std::modf(transportCapacity, &integral);
-        if (fractional != 0. && uniformDist(this->m_generator) > fractional) {
+        if (fractional != 0. && uniformDist(rng) > fractional) {
           spdlog::debug("Skipping dequeue from node {} due to transport capacity {}",
                         pNode->id(),
                         transportCapacity);
@@ -1244,7 +1248,7 @@ namespace dsf::mobility {
       Street const* nextStreet{nullptr};
       if (!pAgent->nextStreetId().has_value()) {
         spdlog::debug("No next street id, generating a new one");
-        nextStreet = this->m_nextStreet(pAgent, pSourceNode, nullptr);
+        nextStreet = this->m_nextStreet(pAgent, pSourceNode, nullptr, this->m_generator);
         if (nextStreet == nullptr) {
           spdlog::debug(
               "No next street found for agent {} at node {}", *pAgent, pSourceNode->id());
@@ -1697,26 +1701,28 @@ namespace dsf::mobility {
   void FirstOrderDynamics::updatePaths() {
     spdlog::debug("Init updating paths...");
     tbb::concurrent_vector<Id> emptyItineraries;
-    tbb::parallel_for_each(
-        this->itineraries().cbegin(),
-        this->itineraries().cend(),
-        [this, &emptyItineraries](auto const& pair) -> void {
-          auto const& pItinerary{pair.second};
-          this->m_updatePath(pItinerary);
-          if (pItinerary->empty()) {
-            if (!this->m_updatepathsThrowOnEmpty) {
-              spdlog::warn("No path found for itinerary {} with destination node {}",
-                           pItinerary->id(),
-                           pItinerary->destination());
-              emptyItineraries.push_back(pItinerary->id());
-              return;
+    this->m_taskArena.execute([&] {
+      tbb::parallel_for_each(
+          this->itineraries().cbegin(),
+          this->itineraries().cend(),
+          [this, &emptyItineraries](auto const& pair) -> void {
+            auto const& pItinerary{pair.second};
+            this->m_updatePath(pItinerary);
+            if (pItinerary->empty()) {
+              if (!this->m_updatepathsThrowOnEmpty) {
+                spdlog::warn("No path found for itinerary {} with destination node {}",
+                             pItinerary->id(),
+                             pItinerary->destination());
+                emptyItineraries.push_back(pItinerary->id());
+                return;
+              }
+              throw std::runtime_error(
+                  std::format("No path found for itinerary {} with destination node {}",
+                              pItinerary->id(),
+                              pItinerary->destination()));
             }
-            throw std::runtime_error(
-                std::format("No path found for itinerary {} with destination node {}",
-                            pItinerary->id(),
-                            pItinerary->destination()));
-          }
-        });
+          });
+    });
     if (!emptyItineraries.empty()) {
       auto const strIds = std::accumulate(
           emptyItineraries.begin(),
@@ -1933,10 +1939,12 @@ namespace dsf::mobility {
     StepDataResult stepData;
     stepData.timeStep = this->time_step();
     auto const n_threads{std::max<std::size_t>(1, this->concurrency())};
-    std::atomic<double> mean_speed{0.}, mean_density{0.}, mean_traveltime{0.},
-        mean_queue_length{0.};
-    std::atomic<double> std_speed{0.}, std_density{0.};
-    std::atomic<std::size_t> nValidEdges{0};
+    // Sums for the average stats, accumulated per thread and merged after the parallel loop
+    struct StepStats {
+      double speed{0.}, speed2{0.}, travelTime{0.}, density{0.}, density2{0.}, queue{0.};
+      std::size_t nValidEdges{0};
+    };
+    tbb::combinable<StepStats> localStats;
     bool const bComputeStats = dataRequest.saveAverageStats ||
                                dataRequest.saveStreetData || dataRequest.saveTravelData ||
                                dataRequest.saveAgentData;
@@ -1954,6 +1962,9 @@ namespace dsf::mobility {
       tbb::parallel_for(
           tbb::blocked_range<std::size_t>(0, numNodes, grainSize),
           [&](const tbb::blocked_range<std::size_t>& range) {
+            auto& stats = localStats.local();
+            // Looked up once per task: draws then cost as much as with a plain engine
+            auto& rng = this->m_threadGenerators.local();
             for (std::size_t i = range.begin(); i != range.end(); ++i) {
               auto* pNode = &this->graph().node(m_nodeIndices[i]);
               for (auto* pStreet : pNode->ingoingEdges()) {
@@ -1983,7 +1994,7 @@ namespace dsf::mobility {
                     }
                   }
                 }
-                m_evolveStreet(pStreet, pNode);
+                m_evolveStreet(pStreet, pNode, rng);
                 if (bComputeStats) {
                   auto const& density{pStreet->density<false>() * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};
@@ -1993,18 +2004,16 @@ namespace dsf::mobility {
                     auto const speed = speedMeasure.mean * MS_TO_KMH;  // to kph
                     auto const speed_std = speedMeasure.std * MS_TO_KMH;
                     if (dataRequest.saveAverageStats) {
-                      mean_speed.fetch_add(speed, std::memory_order_relaxed);
-                      std_speed.fetch_add(speed * speed + speed_std * speed_std,
-                                          std::memory_order_relaxed);
-                      mean_traveltime.fetch_add(pStreet->length() / speedMeasure.mean,
-                                                std::memory_order_relaxed);
-                      ++nValidEdges;
+                      stats.speed += speed;
+                      stats.speed2 += speed * speed + speed_std * speed_std;
+                      stats.travelTime += pStreet->length() / speedMeasure.mean;
+                      ++stats.nValidEdges;
                     }
                   }
                   if (dataRequest.saveAverageStats) {
-                    mean_density.fetch_add(density, std::memory_order_relaxed);
-                    std_density.fetch_add(density * density, std::memory_order_relaxed);
-                    mean_queue_length.fetch_add(queueLength, std::memory_order_relaxed);
+                    stats.density += density;
+                    stats.density2 += density * density;
+                    stats.queue += queueLength;
                   }
 
                   if (dataRequest.saveStreetData) {
@@ -2043,11 +2052,12 @@ namespace dsf::mobility {
     // Move transport capacity agents from each node
     this->m_taskArena.execute([&] {
       tbb::parallel_for(
-          tbb::blocked_range<size_t>(0, numNodes, grainSize),
-          [&](const tbb::blocked_range<size_t>& range) {
-            for (size_t i = range.begin(); i != range.end(); ++i) {
+          tbb::blocked_range<std::size_t>(0, numNodes, grainSize),
+          [&](const tbb::blocked_range<std::size_t>& range) {
+            auto& rng = this->m_threadGenerators.local();
+            for (std::size_t i = range.begin(); i != range.end(); ++i) {
               auto* pNode = &this->graph().node(m_nodeIndices[i]);
-              m_evolveNode(pNode);
+              m_evolveNode(pNode, rng);
               if (pNode->isTrafficLight()) {
                 auto& tl = dynamic_cast<TrafficLight&>(*pNode);
                 ++tl;
@@ -2074,24 +2084,34 @@ namespace dsf::mobility {
       }
 
       if (dataRequest.saveAverageStats) {
+        auto const totals = localStats.combine([](StepStats a, StepStats const& b) {
+          a.speed += b.speed;
+          a.speed2 += b.speed2;
+          a.travelTime += b.travelTime;
+          a.density += b.density;
+          a.density2 += b.density2;
+          a.queue += b.queue;
+          a.nValidEdges += b.nValidEdges;
+          return a;
+        });
         AverageStatsRecord averageStats;
-        averageStats.nValidEdges = nValidEdges.load();
+        averageStats.nValidEdges = totals.nValidEdges;
         auto const edgeCount = static_cast<double>(numEdges);
         if (averageStats.nValidEdges > 0) {
-          averageStats.meanSpeed = mean_speed.load() / averageStats.nValidEdges;
+          averageStats.meanSpeed = totals.speed / averageStats.nValidEdges;
           averageStats.stdSpeed =
               std::sqrt(std::max(0.0,
-                                 std_speed.load() / averageStats.nValidEdges -
+                                 totals.speed2 / averageStats.nValidEdges -
                                      averageStats.meanSpeed * averageStats.meanSpeed));
-          averageStats.meanTravelTime = mean_traveltime.load() / averageStats.nValidEdges;
+          averageStats.meanTravelTime = totals.travelTime / averageStats.nValidEdges;
         }
         if (edgeCount > 0.) {
-          averageStats.meanDensity = mean_density.load() / edgeCount;
+          averageStats.meanDensity = totals.density / edgeCount;
           averageStats.stdDensity = std::sqrt(
               std::max(0.0,
-                       std_density.load() / edgeCount -
+                       totals.density2 / edgeCount -
                            averageStats.meanDensity * averageStats.meanDensity));
-          averageStats.meanQueueLength = mean_queue_length.load() / edgeCount;
+          averageStats.meanQueueLength = totals.queue / edgeCount;
         }
         stepData.averageStats = averageStats;
       }

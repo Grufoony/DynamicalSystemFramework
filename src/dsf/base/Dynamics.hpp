@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <exception>
 #include <format>
 #include <memory>
@@ -31,11 +33,16 @@ namespace dsf {
 
   private:
     std::time_t m_timeStep = 0;
-    std::unique_ptr<tbb::global_control> m_globalControl;
+    // Base seed of the per-thread engines, and number of engines created so far
+    std::uint64_t m_threadSeed;
+    std::atomic<std::uint64_t> m_nThreadGenerators{0};
 
   protected:
     tbb::task_arena m_taskArena;
     std::mt19937_64 m_generator;
+    // One engine per thread, for the parallel kernels: each is created (and seeded) the first
+    // time a thread asks for it, so there is no locking nor seeding cost afterwards
+    tbb::enumerable_thread_specific<std::mt19937_64> m_threadGenerators;
 
   protected:
     inline void m_evolve() { ++m_timeStep; };
@@ -44,11 +51,13 @@ namespace dsf {
     /// @brief Construct a new Dynamics object
     /// @param graph The graph representing the network
     /// @param seed The seed for the random number generator (default is std::nullopt)
-    Dynamics(network_t&& graph, std::optional<unsigned int> seed = std::nullopt);
+    Dynamics(network_t&& graph, std::optional<std::uint64_t> seed = std::nullopt);
 
-    /// @brief Set the seed for the random number generator
+    /// @brief Set the seed for the random number generators
     /// @param seed The seed to set
-    inline void setSeed(unsigned int const seed) noexcept { m_generator.seed(seed); }
+    /// @details With a concurrency of 1 the simulation is reproducible. With more threads it is
+    /// not, as which thread (thus which engine) processes each node depends on scheduling
+    void setSeed(std::uint64_t const seed);
     /// @brief Set the maximum number of threads to use for parallel execution
     /// @param concurrency The maximum number of threads to use for parallel execution
     void setConcurrency(std::size_t const concurrency);
@@ -70,13 +79,24 @@ namespace dsf {
   };
 
   template <typename network_t>
-  Dynamics<network_t>::Dynamics(network_t&& graph, std::optional<unsigned int> seed)
+  Dynamics<network_t>::Dynamics(network_t&& graph, std::optional<std::uint64_t> seed)
       : m_graph{std::make_unique<network_t>(std::move(graph))},
-        m_generator{std::random_device{}()} {
-    if (seed.has_value()) {
-      m_generator.seed(*seed);
-    }
+        m_threadSeed{seed.value_or(std::random_device{}())},
+        m_generator{m_threadSeed},
+        m_threadGenerators{[this] {
+          return std::mt19937_64{
+              m_threadSeed + 1 +
+              m_nThreadGenerators.fetch_add(1, std::memory_order_relaxed)};
+        }} {
     m_taskArena.initialize(static_cast<std::size_t>(tbb::info::default_concurrency()));
+  }
+
+  template <typename network_t>
+  void Dynamics<network_t>::setSeed(std::uint64_t const seed) {
+    m_generator.seed(seed);
+    m_threadSeed = seed;
+    m_threadGenerators.clear();
+    m_nThreadGenerators = 0;
   }
 
   template <typename network_t>
@@ -94,11 +114,6 @@ namespace dsf {
           concurrency,
           maxConcurrency);
     }
-    // Limit the TBB global thread pool so the OS spawns only actualConcurrency
-    // worker threads, rather than the full hardware_concurrency() count.
-    m_globalControl.reset();
-    m_globalControl = std::make_unique<tbb::global_control>(
-        tbb::global_control::max_allowed_parallelism, actualConcurrency);
     m_taskArena.initialize(static_cast<int>(actualConcurrency));
   }
 };  // namespace dsf

@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <set>
 #include <sstream>
@@ -2412,10 +2413,8 @@ TEST_CASE("FirstOrderDynamics") {
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
-          // Both exits are equally likely, so the 6 agents split evenly. The exact
-          // split is seed-dependent; the invariant is that nobody is lost.
-          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
-          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 3);
+          // Both exits are equally likely. The exact split is seed-dependent; the
+          // invariant is that nobody is lost.
           CHECK_EQ(
               dynamics.graph().edge(1).nAgents() + dynamics.graph().edge(2).nAgents(), 6);
         }
@@ -2471,12 +2470,57 @@ TEST_CASE("FirstOrderDynamics") {
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 2);
-          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 3);
+          // The exact split is seed-dependent; the invariant is that nobody is lost.
+          CHECK_EQ(dynamics.graph().edge(1).nAgents() +
+                       dynamics.graph().edge(2).nAgents() +
+                       dynamics.graph().edge(3).nAgents(),
+                   6);
         }
       }
     }
+  }
+  SUBCASE("Seeded results are reproducible with concurrency 1") {
+    // With a single thread, the per-thread engine is seeded from the dynamics' seed only, so
+    // the same seed gives the same simulation, also when it is set after construction
+    auto const run = [](unsigned int const constructorSeed,
+                        std::optional<unsigned int> const newSeed) {
+      auto network = RoadNetwork{};
+      network.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
+      network.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
+      network.setEdgeWeight("length");
+      FirstOrderDynamics dynamics{std::move(network), false, constructorSeed};
+      dynamics.setConcurrency(1);
+      if (newSeed.has_value()) {
+        dynamics.setSeed(*newSeed);
+      }
+      dynamics.setPassageProbability(0.7);
+      dynamics.setErrorProbability(0.1);
+      auto const& graph = dynamics.graph();
+      dynamics.setConditionalODs(
+          {{graph.node(1).outgoingEdges().front()->id(),
+            {1.0, {{graph.node(14).ingoingEdges().front()->id(), 1.0}}}}});
+      dynamics.updatePaths();
+      dynamics.addAgents(200, AgentInsertionMethod::RANDOM);
+      dynamics.addAgents(50, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
+      for (auto i{0}; i < 300; ++i) {
+        dynamics.evolve();
+      }
+      std::vector<std::pair<Id, std::size_t>> streetAgents;
+      for (auto const& [streetId, pStreet] : dynamics.graph().edges()) {
+        streetAgents.emplace_back(streetId, pStreet->nAgents());
+      }
+      std::ranges::sort(streetAgents);
+      return std::make_pair(dynamics.agentStats(), streetAgents);
+    };
+    auto const [firstStats, firstStreets] = run(69, std::nullopt);
+    auto const [secondStats, secondStreets] = run(69, std::nullopt);
+    auto const [reseededStats, reseededStreets] = run(1, 69);
+    // Make sure the simulation actually moved agents around
+    CHECK(std::get<2>(firstStats) + std::get<3>(firstStats) > 0);
+    CHECK_EQ(firstStats, secondStats);
+    CHECK_EQ(firstStreets, secondStreets);
+    CHECK_EQ(firstStats, reseededStats);
+    CHECK_EQ(firstStreets, reseededStreets);
   }
 }
 
