@@ -571,7 +571,8 @@ namespace dsf::mobility {
   Street const* FirstOrderDynamics::m_nextRandomStreet(
       const std::unique_ptr<Agent>& pAgent,
       RoadJunction const* pNode,
-      Street const* pCurrentStreet) {
+      Street const* pCurrentStreet,
+      std::mt19937_64& rng) {
     spdlog::trace("Computing m_nextRandomStreet for {}", *pAgent);
     auto const& outgoingEdges = pNode->outgoingEdges();
 
@@ -646,16 +647,17 @@ namespace dsf::mobility {
                   *pAgent,
                   *pNode);
     if (bUseMatrix) {
-      return m_extractStreet<true>(transitionProbabilities, cumulativeProbability);
+      return m_extractStreet<true>(transitionProbabilities, cumulativeProbability, rng);
     }
-    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
+    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability, rng);
   }
 
   Street const* FirstOrderDynamics::m_nextStreet(const std::unique_ptr<Agent>& pAgent,
                                                  RoadJunction const* pNode,
-                                                 Street const* pCurrentStreet) {
+                                                 Street const* pCurrentStreet,
+                                                 std::mt19937_64& rng) {
     if (pAgent->isRandom()) {
-      return m_nextRandomStreet(pAgent, pNode, pCurrentStreet);
+      return m_nextRandomStreet(pAgent, pNode, pCurrentStreet, rng);
     }
     spdlog::trace("Computing m_nextStreet for {}", *pAgent);
     auto const& outgoingEdges = pNode->outgoingEdges();
@@ -741,10 +743,12 @@ namespace dsf::mobility {
       cumulativeProbability += probability;
     }
 
-    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability);
+    return m_extractStreet<false>(transitionProbabilities, cumulativeProbability, rng);
   }
 
-  void FirstOrderDynamics::m_evolveStreet(Street* pStreet, RoadJunction* pNode) {
+  void FirstOrderDynamics::m_evolveStreet(Street* pStreet,
+                                          RoadJunction* pNode,
+                                          std::mt19937_64& rng) {
     assert(pStreet->target() == pNode);
     auto const nLanes = pStreet->nLanes();
     // Enqueue moving agents if their free time is up
@@ -768,10 +772,10 @@ namespace dsf::mobility {
       if (bArrived) {
         std::uniform_int_distribution<size_t> laneDist{0,
                                                        static_cast<size_t>(nLanes - 1)};
-        pStreet->enqueue(laneDist(this->m_generator));
+        pStreet->enqueue(laneDist(rng));
         continue;
       }
-      auto const* pNextStreet{this->m_nextStreet(pAgent, pNode, pStreet)};
+      auto const* pNextStreet{this->m_nextStreet(pAgent, pNode, pStreet, rng)};
       if (pNextStreet == nullptr) {
         spdlog::debug("No next street found for agent {} at node {}",
                       *pAgent,
@@ -779,7 +783,7 @@ namespace dsf::mobility {
         if (pAgent->isRandom()) {
           std::uniform_int_distribution<size_t> laneDist{0,
                                                          static_cast<size_t>(nLanes - 1)};
-          pStreet->enqueue(laneDist(this->m_generator));
+          pStreet->enqueue(laneDist(rng));
           continue;
         }
         this->m_removeAgent<false>(pStreet->dequeueMovingAgent());
@@ -849,7 +853,7 @@ namespace dsf::mobility {
             directionToString.at(static_cast<std::size_t>(direction)));
         std::uniform_int_distribution<size_t> fallbackDist{
             0, static_cast<size_t>(nLanes - 1)};
-        pStreet->enqueue(fallbackDist(this->m_generator));
+        pStreet->enqueue(fallbackDist(rng));
         continue;
       }
       // If all weights are the same, make the last 0
@@ -866,14 +870,14 @@ namespace dsf::mobility {
       if (!(sum > 0.)) {
         std::uniform_int_distribution<size_t> fallbackDist{
             0, static_cast<size_t>(nLanes - 1)};
-        pStreet->enqueue(fallbackDist(this->m_generator));
+        pStreet->enqueue(fallbackDist(rng));
         continue;
       }
       for (auto& w : weights) {
         w /= sum;
       }
       std::discrete_distribution<size_t> laneDist{weights.begin(), weights.end()};
-      pStreet->enqueue(laneDist(this->m_generator));
+      pStreet->enqueue(laneDist(rng));
     }
     auto const& transportCapacity{pStreet->transportCapacity()};
     std::uniform_real_distribution<double> uniformDist{0., 1.};
@@ -882,7 +886,7 @@ namespace dsf::mobility {
         continue;
       }
       {
-        auto const rndValue{uniformDist(this->m_generator)};
+        auto const rndValue{uniformDist(rng)};
         if (rndValue > transportCapacity) {
           spdlog::trace("Skipping due to transport capacity {} < random {}",
                         transportCapacity,
@@ -1030,7 +1034,7 @@ namespace dsf::mobility {
         }
       }
       bool bArrived{false};
-      if (!(uniformDist(this->m_generator) <
+      if (!(uniformDist(rng) <
             m_passageProbability.value_or(std::numeric_limits<double>::max()))) {
         if (pAgentTemp->isRandom()) {
           bArrived = true;
@@ -1114,14 +1118,14 @@ namespace dsf::mobility {
     }
   }
 
-  void FirstOrderDynamics::m_evolveNode(RoadJunction* pNode) {
+  void FirstOrderDynamics::m_evolveNode(RoadJunction* pNode, std::mt19937_64& rng) {
     auto const transportCapacity{pNode->transportCapacity()};
     for (auto i{0}; i < std::ceil(transportCapacity); ++i) {
       if (i == std::ceil(transportCapacity) - 1) {
         std::uniform_real_distribution<double> uniformDist{0., 1.};
         double integral;
         double fractional = std::modf(transportCapacity, &integral);
-        if (fractional != 0. && uniformDist(this->m_generator) > fractional) {
+        if (fractional != 0. && uniformDist(rng) > fractional) {
           spdlog::debug("Skipping dequeue from node {} due to transport capacity {}",
                         pNode->id(),
                         transportCapacity);
@@ -1244,7 +1248,7 @@ namespace dsf::mobility {
       Street const* nextStreet{nullptr};
       if (!pAgent->nextStreetId().has_value()) {
         spdlog::debug("No next street id, generating a new one");
-        nextStreet = this->m_nextStreet(pAgent, pSourceNode, nullptr);
+        nextStreet = this->m_nextStreet(pAgent, pSourceNode, nullptr, this->m_generator);
         if (nextStreet == nullptr) {
           spdlog::debug(
               "No next street found for agent {} at node {}", *pAgent, pSourceNode->id());
@@ -1959,6 +1963,8 @@ namespace dsf::mobility {
           tbb::blocked_range<std::size_t>(0, numNodes, grainSize),
           [&](const tbb::blocked_range<std::size_t>& range) {
             auto& stats = localStats.local();
+            // Looked up once per task: draws then cost as much as with a plain engine
+            auto& rng = this->m_threadGenerators.local();
             for (std::size_t i = range.begin(); i != range.end(); ++i) {
               auto* pNode = &this->graph().node(m_nodeIndices[i]);
               for (auto* pStreet : pNode->ingoingEdges()) {
@@ -1988,7 +1994,7 @@ namespace dsf::mobility {
                     }
                   }
                 }
-                m_evolveStreet(pStreet, pNode);
+                m_evolveStreet(pStreet, pNode, rng);
                 if (bComputeStats) {
                   auto const& density{pStreet->density<false>() * 1e3};
                   auto const& queueLength{pStreet->nExitingAgents()};
@@ -2046,11 +2052,12 @@ namespace dsf::mobility {
     // Move transport capacity agents from each node
     this->m_taskArena.execute([&] {
       tbb::parallel_for(
-          tbb::blocked_range<size_t>(0, numNodes, grainSize),
-          [&](const tbb::blocked_range<size_t>& range) {
-            for (size_t i = range.begin(); i != range.end(); ++i) {
+          tbb::blocked_range<std::size_t>(0, numNodes, grainSize),
+          [&](const tbb::blocked_range<std::size_t>& range) {
+            auto& rng = this->m_threadGenerators.local();
+            for (std::size_t i = range.begin(); i != range.end(); ++i) {
               auto* pNode = &this->graph().node(m_nodeIndices[i]);
-              m_evolveNode(pNode);
+              m_evolveNode(pNode, rng);
               if (pNode->isTrafficLight()) {
                 auto& tl = dynamic_cast<TrafficLight&>(*pNode);
                 ++tl;
