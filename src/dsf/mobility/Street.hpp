@@ -43,6 +43,7 @@ namespace dsf::mobility {
   };
 
   class Agent;
+  class RoadJunction;
 
   /// @brief The position of the counter on the street
   enum class CounterPosition : uint8_t { ENTRY = 0, MIDDLE = 1, EXIT = 2 };
@@ -83,7 +84,7 @@ namespace dsf::mobility {
     /// @param capacity The street's capacity (default is the maximum number of vehicles that can fit in the street)
     /// @param transportCapacity The street's transport capacity (default is 1)
     Street(Id id,
-           std::pair<Id, Id> nodePair,
+           std::pair<Node*, Node*> nodePair,
            double length = Road::meanVehicleLength(),
            double maxSpeed = 13.8888888889,
            int nLanes = 1,
@@ -94,6 +95,16 @@ namespace dsf::mobility {
     Street(Street&&) = default;
     Street(Street const&) = delete;
     bool operator==(Street const& other) const;
+
+    // Defined in RoadJunction.hpp, which needs the complete Street type
+    /// @brief Get the street's source junction
+    /// @return RoadJunction* The source junction
+    inline RoadJunction* source() noexcept;
+    inline RoadJunction const* source() const noexcept;
+    /// @brief Get the street's target junction
+    /// @return RoadJunction* The target junction
+    inline RoadJunction* target() noexcept;
+    inline RoadJunction const* target() const noexcept;
 
     static inline void acquireAgentData() {
       m_agentData = tbb::concurrent_unordered_map<
@@ -198,6 +209,10 @@ namespace dsf::mobility {
     /// @tparam Reset If true, the average speed data is reset after the computation
     /// @return Measurement<double> The (mean, std) speed of the agents that have passed through the street
     template <bool Reset>
+      requires(!Reset)
+    Measurement<double> meanSpeed() const;
+    template <bool Reset>
+      requires(Reset)
     Measurement<double> meanSpeed();
 
     /// @brief Get the street's lane mapping
@@ -234,11 +249,16 @@ namespace dsf::mobility {
   }
 
   template <bool Reset>
+    requires(!Reset)
+  inline Measurement<double> Street::meanSpeed() const {
+    return Measurement<double>{m_avgSpeeds};
+  }
+
+  template <bool Reset>
+    requires(Reset)
   inline Measurement<double> Street::meanSpeed() {
     Measurement<double> measurement{m_avgSpeeds};
-    if constexpr (Reset) {
-      m_avgSpeeds.clear();
-    }
+    m_avgSpeeds.clear();
     return measurement;
   }
 }  // namespace dsf::mobility
@@ -294,8 +314,8 @@ struct std::formatter<dsf::mobility::Street> {
                           "\tLane mapping: {}\n\tForbidden turns: {})",
                           street.id(),
                           name,
-                          street.nodePair().first,
-                          street.nodePair().second,
+                          street.Edge::source()->id(),
+                          street.Edge::target()->id(),
                           street.length(),
                           street.maxSpeed(),
                           street.nLanes(),

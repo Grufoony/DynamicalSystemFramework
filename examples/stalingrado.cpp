@@ -47,35 +47,36 @@ int main() {
   // Create the graph
   RoadNetwork graph;
 
-  // Street(StreetId, Capacity, Length, vMax, (from, to))
+  // Street ids
+  constexpr dsf::Id s01{1}, s12{7}, s23{13}, s34{19}, s45{25};
   dsf::mobility::Road::setMeanVehicleLength(8.);
-  Street s01{1, std::make_pair(0, 1), 2281., 13.9, 2};
-  Street s12{7, std::make_pair(1, 2), 118., 13.9, 2};
-  Street s23{13, std::make_pair(2, 3), 222., 13.9, 2};
-  Street s34{19, std::make_pair(3, 4), 651., 13.9, 2};
-  Street s45{25, std::make_pair(4, 5), 2281., 13.9, 2};
   // Viale Aldo Moro
   graph.addNode<TrafficLight>(1);
   auto& tl1 = graph.node<TrafficLight>(1);
-  tl1.addPhase(TrafficLightPhase{62, {{s01.id(), {dsf::Direction::ANY}}}});
+  tl1.addPhase(TrafficLightPhase{62, {{s01, {dsf::Direction::ANY}}}});
   tl1.addPhase(TrafficLightPhase{70});
   // Via Donato Creti
   graph.addNode<TrafficLight>(2);
   auto& tl2 = graph.node<TrafficLight>(2);
-  tl2.addPhase(TrafficLightPhase{72, {{s12.id(), {dsf::Direction::ANY}}}});
+  tl2.addPhase(TrafficLightPhase{72, {{s12, {dsf::Direction::ANY}}}});
   tl2.addPhase(TrafficLightPhase{69});
   // Via del Lavoro
   graph.addNode<TrafficLight>(3);
   auto& tl3 = graph.node<TrafficLight>(3);
-  tl3.addPhase(TrafficLightPhase{88, {{s23.id(), {dsf::Direction::ANY}}}});
+  tl3.addPhase(TrafficLightPhase{88, {{s23, {dsf::Direction::ANY}}}});
   tl3.addPhase(TrafficLightPhase{50});
   // Viali
   graph.addNode<TrafficLight>(4);
   auto& tl4 = graph.node<TrafficLight>(4);
-  tl4.addPhase(TrafficLightPhase{81, {{s34.id(), {dsf::Direction::ANY}}}});
+  tl4.addPhase(TrafficLightPhase{81, {{s34, {dsf::Direction::ANY}}}});
   tl4.addPhase(TrafficLightPhase{50});
 
-  graph.addStreets(s01, s12, s23, s34, s45);
+  // addStreet(StreetId, (from, to), Length, vMax, nLanes)
+  graph.addStreet(s01, std::make_pair(0, 1), 2281., 13.9, 2);
+  graph.addStreet(s12, std::make_pair(1, 2), 118., 13.9, 2);
+  graph.addStreet(s23, std::make_pair(2, 3), 222., 13.9, 2);
+  graph.addStreet(s34, std::make_pair(3, 4), 651., 13.9, 2);
+  graph.addStreet(s45, std::make_pair(4, 5), 2281., 13.9, 2);
   graph.adjustNodeCapacities();
   graph.addCoil(19);
   auto& coil = graph.edge(19);

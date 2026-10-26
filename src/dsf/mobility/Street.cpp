@@ -31,7 +31,7 @@ namespace dsf::mobility {
     m_laneMapping = std::vector<Direction>(nLanes, Direction::ANY);
   }
   Street::Street(Id id,
-                 std::pair<Id, Id> nodePair,
+                 std::pair<Node*, Node*> nodePair,
                  double length,
                  double maxSpeed,
                  int nLanes,
@@ -57,7 +57,8 @@ namespace dsf::mobility {
   auto Street::operator==(Street const& other) const -> bool {
     bool isEqual{true};
     isEqual &= (this->m_id == other.m_id);
-    isEqual &= (this->m_nodePair == other.m_nodePair);
+    isEqual &= (Edge::source()->id() == other.Edge::source()->id());
+    isEqual &= (Edge::target()->id() == other.Edge::target()->id());
     isEqual &= (this->m_length == other.m_length);
     isEqual &= (this->m_maxSpeed == other.m_maxSpeed);
     isEqual &= (this->m_nLanes == other.m_nLanes);
@@ -80,10 +81,7 @@ namespace dsf::mobility {
           strLaneMapping +=
               std::format("{} - ", directionToString[static_cast<size_t>(item)]);
         });
-    spdlog::debug("New lane mapping for street {} -> {} is: {}",
-                  m_nodePair.first,
-                  m_nodePair.second,
-                  strLaneMapping);
+    spdlog::debug("New lane mapping for street {}", *this);
   }
   void Street::setQueue(dsf::queue<std::unique_ptr<Agent>> queue, size_t index) {
     assert(index < m_exitQueues.size());

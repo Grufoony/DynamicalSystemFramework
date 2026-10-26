@@ -1266,8 +1266,8 @@ namespace dsf::mobility {
                                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
     for (const auto& [edgeId, pEdge] : m_dynamics->graph().edges()) {
       insertEdgeStmt.bind(1, static_cast<std::int64_t>(edgeId));
-      insertEdgeStmt.bind(2, static_cast<std::int64_t>(pEdge->source()));
-      insertEdgeStmt.bind(3, static_cast<std::int64_t>(pEdge->target()));
+      insertEdgeStmt.bind(2, static_cast<std::int64_t>(pEdge->source()->id()));
+      insertEdgeStmt.bind(3, static_cast<std::int64_t>(pEdge->target()->id()));
       insertEdgeStmt.bind(4, pEdge->length());
       insertEdgeStmt.bind(5, pEdge->maxSpeed());
       insertEdgeStmt.bind(6, pEdge->name());

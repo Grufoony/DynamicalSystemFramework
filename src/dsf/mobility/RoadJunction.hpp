@@ -1,13 +1,23 @@
 #pragma once
 
 #include "../base/Node.hpp"
+#include "Street.hpp"
 
 #include <format>
+#include <ranges>
+#include <span>
 
 namespace dsf::mobility {
   class RoadJunction : public Node {
     std::size_t m_capacity;
     double m_transportCapacity;
+
+    // A RoadNetwork only links streets to road junctions, so the cast is safe
+    template <typename TStreet>
+    static auto m_asStreets(std::span<Edge* const> edges) noexcept {
+      return edges | std::views::transform(
+                         [](Edge* pEdge) { return static_cast<TStreet*>(pEdge); });
+    }
 
   public:
     explicit RoadJunction(Id id);
@@ -36,6 +46,22 @@ namespace dsf::mobility {
     /// @brief Get the junction's transport capacity
     /// @return double The junction's transport capacity
     inline double transportCapacity() const { return m_transportCapacity; }
+    /// @brief Get the junction's ingoing streets
+    /// @return A random-access view of Street pointers, in insertion order
+    inline auto ingoingEdges() noexcept {
+      return m_asStreets<Street>(Node::ingoingEdges());
+    }
+    inline auto ingoingEdges() const noexcept {
+      return m_asStreets<Street const>(Node::ingoingEdges());
+    }
+    /// @brief Get the junction's outgoing streets
+    /// @return A random-access view of Street pointers, in insertion order
+    inline auto outgoingEdges() noexcept {
+      return m_asStreets<Street>(Node::outgoingEdges());
+    }
+    inline auto outgoingEdges() const noexcept {
+      return m_asStreets<Street const>(Node::outgoingEdges());
+    }
 
     virtual inline double density() const { return 0.; }
     virtual inline bool isFull() const { return true; }
@@ -44,6 +70,20 @@ namespace dsf::mobility {
     virtual constexpr bool isTrafficLight() const noexcept { return false; }
     virtual constexpr bool isRoundabout() const noexcept { return false; }
   };
+
+  // A RoadNetwork only links streets to road junctions, so the casts below are safe
+  inline RoadJunction* Street::source() noexcept {
+    return static_cast<RoadJunction*>(Edge::source());
+  }
+  inline RoadJunction const* Street::source() const noexcept {
+    return static_cast<RoadJunction const*>(Edge::source());
+  }
+  inline RoadJunction* Street::target() noexcept {
+    return static_cast<RoadJunction*>(Edge::target());
+  }
+  inline RoadJunction const* Street::target() const noexcept {
+    return static_cast<RoadJunction const*>(Edge::target());
+  }
 }  // namespace dsf::mobility
 
 // Specialization of std::formatter for dsf::mobility::RoadJunction

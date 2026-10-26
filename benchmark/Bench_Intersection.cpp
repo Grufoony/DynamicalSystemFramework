@@ -97,8 +97,12 @@ static void BM_Intersection_SetStreetPriorities(benchmark::State& state) {
 static void BM_Intersection_AddStreetPriority(benchmark::State& state) {
   dsf::mobility::Intersection intersection(0);
   // Need to add ingoing edges first
-  intersection.addIngoingEdge(1);
-  intersection.addIngoingEdge(2);
+  dsf::mobility::Intersection source1{1};
+  dsf::mobility::Intersection source2{2};
+  dsf::mobility::Street street1{1, {&source1, &intersection}};
+  dsf::mobility::Street street2{2, {&source2, &intersection}};
+  intersection.addIngoingEdge(&street1);
+  intersection.addIngoingEdge(&street2);
   for (auto _ : state) {
     intersection.addStreetPriority(1);
     intersection.addStreetPriority(2);

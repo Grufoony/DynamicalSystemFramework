@@ -1,4 +1,6 @@
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <optional>
 #include <numbers>
 #include <format>
@@ -17,6 +19,20 @@ using Intersection = dsf::mobility::Intersection;
 using Street = dsf::mobility::Street;
 using Road = dsf::mobility::Road;
 
+// Streets are built from their junctions: these standalone ones are kept alive here
+static std::pair<dsf::Node*, dsf::Node*> nodes(dsf::Id const source,
+                                               dsf::Id const target) {
+  static std::map<dsf::Id, std::unique_ptr<Intersection>> junctions;
+  auto const junction = [](dsf::Id const id) {
+    auto& pJunction = junctions[id];
+    if (!pJunction) {
+      pJunction = std::make_unique<Intersection>(id);
+    }
+    return pJunction.get();
+  };
+  return {junction(source), junction(target)};
+}
+
 TEST_CASE("Street") {
   Road::setMeanVehicleLength(1.);
   SUBCASE("Constructor_1") {
@@ -26,13 +42,20 @@ TEST_CASE("Street") {
     THEN: The Id, capacity, and length are set correctly
     */
 
-    Street street{1, std::make_pair(0, 1)};
+    Street street{1, nodes(0, 1)};
     CHECK_EQ(street.id(), 1);
     CHECK_EQ(street.capacity(), 1);
     CHECK_EQ(street.transportCapacity(), 1);
     CHECK_EQ(street.length(), 1.);
-    CHECK_EQ(street.nodePair().first, 0);
-    CHECK_EQ(street.nodePair().second, 1);
+    CHECK_EQ(street.source()->id(), 0);
+    CHECK_EQ(street.target()->id(), 1);
+    CHECK(street.nodePair() == nodes(0, 1));
+    // A street needs both of its junctions
+    CHECK_THROWS_AS((Street{2, {nullptr, nodes(0, 1).second}}), std::invalid_argument);
+    // and they can only be replaced by junctions with the same id
+    CHECK_THROWS_AS(street.setSource(nodes(1, 0).first), std::invalid_argument);
+    CHECK_THROWS_AS(street.setTarget(nullptr), std::invalid_argument);
+    CHECK(street.nodePair() == nodes(0, 1));
     CHECK_EQ(street.maxSpeed(), 13.8888888889);
     CHECK_EQ(street.nLanes(), 1);
   }
@@ -44,13 +67,13 @@ TEST_CASE("Street") {
     THEN: The Id, capacity, length and nodePair are set correctly
     */
 
-    Street street{1, std::make_pair(4, 5), 1.5};
+    Street street{1, nodes(4, 5), 1.5};
     CHECK_EQ(street.id(), 1);
     CHECK_EQ(street.capacity(), 2);
     CHECK_EQ(street.transportCapacity(), 1);
     CHECK_EQ(street.length(), 1.5);
-    CHECK_EQ(street.source(), 4);
-    CHECK_EQ(street.target(), 5);
+    CHECK_EQ(street.source()->id(), 4);
+    CHECK_EQ(street.target()->id(), 5);
     CHECK_EQ(doctest::Approx(street.density<false>()), 0);
     CHECK_EQ(street.maxSpeed(), 13.8888888889);
     CHECK_EQ(street.nLanes(), 1);
@@ -62,13 +85,13 @@ TEST_CASE("Street") {
     THEN: The Id, capacity, length, nodePair, and maxSpeed are set correctly
     */
 
-    Street street{1, std::make_pair(4, 5), 1.5, 40.};
+    Street street{1, nodes(4, 5), 1.5, 40.};
     CHECK_EQ(street.id(), 1);
     CHECK_EQ(street.capacity(), 2);
     CHECK_EQ(street.transportCapacity(), 1);
     CHECK_EQ(street.length(), 1.5);
-    CHECK_EQ(street.source(), 4);
-    CHECK_EQ(street.target(), 5);
+    CHECK_EQ(street.source()->id(), 4);
+    CHECK_EQ(street.target()->id(), 5);
     CHECK_EQ(doctest::Approx(street.density<false>()), 0);
     CHECK_EQ(street.maxSpeed(), 40.);
     CHECK_EQ(street.nLanes(), 1);
@@ -77,7 +100,7 @@ TEST_CASE("Street") {
     Street::setEstimatedTravelTimeFunction(
         [](Street const& street) { return street.length() / street.maxSpeed(); });
 
-    Street street{1, std::make_pair(4, 5), 120., 20.};
+    Street street{1, nodes(4, 5), 120., 20.};
     CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(6.0));
   }
 
@@ -85,7 +108,7 @@ TEST_CASE("Street") {
     Street::setEstimatedTravelTimeFunction(
         [](Street const& street) { return street.length() / street.maxSpeed(); });
 
-    Street street{1, std::make_pair(4, 5), 120., 20.};
+    Street street{1, nodes(4, 5), 120., 20.};
     CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(6.0));
 
     Street::setEstimatedTravelTimeFunction(
@@ -102,7 +125,7 @@ TEST_CASE("Street") {
 
   SUBCASE("Lane Mapping") {
     GIVEN("A street with three lanes") {
-      Street street{0, std::make_pair(0, 1), 5., 13.8888888889, 3};
+      Street street{0, nodes(0, 1), 5., 13.8888888889, 3};
       CHECK_EQ(street.laneMapping().size(), 3);
       CHECK_EQ(street.laneMapping()[0], dsf::Direction::ANY);
       CHECK_EQ(street.laneMapping()[1], dsf::Direction::ANY);
@@ -144,7 +167,7 @@ TEST_CASE("Street") {
   }
   SUBCASE("changeNLanes") {
     GIVEN("A street with 2 lanes") {
-      Street street{1, std::make_pair(0, 1), 100.0, 20.0, 2};
+      Street street{1, nodes(0, 1), 100.0, 20.0, 2};
       auto const initialCapacity = street.capacity();
       double const initialTransportCapacity = street.transportCapacity();
       double const initialMaxSpeed = street.maxSpeed();
@@ -212,7 +235,7 @@ TEST_CASE("Street") {
     }
 
     GIVEN("A street with 3 lanes") {
-      Street street{2, std::make_pair(1, 2), 150.0, 25.0, 3};
+      Street street{2, nodes(1, 2), 150.0, 25.0, 3};
 
       WHEN("Lanes change from 3 to 6 with speed factor 1.2") {
         double const initialMaxSpeed = street.maxSpeed();
@@ -235,7 +258,7 @@ TEST_CASE("Street") {
     Agent a3{2, 0, nullptr, 0};
     a3.setFreeTime(7);
 
-    Street street{1, std::make_pair(0, 1), 3.5};
+    Street street{1, nodes(0, 1), 3.5};
     street.addAgent(std::make_unique<Agent>(a1), 0);
     CHECK_EQ(street.movingAgents().top()->freeTime(), 5);
     street.addAgent(std::make_unique<Agent>(a2), 0);
@@ -252,7 +275,7 @@ TEST_CASE("Street") {
     Agent a3{2, 0, nullptr, 0};
     Agent a4{3, 0, nullptr, 0};
 
-    Street street{1, std::make_pair(0, 1), 3.5};
+    Street street{1, nodes(0, 1), 3.5};
     // fill the queue
     street.addAgent(std::make_unique<Agent>(a1), 0);
     street.enqueue(0);
@@ -283,7 +306,7 @@ TEST_CASE("Street") {
     Agent a3{2, 0, nullptr, 0};
     Agent a4{3, 0, nullptr, 0};
 
-    Street street{1, std::make_pair(0, 1), 3.5};
+    Street street{1, nodes(0, 1), 3.5};
     // fill the queue
     street.addAgent(std::make_unique<Agent>(a1), 0);
     street.enqueue(0);
@@ -310,7 +333,7 @@ TEST_CASE("Street") {
     /// GIVEN: A street
     /// WHEN: The angle method is called
     /// THEN: The angle is returned and is correct
-    Street street{1, std::make_pair(0, 1), 3.5};
+    Street street{1, nodes(0, 1), 3.5};
     CHECK_EQ(street.angle(), 0);
     street.setGeometry(
         dsf::geometry::PolyLine{dsf::geometry::Point{0, 1}, dsf::geometry::Point{1, 0}});
@@ -321,7 +344,7 @@ TEST_CASE("Street") {
 TEST_CASE("Street with a coil") {
   SUBCASE("Entry Counter") {
     GIVEN("A street with an entry counter") {
-      Street street{1, std::make_pair(0, 1), 3.5};
+      Street street{1, nodes(0, 1), 3.5};
       CHECK_THROWS_AS(street.resetCounter(), std::runtime_error);
       street.enableCounter("EntryCoil", dsf::mobility::CounterPosition::ENTRY);
       CHECK_EQ(street.counterName(), "EntryCoil");
@@ -337,7 +360,7 @@ TEST_CASE("Street with a coil") {
 
   SUBCASE("Middle Counter") {
     GIVEN("A street with a counter") {
-      Street street{1, std::make_pair(0, 1), 3.5};
+      Street street{1, nodes(0, 1), 3.5};
       street.enableCounter("", dsf::mobility::CounterPosition::MIDDLE);
       CHECK_EQ(street.counterName(), "Coil_1");
       WHEN("An agent is added") {
@@ -353,7 +376,7 @@ TEST_CASE("Street with a coil") {
 
   SUBCASE("Exit Counter") {
     GIVEN("A street with an exit counter") {
-      Street street{1, std::make_pair(0, 1), 3.5};
+      Street street{1, nodes(0, 1), 3.5};
       street.enableCounter("ExitCoil", dsf::mobility::CounterPosition::EXIT);
       CHECK_EQ(street.counterName(), "ExitCoil");
       WHEN("An agent is added and enqueued") {
@@ -368,7 +391,7 @@ TEST_CASE("Street with a coil") {
 
   SUBCASE("meanSpeed") {
     GIVEN("A street with multiple agents") {
-      Street street{1, std::make_pair(0, 1), 100.0, 20.0};
+      Street street{1, nodes(0, 1), 100.0, 20.0};
 
       WHEN("No agents have exited") {
         THEN("meanSpeed returns zero mean and std") {
@@ -440,11 +463,11 @@ TEST_CASE("Road") {
   SUBCASE("Constructor") {
     GIVEN("Valid road parameters") {
       WHEN("A road is constructed with basic parameters") {
-        Street road{1, std::make_pair(0, 1), 100.0, 13.8888888889, 2, "Main Street"};
+        Street road{1, nodes(0, 1), 100.0, 13.8888888889, 2, "Main Street"};
         THEN("All parameters are set correctly") {
           CHECK_EQ(road.id(), 1);
-          CHECK_EQ(road.nodePair().first, 0);
-          CHECK_EQ(road.nodePair().second, 1);
+          CHECK_EQ(road.source()->id(), 0);
+          CHECK_EQ(road.target()->id(), 1);
           CHECK_EQ(road.length(), 100.0);
           CHECK_EQ(road.maxSpeed(), 13.8888888889);
           CHECK_EQ(road.nLanes(), 2);
@@ -461,7 +484,7 @@ TEST_CASE("Road") {
 
       WHEN("A road is constructed with explicit capacity") {
         Street road{2,
-                    std::make_pair(1, 2),
+                    nodes(1, 2),
                     50.0,
                     20.0,
                     1,
@@ -480,25 +503,23 @@ TEST_CASE("Road") {
     GIVEN("Invalid road parameters") {
       WHEN("Length is non-positive") {
         THEN("Constructor throws invalid_argument") {
-          CHECK_THROWS_AS(Street(1, std::make_pair(0, 1), 0.0), std::invalid_argument);
-          CHECK_THROWS_AS(Street(1, std::make_pair(0, 1), -5.0), std::invalid_argument);
+          CHECK_THROWS_AS(Street(1, nodes(0, 1), 0.0), std::invalid_argument);
+          CHECK_THROWS_AS(Street(1, nodes(0, 1), -5.0), std::invalid_argument);
         }
       }
 
       WHEN("Max speed is non-positive") {
         THEN("Constructor throws invalid_argument") {
-          CHECK_THROWS_AS(Street(1, std::make_pair(0, 1), 100.0, 0.0),
-                          std::invalid_argument);
-          CHECK_THROWS_AS(Street(1, std::make_pair(0, 1), 100.0, -10.0),
-                          std::invalid_argument);
+          CHECK_THROWS_AS(Street(1, nodes(0, 1), 100.0, 0.0), std::invalid_argument);
+          CHECK_THROWS_AS(Street(1, nodes(0, 1), 100.0, -10.0), std::invalid_argument);
         }
       }
 
       WHEN("Number of lanes is zero or negative") {
         THEN("Constructor throws invalid_argument") {
-          CHECK_THROWS_AS(Street(1, std::make_pair(0, 1), 100.0, 13.8888888889, 0),
+          CHECK_THROWS_AS(Street(1, nodes(0, 1), 100.0, 13.8888888889, 0),
                           std::invalid_argument);
-          CHECK_THROWS_AS(Street(1, std::make_pair(0, 1), 100.0, 13.8888888889, -1),
+          CHECK_THROWS_AS(Street(1, nodes(0, 1), 100.0, 13.8888888889, -1),
                           std::invalid_argument);
         }
       }
@@ -506,7 +527,7 @@ TEST_CASE("Road") {
       WHEN("Transport capacity is non-positive") {
         THEN("Constructor throws invalid_argument") {
           CHECK_THROWS_AS(Street(1,
-                                 std::make_pair(0, 1),
+                                 nodes(0, 1),
                                  100.0,
                                  13.8888888889,
                                  1,
@@ -516,7 +537,7 @@ TEST_CASE("Road") {
                                  0.0),
                           std::invalid_argument);
           CHECK_THROWS_AS(Street(1,
-                                 std::make_pair(0, 1),
+                                 nodes(0, 1),
                                  100.0,
                                  13.8888888889,
                                  1,
@@ -549,7 +570,7 @@ TEST_CASE("Road") {
   }
 
   SUBCASE("Setters") {
-    Street road{1, std::make_pair(0, 1), 100.0};
+    Street road{1, nodes(0, 1), 100.0};
 
     SUBCASE("setMaxSpeed") {
       WHEN("Valid speed is set") {
@@ -602,7 +623,7 @@ TEST_CASE("Road") {
   }
 
   SUBCASE("Forbidden Turns") {
-    Street road{1, std::make_pair(0, 1), 100.0};
+    Street road{1, nodes(0, 1), 100.0};
 
     SUBCASE("addForbiddenTurn") {
       WHEN("A forbidden turn is added") {
@@ -633,7 +654,7 @@ TEST_CASE("Road") {
   }
 
   SUBCASE("Getters") {
-    Street road{1, std::make_pair(0, 1), 100.0, 20.0, 2, "Test Road"};
+    Street road{1, nodes(0, 1), 100.0, 20.0, 2, "Test Road"};
 
     CHECK_EQ(road.length(), 100.0);
     CHECK_EQ(road.maxSpeed(), 20.0);
@@ -647,7 +668,7 @@ TEST_CASE("Road") {
   }
 
   SUBCASE("turnDirection") {
-    Street road{1, std::make_pair(0, 1), 100.0};
+    Street road{1, nodes(0, 1), 100.0};
     road.setGeometry(
         dsf::geometry::PolyLine{dsf::geometry::Point{0, 0}, dsf::geometry::Point{1, 0}});
 
@@ -697,7 +718,7 @@ TEST_CASE("Street formatting") {
   Road::setMeanVehicleLength(1.);
 
   SUBCASE("std::format with unnamed street") {
-    Street street{10, std::make_pair(5, 8), 100.0, 13.89, 2};
+    Street street{10, nodes(5, 8), 100.0, 13.89, 2};
 
     std::string formatted = std::format("{}", street);
     CHECK(formatted.find("Street(id: 10") != std::string::npos);
@@ -710,7 +731,7 @@ TEST_CASE("Street formatting") {
   }
 
   SUBCASE("std::format with named street") {
-    Street street{20, std::make_pair(1, 2), 250.5, 25.0, 3, "Main Street"};
+    Street street{20, nodes(1, 2), 250.5, 25.0, 3, "Main Street"};
 
     std::string formatted = std::format("{}", street);
     CHECK(formatted.find("Street(id: 20 \"Main Street\"") != std::string::npos);
@@ -721,7 +742,7 @@ TEST_CASE("Street formatting") {
   }
 
   SUBCASE("std::format with street containing agents") {
-    Street street{30, std::make_pair(10, 20), 50.0, 15.0, 1};
+    Street street{30, nodes(10, 20), 50.0, 15.0, 1};
 
     // Add some agents
     auto agent1 = std::make_unique<Agent>(0, 0, nullptr);
@@ -735,7 +756,7 @@ TEST_CASE("Street formatting") {
   }
 
   SUBCASE("std::format with lane mapping and forbidden turns") {
-    Street street{40, std::make_pair(1, 2), 100.0, 15.0, 6};
+    Street street{40, nodes(1, 2), 100.0, 15.0, 6};
     street.setLaneMapping(std::vector<dsf::Direction>{dsf::Direction::RIGHT,
                                                       dsf::Direction::RIGHTANDSTRAIGHT,
                                                       dsf::Direction::STRAIGHT,

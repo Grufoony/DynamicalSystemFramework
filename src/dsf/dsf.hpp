@@ -11,8 +11,8 @@
 #include <spdlog/sinks/basic_file_sink.h>
 
 inline constexpr std::uint8_t DSF_VERSION_MAJOR = 7;
-inline constexpr std::uint8_t DSF_VERSION_MINOR = 3;
-inline constexpr std::uint8_t DSF_VERSION_PATCH = 3;
+inline constexpr std::uint8_t DSF_VERSION_MINOR = 5;
+inline constexpr std::uint8_t DSF_VERSION_PATCH = 0;
 
 namespace dsf::detail {
   constexpr std::size_t digitCount(std::uint8_t value) noexcept {
@@ -53,7 +53,15 @@ namespace dsf::detail {
 inline constexpr std::string_view DSF_VERSION{dsf::detail::VERSION_BUFFER.data(),
                                               dsf::detail::VERSION_BUFFER.size() - 1};
 
+/// @brief Core of the DynamicalSystemFramework: generic networks, nodes, edges and dynamics.
 namespace dsf {
+  /// @brief Traffic model: road networks, junctions, agents and dynamics.
+  namespace mobility {}
+  /// @brief Geometric primitives: points and polylines.
+  namespace geometry {}
+  /// @brief Mobile-Data Trajectories: trajectory collections, stop detection and point clustering.
+  namespace mdt {}
+
   /// @brief Returns the version of the DSF library
   /// @return The version of the DSF library
   constexpr std::string_view version() noexcept { return DSF_VERSION; };
