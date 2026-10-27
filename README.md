@@ -98,6 +98,64 @@ Examples in this repository are being migrated. You can build legacy C++ example
 
 Updated and active examples are maintained in **[dsf-examples](https://github.com/Grufoony/dsf-examples)**.
 
+## Pedestrian Mode
+
+Pedestrian mode uses the same edge-based, first-order dynamics as the traffic model. A network is a directed graph: edges represent street segments and nodes represent intersections or roundabouts. Enabling pedestrian mode does **not** replace the queue-based movement model with a continuous pedestrian flow model. Streets retain their per-lane FIFO exit queues, moving-agent priority queue, finite storage capacity, and transport capacity.
+
+### What pedestrian mode changes
+
+When the network is prepared in pedestrian mode, the framework skips automatic lane mapping, automatic road-priority assignment, and automatic traffic-light initialization. It also disables stochastic route deviations (`errorProbability` rerouting). Agents therefore follow their itinerary's shortest-path successors, subject to the network's available paths and any explicitly configured turn restrictions. Existing junction mechanics and any explicitly imported or configured junction controls still govern transfers.
+
+Pedestrian mode does not automatically reinterpret input speeds, capacities, or lengths as pedestrian values. The network's edge `maxspeed` is still used (with the normal import conversion from km/h to m/s), and the default capacity is still calculated using the framework's mean-vehicle-length setting. The default speed function remains linear with $\alpha = 0.8$. A pedestrian application should provide pedestrian speeds and appropriate street capacities/transport capacities in its network or configure them through the API.
+
+### State and street capacity
+
+At simulation step $t$, an agent occupies one of three places: the list of agents waiting to enter, a street's moving population, or a street exit/junction queue. A street with length $L$, $n$ lanes, and no explicit capacity has storage capacity
+
+$$
+C = \left\lceil \frac{L \, n}{\ell} \right\rceil,
+$$
+
+where $\ell$ is the configured mean vehicle length (5 m by default). A street is full when its moving and queued agents together reach $C$. Its moving density, used by the default speed rule, is the moving-agent count divided by $C$; agents already waiting in exit queues contribute delay at the junction rather than slowing moving agents directly.
+
+With the default linear speed function,
+
+$$
+v_e(t) = v^{\max}_e \left(1 - \alpha \, \rho^{\mathrm{moving}}_e(t)\right),
+\qquad \alpha = 0.8,
+$$
+
+where $v^{\max}_e$ is the edge's imported/configured maximum speed and $\rho^{\mathrm{moving}}_e$ is its normalized moving density. A user-selected constant or custom speed function can replace this rule. When an agent enters an edge, its free-flow completion step is set to
+
+$$
+t_{\mathrm{free}} = t + \left\lceil \frac{L_e}{v_e(t)} \right\rceil.
+$$
+
+The moving population is held in a priority queue ordered by this completion time. Once an agent's free time is reached, it joins one of the street's exit queues. With multiple lanes, the model chooses a lane compatible with the next turn where possible, favoring shorter exit queues; a single-lane street uses its only queue.
+
+### Junction service and route progression
+
+Each step, the model first processes streets and attempts to move eligible agents from street queues into their destination nodes. The queue is FIFO, so its front agent is considered first. A transfer is blocked when the node is full, the next street is full, or an applicable traffic-light/priority rule denies passage. Street and node transport capacities limit service. On a street, each lane gets one service attempt per step; a fractional capacity $c$ between 0 and 1 permits passage with probability $c$. At a node, the model makes $\lceil c \rceil$ service attempts, with the final attempt probabilistic when $c$ is fractional, so capacities above 1 can permit multiple agents per step.
+
+At an intersection, the agent enters the junction's ordered internal queue and, when service is available and its next edge has room, moves onto that edge. Roundabouts use their own FIFO internal queue. The selected edge is the next edge on the agent's itinerary. The itinerary advances when the agent reaches the edge that terminates the current destination; the agent is removed after reaching the final destination. This is a discrete-time, agent-based queueing process, not a microscopic model of pedestrian body motion or collision avoidance.
+
+### Origins, destinations, and insertion
+
+Origins and destinations are edge IDs for the standard edge-based insertion methods. `setOrigins` assigns the edge weights used to choose starting edges; `setDestinations` creates itineraries whose destination is the corresponding edge. `RANDOM_ODS` independently samples an origin and destination according to their normalized weights, while `ODS` uses explicit `(origin edge, destination edge, weight)` tuples. For an inserted agent, its source node is the source endpoint of its selected origin edge, and that edge is its first edge in the itinerary. Entry may be delayed while the source node or edge has no capacity.
+
+The `TrafficSimulator` insertion method defaults to `RANDOM`. In that mode, calls to `setOrigins` and `setDestinations` alone do not constrain the inserted agents; select an OD insertion method explicitly when those distributions are intended to drive the run. The number of agents offered at each insertion time is supplied by the simulation schedule.
+
+### Per-step order
+
+One call to `evolve()` performs the following high-level updates:
+
+1. Process street travel completions and attempt street-queue transfers to junctions.
+2. Process junction queues and move agents onto their next edges when capacity and service rules allow.
+3. Admit waiting agents from their source nodes to their first edges when there is room.
+4. Advance simulation time and, when requested, collect street, agent, travel, queue, and aggregate statistics.
+
+The ordering is consequential: an agent's movement is constrained by discrete service opportunities and available storage, and congestion can propagate upstream as queues fill.
+
 ## Visualization & GUI
 For real-time dynamic visualization and visual inspection of network flows, see **[dsf-gui](https://github.com/Grufoony/dsf-gui)**. It offers an interactive front-end designed specifically for monitoring simulations, analyzing queue dynamics, and visual debugging.
 

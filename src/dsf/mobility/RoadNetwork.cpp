@@ -32,14 +32,10 @@ static constexpr auto EDGE_DEFAULT_ATTRIBUTES =
                                      "lane_mapping",
                                      "geometry"});
 
-<<<<<<< HEAD
-static constexpr auto PAIRED_EDGE_ID_ATTRIBUTE = "paired_edge_id";
-=======
 static bool isDefaultEdgeAttribute(std::string_view const attribute) {
   return std::ranges::find(EDGE_DEFAULT_ATTRIBUTES, attribute) !=
          EDGE_DEFAULT_ATTRIBUTES.end();
 }
->>>>>>> 553a988dfed16bc50ef79493f11c9551e9c5442c
 
 namespace dsf::mobility {
   void RoadNetwork::m_updateMaxAgentCapacity() {

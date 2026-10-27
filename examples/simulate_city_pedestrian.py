@@ -1,0 +1,105 @@
+"""Run a 24-hour pedestrian traffic simulation using OpenStreetMap city cartography.
+
+This script downloads city data, builds network CSV assets, configures origins
+and destinations, initializes the dynamics engine in pedestrian mode, and runs
+a full-day simulation while periodically updating shortest paths.
+"""
+
+import argparse
+import pickle
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+
+import dsf
+from dsf import logging
+from dsf.cartography import get_cartography, to_folium_map
+from dsf.mobility import TrafficSimulator
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--seed", type=int, default=69, help="Random seed for reproducibility"
+    )
+    parser.add_argument(
+        "--city", type=str, required=True, help="City name for cartography"
+    )
+    parser.add_argument(
+        "--country", type=str, default="Italy", help="Country name for cartography"
+    )
+    args = parser.parse_args()
+    logging.info(f"Using dsf version: {dsf.__version__}")
+    local_now = datetime.now().astimezone()
+    EPOCH = int(
+        datetime.combine(
+            local_now.date(), datetime.min.time(), tzinfo=local_now.tzinfo
+        ).timestamp()
+    )
+    np.random.seed(args.seed)
+    args.city = args.city.lower().strip().replace(" ", "_")
+    args.country = args.country.lower().strip().replace(" ", "_")
+
+    logging.info(
+        f"Getting data from OpenStreetMap for {args.city.capitalize()}, {args.country.capitalize()}..."
+    )
+    if (
+        not Path(f"{args.city}_{args.country}_pedestrian_edges.csv").is_file()
+        or not Path(f"{args.city}_{args.country}_pedestrian_nodes.csv").is_file()
+        or not Path(f"{args.city}_{args.country}_pedestrian.pickle").is_file()
+    ):
+        G, df_edges, df_nodes = get_cartography(
+            {"city": args.city.capitalize(), "country": args.country.capitalize()},
+            infer_speeds=True,
+            scc=True,
+        )
+
+        df_edges.to_csv(
+            f"{args.city}_{args.country}_pedestrian_edges.csv", sep=";", index=False
+        )
+        df_nodes.to_csv(
+            f"{args.city}_{args.country}_pedestrian_nodes.csv", sep=";", index=False
+        )
+        with open(f"{args.city}_{args.country}_pedestrian.pickle", "wb") as f:
+            pickle.dump(G, f, protocol=pickle.HIGHEST_PROTOCOL)
+        del df_edges, df_nodes, G
+    else:
+        logging.info("Cartography files already exist, skipping download.")
+
+    with open(f"{args.city}_{args.country}_pedestrian.pickle", "rb") as f:
+        G = pickle.load(f)
+
+    to_folium_map(G).save(f"{args.city}_{args.country}_pedestrian_map.html")
+
+    edge_ids = [e[2].get("id") for e in G.edges(data=True)]
+    origin_ids = np.random.choice(
+        list(edge_ids), size=max(1, int(0.05 * len(edge_ids))), replace=False
+    )
+    destination_ids = np.random.choice(
+        list(edge_ids), size=max(1, int(0.05 * len(edge_ids))), replace=False
+    )
+
+    origins = {edge_id: 1 for edge_id in origin_ids}
+    destinations = {edge_id: 1 for edge_id in destination_ids}
+
+    logging.info("Creating pedestrian road network and dynamics model...")
+
+    simulator = TrafficSimulator()
+    simulator.setPedestrianMode(True)
+    simulator.importRoadNetwork(
+        f"{args.city}_{args.country}_pedestrian_edges.csv",
+        f"{args.city}_{args.country}_pedestrian_nodes.csv",
+    )
+    simulator.connectDataBase(f"{args.city}_{args.country}_pedestrian.db")
+
+    simulator.setTimeFrame(EPOCH)
+    simulator.saveData(300, True, True, True)
+    simulator.updatePaths(300, False)
+
+    simulator.dynamics().setSeed(args.seed)
+    simulator.dynamics().setOrigins(origins)
+    simulator.dynamics().setDestinations(destinations)
+    simulator.dynamics().killStagnantAgents(40.0)
+
+    simulator.run(np.random.randint(0, 50, size=8640), 10)
