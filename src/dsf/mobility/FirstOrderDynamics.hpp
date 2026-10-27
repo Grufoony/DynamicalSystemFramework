@@ -30,6 +30,7 @@
 #include <variant>
 #include <vector>
 
+#include <ankerl/unordered_dense.h>
 #include <tbb/tbb.h>
 #include <spdlog/spdlog.h>
 
@@ -97,18 +98,20 @@ namespace dsf::mobility {
   class FirstOrderDynamics : public Dynamics<RoadNetwork> {
     std::vector<Id> m_nodeIndices;
     std::vector<std::unique_ptr<Agent>> m_agents;
-    std::unordered_map<Id, std::shared_ptr<Itinerary>> m_freeflowItineraries;
-    std::unordered_map<Id, std::shared_ptr<Itinerary>> m_itineraries;
+    ankerl::unordered_dense::map<Id, std::shared_ptr<Itinerary>> m_freeflowItineraries;
+    ankerl::unordered_dense::map<Id, std::shared_ptr<Itinerary>> m_itineraries;
     std::vector<std::tuple<Id, double>> m_origins;
     std::vector<std::tuple<Id, double>> m_destinations;
     std::vector<std::tuple<Id, Id, double>> m_ODs;
     std::vector<double> m_ODCumulativeWeights;
     // Conditional Origin -> Destinations
-    std::unordered_map<Id, std::vector<std::tuple<Id, double>>> m_originToDestinations;
+    ankerl::unordered_dense::map<Id, std::vector<std::tuple<Id, double>>>
+        m_originToDestinations;
     // ---
     tbb::concurrent_unordered_map<Id, std::size_t> m_originCounts;
     tbb::concurrent_unordered_map<Id, std::size_t> m_destinationCounts;
-    std::unordered_map<Id, std::unordered_map<Id, double>> m_transitionMatrix;
+    ankerl::unordered_dense::map<Id, ankerl::unordered_dense::map<Id, double>>
+        m_transitionMatrix;
     std::atomic<std::size_t> m_nAgents{0}, m_nAddedAgents{0}, m_nInsertedAgents{0},
         m_nKilledAgents{0}, m_nArrivedAgents{0};
     std::function<double(Street const&)> m_speedFunction;
@@ -167,8 +170,8 @@ namespace dsf::mobility {
     /// @brief Find an itinerary with the given destination
     /// @param destinationId The destination street id
     /// @return An iterator to the itinerary, or itineraries().cend() if there is none
-    std::unordered_map<Id, std::shared_ptr<Itinerary>>::const_iterator m_findItinerary(
-        Id destinationId) const;
+    ankerl::unordered_dense::map<Id, std::shared_ptr<Itinerary>>::const_iterator
+    m_findItinerary(Id destinationId) const;
 
     template <bool Uniformly>
     void m_addAgentsRandom(std::size_t nAgents);
@@ -491,7 +494,7 @@ namespace dsf::mobility {
         double const threshold = 1.3);
 
     /// @brief Get the free-flow itineraries
-    /// @return const std::unordered_map<Id, std::shared_ptr<Itinerary>>&, The free-flow itineraries,
+    /// @return const ankerl::unordered_dense::map<Id, std::shared_ptr<Itinerary>>&, The free-flow itineraries,
     ///   i.e. the best paths computed at the first updatePaths() call for each itinerary
     inline auto const& freeflowItineraries() const noexcept {
       return m_freeflowItineraries;
@@ -502,7 +505,7 @@ namespace dsf::mobility {
       return m_intelligentFraction;
     }
     /// @brief Get the itineraries
-    /// @return const std::unordered_map<Id, Itinerary>&, The itineraries
+    /// @return const ankerl::unordered_dense::map<Id, std::shared_ptr<Itinerary>>&, The itineraries
     inline auto const& itineraries() const noexcept { return m_itineraries; }
     /// @brief Get the origin nodes of the graph
     /// @return std::vector<std::tuple<Id, double>> const& The origin nodes of the graph
@@ -517,7 +520,7 @@ namespace dsf::mobility {
     /// @return std::vector<std::tuple<Id, double>>>& The destination nodes of the graph
     inline auto& destinations() noexcept { return m_destinations; }
     /// @brief Get the transition matrix used to route random agents
-    /// @return std::unordered_map<Id, std::unordered_map<Id, double>> const& The transition matrix.
+    /// @return ankerl::unordered_dense::map<Id, ankerl::unordered_dense::map<Id, double>> const& The transition matrix.
     ///   The outer key is the current street id, the inner key is the next street id and the value
     ///   is the transition probability. It is empty if no transition matrix has been set.
     inline auto const& transitionMatrix() const noexcept { return m_transitionMatrix; }

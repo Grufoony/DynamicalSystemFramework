@@ -483,7 +483,7 @@ namespace dsf::mobility {
       this->addAgent(itineraryIt->second, *srcId);
     }
   }
-  std::unordered_map<Id, std::shared_ptr<Itinerary>>::const_iterator
+  ankerl::unordered_dense::map<Id, std::shared_ptr<Itinerary>>::const_iterator
   FirstOrderDynamics::m_findItinerary(Id const destinationId) const {
     // Itineraries built from destinations or ODs are keyed by their destination: try that
     // O(1) lookup before scanning for user-added ones with a different id
@@ -1409,7 +1409,8 @@ namespace dsf::mobility {
   void FirstOrderDynamics::setTransitionMatrix(
       std::unordered_map<Id, std::unordered_map<Id, double>> const& transitionMatrix) {
     constexpr double TOLERANCE{1e-9};
-    std::unordered_map<Id, std::unordered_map<Id, double>> validatedMatrix;
+    ankerl::unordered_dense::map<Id, ankerl::unordered_dense::map<Id, double>>
+        validatedMatrix;
     validatedMatrix.reserve(transitionMatrix.size());
     for (auto const& [srcStreetId, row] : transitionMatrix) {
       if (!this->graph().edges().contains(srcStreetId)) {
@@ -1421,7 +1422,7 @@ namespace dsf::mobility {
       }
       auto const& srcStreet{this->graph().edge(srcStreetId)};
       auto const outgoingEdges{srcStreet.target()->outgoingEdges()};
-      std::unordered_map<Id, double> validatedRow;
+      ankerl::unordered_dense::map<Id, double> validatedRow;
       validatedRow.reserve(row.size());
       double sumWeights{0.};
       double redistributableWeight{0.};
