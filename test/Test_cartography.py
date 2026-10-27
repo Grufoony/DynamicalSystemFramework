@@ -1,26 +1,71 @@
 """
 Tests for cartography module.
+
+The tests on real cartographies download them from OpenStreetMap, so that changes in its
+APIs or data that break the pipeline are caught. Each place is downloaded once per session.
 """
+
+import time
 
 import folium
 import networkx as nx
 import pytest
+import requests
+from osmnx._errors import ResponseStatusCodeError
 
 from dsf.cartography import (
     create_manhattan_cartography,
+    fetch_cartography,
     get_cartography,
     graph_from_gdfs,
     graph_to_gdfs,
+    process_cartography,
     to_folium_map,
 )
 
+# Waits (in seconds) before each new download attempt when OpenStreetMap is overloaded
+DOWNLOAD_RETRY_WAITS = (30, 60, 120, 240)
 
-def test_consistency():
+
+def download_with_retries(download, *args, **kwargs):
+    """
+    Call a download function, retrying with increasing waits on transient failures.
+
+    Overpass often answers "502, at capacity" on CI: those errors (non-OK status with a
+    non-JSON body) and connection errors are retried. Any other error, e.g. an OK response
+    that cannot be parsed, may mean that the API changed, so it is raised immediately. The
+    last error is raised once all retries are used up.
+    """
+    for wait in (*DOWNLOAD_RETRY_WAITS, None):
+        try:
+            return download(*args, **kwargs)
+        except (ResponseStatusCodeError, requests.RequestException) as error:
+            if wait is None:
+                raise
+            print(f"Download failed ({type(error).__name__}), retrying in {wait} s")
+            time.sleep(wait)
+
+
+@pytest.fixture(scope="module")
+def postua_cartography():
+    """Download and process the Postua cartography."""
+    return download_with_retries(get_cartography, "Postua, Piedmont, Italy")
+
+
+@pytest.fixture(scope="module")
+def bologna_raw_graph():
+    """Download the raw Bologna graph, known to include turn:lanes tags."""
+    return download_with_retries(
+        fetch_cartography, place_name="Bologna, Emilia-Romagna, Italy"
+    )
+
+
+def test_consistency(postua_cartography):
     """
     A simple consistency test to verify that converting from GeoDataFrames to graph and back
     yields the same GeoDataFrames.
     """
-    G_CART, edges_cart, nodes_cart = get_cartography("Postua, Piedmont, Italy")
+    G_CART, edges_cart, nodes_cart = postua_cartography
 
     edges, nodes = graph_to_gdfs(G_CART)
 
@@ -284,9 +329,9 @@ class TestForbiddenTurns:
     """Tests for lane_mapping and forbidden_turns inference (uses Bologna, which has turn:lanes data)."""
 
     @pytest.fixture(scope="class")
-    def bologna_cartography(self):
-        """Fetch and process a Bologna cartography known to include turn:lanes tags."""
-        return get_cartography("Bologna, Emilia-Romagna, Italy")
+    def bologna_cartography(self, bologna_raw_graph):
+        """Process the Bologna cartography with the default settings."""
+        return process_cartography(bologna_raw_graph.copy())
 
     def test_lane_mapping_column_has_values(self, bologna_cartography):
         """Test that at least some edges have a non-null lane_mapping."""
@@ -331,10 +376,10 @@ class TestForbiddenTurns:
         no_mapping = edges[edges["lane_mapping"].isna()]
         assert no_mapping["forbidden_turns"].isna().all()
 
-    def test_infer_forbidden_turns_disabled(self):
+    def test_infer_forbidden_turns_disabled(self, bologna_raw_graph):
         """Test that disabling infer_forbidden_turns skips forbidden_turns computation entirely."""
-        _, edges, _ = get_cartography(
-            "Bologna, Emilia-Romagna, Italy", infer_forbidden_turns=False
+        _, edges, _ = process_cartography(
+            bologna_raw_graph.copy(), infer_forbidden_turns=False
         )
         assert "forbidden_turns" not in edges.columns
 

@@ -14,6 +14,8 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <optional>
+#include <ranges>
 #include <set>
 #include <sstream>
 
@@ -57,6 +59,23 @@ TEST_CASE("Measurement") {
     CHECK_EQ(m.std, doctest::Approx(28.8661f));
     CHECK_EQ(m.n, 100);
     CHECK(m.is_valid);
+  }
+  SUBCASE("Lazy view") {
+    // A filter view is not sized: the measurement counts the samples itself
+    auto data{std::views::iota(0, 200) |
+              std::views::filter([](int const i) { return i % 2 == 0; }) |
+              std::views::transform([](int const i) { return i / 2.f; })};
+
+    Measurement<float> m(data);
+    CHECK_EQ(m.mean, 49.5f);
+    CHECK_EQ(m.std, doctest::Approx(28.8661f));
+    CHECK_EQ(m.n, 100);
+    CHECK(m.is_valid);
+
+    Measurement<float> empty(std::views::iota(0, 10) |
+                             std::views::filter([](int const i) { return i < 0; }));
+    CHECK_FALSE(empty.is_valid);
+    CHECK_EQ(empty.n, 0);
   }
 }
 
@@ -2165,6 +2184,17 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(distance.std, doctest::Approx(0.));
         }
       }
+      WHEN("Three agents are added at once on the same origin street") {
+        for (int i{0}; i < 3; ++i) {
+          dynamics.addAgent(dynamics.itineraries().at(2), 0);
+        }
+        dynamics.evolve();
+        THEN("The agents still waiting keep their insertion order") {
+          REQUIRE_EQ(dynamics.agents().size(), 2);
+          CHECK_EQ(dynamics.agents().at(0)->id(), 1);
+          CHECK_EQ(dynamics.agents().at(1)->id(), 2);
+        }
+      }
     }
   }
   SUBCASE("Path cache") {
@@ -2383,10 +2413,8 @@ TEST_CASE("FirstOrderDynamics") {
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
-          // Both exits are equally likely, so the 6 agents split evenly. The exact
-          // split is seed-dependent; the invariant is that nobody is lost.
-          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
-          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 3);
+          // Both exits are equally likely. The exact split is seed-dependent; the
+          // invariant is that nobody is lost.
           CHECK_EQ(
               dynamics.graph().edge(1).nAgents() + dynamics.graph().edge(2).nAgents(), 6);
         }
@@ -2425,6 +2453,14 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve();
         dynamics.evolve();
         CHECK_EQ(dynamics.graph().edge(0).nAgents(), 6);
+        // Single-lane streets: the length-weighted density is the agents over the total length
+        auto const density{dynamics.streetMeanDensity<false>()};
+        CHECK_EQ(density.mean, doctest::Approx(6. / 3300.));
+        CHECK_EQ(density.n, 4);
+        auto const normalizedDensity{dynamics.streetMeanDensity<true>()};
+        CHECK_EQ(normalizedDensity.mean,
+                 doctest::Approx(dynamics.graph().edge(0).density<true>() / 4.));
+        CHECK_EQ(normalizedDensity.n, 4);
         dynamics.evolve();
         dynamics.evolve();
         dynamics.evolve();
@@ -2434,12 +2470,57 @@ TEST_CASE("FirstOrderDynamics") {
 
         THEN("The distribution of agents follows the transition probabilities") {
           CHECK_EQ(dynamics.graph().edge(0).nAgents(), 0);
-          CHECK_EQ(dynamics.graph().edge(1).nAgents(), 3);
-          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
-          CHECK_EQ(dynamics.graph().edge(3).nAgents(), 2);
+          // The exact split is seed-dependent; the invariant is that nobody is lost.
+          CHECK_EQ(dynamics.graph().edge(1).nAgents() +
+                       dynamics.graph().edge(2).nAgents() +
+                       dynamics.graph().edge(3).nAgents(),
+                   6);
         }
       }
     }
+  }
+  SUBCASE("Seeded results are reproducible with concurrency 1") {
+    // With a single thread, the per-thread engine is seeded from the dynamics' seed only, so
+    // the same seed gives the same simulation, also when it is set after construction
+    auto const run = [](unsigned int const constructorSeed,
+                        std::optional<unsigned int> const newSeed) {
+      auto network = RoadNetwork{};
+      network.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
+      network.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
+      network.setEdgeWeight("length");
+      FirstOrderDynamics dynamics{std::move(network), false, constructorSeed};
+      dynamics.setConcurrency(1);
+      if (newSeed.has_value()) {
+        dynamics.setSeed(*newSeed);
+      }
+      dynamics.setPassageProbability(0.7);
+      dynamics.setErrorProbability(0.1);
+      auto const& graph = dynamics.graph();
+      dynamics.setConditionalODs(
+          {{graph.node(1).outgoingEdges().front()->id(),
+            {1.0, {{graph.node(14).ingoingEdges().front()->id(), 1.0}}}}});
+      dynamics.updatePaths();
+      dynamics.addAgents(200, AgentInsertionMethod::RANDOM);
+      dynamics.addAgents(50, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
+      for (auto i{0}; i < 300; ++i) {
+        dynamics.evolve();
+      }
+      std::vector<std::pair<Id, std::size_t>> streetAgents;
+      for (auto const& [streetId, pStreet] : dynamics.graph().edges()) {
+        streetAgents.emplace_back(streetId, pStreet->nAgents());
+      }
+      std::ranges::sort(streetAgents);
+      return std::make_pair(dynamics.agentStats(), streetAgents);
+    };
+    auto const [firstStats, firstStreets] = run(69, std::nullopt);
+    auto const [secondStats, secondStreets] = run(69, std::nullopt);
+    auto const [reseededStats, reseededStreets] = run(1, 69);
+    // Make sure the simulation actually moved agents around
+    CHECK(std::get<2>(firstStats) + std::get<3>(firstStats) > 0);
+    CHECK_EQ(firstStats, secondStats);
+    CHECK_EQ(firstStreets, secondStreets);
+    CHECK_EQ(firstStats, reseededStats);
+    CHECK_EQ(firstStreets, reseededStreets);
   }
 }
 

@@ -75,12 +75,6 @@ namespace dsf::mobility {
                       m_nLanes));
     }
     m_laneMapping = laneMapping;
-    std::string strLaneMapping;
-    std::for_each(
-        laneMapping.cbegin(), laneMapping.cend(), [&strLaneMapping](auto const item) {
-          strLaneMapping +=
-              std::format("{} - ", directionToString[static_cast<size_t>(item)]);
-        });
     spdlog::debug("New lane mapping for street {}", *this);
   }
   void Street::setQueue(dsf::queue<std::unique_ptr<Agent>> queue, size_t index) {
