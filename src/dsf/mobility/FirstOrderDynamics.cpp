@@ -1090,6 +1090,16 @@ namespace dsf::mobility {
             *nextStreet);
         continue;
       }
+      if (destinationNode->isIntersection() &&
+          static_cast<Intersection&>(*destinationNode)
+              .isLaneOccupied(pStreet->id(), static_cast<std::size_t>(queueIndex))) {
+        spdlog::trace(
+            "Skipping agent emission from {} due to an agent from lane {} still in {}",
+            *pStreet,
+            queueIndex,
+            *destinationNode);
+        continue;
+      }
       auto pAgent{pStreet->dequeue(queueIndex, this->time_step())};
       spdlog::debug(
           "{} at time {} has been dequeued from street {} and enqueued on street {} "
@@ -1103,7 +1113,8 @@ namespace dsf::mobility {
       if (destinationNode->isIntersection()) {
         auto& intersection = dynamic_cast<Intersection&>(*destinationNode);
         auto const delta{nextStreet->deltaAngle(pStreet->angle())};
-        intersection.addAgent(delta, std::move(pAgent));
+        intersection.addAgent(
+            delta, std::move(pAgent), static_cast<std::size_t>(queueIndex));
       } else if (destinationNode->isRoundabout()) {
         auto& roundabout = dynamic_cast<Roundabout&>(*destinationNode);
         roundabout.enqueue(std::move(pAgent));
@@ -1137,8 +1148,9 @@ namespace dsf::mobility {
         if (intersection.agents().empty()) {
           return;
         }
-        for (auto it{intersection.agents().begin()}; it != intersection.agents().end();) {
-          auto& pAgent{it->second};
+        for (auto it{intersection.agents().cbegin()}; it != intersection.agents().cend();
+             ++it) {
+          auto const& pAgent{it->second};
           if (!pAgent->nextStreetId().has_value()) {
             throw std::runtime_error(std::format(
                 "{} has no next street ID at {}. Cannot proceed.", *pAgent, *pNode));
@@ -1150,7 +1162,6 @@ namespace dsf::mobility {
               spdlog::debug("Forcing priority from {} on {}", *pNode, *nextStreet);
               return;
             }
-            ++it;
             continue;
           }
           if (!m_turnCounts.empty() && pAgent->streetId().has_value()) {
@@ -1172,8 +1183,7 @@ namespace dsf::mobility {
               pNode->id(),
               nextStreet->id(),
               pAgent->freeTime());
-          nextStreet->addAgent(std::move(pAgent), this->time_step());
-          it = intersection.agents().erase(it);
+          nextStreet->addAgent(intersection.removeAgent(it), this->time_step());
           break;
         }
       } else if (pNode->isRoundabout()) {
@@ -1295,10 +1305,8 @@ namespace dsf::mobility {
   void FirstOrderDynamics::prepareNetwork(bool const bAdjustNodeCapacities,
                                           bool const bAutoMapStreetLanes,
                                           bool const bAutoAssignRoadPriorities,
-                                          bool const bAutoInitTrafficLights) {
-    if (bAdjustNodeCapacities) {
-      m_graph->adjustNodeCapacities();
-    }
+                                          bool const bAutoInitTrafficLights,
+                                          bool const bApplyIntersectionPriorities) {
     if (bAutoMapStreetLanes) {
       m_graph->autoMapStreetLanes();
     }
@@ -1307,6 +1315,14 @@ namespace dsf::mobility {
     }
     if (bAutoInitTrafficLights) {
       m_graph->autoInitTrafficLights();
+    }
+    // After autoInitTrafficLights, so that the traffic lights it downgrades are included
+    if (bApplyIntersectionPriorities) {
+      m_graph->applyIntersectionPriorities();
+    }
+    // Last, as the intersections' transport capacity depends on their priorities
+    if (bAdjustNodeCapacities) {
+      m_graph->adjustNodeCapacities();
     }
   }
 
