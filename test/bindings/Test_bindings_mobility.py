@@ -188,3 +188,29 @@ def test_dynamics_freeflow_itineraries(dynamics):
     freeflow = dynamics.freeflowItineraries()
     assert set(freeflow) == set(dynamics.itineraries()) == {4}
     assert freeflow[4].destination() == 4
+
+
+def test_dynamics_mode_defaults_to_edges(dynamics):
+    assert dynamics.mode() == mobility.DynamicsMode.EDGES
+    dynamics.setDestinations([1])
+    assert set(dynamics.itineraries()) == {1}
+
+
+def test_dynamics_mode_nodes(loaded_road_network):
+    # Node 1 has the outgoing streets 3, 4 and 6
+    dynamics = mobility.Dynamics(
+        loaded_road_network, seed=69, mode=mobility.DynamicsMode.NODES
+    )
+    assert dynamics.mode() == mobility.DynamicsMode.NODES
+    dynamics.setDestinations([1])
+    assert set(dynamics.itineraries()) == {3, 4, 6}
+
+    with pytest.raises(RuntimeError):
+        dynamics.setMode(mobility.DynamicsMode.EDGES)
+
+
+def test_dynamics_set_mode(dynamics):
+    dynamics.setMode(mobility.DynamicsMode.NODES)
+    assert dynamics.mode() == mobility.DynamicsMode.NODES
+    dynamics.setODs([(0, 1, 1.0)])
+    assert set(dynamics.itineraries()) == {3, 4, 6}

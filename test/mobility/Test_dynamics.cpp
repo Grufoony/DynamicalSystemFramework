@@ -406,9 +406,9 @@ TEST_CASE("FirstOrderDynamics") {
         randomNetwork.importNodeProperties(
             (DATA_FOLDER / "manhattan_nodes.csv").string());
         randomNetwork.setEdgeWeight("length");
-        FirstOrderDynamics dynamics{std::move(randomNetwork), false, 69};
-        dynamics.importODsFromCSV(
-            (DATA_FOLDER / "ods_random_ods.csv").string(), ';', false);
+        FirstOrderDynamics dynamics{
+            std::move(randomNetwork), false, 69, DynamicsMode::NODES};
+        dynamics.importODsFromCSV((DATA_FOLDER / "ods_random_ods.csv").string());
         dynamics.updatePaths();
         dynamics.addAgents(3, AgentInsertionMethod::RANDOM_ODS);
 
@@ -418,14 +418,14 @@ TEST_CASE("FirstOrderDynamics") {
           // Verify all agents have valid origins and destinations
           for (const auto& agent : dynamics.agents()) {
             auto origin = agent->srcNodeId().value();
-            auto destination = agent->itinerary()->destination();
+            // Destination streets start from the destination node
+            auto destination =
+                graph.edge(agent->itinerary()->destination()).source()->id();
 
             // Origins should be from {0, 1, 27}
             CHECK((origin == 0 || origin == 1 || origin == 27));
             // Destinations should be from {2, 14, 102}
-            CHECK((destination == graph.node(2).ingoingEdges().front()->id() ||
-                   destination == graph.node(14).ingoingEdges().front()->id() ||
-                   destination == graph.node(102).ingoingEdges().front()->id()));
+            CHECK((destination == 2 || destination == 14 || destination == 102));
           }
         }
         SUBCASE("addAgents - CONDITIONAL_RANDOM_ODS") {
@@ -588,7 +588,8 @@ TEST_CASE("FirstOrderDynamics") {
             randomNetwork.importNodeProperties(
                 (DATA_FOLDER / "manhattan_nodes.csv").string());
             randomNetwork.setEdgeWeight("length");
-            FirstOrderDynamics dynamics{std::move(randomNetwork), false, 69};
+            FirstOrderDynamics dynamics{
+                std::move(randomNetwork), false, 69, DynamicsMode::NODES};
 
             WHEN("We import a valid conditional OD CSV") {
               // Expected file format (semicolon-separated):
@@ -596,7 +597,7 @@ TEST_CASE("FirstOrderDynamics") {
               //   0;0.5;2:0.6,14:0.4
               //   1;0.5;102:1.0
               dynamics.importODsFromCSV(
-                  (DATA_FOLDER / "ods_conditional_random_ods.csv").string(), ';', false);
+                  (DATA_FOLDER / "ods_conditional_random_ods.csv").string());
               dynamics.updatePaths();
               dynamics.addAgents(20, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
 
@@ -608,13 +609,13 @@ TEST_CASE("FirstOrderDynamics") {
                 auto const& graph = dynamics.graph();
                 for (const auto& agent : dynamics.agents()) {
                   auto const src = agent->srcNodeId().value();
-                  auto const dest = agent->itinerary()->destination();
+                  auto const dest =
+                      graph.edge(agent->itinerary()->destination()).source()->id();
                   CHECK((src == 0 || src == 1));
                   if (src == 0) {
-                    CHECK((dest == graph.node(2).ingoingEdges().front()->id() ||
-                           dest == graph.node(14).ingoingEdges().front()->id()));
+                    CHECK((dest == 2 || dest == 14));
                   } else {
-                    CHECK_EQ(dest, graph.node(102).ingoingEdges().front()->id());
+                    CHECK_EQ(dest, 102);
                   }
                 }
               }
@@ -670,40 +671,82 @@ TEST_CASE("FirstOrderDynamics") {
           REQUIRE(out.is_open());
           out << content;
         };
-        THEN("Node ids in the compat format are mapped onto their streets") {
+        // Sorted ids of the outgoing streets of a node
+        auto const outgoingStreetIds = [&dynamics](Id const nodeId) {
+          std::vector<Id> ids;
+          for (auto const* pStreet : dynamics.graph().node(nodeId).outgoingEdges()) {
+            ids.push_back(pStreet->id());
+          }
+          std::ranges::sort(ids);
+          return ids;
+        };
+        auto const sortedIds = [](auto const& weightedIds) {
+          std::vector<Id> ids;
+          double sumWeights{0.};
+          for (auto const& [id, weight] : weightedIds) {
+            ids.push_back(id);
+            sumWeights += weight;
+          }
+          CHECK_EQ(sumWeights, doctest::Approx(1.));
+          std::ranges::sort(ids);
+          return ids;
+        };
+        THEN("Node ids in the compat format are spread over their outgoing streets") {
+          dynamics.setMode(DynamicsMode::NODES);
           writeCsv("id;o_prob;d_prob\n0;1.0;\n2;;1.0\n");
-          dynamics.importODsFromCSV(csvPath.string(), ';', false);
-          REQUIRE_EQ(dynamics.origins().size(), 1);
-          REQUIRE_EQ(dynamics.destinations().size(), 1);
-          CHECK_EQ(std::get<0>(dynamics.origins().front()),
-                   dynamics.graph().node(0).outgoingEdges().front()->id());
-          CHECK_EQ(std::get<0>(dynamics.destinations().front()),
-                   dynamics.graph().node(2).ingoingEdges().front()->id());
+          dynamics.importODsFromCSV(csvPath.string());
+          CHECK_EQ(sortedIds(dynamics.origins()), outgoingStreetIds(0));
+          CHECK_EQ(sortedIds(dynamics.destinations()), outgoingStreetIds(2));
         }
-        THEN("Rows with an unknown type or no valid destination are skipped") {
-          for (bool const bEdges : {false, true}) {
-            writeCsv("id;type;weight\n0;O;1.0\n2;X;1.0\n14;D;1.0\n");
-            dynamics.importODsFromCSV(csvPath.string(), ';', bEdges);
-            CHECK_EQ(dynamics.origins().size(), 1);
-            CHECK_EQ(dynamics.destinations().size(), 1);
+        THEN("Rows with an unknown type or no valid destination are skipped (edges)") {
+          writeCsv("id;type;weight\n0;O;1.0\n2;X;1.0\n14;D;1.0\n");
+          dynamics.importODsFromCSV(csvPath.string());
+          CHECK_EQ(dynamics.origins().size(), 1);
+          CHECK_EQ(dynamics.destinations().size(), 1);
 
-            writeCsv("origin_id;weight;destinations\n0;0.5;2:1.0,bad\n1;0.5;\n");
-            dynamics.importODsFromCSV(csvPath.string(), ';', bEdges);
-            REQUIRE_EQ(dynamics.origins().size(), 1);
-            CHECK_EQ(std::get<1>(dynamics.origins().front()), doctest::Approx(1.));
+          writeCsv("origin_id;weight;destinations\n0;0.5;2:1.0,bad\n1;0.5;\n");
+          dynamics.importODsFromCSV(csvPath.string());
+          REQUIRE_EQ(dynamics.origins().size(), 1);
+          CHECK_EQ(std::get<1>(dynamics.origins().front()), doctest::Approx(1.));
+        }
+        THEN("Rows with an unknown type or no valid destination are skipped (nodes)") {
+          dynamics.setMode(DynamicsMode::NODES);
+          writeCsv("id;type;weight\n0;O;1.0\n2;X;1.0\n14;D;1.0\n");
+          dynamics.importODsFromCSV(csvPath.string());
+          CHECK_EQ(sortedIds(dynamics.origins()), outgoingStreetIds(0));
+          CHECK_EQ(sortedIds(dynamics.destinations()), outgoingStreetIds(14));
+
+          writeCsv("origin_id;weight;destinations\n0;0.5;2:1.0,bad\n1;0.5;\n");
+          dynamics.importODsFromCSV(csvPath.string());
+          CHECK_EQ(sortedIds(dynamics.origins()), outgoingStreetIds(0));
+        }
+        THEN("OD pairs between nodes are spread over their outgoing streets") {
+          dynamics.setMode(DynamicsMode::NODES);
+          writeCsv("origin_id;destination_id;weight\n0;2;1.0\n");
+          dynamics.importODsFromCSV(csvPath.string());
+          auto const destinationIds{outgoingStreetIds(2)};
+          CHECK_EQ(dynamics.itineraries().size(), destinationIds.size());
+          for (auto const id : destinationIds) {
+            CHECK(dynamics.itineraries().contains(id));
+          }
+          dynamics.updatePaths();
+          dynamics.addAgents(10, AgentInsertionMethod::ODS);
+          CHECK_EQ(dynamics.nAgents(), 10);
+          for (auto const& agent : dynamics.agents()) {
+            CHECK_EQ(agent->srcNodeId().value(), 0);
+            CHECK_EQ(
+                dynamics.graph().edge(agent->itinerary()->destination()).source()->id(),
+                2);
           }
         }
         THEN("Missing files and unsupported formats throw") {
-          CHECK_THROWS_AS(dynamics.importODsFromCSV("nonexistent_file.csv", ';', false),
+          CHECK_THROWS_AS(dynamics.importODsFromCSV("nonexistent_file.csv"),
                           std::invalid_argument);
           writeCsv("foo;bar\n0;1\n");
-          CHECK_THROWS_AS(dynamics.importODsFromCSV(csvPath.string(), ';', false),
+          CHECK_THROWS_AS(dynamics.importODsFromCSV(csvPath.string()),
                           std::runtime_error);
-          CHECK_THROWS_AS(dynamics.importODsFromCSV(csvPath.string(), ';', true),
-                          std::runtime_error);
-          // OD pairs are only supported between streets
-          writeCsv("origin_id;destination_id;weight\n0;2;1.0\n");
-          CHECK_THROWS_AS(dynamics.importODsFromCSV(csvPath.string(), ';', false),
+          dynamics.setMode(DynamicsMode::NODES);
+          CHECK_THROWS_AS(dynamics.importODsFromCSV(csvPath.string()),
                           std::runtime_error);
           CHECK_THROWS_AS(dynamics.setConditionalODs({{0, {1.0, {{2, 0.}}}}}),
                           std::invalid_argument);
@@ -2624,6 +2667,109 @@ TEST_CASE("RoadDynamics Configuration") {
           CHECK_FALSE(destCounts.empty());
           CHECK_EQ(destCounts.at(1), 1);
           CHECK_EQ(destCounts.at(2), 2);
+        }
+      }
+    }
+  }
+
+  SUBCASE("DynamicsMode") {
+    GIVEN("A network where node 2 has two outgoing streets and nodes 3, 4 have none") {
+      // Street ids differ from node ids, so that mixing them up fails
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      graph2.addStreet(10, std::make_pair(0, 1), 13.8888888889);
+      graph2.addStreet(11, std::make_pair(1, 2), 13.8888888889);
+      graph2.addStreet(12, std::make_pair(2, 3), 13.8888888889);
+      graph2.addStreet(13, std::make_pair(2, 4), 13.8888888889);
+      FirstOrderDynamics dyn{std::move(graph2), false, 42};
+
+      auto const sortedIds = [](auto const& weightedIds) {
+        std::vector<Id> ids;
+        double sumWeights{0.};
+        for (auto const& [id, weight] : weightedIds) {
+          ids.push_back(id);
+          sumWeights += weight;
+        }
+        CHECK_EQ(sumWeights, doctest::Approx(1.));
+        std::ranges::sort(ids);
+        return ids;
+      };
+
+      THEN("The default mode is EDGES and ids are street ids") {
+        CHECK_EQ(dyn.mode(), DynamicsMode::EDGES);
+        dyn.setOrigins({{11, 1.}});
+        dyn.setDestinations({12});
+        CHECK_EQ(sortedIds(dyn.origins()), std::vector<Id>{11});
+        CHECK_EQ(sortedIds(dyn.destinations()), std::vector<Id>{12});
+      }
+      THEN("The mode cannot change once origins or destinations are set") {
+        dyn.setOrigins({{11, 1.}});
+        CHECK_THROWS_AS(dyn.setMode(DynamicsMode::NODES), std::runtime_error);
+        CHECK_NOTHROW(dyn.setMode(DynamicsMode::EDGES));
+        CHECK_EQ(dyn.mode(), DynamicsMode::EDGES);
+      }
+      WHEN("The mode is NODES") {
+        dyn.setMode(DynamicsMode::NODES);
+        CHECK_EQ(dyn.mode(), DynamicsMode::NODES);
+
+        THEN("Origins and destinations are spread over the outgoing streets") {
+          dyn.setOrigins({{2, 1.}});
+          CHECK_EQ(sortedIds(dyn.origins()), std::vector<Id>{12, 13});
+          for (auto const& [id, weight] : dyn.origins()) {
+            CHECK_EQ(weight, doctest::Approx(0.5));
+          }
+          dyn.setDestinations({1, 2});
+          CHECK_EQ(sortedIds(dyn.destinations()), std::vector<Id>{11, 12, 13});
+          for (auto const& [id, weight] : dyn.destinations()) {
+            CHECK_EQ(weight, doctest::Approx(id == 11 ? 0.5 : 0.25));
+          }
+          CHECK_EQ(dyn.itineraries().size(), 3);
+        }
+        THEN("Nodes without outgoing streets are skipped") {
+          dyn.setDestinations({2, 3});
+          CHECK_EQ(sortedIds(dyn.destinations()), std::vector<Id>{12, 13});
+          CHECK_THROWS_AS(dyn.setDestinations({3, 4}), std::invalid_argument);
+          CHECK_THROWS_AS(dyn.setOrigins({{3, 1.}}), std::invalid_argument);
+          CHECK_THROWS_AS(dyn.setODs({{0, 3, 1.}}), std::invalid_argument);
+          CHECK_THROWS_AS(dyn.setConditionalODs({{3, {1., {{2, 1.}}}}}),
+                          std::invalid_argument);
+        }
+        THEN("Unknown nodes throw") {
+          CHECK_THROWS_AS(dyn.setOrigins({{99, 1.}}), std::out_of_range);
+        }
+        THEN("Conditional ODs are spread over the outgoing streets") {
+          dyn.setConditionalODs({{0, {1., {{2, 1.}}}}});
+          CHECK_EQ(sortedIds(dyn.origins()), std::vector<Id>{10});
+          dyn.updatePaths();
+          dyn.addAgents(10, AgentInsertionMethod::CONDITIONAL_RANDOM_ODS);
+          CHECK_EQ(dyn.nAgents(), 10);
+          for (auto const& agent : dyn.agents()) {
+            auto const destination{agent->itinerary()->destination()};
+            CHECK((destination == 12 || destination == 13));
+          }
+        }
+        WHEN("Agents travel from node 0 to node 2") {
+          dyn.setODs({{0, 2, 1.}});
+          CHECK_EQ(dyn.itineraries().size(), 2);
+          dyn.updatePaths();
+          dyn.addAgents(4, AgentInsertionMethod::ODS);
+          CHECK_EQ(dyn.nAgents(), 4);
+
+          THEN("They start from node 0 and are counted by node") {
+            auto const counts{dyn.originCounts(false)};
+            CHECK_EQ(counts.size(), 1);
+            CHECK_EQ(counts.at(0), 4);
+          }
+          THEN("They arrive at node 2 and are counted by node") {
+            for (std::size_t i{0}; i < 1000 && dyn.nAgents() > 0; ++i) {
+              dyn.evolve();
+            }
+            CHECK_EQ(dyn.nAgents(), 0);
+            CHECK_EQ(std::get<2>(dyn.agentStats()), 4);
+            auto const counts{dyn.destinationCounts(false)};
+            CHECK_EQ(counts.size(), 1);
+            CHECK_EQ(counts.at(2), 4);
+          }
         }
       }
     }
