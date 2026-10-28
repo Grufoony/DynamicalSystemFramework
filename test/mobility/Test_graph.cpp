@@ -1134,6 +1134,31 @@ TEST_CASE("RoadNetwork") {
     }
   }
 
+  SUBCASE("reverse") {
+    GIVEN("A RoadNetwork object with a two-way street and a one-way street") {
+      RoadNetwork graph{};
+      graph.addNDefaultNodes(3);
+      graph.addStreet(1, std::make_pair(0, 1), 1.);
+      graph.addStreet(2, std::make_pair(1, 2), 1.);
+      graph.addStreet(3, std::make_pair(1, 0), 1.);
+      THEN("Reverse streets are linked both ways") {
+        CHECK_EQ(graph.edge(1).reverse(), &graph.edge(3));
+        CHECK_EQ(graph.edge(3).reverse(), &graph.edge(1));
+      }
+      THEN("A one-way street has no reverse") {
+        CHECK_EQ(graph.edge(2).reverse(), nullptr);
+      }
+      THEN("An edge that is not the reverse cannot be set") {
+        CHECK_THROWS_AS(graph.edge(1).setReverse(&graph.edge(2)), std::invalid_argument);
+        CHECK_EQ(graph.edge(1).reverse(), &graph.edge(3));
+      }
+      THEN("The reverse can be unset") {
+        graph.edge(1).setReverse(nullptr);
+        CHECK_EQ(graph.edge(1).reverse(), nullptr);
+      }
+    }
+  }
+
   SUBCASE("adjustNodeCapacities and normalizeStreetCapacities") {
     GIVEN("A graph composed of three streets with a different lane number") {
       RoadNetwork graph{};

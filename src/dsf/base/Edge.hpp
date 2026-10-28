@@ -22,6 +22,7 @@ namespace dsf {
     geometry::PolyLine m_geometry;
     Id m_id;
     std::pair<Node*, Node*> m_nodePair;
+    Edge* m_pReverse{nullptr};
     double m_angle;
     std::unordered_map<
         std::string,
@@ -61,6 +62,10 @@ namespace dsf {
     /// @param pNode A pointer to the new target node
     /// @throws std::invalid_argument if the node is null or does not have the target id
     void setTarget(Node* pNode);
+    /// @brief Set the edge's reverse, i.e. the edge v -> u
+    /// @param pEdge A pointer to the reverse edge, or nullptr to unset it
+    /// @throws std::invalid_argument if the edge does not go from this edge's target to its source
+    void setReverse(Edge* pEdge);
 
     /// @brief Get the edge's id
     /// @return Id The edge's id
@@ -74,6 +79,9 @@ namespace dsf {
     /// @brief Get the edge's target node
     /// @return Node* A pointer to the target node
     inline Node* target() const noexcept { return m_nodePair.second; }
+    /// @brief Get the edge's reverse, i.e. the edge v -> u
+    /// @return Edge* A pointer to the reverse edge, or nullptr if there is none
+    inline Edge* reverse() const noexcept { return m_pReverse; }
     /// @brief Get the edge's geometry
     /// @return dsf::geometry::PolyLine The edge's geometry, a vector of pairs of doubles representing the coordinates of the edge's geometry
     inline auto const& geometry() const { return m_geometry; }

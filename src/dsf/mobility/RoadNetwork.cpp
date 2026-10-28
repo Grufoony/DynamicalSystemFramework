@@ -861,8 +861,8 @@ namespace dsf::mobility {
             continue;
           }
           auto const deltaAngle{pOutStreet->deltaAngle(pInStreet->angle())};
-          auto const& outOppositeStreet{
-              this->street(pOutStreet->target()->id(), pOutStreet->source()->id())};
+          auto const* outOppositeStreet{
+              static_cast<Street const*>(pOutStreet->reverse())};
           if (!outOppositeStreet) {
             continue;
           }
