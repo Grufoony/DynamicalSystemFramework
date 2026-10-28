@@ -11,8 +11,8 @@
 #include <spdlog/sinks/basic_file_sink.h>
 
 inline constexpr std::uint8_t DSF_VERSION_MAJOR = 7;
-inline constexpr std::uint8_t DSF_VERSION_MINOR = 5;
-inline constexpr std::uint8_t DSF_VERSION_PATCH = 4;
+inline constexpr std::uint8_t DSF_VERSION_MINOR = 6;
+inline constexpr std::uint8_t DSF_VERSION_PATCH = 0;
 
 namespace dsf::detail {
   constexpr std::size_t digitCount(std::uint8_t value) noexcept {

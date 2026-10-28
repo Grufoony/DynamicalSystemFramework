@@ -49,6 +49,12 @@ NB_MODULE(dsf_cpp, m) {
       .value("UNIFORM", dsf::mobility::AgentInsertionMethod::UNIFORM)
       .export_values();
 
+  // Bind DynamicsMode enum
+  nb::enum_<dsf::mobility::DynamicsMode>(mobility, "DynamicsMode")
+      .value("EDGES", dsf::mobility::DynamicsMode::EDGES)
+      .value("NODES", dsf::mobility::DynamicsMode::NODES)
+      .export_values();
+
   // Bind TrafficLightOptimization enum
   nb::enum_<dsf::TrafficLightOptimization>(mobility, "TrafficLightOptimization")
       .value("SINGLE_TAIL", dsf::TrafficLightOptimization::SINGLE_TAIL)
@@ -1078,11 +1084,45 @@ Returns:
     int: The destination node id.)doc");
 
   nb::class_<dsf::mobility::FirstOrderDynamics>(mobility, "Dynamics")
-      .def(nb::init<dsf::mobility::RoadNetwork&&, bool, std::optional<unsigned int>>(),
+      .def(nb::init<dsf::mobility::RoadNetwork&&,
+                    bool,
+                    std::optional<unsigned int>,
+                    dsf::mobility::DynamicsMode>(),
            nb::arg("graph"),
            nb::arg("useCache") = false,
            nb::arg("seed") = std::nullopt,
-           R"doc(Create a FirstOrderDynamics instance.)doc")
+           nb::arg("mode") = dsf::mobility::DynamicsMode::EDGES,
+           R"doc(Create a FirstOrderDynamics instance.
+
+    Args:
+      graph (RoadNetwork): The road network.
+      useCache (bool, optional): Cache the computed paths on disk.
+      seed (int, optional): Seed of the random number generator.
+      mode (DynamicsMode, optional): How origin, destination and OD ids are
+        interpreted: EDGES (street ids, default) or NODES (node ids).)doc")
+      .def("setMode",
+           &dsf::mobility::FirstOrderDynamics::setMode,
+           nb::arg("mode"),
+           R"doc(Set how origin, destination and OD ids are interpreted.
+
+    In NODES mode each node id is spread over the node's outgoing streets, with its
+    weight split evenly among them: agents start from the node and arrive when they
+    reach it. Nodes without outgoing streets are skipped.
+
+    Args:
+      mode (DynamicsMode): EDGES (street ids) or NODES (node ids).
+
+    Raises:
+      RuntimeError: If origins, destinations or OD pairs are already set.
+
+    Returns:
+      None)doc")
+      .def("mode",
+           &dsf::mobility::FirstOrderDynamics::mode,
+           R"doc(Get how origin, destination and OD ids are interpreted.
+
+    Returns:
+      DynamicsMode: The mode.)doc")
       .def("setSeed",
            &dsf::mobility::FirstOrderDynamics::setSeed,
            nb::arg("seed"),
@@ -1237,46 +1277,47 @@ Returns:
       .def(
           "setDestinations",
           [](dsf::mobility::FirstOrderDynamics& self,
-             const std::vector<dsf::Id>& destinationNodes) {
-            self.setDestinations(destinationNodes);
+             const std::vector<dsf::Id>& destinations) {
+            self.setDestinations(destinations);
           },
           nb::arg("destinations"),
-          R"doc(Set the destinations using a list of ids.
+          R"doc(Set the destinations using a list of ids, with uniform weights.
 
 Args:
-    destinations (Sequence[int]): Destination ids.
+    destinations (Sequence[int]): Destination ids, interpreted according to mode().
 
 Returns:
     None)doc")
       .def(
           "setOrigins",
           [](dsf::mobility::FirstOrderDynamics& self,
-             const std::unordered_map<dsf::Id, double>& originNodes) {
-            self.setOrigins(originNodes);
+             const std::unordered_map<dsf::Id, double>& origins) {
+            self.setOrigins(origins);
           },
-          nb::arg("originNodes") = std::unordered_map<dsf::Id, double>(),
+          nb::arg("origins") = std::unordered_map<dsf::Id, double>(),
           R"doc(Set weighted origins from a mapping of ids to weights.
 
 Args:
-    origins (Mapping[int, float], optional): Origins and weights.
+    origins (Mapping[int, float], optional): Origins and weights, ids being
+        interpreted according to mode(). If empty, all streets are used.
 
 Returns:
     None)doc")
       .def(
           "setOrigins",
-          [](dsf::mobility::FirstOrderDynamics& self, nb::ndarray<dsf::Id> originNodes) {
-            auto* ptr = static_cast<dsf::Id*>(originNodes.data());
-            std::unordered_map<dsf::Id, double> nodeWeights;
-            for (size_t i = 0; i < originNodes.size(); ++i) {
-              nodeWeights[ptr[i]] = 1.0;
+          [](dsf::mobility::FirstOrderDynamics& self, nb::ndarray<dsf::Id> origins) {
+            auto* ptr = static_cast<dsf::Id*>(origins.data());
+            std::unordered_map<dsf::Id, double> weights;
+            for (size_t i = 0; i < origins.size(); ++i) {
+              weights[ptr[i]] = 1.0;
             }
-            self.setOrigins(nodeWeights);
+            self.setOrigins(weights);
           },
-          nb::arg("originNodes"),
-          R"doc(Set origin nodes from a numpy array of node ids.
+          nb::arg("origins"),
+          R"doc(Set origins from a numpy array of ids, with uniform weights.
 
 Args:
-    origins (array[int]): ids to use as origins.
+    origins (array[int]): Ids to use as origins, interpreted according to mode().
 
 Returns:
     None)doc")
@@ -1288,10 +1329,11 @@ Returns:
             self.setDestinations(ids);
           },
           nb::arg("destinations"),
-          R"doc(Set destinations from a numpy array of node ids.
+          R"doc(Set destinations from a numpy array of ids, with uniform weights.
 
 Args:
-    destinationNodes (array[int]): Node ids to use as destinations.
+    destinations (array[int]): Ids to use as destinations, interpreted according
+        to mode().
 
 Returns:
     None)doc")
@@ -1305,7 +1347,8 @@ Returns:
           R"doc(Set weighted destination from a mapping of ids to weights.
 
       Args:
-        destinations (Mapping[int, float]): Destinations and weights.
+        destinations (Mapping[int, float]): Destinations and weights, ids being
+          interpreted according to mode().
 
       Returns:
         None)doc")
@@ -1315,7 +1358,8 @@ Returns:
            R"doc(Set origin-destination pairs for the simulation.
 
     Args:
-      ods (object): Origin-destination data structure expected by the C++ API.
+      ods (Sequence[tuple[int, int, float]]): (origin id, destination id, weight)
+        triples, ids being interpreted according to mode().
 
     Returns:
       None)doc")
@@ -1323,25 +1367,26 @@ Returns:
           "importODsFromCSV",
           [](dsf::mobility::FirstOrderDynamics& self,
              const std::string& fileName,
-             const char separator = ';',
-             const bool edges = true) {
-            self.importODsFromCSV(fileName, separator, edges);
-          },
+             const char separator = ';') { self.importODsFromCSV(fileName, separator); },
           nb::arg("fileName"),
           nb::arg("separator") = ';',
-          nb::arg("edges") = true,
-          "Import origin-destination pairs from a CSV file.\n\n"
-          "Supports two CSV formats:\n"
-          "1. RANDOM_ODS: columns (node_id, type, weight) where type is 'O' (origin) or "
-          "'D' (destination)\n"
-          "2. ODS: columns (origin_id, destination_id, weight) for explicit OD pairs\n\n"
-          "Args:\n"
-          "    fileName (str): Path to the CSV file\n"
-          "    separator (str): CSV delimiter character (default is ';')"
-          "    edges (bool): If True, interpret ids as edge ids; if False, as node "
-          "ids\n\n"
-          "Returns:\n"
-          "    None")
+          R"doc(Import origin-destination pairs from a CSV file.
+
+Supported CSV formats:
+1. RANDOM_ODS: columns (id, type, weight) where type is 'O' (origin) or 'D'
+   (destination), or (id, o_prob, d_prob)
+2. ODS: columns (origin_id, destination_id, weight) for explicit OD pairs
+3. CONDITIONAL_RANDOM_ODS: columns (origin_id, weight, destinations) where
+   destinations is a comma-separated list of destination_id:weight pairs
+
+Ids are interpreted according to mode().
+
+Args:
+    fileName (str): Path to the CSV file.
+    separator (str): CSV delimiter character (default is ';').
+
+Returns:
+    None)doc")
       .def(
           "setTransitionMatrix",
           [](dsf::mobility::FirstOrderDynamics& self,
@@ -1422,7 +1467,7 @@ Returns:
 
     Args:
       id (int): Itinerary id.
-      destination (int): Destination node id.
+      destination (int): Destination street id (whatever mode()).
 
     Returns:
       None)doc")
@@ -1582,36 +1627,38 @@ Returns:
           "originCounts",
           [](dsf::mobility::FirstOrderDynamics& self, bool reset) {
             nb::dict py_result;
-            for (const auto& [node_id, count] : self.originCounts(reset)) {
-              py_result[nb::cast(node_id)] = nb::cast(count);
+            for (const auto& [id, count] : self.originCounts(reset)) {
+              py_result[nb::cast(id)] = nb::cast(count);
             }
             return py_result;
           },
           nb::arg("reset") = true,
-          R"doc(Get the number of origin events per node.
+          R"doc(Get the number of origin events per origin.
 
       Args:
         reset (bool, optional): Reset counters after reading.
 
       Returns:
-        dict[int, int]: Mapping of node id to origin count.)doc")
+        dict[int, int]: Mapping of origin id (street id in EDGES mode, node id in
+          NODES mode) to origin count.)doc")
       .def(
           "destinationCounts",
           [](dsf::mobility::FirstOrderDynamics& self, bool reset) {
             nb::dict py_result;
-            for (const auto& [node_id, count] : self.destinationCounts(reset)) {
-              py_result[nb::cast(node_id)] = nb::cast(count);
+            for (const auto& [id, count] : self.destinationCounts(reset)) {
+              py_result[nb::cast(id)] = nb::cast(count);
             }
             return py_result;
           },
           nb::arg("reset") = true,
-          R"doc(Get the number of destination events per node.
+          R"doc(Get the number of destination events per destination.
 
       Args:
           reset (bool, optional): Reset counters after reading.
 
       Returns:
-          dict[int, int]: Mapping of node id to destination count.)doc")
+          dict[int, int]: Mapping of destination id (street id in EDGES mode, node id
+            in NODES mode) to destination count.)doc")
       .def(
           "summary",
           [](dsf::mobility::FirstOrderDynamics& self) {
