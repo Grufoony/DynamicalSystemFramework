@@ -1305,10 +1305,8 @@ namespace dsf::mobility {
   void FirstOrderDynamics::prepareNetwork(bool const bAdjustNodeCapacities,
                                           bool const bAutoMapStreetLanes,
                                           bool const bAutoAssignRoadPriorities,
-                                          bool const bAutoInitTrafficLights) {
-    if (bAdjustNodeCapacities) {
-      m_graph->adjustNodeCapacities();
-    }
+                                          bool const bAutoInitTrafficLights,
+                                          bool const bApplyIntersectionPriorities) {
     if (bAutoMapStreetLanes) {
       m_graph->autoMapStreetLanes();
     }
@@ -1317,6 +1315,14 @@ namespace dsf::mobility {
     }
     if (bAutoInitTrafficLights) {
       m_graph->autoInitTrafficLights();
+    }
+    // After autoInitTrafficLights, so that the traffic lights it downgrades are included
+    if (bApplyIntersectionPriorities) {
+      m_graph->applyIntersectionPriorities();
+    }
+    // Last, as the intersections' transport capacity depends on their priorities
+    if (bAdjustNodeCapacities) {
+      m_graph->adjustNodeCapacities();
     }
   }
 

@@ -39,6 +39,23 @@ namespace dsf::mobility {
     bool m_saveAgentData{false};
     bool m_saveTurnCounts{false};
     std::queue<std::tuple<std::time_t, std::string>> m_dynamicODsUpdate;
+    // The FirstOrderDynamics::prepareNetwork flags used by run
+    struct {
+      bool adjustNodeCapacities{true};
+      bool autoMapStreetLanes{false};
+      bool autoAssignRoadPriorities{true};
+      bool autoInitTrafficLights{true};
+      bool applyIntersectionPriorities{false};
+    } m_prepareNetwork;
+
+    /// @brief Prepare the network for the run, as configured by m_prepareNetwork
+    void m_runPrepareNetwork() {
+      m_dynamics->prepareNetwork(m_prepareNetwork.adjustNodeCapacities,
+                                 m_prepareNetwork.autoMapStreetLanes,
+                                 m_prepareNetwork.autoAssignRoadPriorities,
+                                 m_prepareNetwork.autoInitTrafficLights,
+                                 m_prepareNetwork.applyIntersectionPriorities);
+    }
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
     /// @param time The time_t to convert
@@ -293,7 +310,7 @@ namespace dsf::mobility {
         throw std::runtime_error(
             "Cannot run the simulation without imported road network dynamics.");
       }
-      m_dynamics->prepareNetwork();
+      m_runPrepareNetwork();
       m_runDefault(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
     }
 
@@ -305,7 +322,7 @@ namespace dsf::mobility {
         throw std::runtime_error(
             "Cannot run the simulation without imported road network dynamics.");
       }
-      m_dynamics->prepareNetwork();
+      m_runPrepareNetwork();
       m_runSlowCharge(nInitialAgents, agentInsertionDeltaT, checkDeltaT, agentIncrement);
     }
 

@@ -6,6 +6,7 @@
 #include <nanobind/stl/function.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/set.h>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/string_view.h>
@@ -173,6 +174,12 @@ NB_MODULE(dsf_cpp, m) {
 
     Returns:
         str: The street's name (empty if unnamed).)doc")
+          .def("hasPriority",
+               &dsf::mobility::Street::hasPriority,
+               R"doc(Check whether the street is a priority (main) road.
+
+    Returns:
+        bool: True if the street has priority.)doc")
           .def("length",
                &dsf::mobility::Street::length,
                R"doc(Get the length of the street.
@@ -384,6 +391,12 @@ NB_MODULE(dsf_cpp, m) {
                                                                        "Intersection")
       .def(nb::init<dsf::Id>(), nb::arg("id"))
       .def(nb::init<dsf::Id, dsf::geometry::Point>(), nb::arg("id"), nb::arg("point"))
+      .def("streetPriorities",
+           &dsf::mobility::Intersection::streetPriorities,
+           R"doc(Get the ids of the ingoing streets with priority (the main roads).
+
+        Returns:
+          set[int]: The street ids.)doc")
       .def(
           "__repr__",
           [](const dsf::mobility::Intersection& i) { return std::format("{}", i); },
@@ -726,6 +739,16 @@ NB_MODULE(dsf_cpp, m) {
       .def("autoAssignRoadPriorities",
            &dsf::mobility::RoadNetwork::autoAssignRoadPriorities,
            R"doc(Auto-assign priorities to roads based on topology and attributes.)doc")
+      .def("applyIntersectionPriorities",
+           &dsf::mobility::RoadNetwork::applyIntersectionPriorities,
+           R"doc(Make the plain intersections give way to their ingoing priority streets.
+
+      Each intersection (not a traffic light) without street priorities gets its ingoing
+      priority streets as street priorities. Call it after the street priorities are set,
+      by the import or by autoAssignRoadPriorities.
+
+      Returns:
+        None)doc")
       .def(
           "importEdges",
           [](dsf::mobility::RoadNetwork& self, const std::string& fileName) {

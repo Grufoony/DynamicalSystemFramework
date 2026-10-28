@@ -2370,6 +2370,42 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
         }
       }
+      WHEN("The road from A to C is the main one and the network is prepared") {
+        for (Id const streetId : {5, 15}) {
+          dynamics.graph().edge(streetId).setMobilityClass(64u);  // PRIMARY
+        }
+        for (Id const streetId : {10, 20}) {
+          dynamics.graph().edge(streetId).setMobilityClass(8u);  // RESIDENTIAL
+        }
+        AND_WHEN("The intersection priorities are applied") {
+          dynamics.prepareNetwork(false, false, true, false, true);
+          dynamics.addAgent(dynamics.itineraries().at(1), 15);
+          dynamics.addAgent(dynamics.itineraries().at(1), 20);
+          dynamics.evolve();
+          dynamics.evolve();
+          dynamics.evolve();
+          THEN("The agent in C passes first because it's on the main road") {
+            CHECK_EQ(nodeO.streetPriorities(), std::set<Id>{5, 15});
+            CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
+            CHECK_EQ(nodeO.agents().size(), 1);
+            CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
+          }
+        }
+        AND_WHEN("The intersection priorities are not applied (the default)") {
+          dynamics.prepareNetwork(false, false, true, false);
+          dynamics.addAgent(dynamics.itineraries().at(1), 15);
+          dynamics.addAgent(dynamics.itineraries().at(1), 20);
+          dynamics.evolve();
+          dynamics.evolve();
+          dynamics.evolve();
+          THEN("The agent in D passes first, as without road types") {
+            CHECK(nodeO.streetPriorities().empty());
+            CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
+            CHECK_EQ(nodeO.agents().size(), 1);
+            CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 15);
+          }
+        }
+      }
       WHEN("Two agents queue on the same lane and the intersection keeps the first") {
         // A negligible transport capacity keeps the agents in the intersection
         nodeO.setTransportCapacity(1e-9);

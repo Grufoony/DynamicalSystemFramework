@@ -713,6 +713,8 @@ namespace dsf::mobility {
               tl.addStreetPriority(pStreet->id());
             }
           }
+          // A one-way main road enters the node from a single flagged street
+          bool const bFlaggedMainRoad{tl.streetPriorities().size() == 1};
 
           if (tl.streetPriorities().empty()) {
             /*************************************************************
@@ -782,7 +784,7 @@ namespace dsf::mobility {
               }
             }
           }
-          if (tl.streetPriorities().size() != 2) {
+          if (!bFlaggedMainRoad && tl.streetPriorities().size() != 2) {
             spdlog::warn("Failed to auto-init Traffic Light {} - going random",
                          pNode->id());
             // Fall back to the first and third ingoing streets by capacity.
@@ -1042,42 +1044,32 @@ namespace dsf::mobility {
     tbb::parallel_for_each(
         m_nodes.cbegin(), m_nodes.cend(), [&nAssigned, &nNotAssigned](auto const& pair) {
           auto const& pNode{pair.second};
-          auto const& inNeighbours{pNode->ingoingEdges()};
-          // NOTE: std::multimap iterates keys in descending order of std::uint8_t.
+          // NOTE: the map iterates keys in descending order of std::uint8_t.
           // std::uint8_t is defined so that more important roads (e.g., HIGHWAY = 128u,
-          // PRIMARY = 64u, SECONDARY = 32u, ...) have bigger values. The logic
-          // below relies on this ordering to consider higher-priority road types
-          // first when selecting streets to mark as priority roads.
-          std::multimap<std::uint8_t, Street*, std::greater<std::uint8_t>> types;
-          for (auto* pStreet : inNeighbours) {
+          // PRIMARY = 64u, SECONDARY = 32u, ...) have bigger values, so the first group
+          // holds the ingoing streets of the most important road type.
+          std::map<std::uint8_t, std::vector<Street*>, std::greater<std::uint8_t>> types;
+          std::size_t nClassified{0};
+          for (auto* pStreet : pNode->ingoingEdges()) {
             auto const mobilityClass = pStreet->mobilityClass();
             if (mobilityClass != 0u) {
-              types.emplace(mobilityClass, pStreet);
+              types[mobilityClass].push_back(pStreet);
+              ++nClassified;
             }
           }
-          if (types.size() < 2) {
+          if (nClassified < 2) {
             ++nNotAssigned;
             return;
           }
-          std::vector<Street*> priorityRoads;
-          // Find the first road type that has at least 2 streets
-          for (auto it = types.begin(); it != types.end();) {
-            auto const& currentType = it->first;
-            auto const count = types.count(currentType);
+          // The main road crosses the node, entering it from at most two streets: the
+          // most important type is the main road if it has one (a one-way road) or two
+          // streets, otherwise the main road is the pair of them that is the same road.
+          auto const& mainTypeStreets{types.begin()->second};
+          auto const priorityRoads{mainTypeStreets.size() <= 2
+                                       ? mainTypeStreets
+                                       : m_sameRoadPair(mainTypeStreets)};
 
-            if (count == 2) {
-              auto range = types.equal_range(currentType);
-              for (auto rangeIt = range.first; rangeIt != range.second; ++rangeIt) {
-                priorityRoads.push_back(rangeIt->second);
-              }
-              break;
-            }
-
-            // Move to the next different type
-            it = types.upper_bound(currentType);
-          }
-
-          if (priorityRoads.size() < 2) {
+          if (priorityRoads.empty()) {
             spdlog::debug("{}: unable to auto-assign road priorities", *pNode);
             ++nNotAssigned;
             return;
@@ -1094,6 +1086,72 @@ namespace dsf::mobility {
         "streets.",
         nAssigned.load(),
         nNotAssigned.load());
+  }
+
+  std::vector<Street*> RoadNetwork::m_sameRoadPair(std::vector<Street*> const& streets) {
+    // Two streets with the same name are the same road, if no other pair shares a name
+    std::unordered_map<std::string_view, std::vector<Street*>> streetsByName;
+    for (auto* pStreet : streets) {
+      if (!pStreet->name().empty()) {
+        streetsByName[pStreet->name()].push_back(pStreet);
+      }
+    }
+    std::vector<Street*> namedPair;
+    for (auto const& namesakes : streetsByName | std::views::values) {
+      if (namesakes.size() == 2) {
+        if (!namedPair.empty()) {
+          namedPair.clear();
+          break;
+        }
+        namedPair = namesakes;
+      }
+    }
+    if (!namedPair.empty()) {
+      return namedPair;
+    }
+    // Otherwise, the two streets entering the node from opposite directions, if no other
+    // pair does (e.g. two roads crossing): more than 135 degrees apart
+    std::vector<Street*> opposedPair;
+    for (auto itFirst{streets.cbegin()}; itFirst != streets.cend(); ++itFirst) {
+      for (auto itSecond{std::next(itFirst)}; itSecond != streets.cend(); ++itSecond) {
+        auto gap{std::abs((*itFirst)->angle() - (*itSecond)->angle())};
+        gap = std::min(gap, 2 * std::numbers::pi - gap);
+        if (gap > 0.75 * std::numbers::pi) {
+          if (!opposedPair.empty()) {
+            return {};
+          }
+          opposedPair = {*itFirst, *itSecond};
+        }
+      }
+    }
+    return opposedPair;
+  }
+
+  void RoadNetwork::applyIntersectionPriorities() {
+    std::atomic<std::size_t> nApplied{0};
+    tbb::parallel_for_each(m_nodes.begin(), m_nodes.end(), [&nApplied](auto& pair) {
+      auto& pNode{pair.second};
+      // Traffic lights take their priorities from autoInitTrafficLights
+      if (!pNode->isIntersection() || pNode->isTrafficLight()) {
+        return;
+      }
+      auto& intersection{static_cast<Intersection&>(*pNode)};
+      if (!intersection.streetPriorities().empty()) {
+        return;
+      }
+      std::set<Id> streetPriorities;
+      for (auto const* pStreet : intersection.ingoingEdges()) {
+        if (pStreet->hasPriority()) {
+          streetPriorities.emplace(pStreet->id());
+        }
+      }
+      if (streetPriorities.empty()) {
+        return;
+      }
+      intersection.setStreetPriorities(std::move(streetPriorities));
+      ++nApplied;
+    });
+    spdlog::info("Applied road priorities to {} intersections.", nApplied.load());
   }
 
   void RoadNetwork::setEdgeWeight(std::string_view const strv_weight,

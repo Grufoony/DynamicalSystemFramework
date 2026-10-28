@@ -181,3 +181,25 @@ def test_dynamics_freeflow_itineraries(dynamics):
     freeflow = dynamics.freeflowItineraries()
     assert set(freeflow) == set(dynamics.itineraries()) == {4}
     assert freeflow[4].destination() == 4
+
+
+def test_road_network_apply_intersection_priorities(tmp_path):
+    # Node 1 is an intersection crossed by a PRIMARY road (streets 0 and 1)
+    edges_path = tmp_path / "edges.csv"
+    edges_path.write_text(
+        "id;source;target;length;maxspeed;name;type;nlanes;mobility_class\n"
+        "0;0;1;13.8888888889;50;edge_0;primary;1;64\n"
+        "1;2;1;13.8888888889;50;edge_1;primary;1;64\n"
+        "2;3;1;13.8888888889;50;edge_2;residential;1;8\n"
+    )
+    network = mobility.RoadNetwork()
+    network.importEdges(str(edges_path), ";")
+
+    network.autoAssignRoadPriorities()
+    assert network.edge(0).hasPriority()
+    assert network.edge(1).hasPriority()
+    assert not network.edge(2).hasPriority()
+    assert network.node(1).streetPriorities() == set()
+
+    network.applyIntersectionPriorities()
+    assert network.node(1).streetPriorities() == {0, 1}

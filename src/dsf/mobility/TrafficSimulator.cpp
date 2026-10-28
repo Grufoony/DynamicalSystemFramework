@@ -242,6 +242,37 @@ namespace dsf::mobility {
             roadNetworkConfig["mean_vehicle_length"].get_double().value());
       }
       importRoadNetwork(edgesFile.string(), nodePropertiesFile.string());
+      // Every flag is optional, falling back to the FirstOrderDynamics::prepareNetwork default
+      m_prepareNetwork = {};
+      auto const prepareNetworkConfig = roadNetworkConfig["prepare_network"];
+      if (!prepareNetworkConfig.error()) {
+        if (!prepareNetworkConfig.is_object()) {
+          throw std::runtime_error(std::format(
+              "Invalid JSON field 'road_network.prepare_network' in configuration file "
+              "'{}': it must be an object",
+              jsonConfigFile));
+        }
+        auto const readFlag = [&](std::string_view const field, bool& flag) {
+          auto const fieldValue = prepareNetworkConfig[field];
+          if (fieldValue.error()) {
+            return;
+          }
+          if (!fieldValue.is_bool()) {
+            throw std::runtime_error(std::format(
+                "Invalid JSON field 'road_network.prepare_network.{}' in configuration "
+                "file '{}': it must be a boolean",
+                field,
+                jsonConfigFile));
+          }
+          flag = fieldValue.get_bool().value();
+        };
+        readFlag("adjust_node_capacities", m_prepareNetwork.adjustNodeCapacities);
+        readFlag("auto_map_street_lanes", m_prepareNetwork.autoMapStreetLanes);
+        readFlag("auto_assign_road_priorities",
+                 m_prepareNetwork.autoAssignRoadPriorities);
+        readFlag("auto_init_traffic_lights", m_prepareNetwork.autoInitTrafficLights);
+        readFlag("intersection_priorities", m_prepareNetwork.applyIntersectionPriorities);
+      }
       auto const setEdgeWeightParams =
           require_field(roadNetworkConfig, "road_network", "set_edge_weight");
       m_dynamics->graph().setEdgeWeight(

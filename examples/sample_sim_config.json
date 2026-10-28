@@ -23,6 +23,13 @@
     "set_edge_weight": {
       "weight": "traveltime",
       "threshold": 0.05
+    },
+    "prepare_network": {
+      "adjust_node_capacities": true,
+      "auto_map_street_lanes": false,
+      "auto_assign_road_priorities": true,
+      "auto_init_traffic_lights": true,
+      "intersection_priorities": false
     }
   },
   "dynamics": {
