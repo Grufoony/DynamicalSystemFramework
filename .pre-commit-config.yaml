@@ -7,7 +7,7 @@ repos:
         files: ^(src|test|examples)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.1
+    rev: v0.17.2
     hooks:
       - id: ruff-format
 
