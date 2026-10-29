@@ -714,9 +714,31 @@ namespace dsf::mobility {
             throw std::invalid_argument(
                 std::format("The alpha parameter ({}) must be in [0., 1)", alpha));
           }
-          // Queued agents do not slow the street down: they cost queue time instead
-          m_speedFunction = [alpha](Street const& pStreet) {
-            return pStreet.maxSpeed() * (1. - alpha * pStreet.movingDensity<true>());
+          // Queued agents do not slow the street down: they cost queue time instead.
+          // In pedestrian mode, both directions of a paired street share congestion.
+          m_speedFunction = [this, alpha](Street const& pStreet) {
+            auto density = pStreet.movingDensity<true>();
+            if (m_pedestrianMode) {
+              auto const pairedEdgeId =
+                  pStreet.getAttribute<std::int64_t>("paired_edge_id");
+              Street const* pairedStreet = nullptr;
+              if (pairedEdgeId.has_value()) {
+                auto const pairedId = static_cast<Id>(*pairedEdgeId);
+                if (pairedId != pStreet.id()) {
+                  pairedStreet = &this->graph().edge(pairedId);
+                }
+              } else {
+                pairedStreet = this->graph().street(pStreet.target()->id(),
+                                                    pStreet.source()->id());
+              }
+              if (pairedStreet != nullptr) {
+                density += pairedStreet->movingDensity<true>();
+              }
+            }
+            // A paired density can exceed 1; saturate the slowdown at jam density
+            // to keep the resulting speed positive.
+            density = std::min(density, 1.);
+            return pStreet.maxSpeed() * (1. - alpha * density);
           };
           Street::setEstimatedTravelTimeFunction([alpha](Street const& pStreet) {
             return pStreet.length() /

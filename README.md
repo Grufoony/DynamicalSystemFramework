@@ -116,16 +116,16 @@ $$
 C = \left\lceil \frac{L \, n}{\ell} \right\rceil,
 $$
 
-where $\ell$ is the configured mean vehicle length (5 m by default). A street is full when its moving and queued agents together reach $C$. Its moving density, used by the default speed rule, is the moving-agent count divided by $C$; agents already waiting in exit queues contribute delay at the junction rather than slowing moving agents directly.
+where $\ell$ is the configured mean vehicle length (5 m by default). A street is full when its moving and queued agents together reach $C$. Its normalized moving density is the moving-agent count divided by $C$; agents already waiting in exit queues contribute delay at the junction rather than slowing moving agents directly. In pedestrian mode, the default speed rule also considers the normalized moving density of a paired edge in the opposite direction.
 
 With the default linear speed function,
 
 $$
-v_e(t) = v^{\max}_e \left(1 - \alpha \, \rho^{\mathrm{moving}}_e(t)\right),
+v_e(t) = v^{\max}_e \left(1 - \alpha \, \min(1,\rho^{\mathrm{effective}}_e(t))\right),
 \qquad \alpha = 0.8,
 $$
 
-where $v^{\max}_e$ is the edge's imported/configured maximum speed and $\rho^{\mathrm{moving}}_e$ is its normalized moving density. A user-selected constant or custom speed function can replace this rule. When an agent enters an edge, its free-flow completion step is set to
+where $v^{\max}_e$ is the edge's imported/configured maximum speed. In regular mode, $\rho^{\mathrm{effective}}_e$ is the edge's normalized moving density. In pedestrian mode, it is the sum of the normalized moving densities on both directions of the same segment, when the reverse edge exists. An explicit `paired_edge_id` attribute takes precedence; otherwise, the reverse edge is found by swapping source and target nodes. If neither exists, only the edge's own density is used. The sum is capped at 1 so speed remains positive for the allowed $\alpha\in[0,1)$. A user-selected constant or custom speed function can replace this rule. When an agent enters an edge, its free-flow completion step is set to
 
 $$
 t_{\mathrm{free}} = t + \left\lceil \frac{L_e}{v_e(t)} \right\rceil.

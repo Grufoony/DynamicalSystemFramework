@@ -17,17 +17,18 @@ namespace dsf::mobility {
       }
 
       auto const pairedEdgeId = street.getAttribute<std::int64_t>("paired_edge_id");
-      if (!pairedEdgeId.has_value()) {
-        return density;
+      Street const* pairedStreet = nullptr;
+      if (pairedEdgeId.has_value()) {
+        auto const pairedId = static_cast<Id>(*pairedEdgeId);
+        if (pairedId != street.id()) {
+          pairedStreet = &dynamics.graph().edge(pairedId);
+        }
+      } else {
+        pairedStreet = dynamics.graph().street(street.target()->id(),
+                                               street.source()->id());
       }
-
-      auto const pairedId = static_cast<Id>(*pairedEdgeId);
-      if (pairedId == street.id()) {
-        return density;
-      }
-
-      auto const& pairedStreet = dynamics.graph().edge(pairedId);
-      return density + pairedStreet.density<Normalized>();
+      return pairedStreet == nullptr ? density
+                                     : density + pairedStreet->density<Normalized>();
     }
   }  // namespace
 
