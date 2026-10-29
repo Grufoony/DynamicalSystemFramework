@@ -78,7 +78,6 @@ def main():
     origin_ids = [int(street_id) for street_id in gdf_edges[gdf_edges["name"] == "Piazzale_Roma"]["id"].tolist()]
     destination_ids = [int(street_id) for street_id in gdf_edges[gdf_edges["name"] == "Piazza_San_Marco"]["id"].tolist()]
 
-
     origins = {int(node_id): 1 for node_id in origin_ids}
     destinations = [int(node_id) for node_id in destination_ids]
 
@@ -98,11 +97,13 @@ def main():
     )
 
     simulator = TrafficSimulator()
+    # simulator.dynamics().importODsFromCSV("venezia_od.csv", separator=";", edges=False)
     simulator.setPedestrianMode(True)
     simulator.connectDataBase("venezia_pedestrian.db")
     simulator.importRoadNetwork(edges_path.as_posix())
     simulator.setTimeFrame(epoch)
     simulator.saveData(300, True, True, True)
+    simulator.dynamics().graph().setEdgeWeight('traveltime', 0)
     simulator.updatePaths(300, False)
 
     simulator.dynamics().setSeed(args.seed)
@@ -110,8 +111,9 @@ def main():
     simulator.dynamics().setDestinations(destinations)
     simulator.setAgentInsertionMethod(AgentInsertionMethod.RANDOM_ODS)
     simulator.dynamics().killStagnantAgents(40.0)
+    
 
-    simulator.run(np.random.randint(0, 50, size=8640), 10)
+    simulator.run(np.random.randint(0, 5, size=8640), 10)
 
 
 if __name__ == "__main__":
