@@ -162,6 +162,13 @@ def test_street_moving_density(dynamics):
     assert street.movingDensity(normalized=True) == 0.0
 
 
+def test_street_reverse(loaded_road_network):
+    # Street 2 goes 0 -> 1 and street 3 goes 1 -> 0
+    street = loaded_road_network.edge(2)
+    assert street.reverse() == 3
+    assert loaded_road_network.edge(3).reverse() == 2
+
+
 def test_dynamics_constant_speed_function_rejects_argument(dynamics):
     with pytest.raises(ValueError):
         dynamics.setSpeedFunction(mobility.SpeedFunction.CONSTANT, 0.8)

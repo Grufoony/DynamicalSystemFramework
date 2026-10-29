@@ -310,6 +310,12 @@ namespace dsf {
     m_edges.emplace(edgeId, std::move(pEdge));
     sourceNode.addOutgoingEdge(&newEdge);
     targetNode.addIngoingEdge(&newEdge);
+    // Link the reverse edge (v -> u), if any
+    if (auto* pReverse{m_findEdge(targetNodeId, sourceNodeId)};
+        pReverse != nullptr && pReverse != &newEdge && pReverse->reverse() == nullptr) {
+      newEdge.setReverse(pReverse);
+      pReverse->setReverse(&newEdge);
+    }
     return newEdge;
   }
 

@@ -161,6 +161,18 @@ NB_MODULE(dsf_cpp, m) {
 
     Returns:
         int: Target node id.)doc")
+          .def(
+              "reverse",
+              [](dsf::mobility::Street const& self) -> std::optional<dsf::Id> {
+                if (auto const* pReverse{self.reverse()}) {
+                  return pReverse->id();
+                }
+                return std::nullopt;
+              },
+              R"doc(Get the id of the reverse street, i.e. the one going from this street's target to its source.
+
+    Returns:
+        int | None: Reverse street id, or None if there is no reverse street.)doc")
           .def("geometry",
                &dsf::mobility::Street::geometry,
                R"doc(Get the geometry object for this street.

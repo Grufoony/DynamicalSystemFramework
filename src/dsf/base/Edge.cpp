@@ -64,6 +64,20 @@ namespace dsf {
     }
     m_nodePair.second = pNode;
   }
+  void Edge::setReverse(Edge* pEdge) {
+    if (pEdge != nullptr && (pEdge->source()->id() != target()->id() ||
+                             pEdge->target()->id() != source()->id())) {
+      throw std::invalid_argument(
+          std::format("Edge {} ({} -> {}) is not the reverse of edge {} ({} -> {}).",
+                      pEdge->id(),
+                      pEdge->source()->id(),
+                      pEdge->target()->id(),
+                      m_id,
+                      source()->id(),
+                      target()->id()));
+    }
+    m_pReverse = pEdge;
+  }
 
   double Edge::deltaAngle(double const previousEdgeAngle) const {
     double deltaAngle{m_angle - previousEdgeAngle};
