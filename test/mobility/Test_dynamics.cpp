@@ -2141,6 +2141,65 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
+  SUBCASE("Exit gates") {
+    // Agents travel 0 -> 1 -> 2 on streets 0 and 1, towards destination street 2: they
+    // arrive when leaving street 1. Returns the time steps of their arrivals.
+    auto const arrivalSteps = [](std::size_t const nAgents,
+                                 double const streetCapacity,
+                                 double const nodeCapacity) {
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      graph2.addStreet(0, std::make_pair(0, 1), 30., 15.);
+      graph2.addStreet(1, std::make_pair(1, 2), 30., 15.);
+      graph2.addStreet(2, std::make_pair(2, 3), 30., 15.);
+      graph2.edge(1).setTransportCapacity(streetCapacity);
+      graph2.node(1).setTransportCapacity(nodeCapacity);
+      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
+      dynamics.addItinerary(2, 2);
+      dynamics.updatePaths();
+      for (std::size_t i{0}; i < nAgents; ++i) {
+        dynamics.addAgent(dynamics.itineraries().at(2), 0);
+      }
+      std::vector<std::time_t> steps;
+      for (int i{0}; i < 100 && steps.size() < nAgents; ++i) {
+        auto const nAgentsBefore{dynamics.nAgents()};
+        dynamics.evolve();
+        for (auto n{dynamics.nAgents()}; n < nAgentsBefore; ++n) {
+          steps.push_back(dynamics.time_step());
+        }
+      }
+      REQUIRE_EQ(steps.size(), nAgents);
+      return steps;
+    };
+    auto const headways = [](std::vector<std::time_t> const& steps) {
+      std::vector<std::time_t> result;
+      for (std::size_t i{1}; i < steps.size(); ++i) {
+        result.push_back(steps[i] - steps[i - 1]);
+      }
+      return result;
+    };
+    auto const freeFlow{arrivalSteps(1, 1., 1.)};
+    THEN("Without gates the agents arrive one per step") {
+      CHECK_EQ(headways(arrivalSteps(4, 1., 1.)), std::vector<std::time_t>{1, 1, 1});
+    }
+    THEN("A street with transport capacity 0.25 lets a lone agent pass at once") {
+      CHECK_EQ(arrivalSteps(1, 0.25, 1.), freeFlow);
+    }
+    THEN("A street with transport capacity 0.25 releases a platoon every 4 steps") {
+      auto const steps{arrivalSteps(4, 0.25, 1.)};
+      CHECK_EQ(steps.front(), freeFlow.front());
+      CHECK_EQ(headways(steps), std::vector<std::time_t>{4, 4, 4});
+    }
+    THEN("A node with transport capacity 0.25 lets a lone agent pass at once") {
+      CHECK_EQ(arrivalSteps(1, 1., 0.25), freeFlow);
+    }
+    THEN("A node with transport capacity 0.25 releases a platoon every 4 steps") {
+      auto const steps{arrivalSteps(4, 1., 0.25)};
+      CHECK_EQ(steps.front(), freeFlow.front());
+      CHECK_EQ(headways(steps), std::vector<std::time_t>{4, 4, 4});
+    }
+  }
   SUBCASE("Moving agents are not counted as queued") {
     GIVEN("A long street and a single free-flowing agent") {
       // 300 m at 13.888... m/s => the agent needs 22 time-steps to cross street 0.

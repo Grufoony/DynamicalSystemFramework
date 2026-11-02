@@ -7,7 +7,8 @@ namespace dsf::mobility {
   RoadJunction::RoadJunction(RoadJunction const& other)
       : Node(other),
         m_capacity{other.m_capacity},
-        m_transportCapacity{other.m_transportCapacity} {}
+        m_transportCapacity{other.m_transportCapacity},
+        m_flowAccumulator{other.m_flowAccumulator} {}
 
   void RoadJunction::setCapacity(std::size_t const capacity) { m_capacity = capacity; }
   void RoadJunction::setTransportCapacity(double capacity) {

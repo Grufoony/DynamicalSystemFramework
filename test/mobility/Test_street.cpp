@@ -173,14 +173,18 @@ TEST_CASE("Street") {
       double const initialMaxSpeed = street.maxSpeed();
 
       WHEN("Number of lanes is increased to 4") {
+        street.setLaneMapping({dsf::Direction::RIGHT, dsf::Direction::LEFT});
         street.changeNLanes(4);
         THEN("All properties scale correctly") {
           CHECK_EQ(street.nLanes(), 4);
           CHECK_EQ(street.capacity(), initialCapacity * 2);
           CHECK_EQ(street.transportCapacity(), initialTransportCapacity * 2);
           CHECK_EQ(street.maxSpeed(), initialMaxSpeed);
-          CHECK_EQ(street.exitQueues().size(), 4);
-          CHECK_EQ(street.laneMapping().size(), 4);
+          CHECK_EQ(street.lanes().size(), 4);
+        }
+        THEN("The lane mapping is reset, as the old one does not fit the new lanes") {
+          CHECK_EQ(street.laneMapping(),
+                   std::vector<dsf::Direction>(4, dsf::Direction::ANY));
         }
       }
 
@@ -191,7 +195,7 @@ TEST_CASE("Street") {
           CHECK_EQ(street.capacity(), initialCapacity / 2);
           CHECK_EQ(street.transportCapacity(), initialTransportCapacity / 2);
           CHECK_EQ(street.maxSpeed(), initialMaxSpeed);
-          CHECK_EQ(street.exitQueues().size(), 1);
+          CHECK_EQ(street.lanes().size(), 1);
           CHECK_EQ(street.laneMapping().size(), 1);
         }
       }
@@ -203,7 +207,7 @@ TEST_CASE("Street") {
         }
         street.changeNLanes(1);
         THEN("The agents of the removed lane are moved to the surviving one") {
-          CHECK_EQ(street.exitQueues().size(), 1);
+          CHECK_EQ(street.lanes().size(), 1);
           CHECK_EQ(street.queue(0).size(), 2);
         }
       }
@@ -245,7 +249,7 @@ TEST_CASE("Street") {
           CHECK_EQ(street.capacity(),
                    static_cast<int>(std::ceil((150.0 * 6) / Road::meanVehicleLength())));
           CHECK_EQ(street.maxSpeed(), doctest::Approx(initialMaxSpeed * 1.2));
-          CHECK_EQ(street.exitQueues().size(), 6);
+          CHECK_EQ(street.lanes().size(), 6);
         }
       }
     }
@@ -327,6 +331,36 @@ TEST_CASE("Street") {
     CHECK_EQ(street.queue(0).size(), 2);
     street.dequeue(0, 3);
     street.dequeue(0, 4);  // the queue is now empty
+  }
+  SUBCASE("Flow accumulators") {
+    GIVEN("A two-lane street with transport capacity 0.5") {
+      Street street{1, nodes(0, 1), 30., 13.8888888889, 2};
+      street.setTransportCapacity(0.5);
+      Agent agent{0, 0, nullptr, 0};
+      street.addAgent(std::make_unique<Agent>(agent), 0);
+      street.enqueue(0);
+      street.refillFlowAccumulators();
+      WHEN("An agent is dequeued from the first lane") {
+        street.dequeue(0, 1);
+        THEN("Only that lane's gate is consumed") {
+          CHECK_FALSE(street.lane(0).flowAccumulator.canPass());
+          CHECK(street.lane(1).flowAccumulator.canPass());
+        }
+        THEN("The gate reopens after 1 / transport capacity refills") {
+          street.refillFlowAccumulators();
+          CHECK_FALSE(street.lane(0).flowAccumulator.canPass());
+          street.refillFlowAccumulators();
+          CHECK(street.lane(0).flowAccumulator.canPass());
+        }
+      }
+      WHEN("The number of lanes changes") {
+        street.changeNLanes(3);
+        street.refillFlowAccumulators();
+        THEN("Each lane has a gate, rescaled with the transport capacity") {
+          CHECK_EQ(street.lane(2).flowAccumulator.value(), doctest::Approx(0.75));
+        }
+      }
+    }
   }
   SUBCASE("Angle") {
     /// This tests the angle method

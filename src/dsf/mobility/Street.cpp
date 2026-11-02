@@ -27,9 +27,6 @@ namespace dsf::mobility {
     return m_estimatedTravelTimeFunction;
   }
 
-  void Street::m_updateLaneMapping(int const nLanes) {
-    m_laneMapping = std::vector<Direction>(nLanes, Direction::ANY);
-  }
   Street::Street(Id id,
                  std::pair<Node*, Node*> nodePair,
                  double length,
@@ -48,12 +45,10 @@ namespace dsf::mobility {
              std::move(geometry),
              capacity,
              transportCapacity),
-        m_exitQueues{std::vector<dsf::queue<std::unique_ptr<Agent>>>(nLanes)},
+        m_lanes(static_cast<std::size_t>(nLanes)),
         m_movingAgents{dsf::priority_queue<std::unique_ptr<Agent>,
                                            std::vector<std::unique_ptr<Agent>>,
-                                           AgentComparator>()} {
-    m_updateLaneMapping(nLanes);
-  }
+                                           AgentComparator>()} {}
   auto Street::operator==(Street const& other) const -> bool {
     bool isEqual{true};
     isEqual &= (this->m_id == other.m_id);
@@ -74,12 +69,14 @@ namespace dsf::mobility {
                       laneMapping.size(),
                       m_nLanes));
     }
-    m_laneMapping = laneMapping;
+    for (std::size_t i{0}; i < m_lanes.size(); ++i) {
+      m_lanes[i].direction = laneMapping[i];
+    }
     spdlog::debug("New lane mapping for street {}", *this);
   }
   void Street::setQueue(dsf::queue<std::unique_ptr<Agent>> queue, size_t index) {
-    assert(index < m_exitQueues.size());
-    m_exitQueues[index] = std::move(queue);
+    assert(index < m_lanes.size());
+    m_lanes[index].queue = std::move(queue);
   }
   void Street::changeNLanes(int const nLanes, std::optional<double> const speedFactor) {
     if (this->nExitingAgents() > 0) {
@@ -103,15 +100,18 @@ namespace dsf::mobility {
     if (nLanes < previousNLanes) {
       // Resizing down would destroy the agents queued in the removed lanes without
       // anyone noticing. Move them to the last surviving lane instead.
-      auto& survivingQueue{m_exitQueues[static_cast<std::size_t>(nLanes) - 1]};
-      for (auto i{static_cast<std::size_t>(nLanes)}; i < m_exitQueues.size(); ++i) {
-        while (!m_exitQueues[i].empty()) {
-          survivingQueue.push(m_exitQueues[i].extract_front());
+      auto& survivingQueue{m_lanes[static_cast<std::size_t>(nLanes) - 1].queue};
+      for (auto i{static_cast<std::size_t>(nLanes)}; i < m_lanes.size(); ++i) {
+        while (!m_lanes[i].queue.empty()) {
+          survivingQueue.push(m_lanes[i].queue.extract_front());
         }
       }
     }
-    m_exitQueues.resize(m_nLanes);
-    m_updateLaneMapping(m_nLanes);
+    m_lanes.resize(static_cast<std::size_t>(m_nLanes));
+    // The old mapping does not fit the new lanes
+    for (auto& lane : m_lanes) {
+      lane.direction = Direction::ANY;
+    }
   }
   void Street::enableCounter(std::string name, CounterPosition position) {
     if (m_counter.has_value()) {
@@ -149,15 +149,17 @@ namespace dsf::mobility {
   void Street::enqueue(std::size_t const& queueId) {
     assert(!m_movingAgents.empty());
     m_movingAgents.top()->incrementDistance(m_length);
-    m_exitQueues[queueId].push(m_movingAgents.extract_top());
+    m_lanes[queueId].queue.push(m_movingAgents.extract_top());
     if (m_counter.has_value() && m_counterPosition == CounterPosition::MIDDLE) {
       ++(*m_counter);
     }
   }
   std::unique_ptr<Agent> Street::dequeue(std::size_t const& index,
                                          std::time_t const currentTime) {
-    assert(!m_exitQueues[index].empty());
-    auto pAgent{m_exitQueues[index].extract_front()};
+    auto& lane{m_lanes[index]};
+    assert(!lane.queue.empty());
+    auto pAgent{lane.queue.extract_front()};
+    lane.flowAccumulator.consume();
     // Keep track of average speed
     auto const itInsertion{m_agentsInsertionTimes.find(pAgent->id())};
     auto const insertionTime{
@@ -182,40 +184,37 @@ namespace dsf::mobility {
 
   std::size_t Street::nAgents() const {
     auto nAgents{m_movingAgents.size()};
-    for (const auto& queue : m_exitQueues) {
-      nAgents += queue.size();
+    for (auto const& lane : m_lanes) {
+      nAgents += lane.queue.size();
     }
     return nAgents;
+  }
+
+  std::vector<Direction> Street::laneMapping() const {
+    std::vector<Direction> laneMapping;
+    laneMapping.reserve(m_lanes.size());
+    for (auto const& lane : m_lanes) {
+      laneMapping.push_back(lane.direction);
+    }
+    return laneMapping;
   }
 
   std::size_t Street::nMovingAgents() const { return m_movingAgents.size(); }
   double Street::nExitingAgents(Direction direction, bool normalizeOnNLanes) const {
     double nAgents{0.};
     std::size_t n{0};
-    for (auto i{0}; i < m_nLanes; ++i) {
-      if (direction == Direction::ANY) {
-        nAgents += m_exitQueues[i].size();
-        ++n;
-      } else if (m_laneMapping[i] == direction) {
-        nAgents += m_exitQueues[i].size();
-        ++n;
-      } else if (m_laneMapping[i] == Direction::RIGHTANDSTRAIGHT &&
-                 (direction == Direction::RIGHT || direction == Direction::STRAIGHT)) {
-        nAgents += m_exitQueues[i].size();
-        ++n;
-      } else if (m_laneMapping[i] == Direction::LEFTANDSTRAIGHT &&
-                 (direction == Direction::LEFT || direction == Direction::STRAIGHT)) {
-        nAgents += m_exitQueues[i].size();
-        ++n;
-      } else if (direction == Direction::RIGHTANDSTRAIGHT &&
-                 (m_laneMapping[i] == Direction::RIGHT ||
-                  m_laneMapping[i] == Direction::STRAIGHT)) {
-        nAgents += m_exitQueues[i].size();
-        ++n;
-      } else if (direction == Direction::LEFTANDSTRAIGHT &&
-                 (m_laneMapping[i] == Direction::LEFT ||
-                  m_laneMapping[i] == Direction::STRAIGHT)) {
-        nAgents += m_exitQueues[i].size();
+    for (auto const& lane : m_lanes) {
+      auto const laneDirection{lane.direction};
+      if (direction == Direction::ANY || laneDirection == direction ||
+          (laneDirection == Direction::RIGHTANDSTRAIGHT &&
+           (direction == Direction::RIGHT || direction == Direction::STRAIGHT)) ||
+          (laneDirection == Direction::LEFTANDSTRAIGHT &&
+           (direction == Direction::LEFT || direction == Direction::STRAIGHT)) ||
+          (direction == Direction::RIGHTANDSTRAIGHT &&
+           (laneDirection == Direction::RIGHT || laneDirection == Direction::STRAIGHT)) ||
+          (direction == Direction::LEFTANDSTRAIGHT &&
+           (laneDirection == Direction::LEFT || laneDirection == Direction::STRAIGHT))) {
+        nAgents += lane.queue.size();
         ++n;
       }
     }

@@ -2526,7 +2526,7 @@ TEST_CASE("Change Street Lanes") {
           CHECK_EQ(pStreet01->nLanes(), 4);
           CHECK_EQ(pStreet01->capacity(), initialCapacity * 2);
           CHECK_EQ(pStreet01->maxSpeed(), initialMaxSpeed);
-          CHECK_EQ(pStreet01->exitQueues().size(), 4);
+          CHECK_EQ(pStreet01->lanes().size(), 4);
         }
       }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../base/Node.hpp"
+#include "../utility/FlowAccumulator.hpp"
 #include "Street.hpp"
 
 #include <format>
@@ -11,6 +12,7 @@ namespace dsf::mobility {
   class RoadJunction : public Node {
     std::size_t m_capacity;
     double m_transportCapacity;
+    FlowAccumulator m_flowAccumulator;  // Exit gate
 
     // A RoadNetwork only links streets to road junctions, so the cast is safe
     template <typename TStreet>
@@ -29,6 +31,7 @@ namespace dsf::mobility {
         Node::operator=(other);
         m_capacity = other.m_capacity;
         m_transportCapacity = other.m_transportCapacity;
+        m_flowAccumulator = other.m_flowAccumulator;
       }
       return *this;
     }
@@ -37,7 +40,8 @@ namespace dsf::mobility {
     /// @param capacity The junction's capacity
     virtual void setCapacity(std::size_t const capacity);
     /// @brief Set the junction's transport capacity
-    /// @param capacity The junction's transport capacity
+    /// @param capacity The junction's transport capacity, i.e. the number of agents per time
+    ///   step it can release, enforced by its exit gate (see flowAccumulator())
     void setTransportCapacity(double capacity);
 
     /// @brief Get the junction's capacity
@@ -46,6 +50,12 @@ namespace dsf::mobility {
     /// @brief Get the junction's transport capacity
     /// @return double The junction's transport capacity
     inline double transportCapacity() const { return m_transportCapacity; }
+    /// @brief Get the junction's exit gate, refilled by the transport capacity at each time step
+    /// @return FlowAccumulator& The exit gate
+    inline FlowAccumulator& flowAccumulator() noexcept { return m_flowAccumulator; }
+    inline FlowAccumulator const& flowAccumulator() const noexcept {
+      return m_flowAccumulator;
+    }
     /// @brief Get the junction's ingoing streets
     /// @return A random-access view of Street pointers, in insertion order
     inline auto ingoingEdges() noexcept {

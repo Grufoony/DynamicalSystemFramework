@@ -646,29 +646,30 @@ namespace dsf::mobility {
       }
       auto const direction{pNextStreet->turnDirection(pStreet->angle())};
       std::vector<size_t> validLanes;
-      auto const& mapping = pStreet->laneMapping();
-      for (size_t laneIndex = 0; laneIndex < mapping.size(); ++laneIndex) {
+      auto const& lanes = pStreet->lanes();
+      for (size_t laneIndex = 0; laneIndex < lanes.size(); ++laneIndex) {
+        auto const laneDirection{lanes[laneIndex].direction};
         switch (direction) {
           case Direction::ANY:
             validLanes.push_back(laneIndex);
             break;
           case Direction::UTURN:
           case Direction::LEFT:
-            if (mapping[laneIndex] == Direction::LEFT ||
-                mapping[laneIndex] == Direction::LEFTANDSTRAIGHT) {
+            if (laneDirection == Direction::LEFT ||
+                laneDirection == Direction::LEFTANDSTRAIGHT) {
               validLanes.push_back(laneIndex);
             }
             break;
           case Direction::STRAIGHT:
-            if (mapping[laneIndex] == Direction::STRAIGHT ||
-                mapping[laneIndex] == Direction::LEFTANDSTRAIGHT ||
-                mapping[laneIndex] == Direction::RIGHTANDSTRAIGHT) {
+            if (laneDirection == Direction::STRAIGHT ||
+                laneDirection == Direction::LEFTANDSTRAIGHT ||
+                laneDirection == Direction::RIGHTANDSTRAIGHT) {
               validLanes.push_back(laneIndex);
             }
             break;
           case Direction::RIGHT:
-            if (mapping[laneIndex] == Direction::RIGHT ||
-                mapping[laneIndex] == Direction::RIGHTANDSTRAIGHT) {
+            if (laneDirection == Direction::RIGHT ||
+                laneDirection == Direction::RIGHTANDSTRAIGHT) {
               validLanes.push_back(laneIndex);
             }
             break;
@@ -724,20 +725,20 @@ namespace dsf::mobility {
       std::discrete_distribution<size_t> laneDist{weights.begin(), weights.end()};
       pStreet->enqueue(laneDist(rng));
     }
-    auto const& transportCapacity{pStreet->transportCapacity()};
+    // Refilled even when the lanes are empty, so that an idle lane lets the next agent pass
+    // at once; every dequeue() below consumes one unit of the lane's gate
+    pStreet->refillFlowAccumulators();
     std::uniform_real_distribution<double> uniformDist{0., 1.};
     for (auto queueIndex = 0; queueIndex < nLanes; ++queueIndex) {
       if (pStreet->queue(queueIndex).empty()) {
         continue;
       }
-      {
-        auto const rndValue{uniformDist(rng)};
-        if (rndValue > transportCapacity) {
-          spdlog::trace("Skipping due to transport capacity {} < random {}",
-                        transportCapacity,
-                        rndValue);
-          continue;
-        }
+      if (!pStreet->lane(queueIndex).flowAccumulator.canPass()) {
+        spdlog::trace("Skipping lane {} of {} due to transport capacity {}",
+                      queueIndex,
+                      *pStreet,
+                      pStreet->transportCapacity());
+        continue;
       }
       // Logger::debug("Taking temp agent");
       auto const& pAgentTemp{pStreet->queue(queueIndex).front()};
@@ -759,7 +760,7 @@ namespace dsf::mobility {
               this->time_step(),
               *pAgentTemp,
               *pStreet,
-              directionToString.at(pStreet->laneMapping().at(queueIndex)),
+              directionToString.at(pStreet->lane(queueIndex).direction),
               pNode->isTrafficLight(),
               timeTolerance,
               timeDiff);
@@ -776,7 +777,7 @@ namespace dsf::mobility {
       }
       if (destinationNode->isTrafficLight()) {
         auto& tl = dynamic_cast<TrafficLight&>(*destinationNode);
-        auto const direction{pStreet->laneMapping().at(queueIndex)};
+        auto const direction{pStreet->lane(queueIndex).direction};
         if (!tl.isGreen(pStreet->id(), direction)) {
           spdlog::trace("Skipping due to red light on street {} and direction {}",
                         pStreet->id(),
@@ -963,20 +964,13 @@ namespace dsf::mobility {
     }
   }
 
-  void FirstOrderDynamics::m_evolveNode(RoadJunction* pNode, std::mt19937_64& rng) {
-    auto const transportCapacity{pNode->transportCapacity()};
-    for (auto i{0}; i < std::ceil(transportCapacity); ++i) {
-      if (i == std::ceil(transportCapacity) - 1) {
-        std::uniform_real_distribution<double> uniformDist{0., 1.};
-        double integral;
-        double fractional = std::modf(transportCapacity, &integral);
-        if (fractional != 0. && uniformDist(rng) > fractional) {
-          spdlog::debug("Skipping dequeue from node {} due to transport capacity {}",
-                        pNode->id(),
-                        transportCapacity);
-          return;
-        }
-      }
+  void FirstOrderDynamics::m_evolveNode(RoadJunction* pNode) {
+    auto& flowAccumulator{pNode->flowAccumulator()};
+    // Refilled even when the node is empty, so that an idle node lets the next agent pass
+    // at once
+    flowAccumulator.refill(pNode->transportCapacity());
+    while (flowAccumulator.canPass()) {
+      bool bReleased{false};
       if (pNode->isIntersection()) {
         auto& intersection = dynamic_cast<Intersection&>(*pNode);
         if (intersection.agents().empty()) {
@@ -1019,6 +1013,7 @@ namespace dsf::mobility {
               pAgent->freeTime());
           nextStreet->addAgent(std::move(pAgent), this->time_step());
           it = intersection.agents().erase(it);
+          bReleased = true;
           break;
         }
       } else if (pNode->isRoundabout()) {
@@ -1056,10 +1051,14 @@ namespace dsf::mobility {
               pAgent->freeTime(),
               *pAgent);
           nextStreet->addAgent(std::move(pAgent), this->time_step());
-        } else {
-          return;
+          bReleased = true;
         }
       }
+      if (!bReleased) {
+        // Every agent is blocked: trying again in this time step would not change that
+        return;
+      }
+      flowAccumulator.consume();
     }
   }
   void FirstOrderDynamics::m_evolveAgents() {
@@ -1982,10 +1981,9 @@ namespace dsf::mobility {
       tbb::parallel_for(
           tbb::blocked_range<std::size_t>(0, numNodes, grainSize),
           [&](const tbb::blocked_range<std::size_t>& range) {
-            auto& rng = this->m_threadGenerators.local();
             for (std::size_t i = range.begin(); i != range.end(); ++i) {
               auto* pNode = &this->graph().node(m_nodeIndices[i]);
-              m_evolveNode(pNode, rng);
+              m_evolveNode(pNode);
               if (pNode->isTrafficLight()) {
                 auto& tl = dynamic_cast<TrafficLight&>(*pNode);
                 ++tl;
