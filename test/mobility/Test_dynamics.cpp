@@ -2117,6 +2117,8 @@ TEST_CASE("FirstOrderDynamics") {
         }
         THEN("The agent has travelled the correct distance") {
           auto const& distance{dynamics.meanTravelDistance()};
+          // Streets 0 and 1: the agent arrives at the source node of its destination
+          // street 2, without travelling it
           CHECK_EQ(distance.mean, 4.);
           CHECK_EQ(distance.std, doctest::Approx(0.));
           CHECK_EQ(dynamics.nAgents(), 0);

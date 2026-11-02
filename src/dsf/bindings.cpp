@@ -702,10 +702,16 @@ NB_MODULE(dsf_cpp, m) {
         int: Capacity.)doc")
       .def("adjustNodeCapacities",
            &dsf::mobility::RoadNetwork::adjustNodeCapacities,
-           R"doc(Adjust capacities of nodes according to provided factors.
+           R"doc(Adjust the nodes' capacities to the streets' transport capacities.
 
-      Args:
-        (See C++ API) Adjusts node capacities in-place.)doc")
+      Each street contributes its number of lanes times its transport capacity.
+      The node capacity is the sum over the incoming streets (the outgoing ones
+      for nodes without incoming streets), rounded up and at least 1. The node
+      transport capacity is the sum over the outgoing streets, or 1 if there
+      are none.
+
+      Returns:
+        None)doc")
       .def("autoInitTrafficLights",
            &dsf::mobility::RoadNetwork::autoInitTrafficLights,
            nb::arg("mainRoadPercentage") = 0.6,
@@ -1105,6 +1111,10 @@ Returns:
            nb::arg("mode"),
            R"doc(Set how origin, destination and OD ids are interpreted.
 
+    In EDGES mode an agent starts from the source node of its origin street and
+    travels it; it arrives, and is removed, when it reaches the source node of its
+    destination street, which it never enters.
+
     In NODES mode each node id is spread over the node's outgoing streets, with its
     weight split evenly among them: agents start from the node and arrive when they
     reach it. Nodes without outgoing streets are skipped.
@@ -1467,7 +1477,8 @@ Returns:
 
     Args:
       id (int): Itinerary id.
-      destination (int): Destination street id (whatever mode()).
+      destination (int): Destination street id (whatever mode()). Agents
+        following the itinerary arrive at its source node, without travelling it.
 
     Returns:
       None)doc")

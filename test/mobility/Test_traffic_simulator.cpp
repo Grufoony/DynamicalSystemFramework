@@ -433,7 +433,8 @@ TEST_CASE("TrafficSimulator JSON config errors") {
         std::invalid_argument);
   }
   SUBCASE("Every other agent insertion method is accepted") {
-    for (auto const* method : {"CONDITIONAL_RANDOM_ODS", "UNIFORM"}) {
+    for (auto const* method :
+         {"RANDOM_WEIGHTED_ORIGIN", "CONDITIONAL_RANDOM_ODS", "UNIFORM"}) {
       CHECK_NOTHROW(importConfig(
           makeConfig("",
                      roadNetwork + R"(, "dynamics": { "agent_insertion_method": ")" +

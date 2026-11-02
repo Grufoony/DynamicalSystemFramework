@@ -58,9 +58,12 @@ namespace dsf::mobility {
   };
   /// @brief How the ids of origins, destinations and OD pairs are interpreted
   enum class DynamicsMode : std::uint8_t {
-    EDGES = 0,  // Ids are street ids
-    NODES =
-        1,  // Ids are node ids, each spread over the node's outgoing streets: agents start from and arrive at the node
+    /// @brief Ids are street ids: agents start from the origin street's source node and
+    ///   travel it, and arrive at the destination street's source node, without travelling it
+    EDGES = 0,
+    /// @brief Ids are node ids, each spread over the node's outgoing streets: agents start
+    ///   from and arrive at the node
+    NODES = 1,
   };
   // Struct to collect street data for batch insert after parallel section
   struct StreetDataRecord {
@@ -367,7 +370,10 @@ namespace dsf::mobility {
     void setIntelligentAgentsFraction(double const intelligentFraction);
     /// @brief Set how origin, destination and OD ids are interpreted
     /// @param mode DynamicsMode::EDGES for street ids, DynamicsMode::NODES for node ids
-    /// @details In NODES mode each node id is spread over the node's outgoing streets, with its
+    /// @details In EDGES mode an agent starts from the source node of its origin street and
+    ///   travels it; it arrives, and is removed, when it reaches the source node of its
+    ///   destination street, which it never enters.
+    ///   In NODES mode each node id is spread over the node's outgoing streets, with its
     ///   weight split evenly among them: agents start from the node and arrive when they reach
     ///   it. Nodes without outgoing streets are skipped. The dynamics itself always works on
     ///   streets, so origins(), destinations() and itineraries() hold street ids in both modes.
@@ -494,7 +500,8 @@ namespace dsf::mobility {
     void addItinerary(TArgs&&... args);
     /// @brief Add an itinerary
     /// @param itinerary std::unique_ptr to the itinerary
-    /// @details The itinerary's destination is always a street id, whatever mode()
+    /// @details The itinerary's destination is always a street id, whatever mode(): agents
+    ///   following it arrive at that street's source node, without travelling it
     /// @throws std::invalid_argument If the itinerary already exists
     void addItinerary(std::shared_ptr<Itinerary> itinerary);
 

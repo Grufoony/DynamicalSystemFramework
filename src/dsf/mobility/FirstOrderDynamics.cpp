@@ -1850,8 +1850,8 @@ namespace dsf::mobility {
       default:
         throw std::runtime_error(
             "Cannot add agents without a valid insertion methods. Possible values are "
-            "\"RANDOM\", \"RANDOM_WEIGHTED_ORIGIN\", \"ODS\", \"RANDOM_ODS\" and "
-            "\"UNIFORM\"");
+            "\"RANDOM\", \"RANDOM_WEIGHTED_ORIGIN\", \"ODS\", \"RANDOM_ODS\", "
+            "\"CONDITIONAL_RANDOM_ODS\" and \"UNIFORM\"");
     }
   }
 
