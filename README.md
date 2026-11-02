@@ -1,6 +1,7 @@
 # DynamicalSystemFramework
 [![Latest Release](https://img.shields.io/github/v/release/Grufoony/DynamicalSystemFramework)](https://github.com/Grufoony/DynamicalSystemFramework/releases/latest)
 [![PyPI version](https://img.shields.io/pypi/v/dsf-suite)](https://pypi.org/project/dsf-suite/)
+[![codecov](https://codecov.io/gh/Grufoony/DynamicalSystemFramework/graph/badge.svg?token=JV53J6IUJ3)](https://codecov.io/gh/Grufoony/DynamicalSystemFramework)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18745492.svg)](https://doi.org/10.5281/zenodo.18745492)
 
 [![Standard](https://img.shields.io/badge/C%2B%2B-20/23-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B#Standardization)
@@ -9,7 +10,6 @@
 [![CSV](https://img.shields.io/badge/csv_parser-5.4.0-blue.svg)](https://github.com/vincentlaucsb/csv-parser)
 [![JSON](https://img.shields.io/badge/simdjson-5.0.0-blue.svg)](https://github.com/simdjson/simdjson)
 [![SQLite](https://img.shields.io/badge/SQLiteCpp-3.4.0-blue.svg)](https://github.com/SRombauts/SQLiteCpp)
-[![codecov](https://codecov.io/gh/Grufoony/DynamicalSystemFramework/graph/badge.svg?token=JV53J6IUJ3)](https://codecov.io/gh/Grufoony/DynamicalSystemFramework)
 
 The aim of this project is to rework the original [Traffic Flow Dynamics Model](https://github.com/Grufoony/TrafficFlowDynamicsModel).
 This rework consists of a full code rewriting, in order to implement more features (like *intersections*) and get advantage from the latest C++ updates.
