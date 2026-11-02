@@ -1160,12 +1160,15 @@ TEST_CASE("RoadNetwork") {
   }
 
   SUBCASE("adjustNodeCapacities and normalizeStreetCapacities") {
-    GIVEN("A graph composed of three streets with a different lane number") {
+    GIVEN(
+        "A graph composed of four streets with a different lane number and an isolated "
+        "node") {
       RoadNetwork graph{};
       graph.addStreet(0, std::make_pair(0, 1), 10., 30., 1);
       graph.addStreet(1, std::make_pair(1, 2), 40., 30., 2);
       graph.addStreet(2, std::make_pair(3, 1), 75., 30., 3);
       graph.addStreet(3, std::make_pair(1, 4), 55., 30., 1);
+      graph.addNode(5);
       WHEN("We adjust node capacities") {
         graph.adjustNodeCapacities();
         THEN("The node capacities are correct") {
@@ -1174,12 +1177,43 @@ TEST_CASE("RoadNetwork") {
           CHECK_EQ(graph.node(2).capacity(), 2);
           CHECK_EQ(graph.node(3).capacity(), 3);
           CHECK_EQ(graph.node(4).capacity(), 1);
+          CHECK_EQ(graph.node(5).capacity(), 1);
         }
         THEN("The transport capacities are correct") {
           CHECK_EQ(graph.node(0).transportCapacity(), 1);
           CHECK_EQ(graph.node(1).transportCapacity(), 3);
           CHECK_EQ(graph.node(2).transportCapacity(), 1);
           CHECK_EQ(graph.node(3).transportCapacity(), 3);
+          CHECK_EQ(graph.node(4).transportCapacity(), 1);
+          CHECK_EQ(graph.node(5).transportCapacity(), 1);
+        }
+      }
+      WHEN("Fractional flows sum to an integer up to floating-point error") {
+        graph.edge(0).setTransportCapacity(0.6);
+        graph.edge(2).setTransportCapacity(0.8);
+        graph.adjustNodeCapacities();
+        THEN("The node capacity is not rounded up past the integer") {
+          // 0.6 + 3 * 0.8 evaluates to 3.0000000000000004
+          CHECK_EQ(graph.node(1).capacity(), 3);
+        }
+      }
+      WHEN("Transport capacities are scaled below one and we adjust node capacities") {
+        for (auto const& [_, pStreet] : graph.edges()) {
+          pStreet->setTransportCapacity(0.6);
+        }
+        graph.adjustNodeCapacities();
+        THEN("The node capacities are rounded up and never zero") {
+          CHECK_EQ(graph.node(0).capacity(), 1);  // no ingoing, 0.6 outgoing
+          CHECK_EQ(graph.node(1).capacity(), 3);  // 0.6 + 1.8 ingoing
+          CHECK_EQ(graph.node(2).capacity(), 2);  // 1.2 ingoing
+          CHECK_EQ(graph.node(3).capacity(), 2);  // no ingoing, 1.8 outgoing
+          CHECK_EQ(graph.node(4).capacity(), 1);  // 0.6 ingoing
+        }
+        THEN("The transport capacities are the outgoing flows") {
+          CHECK_EQ(graph.node(0).transportCapacity(), doctest::Approx(0.6));
+          CHECK_EQ(graph.node(1).transportCapacity(), doctest::Approx(1.8));
+          CHECK_EQ(graph.node(2).transportCapacity(), 1);
+          CHECK_EQ(graph.node(3).transportCapacity(), doctest::Approx(1.8));
           CHECK_EQ(graph.node(4).transportCapacity(), 1);
         }
       }

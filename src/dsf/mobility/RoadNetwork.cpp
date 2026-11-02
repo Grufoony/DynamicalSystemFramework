@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <ranges>
@@ -1144,25 +1145,26 @@ namespace dsf::mobility {
   }
 
   void RoadNetwork::adjustNodeCapacities() {
-    double value;
+    // Absorbs the floating-point error of summing fractional flows, so that e.g.
+    // 0.6 + 3 * 0.8 = 3.0000000000000004 rounds up to 3, not 4
+    constexpr double ROUNDING_TOLERANCE{1e-9};
     for (auto const& [_, pNode] : nodes()) {
-      value = 0.;
+      double ingoingFlow{0.};
       for (auto const* pStreet : pNode->ingoingEdges()) {
-        value += pStreet->nLanes() * pStreet->transportCapacity();
+        ingoingFlow += pStreet->nLanes() * pStreet->transportCapacity();
       }
-      pNode->setCapacity(static_cast<std::size_t>(value));
-      value = 0.;
+      double outgoingFlow{0.};
       for (auto const* pStreet : pNode->outgoingEdges()) {
-        value += pStreet->nLanes() * pStreet->transportCapacity();
+        outgoingFlow += pStreet->nLanes() * pStreet->transportCapacity();
       }
-      pNode->setTransportCapacity(value == 0. ? 1. : value);
-      if (pNode->capacity() == 0) {
-        // Falling back to the outgoing sum, and ultimately to 1: a zero capacity makes
-        // isFull() permanently true (the node would never accept an agent) and turns
-        // density() into a division by zero.
-        pNode->setCapacity(value > 0. ? static_cast<std::size_t>(value)
-                                      : static_cast<std::size_t>(1));
-      }
+      // Rounding up, so that flows below one agent per step (e.g. scaled-down transport
+      // capacities) never give a zero capacity: it would make isFull() permanently true
+      // (the node would never accept an agent) and turn density() into a division by zero.
+      // Nodes without ingoing streets fall back to the outgoing flow, and ultimately to 1.
+      auto const capacity{static_cast<std::size_t>(std::ceil(
+          (ingoingFlow > 0. ? ingoingFlow : outgoingFlow) - ROUNDING_TOLERANCE))};
+      pNode->setCapacity(std::max<std::size_t>(capacity, 1));
+      pNode->setTransportCapacity(outgoingFlow == 0. ? 1. : outgoingFlow);
     }
   }
 
