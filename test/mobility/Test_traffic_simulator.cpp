@@ -262,12 +262,13 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   "dynamics": {
     "seed": 42,
     "max_concurrency": 2,
+    "mode": "EDGES",
     "agent_insertion_method": "RANDOM_ODS",
     "error_probability": 0.05,
     "kill_stagnant_agents": 10.0,
     "mean_travel_distance": 1000.0,
     "mean_travel_time": 600,
-    "importODsFromCSV": { "file": "ods.csv", "separator": ",", "edges": true }
+    "importODsFromCSV": { "file": "ods.csv", "separator": "," }
   }
 })");
 
@@ -372,6 +373,57 @@ TEST_CASE("TrafficSimulator JSON config errors") {
         importConfig(makeConfig(
             "", roadNetwork + R"(, "dynamics": { "agent_insertion_method": "FOO" })")),
         std::runtime_error);
+  }
+  SUBCASE("The mode is unknown") {
+    CHECK_THROWS_AS(
+        importConfig(makeConfig("",
+                                roadNetwork + R"(, "dynamics": { "mode": "FOO", )"
+                                              R"("agent_insertion_method": "ODS" })")),
+        std::runtime_error);
+  }
+  SUBCASE("The mode selects how OD ids are read") {
+    // Node 1 has outgoing streets 1 and 2, node 2 has outgoing street 3
+    writeFile(inputDir / "ods.csv", "id;type;weight\n1;O;1.0\n2;D;1.0\n");
+    auto const importODs = [&](std::string const& modeField,
+                               std::string const& edgesField) {
+      writeFile(jsonPath,
+                makeConfig("",
+                           roadNetwork + R"(, "dynamics": { )" + modeField +
+                               R"("agent_insertion_method": "RANDOM_ODS", )"
+                               R"("importODsFromCSV": { "file": "ods.csv")" +
+                               edgesField + " } }"));
+      auto pSimulator{std::make_unique<TrafficSimulator>()};
+      pSimulator->importConfig(jsonPath.string());
+      return pSimulator;
+    };
+    auto const sortedIds = [](auto const& weightedIds) {
+      std::vector<Id> ids;
+      for (auto const& [id, weight] : weightedIds) {
+        ids.push_back(id);
+      }
+      std::ranges::sort(ids);
+      return ids;
+    };
+    SUBCASE("Default: street ids") {
+      auto const pSimulator{importODs("", "")};
+      CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::EDGES);
+      CHECK_EQ(sortedIds(pSimulator->dynamics()->origins()), std::vector<Id>{1});
+      CHECK_EQ(sortedIds(pSimulator->dynamics()->destinations()), std::vector<Id>{2});
+    }
+    SUBCASE("NODES: node ids") {
+      auto const pSimulator{importODs(R"("mode": "NODES", )", "")};
+      CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::NODES);
+      CHECK_EQ(sortedIds(pSimulator->dynamics()->origins()), (std::vector<Id>{1, 2}));
+      CHECK_EQ(sortedIds(pSimulator->dynamics()->destinations()), std::vector<Id>{3});
+    }
+    SUBCASE("The deprecated 'edges' flag still selects the mode") {
+      auto const pSimulator{importODs("", R"(, "edges": false)")};
+      CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::NODES);
+    }
+    SUBCASE("'mode' takes precedence over the deprecated 'edges' flag") {
+      auto const pSimulator{importODs(R"("mode": "EDGES", )", R"(, "edges": false)")};
+      CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::EDGES);
+    }
   }
   SUBCASE("The intelligent fraction is out of range") {
     CHECK_THROWS_AS(

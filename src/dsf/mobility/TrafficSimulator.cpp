@@ -265,6 +265,19 @@ namespace dsf::mobility {
       if (!dynamicsConfig["max_concurrency"].error()) {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
       }
+      bool const bHasMode{!dynamicsConfig["mode"].error()};
+      if (bHasMode) {
+        auto const mode =
+            require_field(dynamicsConfig, "dynamics", "mode").get_string().value();
+        if (mode == "EDGES") {
+          m_dynamics->setMode(DynamicsMode::EDGES);
+        } else if (mode == "NODES") {
+          m_dynamics->setMode(DynamicsMode::NODES);
+        } else {
+          throw std::runtime_error(std::format(
+              "Invalid 'mode' value in JSON file '{}': {}", jsonConfigFile, mode));
+        }
+      }
       auto const agentInsertionMethod =
           require_field(dynamicsConfig, "dynamics", "agent_insertion_method")
               .get_string()
@@ -309,18 +322,26 @@ namespace dsf::mobility {
                   require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
                       .get_string()
                       .value());
-          bool bEdges = true;
           if (!importODsFromCSVConfig["edges"].error()) {
-            bEdges = importODsFromCSVConfig["edges"].get_bool().value();
+            // Deprecated: superseded by 'dynamics.mode', which takes precedence
+            spdlog::warn(
+                "'importODsFromCSV.edges' in JSON file '{}' is deprecated: use "
+                "'dynamics.mode' (\"EDGES\" or \"NODES\") instead.",
+                jsonConfigFile);
+            if (!bHasMode) {
+              m_dynamics->setMode(importODsFromCSVConfig["edges"].get_bool().value()
+                                      ? DynamicsMode::EDGES
+                                      : DynamicsMode::NODES);
+            }
           }
           if (!importODsFromCSVConfig["separator"].error()) {
             auto const sep =
                 require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
                     .get_string()
                     .value()[0];
-            m_dynamics->importODsFromCSV(odsFile.string(), sep, bEdges);
+            m_dynamics->importODsFromCSV(odsFile.string(), sep);
           } else {
-            m_dynamics->importODsFromCSV(odsFile.string(), ';', bEdges);
+            m_dynamics->importODsFromCSV(odsFile.string());
           }
         }
       }
