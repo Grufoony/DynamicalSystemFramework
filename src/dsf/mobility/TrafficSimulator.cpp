@@ -284,6 +284,8 @@ namespace dsf::mobility {
               .value();
       if (agentInsertionMethod == "RANDOM") {
         m_agentInsertionMethod = AgentInsertionMethod::RANDOM;
+      } else if (agentInsertionMethod == "RANDOM_WEIGHTED_ORIGIN") {
+        m_agentInsertionMethod = AgentInsertionMethod::RANDOM_WEIGHTED_ORIGIN;
       } else if (agentInsertionMethod == "ODS") {
         m_agentInsertionMethod = AgentInsertionMethod::ODS;
       } else if (agentInsertionMethod == "RANDOM_ODS") {
@@ -767,11 +769,20 @@ namespace dsf::mobility {
       case AgentInsertionMethod::RANDOM:
         insertionMethodStr = "random";
         break;
+      case AgentInsertionMethod::RANDOM_WEIGHTED_ORIGIN:
+        insertionMethodStr = "random_weighted_origin";
+        break;
       case AgentInsertionMethod::ODS:
         insertionMethodStr = "ods";
         break;
       case AgentInsertionMethod::RANDOM_ODS:
         insertionMethodStr = "random_ods";
+        break;
+      case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS:
+        insertionMethodStr = "conditional_random_ods";
+        break;
+      case AgentInsertionMethod::UNIFORM:
+        insertionMethodStr = "uniform";
         break;
       default:
         insertionMethodStr = "unknown";
