@@ -25,7 +25,8 @@ namespace dsf::mobility {
                                          std::size_t const nInserted,
                                          std::size_t const nArrived,
                                          std::size_t const nKilled,
-                                         std::size_t const nRemaining) const {
+                                         std::size_t const nRemaining,
+                                         std::size_t const nStagnant) const {
     // Every inserted agent should be arrived, killed (stagnant pending agents included)
     // or remaining, so ghosts should be 0. Do the subtraction in a signed type anyway,
     // so an imbalance shows up as a negative number instead of wrapping around to ~1.8e19.
@@ -36,7 +37,7 @@ namespace dsf::mobility {
     spdlog::info(
         "Simulation completed. Total agents added: {}\n\tInserted: {} "
         "({:.2f}%)\n\tArrived: {} ({:.2f}%)\n\tKilled: {} ({:.2f}%)\n\tGhosts: {} "
-        "({:.2f}%)\n\tRemaining: {} ({:.2f}%).",
+        "({:.2f}%)\n\tRemaining: {} ({:.2f}%)\n\tStagnant agents handled: {}.",
         nAdded,
         nInserted,
         percentOf(nInserted, nAdded),
@@ -49,7 +50,8 @@ namespace dsf::mobility {
             ? 0.
             : static_cast<double>(nGhosts) * 100. / static_cast<double>(nInserted),
         nRemaining,
-        percentOf(nRemaining, nInserted));
+        percentOf(nRemaining, nInserted),
+        nStagnant);
   }
 
   void TrafficSimulator::m_createId() {
@@ -305,8 +307,34 @@ namespace dsf::mobility {
             dynamicsConfig["error_probability"].get_double().value());
       }
       if (!dynamicsConfig["kill_stagnant_agents"].error()) {
-        m_dynamics->killStagnantAgents(
-            dynamicsConfig["kill_stagnant_agents"].get_double().value());
+        throw std::runtime_error(std::format(
+            "'dynamics.kill_stagnant_agents' in JSON file '{}' was replaced by "
+            "'dynamics.stagnant_agents': {{\"tolerance_factor\": <factor>, \"mode\": "
+            "\"KILL\"}} (mode defaults to \"FORCE\").",
+            jsonConfigFile));
+      }
+      if (!dynamicsConfig["stagnant_agents"].error()) {
+        auto const stagnantAgentsConfig = dynamicsConfig["stagnant_agents"];
+        auto stagnantAgentsMode{StagnantAgentsMode::FORCE};
+        if (!stagnantAgentsConfig["mode"].error()) {
+          auto const mode = stagnantAgentsConfig["mode"].get_string().value();
+          if (mode == "FORCE") {
+            stagnantAgentsMode = StagnantAgentsMode::FORCE;
+          } else if (mode == "KILL") {
+            stagnantAgentsMode = StagnantAgentsMode::KILL;
+          } else {
+            throw std::runtime_error(
+                std::format("Invalid 'stagnant_agents.mode' value in JSON file '{}': {}",
+                            jsonConfigFile,
+                            mode));
+          }
+        }
+        m_dynamics->handleStagnantAgents(
+            stagnantAgentsMode,
+            require_field(
+                stagnantAgentsConfig, "dynamics.stagnant_agents", "tolerance_factor")
+                .get_double()
+                .value());
       }
       if (!dynamicsConfig["importODsFromCSV"].error()) {
         if (hasDynamicODs) {
@@ -557,9 +585,9 @@ namespace dsf::mobility {
       }
       pbar->update();
     }
-    auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
+    auto const [nAdded, nInserted, nArrived, nKilled, nRemaining, nStagnant] =
         m_dynamics->agentStats();
-    m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
+    m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining, nStagnant);
   }
   void TrafficSimulator::m_runSlowCharge(std::size_t const nInitialAgents,
                                          std::time_t const agentInsertionDeltaT,
@@ -647,9 +675,9 @@ namespace dsf::mobility {
       }
       pbar->update();
     }
-    auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
+    auto const [nAdded, nInserted, nArrived, nKilled, nRemaining, nStagnant] =
         m_dynamics->agentStats();
-    m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
+    m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining, nStagnant);
   }
 
   void TrafficSimulator::connectDataBase(std::string_view const dbPath,

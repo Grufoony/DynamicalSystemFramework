@@ -8,6 +8,7 @@
 #include "../utility/queue.hpp"
 #include "../utility/Typedef.hpp"
 
+#include <ctime>
 #include <memory>
 
 namespace dsf::mobility {
@@ -17,5 +18,6 @@ namespace dsf::mobility {
     dsf::queue<std::unique_ptr<Agent>> queue;  ///< Agents waiting to leave the street
     Direction direction{Direction::ANY};       ///< The turns the lane serves
     FlowAccumulator flowAccumulator;  ///< Exit gate, refilled by the transport capacity
+    std::time_t lastDischarge{0};     ///< Time step of the last agent leaving the lane
   };
 }  // namespace dsf::mobility

@@ -216,7 +216,8 @@ namespace dsf::mobility {
                          std::size_t const nInserted,
                          std::size_t const nArrived,
                          std::size_t const nKilled,
-                         std::size_t const nRemaining) const;
+                         std::size_t const nRemaining,
+                         std::size_t const nStagnant) const;
     void m_dumpNetwork() const;
     void m_preparePersistence();
     void m_flushStepData(StepDataResult stepData);

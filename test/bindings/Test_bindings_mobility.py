@@ -209,6 +209,18 @@ def test_dynamics_mode_nodes(loaded_road_network):
         dynamics.setMode(mobility.DynamicsMode.EDGES)
 
 
+def test_dynamics_handle_stagnant_agents(dynamics):
+    assert dynamics.stagnantAgentsMode() is None
+    # (added, inserted, arrived, killed, current, stagnant)
+    assert dynamics.agentStats() == (0, 0, 0, 0, 0, 0)
+    dynamics.handleStagnantAgents()
+    assert dynamics.stagnantAgentsMode() == mobility.StagnantAgentsMode.FORCE
+    dynamics.handleStagnantAgents(mobility.StagnantAgentsMode.KILL, 40.0)
+    assert dynamics.stagnantAgentsMode() == mobility.StagnantAgentsMode.KILL
+    with pytest.raises(ValueError):
+        dynamics.handleStagnantAgents(mobility.StagnantAgentsMode.FORCE, 0.0)
+
+
 def test_dynamics_set_mode(dynamics):
     dynamics.setMode(mobility.DynamicsMode.NODES)
     assert dynamics.mode() == mobility.DynamicsMode.NODES

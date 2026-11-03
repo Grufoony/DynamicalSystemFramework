@@ -31,6 +31,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <spdlog/spdlog.h>
 #include <tbb/concurrent_unordered_map.h>
 
 namespace dsf::mobility {
@@ -227,8 +228,12 @@ namespace dsf::mobility {
     ///   prefer lane(index).direction)
     std::vector<Direction> laneMapping() const;
     /// @brief Add an agent to the street
+    /// @tparam Force If true, the agent is added even if the street is full, which is how
+    ///   stagnant agents are forced on (default is false)
     /// @param pAgent The agent to add to the street
     /// @param currentTime The current simulation time
+    /// @details Asserts that the street is not full, unless Force is true
+    template <bool Force = false>
     void addAgent(std::unique_ptr<Agent> pAgent, std::time_t const currentTime);
     /// @brief Remove the top agent from the street's moving agents priority queue
     /// @return std::unique_ptr<Agent> The agent removed from the street's moving agents priority queue
@@ -238,7 +243,8 @@ namespace dsf::mobility {
     /// @throw std::runtime_error If the street's queue is full
     void enqueue(std::size_t const& queueId);
     /// @brief Remove an agent from the street's queue
-    /// @details Consumes one unit of the lane's exit gate (see Lane::flowAccumulator)
+    /// @details Consumes one unit of the lane's exit gate (see Lane::flowAccumulator) and
+    ///   records currentTime as the lane's last discharge (see Lane::lastDischarge)
     /// @param index The index of the queue
     /// @param currentTime The current simulation time
     /// @return Id The id of the agent removed from the street's queue
@@ -334,3 +340,20 @@ struct std::formatter<dsf::mobility::Street> {
                           forbiddenTurnsStr);
   }
 };
+
+namespace dsf::mobility {
+  // Defined after std::formatter<Street>, which the trace log needs
+  template <bool Force>
+  inline void Street::addAgent(std::unique_ptr<Agent> pAgent,
+                               std::time_t const currentTime) {
+    if constexpr (!Force) {
+      assert(!isFull());
+    }
+    spdlog::trace("Adding {} on {}", *pAgent, *this);
+    m_agentsInsertionTimes[pAgent->id()] = currentTime;
+    m_movingAgents.push(std::move(pAgent));
+    if (m_counter.has_value() && m_counterPosition == CounterPosition::ENTRY) {
+      ++(*m_counter);
+    }
+  }
+}  // namespace dsf::mobility

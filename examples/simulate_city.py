@@ -15,7 +15,7 @@ import numpy as np
 import dsf
 from dsf import logging
 from dsf.cartography import get_cartography, to_folium_map
-from dsf.mobility import TrafficSimulator
+from dsf.mobility import StagnantAgentsMode, TrafficSimulator
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -94,6 +94,6 @@ if __name__ == "__main__":
     simulator.dynamics().setSeed(args.seed)
     simulator.dynamics().setOrigins(origins)
     simulator.dynamics().setDestinations(destinations)
-    simulator.dynamics().killStagnantAgents(40.0)
+    simulator.dynamics().handleStagnantAgents(StagnantAgentsMode.KILL, 40.0)
 
     simulator.run(np.random.randint(0, 50, size=8640), 10)

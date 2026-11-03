@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
 
   dynamics->setErrorProbability(ERROR_PROBABILITY);
   dynamics->setPassageProbability(0.7707);
-  dynamics->killStagnantAgents(40.);
+  dynamics->handleStagnantAgents(dsf::mobility::StagnantAgentsMode::KILL, 40.);
   // dynamics->setForcePriorities(true);
 
   // Connect database for saving data

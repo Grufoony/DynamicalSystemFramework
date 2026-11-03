@@ -11,10 +11,13 @@
 #include "Agent.hpp"
 #include "RoadJunction.hpp"
 
+#include <cstdint>
 #include <format>
+#include <limits>
 #include <map>
 #include <memory>
 #include <set>
+#include <stdexcept>
 
 namespace dsf::mobility {
   /// @brief The Intersection class represents a node in the network.
@@ -46,18 +49,22 @@ namespace dsf::mobility {
     void setCapacity(std::size_t const capacity) override;
 
     /// @brief Put an agent in the node
+    /// @tparam Force If true, the agent is added even if the node is full (default is false)
     /// @param agent A std::pair containing the agent's angle difference and id
     /// @details The agent's angle difference is used to order the agents in the node.
     ///          The agent with the smallest angle difference is the first one to be
     ///          removed from the node.
-    /// @throws std::runtime_error if the node is full
+    /// @throws std::runtime_error if the node is full and Force is false
+    template <bool Force = false>
     void addAgent(double angle, std::unique_ptr<Agent> pAgent);
     /// @brief Put an agent in the node
+    /// @tparam Force If true, the agent is added even if the node is full (default is false)
     /// @param agentId The agent's id
     /// @details The agent's angle difference is used to order the agents in the node.
     ///          The agent with the smallest angle difference is the first one to be
     ///          removed from the node.
-    /// @throws std::runtime_error if the node is full
+    /// @throws std::runtime_error if the node is full and Force is false
+    template <bool Force = false>
     void addAgent(std::unique_ptr<Agent> pAgent);
     // /// @brief Removes an agent from the node
     // /// @param agentId The agent's id
@@ -137,3 +144,36 @@ struct std::formatter<dsf::mobility::Intersection> {
     }
   }
 };
+
+namespace dsf::mobility {
+  // Defined after std::formatter<Intersection>, which the error messages need
+  template <bool Force>
+  inline void Intersection::addAgent(double angle, std::unique_ptr<Agent> pAgent) {
+    if constexpr (!Force) {
+      if (isFull()) {
+        throw std::runtime_error(std::format("{} is full.", *this));
+      }
+    }
+    auto iAngle{static_cast<int16_t>(angle * 100)};
+    m_agents.emplace(iAngle, std::move(pAgent));
+  }
+
+  template <bool Force>
+  inline void Intersection::addAgent(std::unique_ptr<Agent> pAgent) {
+    if constexpr (!Force) {
+      if (isFull()) {
+        throw std::runtime_error(std::format("{} is full.", *this));
+      }
+    }
+    int16_t lastKey{0};
+    if (!m_agents.empty()) {
+      lastKey = m_agents.rbegin()->first;
+      if (lastKey == std::numeric_limits<int16_t>::max()) {
+        throw std::runtime_error(std::format(
+            "{} cannot order any further agent: the queue key saturated.", *this));
+      }
+      ++lastKey;
+    }
+    m_agents.emplace(lastKey, std::move(pAgent));
+  }
+}  // namespace dsf::mobility

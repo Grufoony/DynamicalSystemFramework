@@ -11,6 +11,7 @@
 #include "RoadJunction.hpp"
 #include "../utility/queue.hpp"
 
+#include <cassert>
 #include <memory>
 
 namespace dsf::mobility {
@@ -34,8 +35,10 @@ namespace dsf::mobility {
     ~Roundabout() = default;
 
     /// @brief Put an agent in the node
+    /// @tparam Force If true, the agent is added even if the node is full (default is false)
     /// @param agentId The agent's id
-    /// @throws std::runtime_error if the node is full
+    /// @details Asserts that the node is not full, unless Force is true
+    template <bool Force = false>
     void enqueue(std::unique_ptr<Agent> agentId);
     /// @brief Removes the first agent from the node
     /// @return Id The agent's id
@@ -55,4 +58,12 @@ namespace dsf::mobility {
     /// @return bool True if the node is a roundabout
     constexpr bool isRoundabout() const noexcept final { return true; }
   };
+
+  template <bool Force>
+  inline void Roundabout::enqueue(std::unique_ptr<Agent> pAgent) {
+    if constexpr (!Force) {
+      assert(!isFull());
+    }
+    m_agents.push(std::move(pAgent));
+  }
 }  // namespace dsf::mobility

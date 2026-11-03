@@ -65,6 +65,14 @@ namespace dsf::mobility {
     ///   from and arrive at the node
     NODES = 1,
   };
+  /// @brief What to do with an agent that has been stuck for too long (see
+  ///   FirstOrderDynamics::handleStagnantAgents)
+  enum class StagnantAgentsMode : std::uint8_t {
+    /// @brief Push the agent on, ignoring capacities, traffic lights and right of way
+    FORCE = 0,
+    /// @brief Remove the agent from the simulation
+    KILL = 1,
+  };
   // Struct to collect street data for batch insert after parallel section
   struct StreetDataRecord {
     std::optional<std::string> coilName;
@@ -119,7 +127,7 @@ namespace dsf::mobility {
     tbb::concurrent_unordered_map<Id, std::size_t> m_destinationCounts;
     std::unordered_map<Id, std::unordered_map<Id, double>> m_transitionMatrix;
     std::atomic<std::size_t> m_nAgents{0}, m_nAddedAgents{0}, m_nInsertedAgents{0},
-        m_nKilledAgents{0}, m_nArrivedAgents{0};
+        m_nKilledAgents{0}, m_nArrivedAgents{0}, m_nStagnantAgents{0};
     std::function<double(Street const&)> m_speedFunction;
     std::string m_speedFunctionDescription;
     double m_uturnPenaltyFactor = 0.1;
@@ -144,6 +152,7 @@ namespace dsf::mobility {
     std::optional<Delay> m_dataUpdatePeriod;
     bool m_bCacheEnabled;
     std::optional<double> m_timeToleranceFactor{std::nullopt};
+    StagnantAgentsMode m_stagnantAgentsMode{StagnantAgentsMode::FORCE};
     bool m_forcePriorities{false};
 
   private:
@@ -159,6 +168,20 @@ namespace dsf::mobility {
     ///   of the free-flow ones) with probability m_intelligentFraction
     /// @param pAgent A std::unique_ptr to the agent
     void m_assignIntelligence(std::unique_ptr<Agent> const& pAgent);
+    /// @brief Get the time an agent may stay still on a street before being stagnant
+    /// @param street The street
+    /// @return double timeToleranceFactor * ceil(length / maxSpeed). Only meaningful when
+    ///   stagnant agents are handled (m_timeToleranceFactor has a value)
+    double m_stagnationTolerance(Street const& street) const;
+    /// @brief Check whether an agent waiting in a node has been still for too long
+    /// @param agent The agent, which is still on the street it came from
+    /// @return bool True if stagnant agents are forced and the agent has been still, since
+    ///   its free time, for longer than its street's stagnation tolerance
+    bool m_isForcedFromNode(Agent const& agent) const;
+    /// @brief In KILL mode, kill the agents still waiting to enter the network (not inserted
+    ///   since the previous call to addAgents). In FORCE mode they keep waiting.
+    /// @param caller The name of the caller, for logging
+    void m_killPendingAgents(std::string_view caller);
 
     /// @brief Get the cumulative sums of the weights of a weighted list of ids
     /// @param weightedIds The (id, weight) pairs
@@ -297,11 +320,22 @@ namespace dsf::mobility {
     /// @details The passage probability is the probability of passing through a node
     ///   It is useful in the case of random agents
     void setPassageProbability(double passageProbability);
-    /// @brief Set the time tolerance factor for killing stagnant agents.
-    ///   An agent will be considered stagnant if it has not moved for timeToleranceFactor * std::ceil(street_length / street_maxSpeed) time units.
-    /// @param timeToleranceFactor The time tolerance factor
+    /// @brief Handle the agents that are stuck on a street for too long.
+    /// @details The tolerance of a street is timeToleranceFactor * std::ceil(street_length / street_maxSpeed).
+    /// - FORCE: when a lane has released no agent for longer than the tolerance, the agent at
+    ///   its head is pushed on to its next street, ignoring the capacities of the node and of
+    ///   the next street, traffic lights and right of way. Streets can therefore hold more agents
+    ///   than their capacity (normalized densities above 1). Agents still waiting to enter
+    ///   the network keep waiting.
+    /// - KILL: an agent queued for longer than the tolerance since its free time is removed,
+    ///   and the agents still waiting to enter the network are removed at the next call to
+    ///   addAgents. Both count as killed.
+    /// Either way, each handled agent is counted in agentStats() (nStagnantAgents).
+    /// @param mode The way stagnant agents are handled (default is FORCE)
+    /// @param timeToleranceFactor The time tolerance factor (default is 3)
     /// @throw std::invalid_argument If the time tolerance factor is not positive
-    void killStagnantAgents(double timeToleranceFactor = 3.);
+    void handleStagnantAgents(StagnantAgentsMode mode = StagnantAgentsMode::FORCE,
+                              double timeToleranceFactor = 3.);
     /// @brief Enable data saving (compatibility wrapper; persistence is handled by TrafficSimulator).
     void saveData(std::time_t const savingInterval,
                   bool const saveAverageStats = false,
@@ -309,10 +343,12 @@ namespace dsf::mobility {
                   bool const saveTravelData = false,
                   bool const saveAgentData = false);
     /// @brief Set the speed function. Options are:
-    /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * moving_density), where alpha is a parameter in [0, 1)
-    ///   and moving_density = n_moving_agents / capacity (queued agents cost queue time instead, see RoadNetwork::setEdgeWeight)
+    /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * min(1, moving_density)), where alpha is a parameter in [0, 1)
+    ///   and moving_density = n_moving_agents / capacity (queued agents cost queue time instead, see RoadNetwork::setEdgeWeight).
+    ///   The density is capped at 1 since forced stagnant agents can overfill a street (see handleStagnantAgents)
     /// - (CONSTANT): speed = max_speed, i.e. agents always travel in free flow
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
+    ///   It must stay positive also for streets holding more agents than their capacity.
     template <typename... TArgs>
     void setSpeedFunction(SpeedFunction const speedFunction, TArgs&&... args);
     /// @brief Set the force priorities flag
@@ -546,6 +582,15 @@ namespace dsf::mobility {
     /// @brief Get how origin, destination and OD ids are interpreted
     /// @return DynamicsMode The mode
     inline auto mode() const noexcept { return m_mode; }
+    /// @brief Get how stagnant agents are handled (see handleStagnantAgents)
+    /// @return std::optional<StagnantAgentsMode> The mode, or std::nullopt if stagnant agents
+    ///   are not handled
+    inline std::optional<StagnantAgentsMode> stagnantAgentsMode() const noexcept {
+      if (!m_timeToleranceFactor.has_value()) {
+        return std::nullopt;
+      }
+      return m_stagnantAgentsMode;
+    }
     /// @brief Get the origins
     /// @return std::vector<std::tuple<Id, double>> const& The origin street ids and their weights
     inline auto const& origins() const noexcept { return m_origins; }
@@ -622,14 +667,18 @@ namespace dsf::mobility {
     /// @return Measurement<double> The mean flow of the streets and the standard deviation
     Measurement<double> streetMeanFlow(double threshold, bool above) const;
 
-    /// @brief Get agents stats from this Dynamics as the following tuple: (nAddedAgents, nInsertedAgents, nArrivedAgents, nKilledAgents, nAgents)
-    /// @return std::tuple<std::size_t, std::size_t, std::size_t, std::size_t, std::size_t> The tuple containing the agents stats
+    /// @brief Get agents stats from this Dynamics as the following tuple: (nAddedAgents, nInsertedAgents, nArrivedAgents, nKilledAgents, nAgents, nStagnantAgents)
+    /// @details nStagnantAgents counts the stagnant agents handled so far (see
+    ///   handleStagnantAgents): forced on in FORCE mode, once per forced passage, or killed in
+    ///   KILL mode, where they are also counted in nKilledAgents.
+    /// @return std::tuple<std::size_t, std::size_t, std::size_t, std::size_t, std::size_t, std::size_t> The tuple containing the agents stats
     inline auto agentStats() const noexcept {
       return std::make_tuple(m_nAddedAgents.load(),
                              m_nInsertedAgents.load(),
                              m_nArrivedAgents.load(),
                              m_nKilledAgents.load(),
-                             m_nAgents.load());
+                             m_nAgents.load(),
+                             m_nStagnantAgents.load());
     }
     /// @brief Print a summary of the dynamics to an output stream
     /// @param os The output stream to write to (default is std::cout)
@@ -639,6 +688,7 @@ namespace dsf::mobility {
     /// - Number of added agents
     /// - Number of arrived agents
     /// - Number of killed agents
+    /// - Number of stagnant agents
     /// - Current number of agents in the simulation
     void summary(std::ostream& os = std::cout) const;
   };
@@ -753,13 +803,15 @@ namespace dsf::mobility {
             throw std::invalid_argument(
                 std::format("The alpha parameter ({}) must be in [0., 1)", alpha));
           }
-          // Queued agents do not slow the street down: they cost queue time instead
+          // Queued agents do not slow the street down: they cost queue time instead.
           m_speedFunction = [alpha](Street const& pStreet) {
-            return pStreet.maxSpeed() * (1. - alpha * pStreet.movingDensity<true>());
+            return pStreet.maxSpeed() *
+                   (1. - alpha * std::min(1., pStreet.movingDensity<true>()));
           };
           Street::setEstimatedTravelTimeFunction([alpha](Street const& pStreet) {
             return pStreet.length() /
-                   (pStreet.maxSpeed() * (1. - alpha * pStreet.movingDensity<true>()));
+                   (pStreet.maxSpeed() *
+                    (1. - alpha * std::min(1., pStreet.movingDensity<true>())));
           });
           m_speedFunctionDescription = std::format("LINEAR(alpha={})", alpha);
         }

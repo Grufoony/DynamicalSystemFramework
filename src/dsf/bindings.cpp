@@ -55,6 +55,12 @@ NB_MODULE(dsf_cpp, m) {
       .value("NODES", dsf::mobility::DynamicsMode::NODES)
       .export_values();
 
+  // Bind StagnantAgentsMode enum
+  nb::enum_<dsf::mobility::StagnantAgentsMode>(mobility, "StagnantAgentsMode")
+      .value("FORCE", dsf::mobility::StagnantAgentsMode::FORCE)
+      .value("KILL", dsf::mobility::StagnantAgentsMode::KILL)
+      .export_values();
+
   // Bind TrafficLightOptimization enum
   nb::enum_<dsf::TrafficLightOptimization>(mobility, "TrafficLightOptimization")
       .value("SINGLE_TAIL", dsf::TrafficLightOptimization::SINGLE_TAIL)
@@ -1280,16 +1286,47 @@ Returns:
 
       Returns:
         float: The fraction in the range [0, 1].)doc")
-      .def("killStagnantAgents",
-           &dsf::mobility::FirstOrderDynamics::killStagnantAgents,
+      .def("handleStagnantAgents",
+           &dsf::mobility::FirstOrderDynamics::handleStagnantAgents,
+           nb::arg("mode") = dsf::mobility::StagnantAgentsMode::FORCE,
            nb::arg("timeToleranceFactor") = 3.,
-           R"doc(Enable or configure removal of stagnant agents.
+           R"doc(Handle the agents stuck on a street for too long.
+
+    The tolerance of a street is timeToleranceFactor * ceil(length / maxSpeed).
+
+    - FORCE: when a lane has released no agent for longer than the tolerance, the
+      agent at its head is pushed on to its next street, ignoring the capacities of
+      the node and of the next street, traffic lights and right of way. Streets can
+      then hold more agents than their capacity. Agents waiting to enter the network
+      keep waiting.
+    - KILL: an agent queued for longer than the tolerance is removed, and the agents
+      still waiting to enter the network are removed at the next addAgents call.
 
     Args:
-      timeToleranceFactor (float, optional): Multiplier used to detect stagnation.
+      mode (StagnantAgentsMode, optional): How stagnant agents are handled. Default is FORCE.
+      timeToleranceFactor (float, optional): Multiplier of the street's free-flow
+        travel time used to detect stagnation. Default is 3.
+
+    Raises:
+      ValueError: If timeToleranceFactor is not positive.
 
     Returns:
       None)doc")
+      .def("stagnantAgentsMode",
+           &dsf::mobility::FirstOrderDynamics::stagnantAgentsMode,
+           R"doc(Get how stagnant agents are handled.
+
+    Returns:
+      StagnantAgentsMode | None: The mode, or None if stagnant agents are not handled.)doc")
+      .def("agentStats",
+           &dsf::mobility::FirstOrderDynamics::agentStats,
+           R"doc(Get the agents stats.
+
+    Returns:
+      tuple[int, int, int, int, int, int]: (nAddedAgents, nInsertedAgents,
+        nArrivedAgents, nKilledAgents, nAgents, nStagnantAgents). nStagnantAgents
+        counts the stagnant agents handled so far: forced on in FORCE mode (once per
+        forced passage) or killed in KILL mode (also counted in nKilledAgents).)doc")
       .def(
           "setDestinations",
           [](dsf::mobility::FirstOrderDynamics& self,

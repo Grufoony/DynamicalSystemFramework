@@ -28,7 +28,10 @@
   "dynamics": {
     "mode": "EDGES",
     "error_probability": 0.05,
-    "kill_stagnant_agents": 40.0,
+    "stagnant_agents": {
+      "tolerance_factor": 40.0,
+      "mode": "KILL"
+    },
     "agent_insertion_method": "RANDOM",
     "importTransitionMatrixFromJSON": {
       "file": "transition_matrix.json"

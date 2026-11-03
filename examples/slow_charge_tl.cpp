@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
   dynamics->updatePaths();
 
   dynamics->setErrorProbability(ERROR_PROBABILITY);
-  dynamics->killStagnantAgents(40.);
+  dynamics->handleStagnantAgents(dsf::mobility::StagnantAgentsMode::KILL, 40.);
   // dynamics->setMaxFlowPercentage(0.69);
   // dynamics->setForcePriorities(false);
   if (OPTIMIZE)

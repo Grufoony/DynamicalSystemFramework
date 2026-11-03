@@ -206,16 +206,7 @@ namespace dsf::mobility {
           "FirstOrderDynamics::m_addAgentsODs: No origin-destination pairs provided");
     }
     m_nAddedAgents += nAgents;
-    if (m_timeToleranceFactor.has_value() && !m_agents.empty()) {
-      auto const nStagnantAgents{m_agents.size()};
-      spdlog::debug(
-          "Removing {} stagnant agents that were not inserted since the previous call to "
-          "addAgents(ODS).",
-          nStagnantAgents);
-      m_agents.clear();
-      m_nAgents -= nStagnantAgents;
-      m_nKilledAgents += nStagnantAgents;
-    }
+    this->m_killPendingAgents("addAgents(ODS)");
     if (m_ODs.size() == 1) {
       auto [originId, destinationId, weight] = m_ODs.at(0);
       auto const itineraryIt = this->itineraries().find(destinationId);
@@ -262,16 +253,7 @@ namespace dsf::mobility {
   }
   void FirstOrderDynamics::m_addAgentsRandomODs(std::size_t nAgents) {
     m_nAddedAgents += nAgents;
-    if (m_timeToleranceFactor.has_value() && !m_agents.empty()) {
-      auto const nStagnantAgents{m_agents.size()};
-      spdlog::debug(
-          "Removing {} stagnant agents that were not inserted since the previous call to "
-          "addAgentsRandomly().",
-          nStagnantAgents);
-      m_agents.clear();
-      m_nAgents -= nStagnantAgents;
-      m_nKilledAgents += nStagnantAgents;
-    }
+    this->m_killPendingAgents("addAgentsRandomly()");
     auto const& nSources{m_origins.size()};
     auto const& nDestinations{m_destinations.size()};
     spdlog::debug("Init addAgentsRandomly for {} agents from {} streets to {} streets.",
@@ -342,16 +324,7 @@ namespace dsf::mobility {
   }
   void FirstOrderDynamics::m_addAgentsConditionalRandomODs(std::size_t nAgents) {
     m_nAddedAgents += nAgents;
-    if (m_timeToleranceFactor.has_value() && !m_agents.empty()) {
-      auto const nStagnantAgents{m_agents.size()};
-      spdlog::debug(
-          "Removing {} stagnant agents that were not inserted since the previous call to "
-          "addAgentsConditionalRandomODs().",
-          nStagnantAgents);
-      m_agents.clear();
-      m_nAgents -= nStagnantAgents;
-      m_nKilledAgents += nStagnantAgents;
-    }
+    this->m_killPendingAgents("addAgentsConditionalRandomODs()");
     if (m_origins.empty()) {
       throw std::runtime_error(
           "FirstOrderDynamics::m_addAgentsConditionalRandomODs: Origins must be set");
@@ -747,33 +720,46 @@ namespace dsf::mobility {
         continue;
       }
 
+      // A forced agent ignores the capacities of the node and of the next street, traffic
+      // lights, right of way and the passage probability (see handleStagnantAgents)
+      bool bForce{false};
       if (m_timeToleranceFactor.has_value()) {
-        auto const timeDiff{this->time_step() - pAgentTemp->freeTime()};
-        auto const timeTolerance{*m_timeToleranceFactor *
-                                 std::ceil(pStreet->length() / pStreet->maxSpeed())};
+        auto const timeTolerance{m_stagnationTolerance(*pStreet)};
+        auto const& lane{pStreet->lane(queueIndex)};
+        // KILL: the agent's age in the queue. FORCE: the time since the agent became the
+        // eligible head of the lane, so that a blocked lane releases at most one forced
+        // agent per tolerance window instead of flushing a whole old queue at once
+        auto const timeDiff{m_stagnantAgentsMode == StagnantAgentsMode::KILL
+                                ? this->time_step() - pAgentTemp->freeTime()
+                                : this->time_step() - std::max(pAgentTemp->freeTime(),
+                                                               lane.lastDischarge)};
         if (timeDiff > timeTolerance) {
+          ++m_nStagnantAgents;
           spdlog::debug(
               "Time-step {} - {} currently on {} ({} turn - Traffic Light? {}), "
-              "has been still for more than {} seconds ({} seconds). Killing it.",
+              "has been still for more than {} seconds ({} seconds). {} it.",
               this->time_step(),
               *pAgentTemp,
               *pStreet,
-              directionToString.at(pStreet->lane(queueIndex).direction),
+              directionToString.at(lane.direction),
               pNode->isTrafficLight(),
               timeTolerance,
-              timeDiff);
-          // Kill the agent
-          this->m_removeAgent<false>(pStreet->dequeue(queueIndex, this->time_step()));
-          continue;
+              timeDiff,
+              m_stagnantAgentsMode == StagnantAgentsMode::KILL ? "Killing" : "Forcing");
+          if (m_stagnantAgentsMode == StagnantAgentsMode::KILL) {
+            this->m_removeAgent<false>(pStreet->dequeue(queueIndex, this->time_step()));
+            continue;
+          }
+          bForce = true;
         }
       }
       pAgentTemp->setSpeed(0.);
       auto* destinationNode{pNode};
-      if (destinationNode->isFull()) {
+      if (!bForce && destinationNode->isFull()) {
         spdlog::trace("Skipping due to full destination node {}", *destinationNode);
         continue;
       }
-      if (destinationNode->isTrafficLight()) {
+      if (!bForce && destinationNode->isTrafficLight()) {
         auto& tl = dynamic_cast<TrafficLight&>(*destinationNode);
         auto const direction{pStreet->lane(queueIndex).direction};
         if (!tl.isGreen(pStreet->id(), direction)) {
@@ -785,7 +771,7 @@ namespace dsf::mobility {
         spdlog::debug("Green light on street {} and direction {}",
                       pStreet->id(),
                       directionToString.at(direction));
-      } else if (destinationNode->isIntersection() &&
+      } else if (!bForce && destinationNode->isIntersection() &&
                  pAgentTemp->nextStreetId().has_value()) {
         auto& intersection = static_cast<Intersection&>(*destinationNode);
         bool bCanPass{true};
@@ -882,7 +868,7 @@ namespace dsf::mobility {
             m_passageProbability.value_or(std::numeric_limits<double>::max()))) {
         if (pAgentTemp->isRandom()) {
           bArrived = true;
-        } else {
+        } else if (!bForce) {
           spdlog::debug(
               "Skipping agent emission from {} due to passage "
               "probability",
@@ -926,7 +912,7 @@ namespace dsf::mobility {
                         destinationNode->id()));
       }
       auto* nextStreet{&this->graph().edge(*(pAgentTemp->nextStreetId()))};
-      if (nextStreet->isFull()) {
+      if (!bForce && nextStreet->isFull()) {
         spdlog::debug(
             "Skipping agent emission from {} due to full "
             "next street: {}",
@@ -947,10 +933,18 @@ namespace dsf::mobility {
       if (destinationNode->isIntersection()) {
         auto& intersection = dynamic_cast<Intersection&>(*destinationNode);
         auto const delta{nextStreet->deltaAngle(pStreet->angle())};
-        intersection.addAgent(delta, std::move(pAgent));
+        if (bForce) {
+          intersection.addAgent<true>(delta, std::move(pAgent));
+        } else {
+          intersection.addAgent(delta, std::move(pAgent));
+        }
       } else if (destinationNode->isRoundabout()) {
         auto& roundabout = dynamic_cast<Roundabout&>(*destinationNode);
-        roundabout.enqueue(std::move(pAgent));
+        if (bForce) {
+          roundabout.enqueue<true>(std::move(pAgent));
+        } else {
+          roundabout.enqueue(std::move(pAgent));
+        }
       } else {
         spdlog::warn(
             "{} cannot host agents (it is neither an intersection nor a roundabout). "
@@ -989,7 +983,9 @@ namespace dsf::mobility {
                 "{} has no next street ID at {}. Cannot proceed.", *pAgent, *pNode));
           }
           auto* nextStreet{&this->graph().edge(*(pAgent->nextStreetId()))};
-          if (nextStreet->isFull()) {
+          bool const bFull{nextStreet->isFull()};
+          bool const bForce{bFull && m_isForcedFromNode(*pAgent)};
+          if (bFull && !bForce) {
             spdlog::debug("Next street is full: {}", *nextStreet);
             if (m_forcePriorities) {
               spdlog::debug("Forcing priority from {} on {}", *pNode, *nextStreet);
@@ -1017,7 +1013,11 @@ namespace dsf::mobility {
               pNode->id(),
               nextStreet->id(),
               pAgent->freeTime());
-          nextStreet->addAgent(std::move(pAgent), this->time_step());
+          if (bForce) {
+            nextStreet->addAgent<true>(std::move(pAgent), this->time_step());
+          } else {
+            nextStreet->addAgent(std::move(pAgent), this->time_step());
+          }
           it = intersection.agents().erase(it);
           bReleased = true;
           break;
@@ -1035,7 +1035,9 @@ namespace dsf::mobility {
               *pNode));
         }
         auto* nextStreet{&this->graph().edge(*(pAgentTemp->nextStreetId()))};
-        if (!(nextStreet->isFull())) {
+        bool const bFull{nextStreet->isFull()};
+        bool const bForce{bFull && m_isForcedFromNode(*pAgentTemp)};
+        if (!bFull || bForce) {
           if (!m_turnCounts.empty() && pAgentTemp->streetId().has_value()) {
             auto const count{++m_turnCounts[*(pAgentTemp->streetId())][nextStreet->id()]};
             spdlog::trace("Incremented turn count for {} -> {}: {}",
@@ -1056,7 +1058,11 @@ namespace dsf::mobility {
               nextStreet->id(),
               pAgent->freeTime(),
               *pAgent);
-          nextStreet->addAgent(std::move(pAgent), this->time_step());
+          if (bForce) {
+            nextStreet->addAgent<true>(std::move(pAgent), this->time_step());
+          } else {
+            nextStreet->addAgent(std::move(pAgent), this->time_step());
+          }
           bReleased = true;
         }
       }
@@ -1181,12 +1187,50 @@ namespace dsf::mobility {
     }
     m_passageProbability = passageProbability;
   }
-  void FirstOrderDynamics::killStagnantAgents(double timeToleranceFactor) {
+  void FirstOrderDynamics::handleStagnantAgents(StagnantAgentsMode mode,
+                                                double timeToleranceFactor) {
     if (timeToleranceFactor <= 0.) {
       throw std::invalid_argument(std::format(
           "The time tolerance factor ({}) must be positive", timeToleranceFactor));
     }
+    m_stagnantAgentsMode = mode;
     m_timeToleranceFactor = timeToleranceFactor;
+  }
+  double FirstOrderDynamics::m_stagnationTolerance(Street const& street) const {
+    assert(m_timeToleranceFactor.has_value());
+    return *m_timeToleranceFactor * std::ceil(street.length() / street.maxSpeed());
+  }
+  bool FirstOrderDynamics::m_isForcedFromNode(Agent const& agent) const {
+    if (!m_timeToleranceFactor.has_value() ||
+        m_stagnantAgentsMode != StagnantAgentsMode::FORCE) {
+      return false;
+    }
+    // Agents waiting in a node are still on the street they came from. Agents just
+    // inserted in the network have no street yet: they entered the node with room ahead
+    auto const streetId{agent.streetId()};
+    if (!streetId.has_value()) {
+      return false;
+    }
+    // Agents forced out of a lane have waited at least this long, since a lane head
+    // becomes eligible at its free time or later
+    return static_cast<double>(this->time_step() - agent.freeTime()) >
+           m_stagnationTolerance(this->graph().edge(*streetId));
+  }
+  void FirstOrderDynamics::m_killPendingAgents(std::string_view caller) {
+    if (!m_timeToleranceFactor.has_value() || m_agents.empty() ||
+        m_stagnantAgentsMode != StagnantAgentsMode::KILL) {
+      return;
+    }
+    auto const nStagnantAgents{m_agents.size()};
+    spdlog::debug(
+        "Removing {} stagnant agents that were not inserted since the previous call to "
+        "{}.",
+        nStagnantAgents,
+        caller);
+    m_agents.clear();
+    m_nAgents -= nStagnantAgents;
+    m_nKilledAgents += nStagnantAgents;
+    m_nStagnantAgents += nStagnantAgents;
   }
   std::vector<Id> FirstOrderDynamics::m_streetIds(Id const id) const {
     if (m_mode == DynamicsMode::EDGES) {
@@ -1723,16 +1767,7 @@ namespace dsf::mobility {
   void FirstOrderDynamics::addAgentsUniformly(std::size_t nAgents,
                                               std::optional<Id> optItineraryId) {
     m_nAddedAgents += nAgents;
-    if (m_timeToleranceFactor.has_value() && !m_agents.empty()) {
-      auto const nStagnantAgents{m_agents.size()};
-      spdlog::debug(
-          "Removing {} stagnant agents that were not inserted since the previous call to "
-          "addAgentsUniformly().",
-          nStagnantAgents);
-      m_agents.clear();
-      m_nAgents -= nStagnantAgents;
-      m_nKilledAgents += nStagnantAgents;
-    }
+    this->m_killPendingAgents("addAgentsUniformly()");
     if (optItineraryId.has_value() && !this->itineraries().contains(*optItineraryId)) {
       throw std::invalid_argument(
           std::format("No itineraries available. Cannot add agents with itinerary id {}",
@@ -2388,6 +2423,7 @@ namespace dsf::mobility {
        << "Number of inserted agents: " << m_nInsertedAgents << '\n'
        << "Number of arrived agents: " << m_nArrivedAgents << '\n'
        << "Number of killed agents: " << m_nKilledAgents << '\n'
+       << "Number of stagnant agents: " << m_nStagnantAgents << '\n'
        << "Current number of agents: " << this->nAgents() << '\n';
   }
 

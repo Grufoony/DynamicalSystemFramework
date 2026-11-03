@@ -265,7 +265,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "mode": "EDGES",
     "agent_insertion_method": "RANDOM_ODS",
     "error_probability": 0.05,
-    "kill_stagnant_agents": 10.0,
+    "stagnant_agents": { "tolerance_factor": 10.0, "mode": "KILL" },
     "mean_travel_distance": 1000.0,
     "mean_travel_time": 600,
     "importODsFromCSV": { "file": "ods.csv", "separator": "," }
@@ -282,6 +282,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   CHECK_EQ(simulator.dynamics()->origins().size(), 1);
   CHECK_EQ(simulator.dynamics()->destinations().size(), 1);
   CHECK_EQ(simulator.dynamics()->intelligentAgentsFraction(), 0.5);
+  CHECK_EQ(simulator.dynamics()->stagnantAgentsMode(), StagnantAgentsMode::KILL);
   // The streets have no capacity column: it follows from the mean vehicle length
   CHECK_EQ(Road::meanVehicleLength(), 2.5);
   CHECK_EQ(simulator.dynamics()->graph().edge(0).capacity(), 6);
@@ -424,6 +425,36 @@ TEST_CASE("TrafficSimulator JSON config errors") {
       auto const pSimulator{importODs(R"("mode": "EDGES", )", R"(, "edges": false)")};
       CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::EDGES);
     }
+  }
+  SUBCASE("Stagnant agents") {
+    auto const importStagnant = [&](std::string const& dynamicsExtra) {
+      writeFile(jsonPath,
+                makeConfig("",
+                           roadNetwork +
+                               R"(, "dynamics": { "agent_insertion_method": )"
+                               R"("ODS")" +
+                               dynamicsExtra + " }"));
+      auto pSimulator{std::make_unique<TrafficSimulator>()};
+      pSimulator->importConfig(jsonPath.string());
+      return pSimulator;
+    };
+    CHECK_FALSE(importStagnant("")->dynamics()->stagnantAgentsMode().has_value());
+    // The mode defaults to FORCE
+    CHECK_EQ(importStagnant(R"(, "stagnant_agents": { "tolerance_factor": 10.0 })")
+                 ->dynamics()
+                 ->stagnantAgentsMode(),
+             StagnantAgentsMode::FORCE);
+    CHECK_THROWS_AS(
+        importStagnant(
+            R"(, "stagnant_agents": { "tolerance_factor": 10.0, "mode": "FOO" })"),
+        std::runtime_error);
+    CHECK_THROWS_AS(importStagnant(R"(, "stagnant_agents": { "mode": "KILL" })"),
+                    std::runtime_error);
+    CHECK_THROWS_AS(importStagnant(R"(, "stagnant_agents": { "tolerance_factor": 0.0 })"),
+                    std::invalid_argument);
+    // The replaced key is rejected instead of being silently ignored
+    CHECK_THROWS_AS(importStagnant(R"(, "kill_stagnant_agents": 10.0)"),
+                    std::runtime_error);
   }
   SUBCASE("The intelligent fraction is out of range") {
     CHECK_THROWS_AS(
@@ -915,7 +946,7 @@ TEST_CASE("TrafficSimulator slow charge with travel and agent data") {
   simulator.run(1, 2, 4);
 
   CHECK_EQ(simulator.dynamics()->time_step(), 20);
-  auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
+  auto const [nAdded, nInserted, nArrived, nKilled, nRemaining, nStagnant] =
       simulator.dynamics()->agentStats();
   CHECK_GE(nAdded, 10);
   CHECK_GT(nArrived, 0);

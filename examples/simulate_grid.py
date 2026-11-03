@@ -15,6 +15,7 @@ from numba import cfunc, float64
 from dsf.cartography import create_manhattan_cartography
 from dsf.mobility import (
     AgentInsertionMethod,
+    StagnantAgentsMode,
     TrafficSimulator,
 )
 
@@ -90,7 +91,7 @@ if __name__ == "__main__":
     simulator.updatePaths(300, False)
 
     simulator.dynamics().setSeed(args.seed)
-    simulator.dynamics().killStagnantAgents(40.0)
+    simulator.dynamics().handleStagnantAgents(StagnantAgentsMode.KILL, 40.0)
     simulator.dynamics().setMeanTravelDistance(
         10e3
     )  # Set mean travel distance to 10 km

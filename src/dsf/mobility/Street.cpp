@@ -133,15 +133,6 @@ namespace dsf::mobility {
     m_counter->reset();
   }
 
-  void Street::addAgent(std::unique_ptr<Agent> pAgent, std::time_t const currentTime) {
-    assert(!isFull());
-    spdlog::trace("Adding {} on {}", *pAgent, *this);
-    m_agentsInsertionTimes[pAgent->id()] = currentTime;
-    m_movingAgents.push(std::move(pAgent));
-    if (m_counter.has_value() && m_counterPosition == CounterPosition::ENTRY) {
-      ++(*m_counter);
-    }
-  }
   std::unique_ptr<Agent> Street::dequeueMovingAgent() {
     assert(!m_movingAgents.empty());
     return m_movingAgents.extract_top();
@@ -160,6 +151,7 @@ namespace dsf::mobility {
     assert(!lane.queue.empty());
     auto pAgent{lane.queue.extract_front()};
     lane.flowAccumulator.consume();
+    lane.lastDischarge = currentTime;
     // Keep track of average speed
     auto const itInsertion{m_agentsInsertionTimes.find(pAgent->id())};
     auto const insertionTime{

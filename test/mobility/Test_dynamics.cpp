@@ -962,7 +962,7 @@ TEST_CASE("FirstOrderDynamics") {
           dynamics.evolve();
         }
         THEN("Every agent ends its trip as arrived, not killed") {
-          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent, nStagnant] =
               dynamics.agentStats();
           CHECK_EQ(nArrived, nAgents);
           CHECK_EQ(nKilled, 0);
@@ -1439,7 +1439,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve();
 
         THEN("The summary counts the agent as arrived but not killed") {
-          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent, nStagnant] =
               dynamics.agentStats();
           CHECK_EQ(nAdded, 1);
           CHECK_EQ(nInserted, 1);
@@ -1596,7 +1596,7 @@ TEST_CASE("FirstOrderDynamics") {
           dynamics.evolve();
         }
         THEN("Arrived agents are reinserted and none is lost") {
-          auto const [nAdded, nInserted, nArrived, nKilled, nAgents] =
+          auto const [nAdded, nInserted, nArrived, nKilled, nAgents, nStagnant] =
               dynamics.agentStats();
           CHECK(nArrived > 0);
           CHECK_EQ(nAgents + nKilled, 2000);
@@ -2344,17 +2344,131 @@ TEST_CASE("FirstOrderDynamics") {
       dynamics.updatePaths();
       dynamics.addAgent(dynamics.itineraries().at(1), 0);
       WHEN("Stagnant agents are killed and we evolve the dynamics") {
-        CHECK_THROWS_AS(dynamics.killStagnantAgents(0.), std::invalid_argument);
-        dynamics.killStagnantAgents(1.);
+        CHECK_THROWS_AS(dynamics.handleStagnantAgents(StagnantAgentsMode::KILL, 0.),
+                        std::invalid_argument);
+        dynamics.handleStagnantAgents(StagnantAgentsMode::KILL, 1.);
         for (auto i{0}; i < 10; ++i) {
           dynamics.evolve();
         }
         THEN("The agent is killed instead of waiting forever") {
-          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent, nStagnant] =
               dynamics.agentStats();
           CHECK_EQ(nKilled, 1);
           CHECK_EQ(nArrived, 0);
           CHECK_EQ(nCurrent, 0);
+          CHECK_EQ(nStagnant, 1);
+        }
+      }
+      WHEN("Stagnant agents are forced, the default mode") {
+        CHECK_THROWS_AS(dynamics.handleStagnantAgents(StagnantAgentsMode::FORCE, -1.),
+                        std::invalid_argument);
+        // Default factor 3: the street is travelled in 1 s, so the tolerance is 3 s
+        dynamics.handleStagnantAgents();
+        for (auto i{0}; i < 4; ++i) {
+          dynamics.evolve();
+        }
+        CHECK_EQ(std::get<5>(dynamics.agentStats()), 0);
+        CHECK_EQ(dynamics.graph().edge(0).nExitingAgents(), 1);
+        for (auto i{0}; i < 6; ++i) {
+          dynamics.evolve();
+        }
+        THEN("The agent runs the red light and arrives instead of being killed") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent, nStagnant] =
+              dynamics.agentStats();
+          CHECK_EQ(nKilled, 0);
+          CHECK_EQ(nArrived, 1);
+          CHECK_EQ(nCurrent, 0);
+          CHECK_EQ(nStagnant, 1);
+        }
+      }
+    }
+    GIVEN(
+        "A full street held by an agent waiting at a traffic light never green for it") {
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      graph2.addStreet(0, std::make_pair(0, 1), 13.8888888889);
+      // Travelled in 36 s: the agent holding it stays still much longer than the one behind
+      graph2.addStreet(1, std::make_pair(1, 2), 500.);
+      graph2.addStreet(2, std::make_pair(2, 3), 13.8888888889);
+      graph2.addStreet(3, std::make_pair(4, 2), 13.8888888889);
+      graph2.edge(1).setCapacity(1);
+      auto& tl = graph2.makeTrafficLight(2);
+      TrafficLightPhase phase{10};
+      phase.addGreen(3);
+      tl.addPhase(phase);
+      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      dynamics.addItinerary(2, 2);
+      dynamics.updatePaths();
+      dynamics.handleStagnantAgents(StagnantAgentsMode::FORCE, 3.);
+      // The first agent takes street 1 at once, the second one waits behind it on street 0
+      dynamics.addAgent(dynamics.itineraries().at(2), 1);
+      dynamics.addAgent(dynamics.itineraries().at(2), 0);
+      WHEN("The agent behind has been still for longer than its street's tolerance") {
+        for (auto i{0}; i < 10; ++i) {
+          dynamics.evolve();
+        }
+        THEN("It is forced on the full street, beyond its capacity") {
+          auto const& street{dynamics.graph().edge(1)};
+          CHECK_EQ(street.nAgents(), 2);
+          CHECK_GT(street.nAgents(), street.capacity());
+          CHECK_GT(street.density<true>(), 1.);
+          CHECK_EQ(std::get<5>(dynamics.agentStats()), 1);
+          // The speed function is capped: the forced agent still travels the street
+          CHECK_GT(street.estimatedTravelTime(), 0.);
+        }
+      }
+      WHEN("We evolve until both agents ran the red light") {
+        for (auto i{0}; i < 600; ++i) {
+          dynamics.evolve();
+        }
+        THEN("No agent is lost") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent, nStagnant] =
+              dynamics.agentStats();
+          CHECK_EQ(nKilled, 0);
+          CHECK_EQ(nArrived, 2);
+          CHECK_EQ(nCurrent, 0);
+          CHECK_EQ(nStagnant, 3);
+        }
+      }
+    }
+    GIVEN("Two agents queued on the same lane, at a traffic light never green for them") {
+      RoadNetwork graph2;
+      graph2.setEdgeWeight("length");
+      // Travelled in 4 s, with room for both agents
+      graph2.addStreet(0, std::make_pair(0, 1), 50.);
+      graph2.addStreet(1, std::make_pair(1, 2), 13.8888888889);
+      graph2.addStreet(2, std::make_pair(3, 1), 13.8888888889);
+      auto& tl = graph2.makeTrafficLight(1);
+      TrafficLightPhase phase{10};
+      phase.addGreen(2);
+      tl.addPhase(phase);
+      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      dynamics.addItinerary(1, 1);
+      dynamics.updatePaths();
+      // Tolerance of street 0: 4 s
+      dynamics.handleStagnantAgents(StagnantAgentsMode::FORCE, 1.);
+      dynamics.addAgent(dynamics.itineraries().at(1), 0);
+      dynamics.addAgent(dynamics.itineraries().at(1), 0);
+      WHEN("The first agent is forced") {
+        std::size_t nSteps{0};
+        while (std::get<5>(dynamics.agentStats()) == 0 && nSteps < 100) {
+          dynamics.evolve();
+          ++nSteps;
+        }
+        REQUIRE_EQ(std::get<5>(dynamics.agentStats()), 1);
+        REQUIRE_EQ(dynamics.graph().edge(0).nExitingAgents(), 1);
+        THEN("The second one waits a whole tolerance window as the head of the lane") {
+          // By its age alone, the second agent would already be stagnant
+          for (auto i{0}; i < 4; ++i) {
+            dynamics.evolve();
+          }
+          CHECK_EQ(std::get<5>(dynamics.agentStats()), 1);
+          dynamics.evolve();
+          CHECK_EQ(std::get<5>(dynamics.agentStats()), 2);
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent, nStagnant] =
+              dynamics.agentStats();
+          CHECK_EQ(nArrived, 2);
+          CHECK_EQ(nKilled, 0);
         }
       }
     }
@@ -2367,15 +2481,30 @@ TEST_CASE("FirstOrderDynamics") {
       FirstOrderDynamics dynamics{std::move(graph2), false, 69};
       dynamics.setODs({{0, 1, 1.}});
       dynamics.updatePaths();
-      dynamics.killStagnantAgents(1.);
-      dynamics.addAgents(3, AgentInsertionMethod::ODS);
-      dynamics.evolve();
-      WHEN("New agents are added") {
+      WHEN("Stagnant agents are killed and new agents are added") {
+        dynamics.handleStagnantAgents(StagnantAgentsMode::KILL, 1.);
+        dynamics.addAgents(3, AgentInsertionMethod::ODS);
+        dynamics.evolve();
         dynamics.addAgents(1, AgentInsertionMethod::ODS);
         THEN("The agents left waiting are counted as killed") {
-          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent, nStagnant] =
               dynamics.agentStats();
           CHECK_GT(nKilled, 0);
+          CHECK_EQ(nStagnant, nKilled);
+          CHECK_EQ(nInserted, nArrived + nKilled + nCurrent);
+        }
+      }
+      WHEN("Stagnant agents are forced and new agents are added") {
+        dynamics.handleStagnantAgents(StagnantAgentsMode::FORCE, 1.);
+        dynamics.addAgents(3, AgentInsertionMethod::ODS);
+        dynamics.evolve();
+        dynamics.addAgents(1, AgentInsertionMethod::ODS);
+        THEN("The agents left waiting keep waiting") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent, nStagnant] =
+              dynamics.agentStats();
+          CHECK_EQ(nKilled, 0);
+          CHECK_EQ(nStagnant, 0);
+          CHECK_EQ(nCurrent, 4);
           CHECK_EQ(nInserted, nArrived + nKilled + nCurrent);
         }
       }

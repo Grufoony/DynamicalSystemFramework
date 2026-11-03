@@ -21,6 +21,7 @@ static const auto DATA_FOLDER =
 using dsf::mobility::AgentInsertionMethod;
 using dsf::mobility::FirstOrderDynamics;
 using dsf::mobility::RoadNetwork;
+using dsf::mobility::StagnantAgentsMode;
 
 static constexpr unsigned int SEED{42};
 // Number of steps run before timing a loaded scenario, to reach a steady state
@@ -151,7 +152,7 @@ static void BM_FirstOrderDynamics_AddAgents_RandomODs(benchmark::State& state) {
     auto pDynamics = makeODDynamics();
     // Agents that are not inserted into the network are dropped at the next call, so
     // that agents do not pile up across iterations
-    pDynamics->killStagnantAgents();
+    pDynamics->handleStagnantAgents(StagnantAgentsMode::KILL);
     return pDynamics;
   }();
   auto const nAgents{static_cast<std::size_t>(state.range(0))};

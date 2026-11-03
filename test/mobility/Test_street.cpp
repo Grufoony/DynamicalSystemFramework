@@ -299,6 +299,10 @@ TEST_CASE("Street") {
     CHECK_EQ(street.queue(0).size(), street.capacity());
     CHECK_EQ(doctest::Approx(street.density<false>()), 1.14286);
     CHECK(street.isFull());
+    // Forced agents (see FirstOrderDynamics::handleStagnantAgents) overfill the street
+    street.addAgent<true>(std::make_unique<Agent>(4, 0, nullptr, 0), 0);
+    CHECK_EQ(street.nAgents(), street.capacity() + 1);
+    CHECK_GT(street.density<true>(), 1.);
   }
 
   SUBCASE("Dequeue") {
@@ -321,8 +325,10 @@ TEST_CASE("Street") {
     street.addAgent(std::make_unique<Agent>(a4), 0);
     street.enqueue(0);
     CHECK(street.queue(0).front());
+    CHECK_EQ(street.lane(0).lastDischarge, 0);
     // dequeue
     street.dequeue(0, 1);
+    CHECK_EQ(street.lane(0).lastDischarge, 1);
     CHECK(street.queue(0).front());  // check that agent 2 is now at front
     // check that the length of the queue has decreased
     CHECK_EQ(street.queue(0).size(), 3);
@@ -331,6 +337,7 @@ TEST_CASE("Street") {
     CHECK_EQ(street.queue(0).size(), 2);
     street.dequeue(0, 3);
     street.dequeue(0, 4);  // the queue is now empty
+    CHECK_EQ(street.lane(0).lastDischarge, 4);
   }
   SUBCASE("Flow accumulators") {
     GIVEN("A two-lane street with transport capacity 0.5") {

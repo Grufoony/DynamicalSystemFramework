@@ -149,6 +149,9 @@ TEST_CASE("Intersection") {
     CHECK(intersection.isFull());
     auto agent3 = std::make_unique<dsf::mobility::Agent>(3, 3);
     CHECK_THROWS_AS(intersection.addAgent(2.0, std::move(agent3)), std::runtime_error);
+    // Forced agents are accepted beyond the capacity
+    intersection.addAgent<true>(2.0, std::make_unique<dsf::mobility::Agent>(4, 4));
+    CHECK_EQ(intersection.nAgents(), 3);
     // Lowering capacity below current agent count throws
     CHECK_THROWS_AS(intersection.setCapacity(1), std::runtime_error);
   }
@@ -174,6 +177,8 @@ TEST_CASE("Intersection") {
     // Verify that adding another agent when full throws an error
     auto agent4 = std::make_unique<dsf::mobility::Agent>(3, 40);
     CHECK_THROWS_AS(intersection.addAgent(std::move(agent4)), std::runtime_error);
+    intersection.addAgent<true>(std::make_unique<dsf::mobility::Agent>(4, 50));
+    CHECK_EQ(intersection.nAgents(), 4);
   }
 }
 
@@ -554,5 +559,10 @@ TEST_CASE("RoadJunction and Intersection formatting") {
     roundabout.enqueue(std::make_unique<dsf::mobility::Agent>(0, 0));
     CHECK_EQ(roundabout.density(), doctest::Approx(0.5));
     CHECK_FALSE(roundabout.isFull());
+    roundabout.enqueue(std::make_unique<dsf::mobility::Agent>(1, 0));
+    CHECK(roundabout.isFull());
+    // Forced agents are accepted beyond the capacity
+    roundabout.enqueue<true>(std::make_unique<dsf::mobility::Agent>(2, 0));
+    CHECK_EQ(roundabout.density(), doctest::Approx(1.5));
   }
 }
