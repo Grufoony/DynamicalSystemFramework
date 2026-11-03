@@ -219,8 +219,11 @@ NB_MODULE(dsf_cpp, m) {
                &dsf::mobility::Street::transportCapacity,
                R"doc(Get the transport capacity of this street.
 
+    Each lane releases at most this many agents per time step: a lone agent
+    leaves at once, a queue at this rate.
+
     Returns:
-        float: Transport capacity (units: vehicles or payload).)doc")
+        float: Transport capacity, in agents per lane and time step.)doc")
           .def("roadStatus",
                &dsf::mobility::Street::roadStatus,
                R"doc(Get the current status of the road.
@@ -318,8 +321,11 @@ NB_MODULE(dsf_cpp, m) {
            &dsf::mobility::RoadJunction::transportCapacity,
            R"doc(Get the transport capacity of the junction.
 
+    The junction releases at most this many agents per time step: a lone agent
+    leaves at once, a queue at this rate.
+
     Returns:
-        float: Transport capacity.)doc")
+        float: Transport capacity, in agents per time step.)doc")
       .def("attributes",
            &dsf::mobility::RoadJunction::attributes,
            R"doc(Get the attribute dictionary for this junction.

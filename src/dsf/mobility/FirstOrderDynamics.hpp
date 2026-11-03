@@ -232,10 +232,10 @@ namespace dsf::mobility {
     /// @param rng The random engine to draw from (one per thread, as nodes evolve in parallel)
     /// @details If possible, removes the first agent of the street's queue, putting it in the destination node.
     void m_evolveStreet(Street* pStreet, RoadJunction* pNode, std::mt19937_64& rng);
-    /// @brief If possible, removes one agent from the node, putting it on the next street.
-    /// @param pNode A std::unique_ptr to the node
-    /// @param rng The random engine to draw from (one per thread, as nodes evolve in parallel)
-    void m_evolveNode(RoadJunction* pNode, std::mt19937_64& rng);
+    /// @brief Moves agents from the node to their next street, as many as the node's exit
+    ///   gate allows (see RoadJunction::flowAccumulator()).
+    /// @param pNode A pointer to the node
+    void m_evolveNode(RoadJunction* pNode);
     /// @brief Evolve the agents.
     /// @details Puts all new agents on a street, if possible, decrements all delays
     /// and increments all travel times.
