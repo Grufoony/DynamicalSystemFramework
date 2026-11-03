@@ -15,10 +15,39 @@
   ],
   "contributors": [
     {
+      "name": "Berselli, Gregorio",
+      "affiliation": "University of Bologna, INFN Bologna",
+      "orcid": "0009-0004-7797-9138",
+      "type": "ProjectLeader"
+    },
+    {
+      "name": "Bazzani, Armando",
+      "affiliation": "University of Bologna, INFN Bologna",
+      "orcid": "0000-0002-9633-0017",
+      "type": "Supervisor"
+    },
+    {
       "name": "Balducci, Simone",
       "affiliation": "CERN, University and INFN Bologna",
       "orcid": "0009-0001-0186-755X",
       "type": "ProjectMember"
+    },
+    {
+      "name": "Dalla, Filippo",
+      "affiliation": "University of Bologna",
+      "type": "Other"
+    },
+    {
+      "name": "Furlanetto, Ludovico",
+      "type": "Other"
+    },
+    {
+      "name": "Mungai, Veronica",
+      "type": "Other"
+    },
+    {
+      "name": "Barbieri, Riccardo",
+      "type": "Other"
     }
   ],
   "access_right": "open",
