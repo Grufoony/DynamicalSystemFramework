@@ -725,14 +725,12 @@ namespace dsf::mobility {
       std::discrete_distribution<size_t> laneDist{weights.begin(), weights.end()};
       pStreet->enqueue(laneDist(rng));
     }
-    // Refilled even when the lanes are empty, so that an idle lane lets the next agent pass
-    // at once; every dequeue() below consumes one unit of the lane's gate
-    pStreet->refillFlowAccumulators();
     std::uniform_real_distribution<double> uniformDist{0., 1.};
     for (auto queueIndex = 0; queueIndex < nLanes; ++queueIndex) {
       if (pStreet->queue(queueIndex).empty()) {
         continue;
       }
+      pStreet->refillFlowAccumulator(queueIndex, this->time_step());
       if (!pStreet->lane(queueIndex).flowAccumulator.canPass()) {
         spdlog::trace("Skipping lane {} of {} due to transport capacity {}",
                       queueIndex,
@@ -965,10 +963,18 @@ namespace dsf::mobility {
   }
 
   void FirstOrderDynamics::m_evolveNode(RoadJunction* pNode) {
+    bool bIdle{true};
+    if (pNode->isIntersection()) {
+      bIdle = static_cast<Intersection const&>(*pNode).nAgents() == 0;
+    } else if (pNode->isRoundabout()) {
+      bIdle = static_cast<Roundabout const&>(*pNode).agents().empty();
+    }
+    if (bIdle) {
+      // The gate is left untouched: its next refill catches up on the idle time steps
+      return;
+    }
     auto& flowAccumulator{pNode->flowAccumulator()};
-    // Refilled even when the node is empty, so that an idle node lets the next agent pass
-    // at once
-    flowAccumulator.refill(pNode->transportCapacity());
+    flowAccumulator.refill(pNode->transportCapacity(), this->time_step());
     while (flowAccumulator.canPass()) {
       bool bReleased{false};
       if (pNode->isIntersection()) {

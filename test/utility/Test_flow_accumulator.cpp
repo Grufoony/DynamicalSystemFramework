@@ -4,6 +4,7 @@
 #include "doctest.h"
 
 #include <cstddef>
+#include <ctime>
 #include <vector>
 
 using dsf::FlowAccumulator;
@@ -15,7 +16,7 @@ namespace {
     FlowAccumulator accumulator;
     std::vector<std::size_t> passed;
     for (std::size_t step{0}; step < nSteps; ++step) {
-      accumulator.refill(capacity);
+      accumulator.refill(capacity, static_cast<std::time_t>(step));
       std::size_t n{0};
       while (accumulator.canPass()) {
         accumulator.consume();
@@ -28,21 +29,50 @@ namespace {
 }  // namespace
 
 TEST_CASE("FlowAccumulator") {
-  SUBCASE("A new gate is closed until refilled") {
+  SUBCASE("A new gate is closed until its first refill fills it") {
     FlowAccumulator accumulator;
     CHECK_FALSE(accumulator.canPass());
-    accumulator.refill(0.25);
+    accumulator.refill(0.25, 7);
     CHECK(accumulator.canPass());
     CHECK_EQ(accumulator.value(), doctest::Approx(0.25));
   }
   SUBCASE("An idle gate never exceeds its capacity") {
     FlowAccumulator accumulator;
-    for (int i{0}; i < 10; ++i) {
-      accumulator.refill(0.25);
-    }
+    accumulator.refill(0.25, 0);
+    accumulator.refill(0.25, 100);
     CHECK_EQ(accumulator.value(), doctest::Approx(0.25));
     accumulator.consume();
     CHECK_FALSE(accumulator.canPass());
+  }
+  SUBCASE("A second refill in the same time step has no effect") {
+    FlowAccumulator accumulator;
+    accumulator.refill(0.25, 0);
+    accumulator.consume();
+    accumulator.refill(0.25, 1);
+    accumulator.refill(0.25, 1);
+    CHECK_EQ(accumulator.value(), doctest::Approx(-0.5));
+  }
+  SUBCASE("Refilling after idle time steps catches up on them") {
+    FlowAccumulator eager;
+    FlowAccumulator lazy;
+    eager.refill(0.3, 0);
+    lazy.refill(0.3, 0);
+    eager.consume();
+    lazy.consume();
+    for (std::time_t step{1}; step <= 2; ++step) {
+      eager.refill(0.3, step);
+    }
+    lazy.refill(0.3, 2);
+    // Still below the capacity: the idle steps add up
+    CHECK_EQ(lazy.value(), doctest::Approx(eager.value()));
+    CHECK_EQ(lazy.value(), doctest::Approx(-0.1));
+    for (std::time_t step{3}; step <= 10; ++step) {
+      eager.refill(0.3, step);
+    }
+    lazy.refill(0.3, 10);
+    // Above the capacity: clipped, as step by step
+    CHECK_EQ(lazy.value(), doctest::Approx(eager.value()));
+    CHECK_EQ(lazy.value(), doctest::Approx(0.3));
   }
   SUBCASE("A fractional capacity releases one agent every 1 / capacity steps") {
     CHECK_EQ(saturate(0.25, 9), std::vector<std::size_t>{1, 0, 0, 0, 1, 0, 0, 0, 1});

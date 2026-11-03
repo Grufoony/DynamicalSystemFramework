@@ -151,18 +151,21 @@ namespace dsf::mobility {
     /// @brief Get a lane of the street
     /// @param index The index of the lane
     /// @return Lane const& The lane. Its exit gate is refilled by the transport capacity at
-    ///   each refillFlowAccumulators() and consumed by each dequeue()
+    ///   each refillFlowAccumulator() and consumed by each dequeue()
     inline auto const& lane(std::size_t const index) const { return m_lanes[index]; }
     /// @brief Get the street's queue
     /// @return const dsf::queue<std::unique_ptr<Agent>>&, The street's queue
     const dsf::queue<std::unique_ptr<Agent>>& queue(size_t const& index) const {
       return m_lanes[index].queue;
     }
-    /// @brief Refill the exit gate of each lane by the transport capacity, for a new time step
-    void refillFlowAccumulators() noexcept {
-      for (auto& lane : m_lanes) {
-        lane.flowAccumulator.refill(m_transportCapacity);
-      }
+    /// @brief Bring the exit gate of a lane up to date with a time step
+    /// @details The gate catches up on the time steps since its previous refill (see
+    ///   FlowAccumulator::refill()), so idle lanes need no refill
+    /// @param index The index of the lane
+    /// @param timeStep The current time step
+    void refillFlowAccumulator(std::size_t const index,
+                               std::time_t const timeStep) noexcept {
+      m_lanes[index].flowAccumulator.refill(m_transportCapacity, timeStep);
     }
     /// @brief  Get the number of agents on the street
     /// @return std::size_t, The number of agents on the street

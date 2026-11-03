@@ -339,23 +339,24 @@ TEST_CASE("Street") {
       Agent agent{0, 0, nullptr, 0};
       street.addAgent(std::make_unique<Agent>(agent), 0);
       street.enqueue(0);
-      street.refillFlowAccumulators();
+      street.refillFlowAccumulator(0, 0);
+      street.refillFlowAccumulator(1, 0);
       WHEN("An agent is dequeued from the first lane") {
         street.dequeue(0, 1);
         THEN("Only that lane's gate is consumed") {
           CHECK_FALSE(street.lane(0).flowAccumulator.canPass());
           CHECK(street.lane(1).flowAccumulator.canPass());
         }
-        THEN("The gate reopens after 1 / transport capacity refills") {
-          street.refillFlowAccumulators();
+        THEN("The gate reopens after 1 / transport capacity time steps") {
+          street.refillFlowAccumulator(0, 1);
           CHECK_FALSE(street.lane(0).flowAccumulator.canPass());
-          street.refillFlowAccumulators();
+          street.refillFlowAccumulator(0, 2);
           CHECK(street.lane(0).flowAccumulator.canPass());
         }
       }
       WHEN("The number of lanes changes") {
         street.changeNLanes(3);
-        street.refillFlowAccumulators();
+        street.refillFlowAccumulator(2, 0);
         THEN("Each lane has a gate, rescaled with the transport capacity") {
           CHECK_EQ(street.lane(2).flowAccumulator.value(), doctest::Approx(0.75));
         }
