@@ -7,8 +7,9 @@
 #include <memory>
 #include <ranges>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
+
+#include <ankerl/unordered_dense.h>
 
 namespace dsf {
   /// @brief Non-owning view over a map of owning pointers, exposing (id, raw pointer) pairs
@@ -20,7 +21,8 @@ namespace dsf {
   template <typename T>
   class PtrMapView : public std::ranges::view_interface<PtrMapView<T>> {
   public:
-    using map_type = std::unordered_map<Id, std::unique_ptr<std::remove_const_t<T>>>;
+    using map_type =
+        ankerl::unordered_dense::map<Id, std::unique_ptr<std::remove_const_t<T>>>;
 
     /// @brief Forward iterator returning (id, pointer) pairs by value
     class iterator {

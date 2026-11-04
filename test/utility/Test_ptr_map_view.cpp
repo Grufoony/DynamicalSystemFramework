@@ -9,7 +9,8 @@
 #include <ranges>
 #include <stdexcept>
 #include <type_traits>
-#include <unordered_map>
+
+#include <ankerl/unordered_dense.h>
 
 using dsf::Id;
 using dsf::PtrMapView;
@@ -26,7 +27,7 @@ static_assert(
     std::is_same_v<decltype(std::declval<PtrMapView<int const>>().at(0)), int const&>);
 
 TEST_CASE("PtrMapView") {
-  std::unordered_map<Id, std::unique_ptr<int>> map;
+  ankerl::unordered_dense::map<Id, std::unique_ptr<int>> map;
   map.emplace(1, std::make_unique<int>(10));
   map.emplace(2, std::make_unique<int>(20));
   map.emplace(3, std::make_unique<int>(30));
@@ -49,7 +50,7 @@ TEST_CASE("PtrMapView") {
     CHECK_EQ(view.at(3), 30);
     CHECK_THROWS_AS(view.at(4), std::out_of_range);
 
-    std::unordered_map<Id, std::unique_ptr<int>> emptyMap;
+    ankerl::unordered_dense::map<Id, std::unique_ptr<int>> emptyMap;
     CHECK(PtrMapView<int>{emptyMap}.empty());
   }
   SUBCASE("Mutable view allows changing the owned objects") {

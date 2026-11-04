@@ -10,10 +10,12 @@
 #include <variant>
 #include <vector>
 
+#include <ankerl/unordered_dense.h>
+
 namespace dsf::mdt {
   class TrajectoryCollection {
   private:
-    std::unordered_map<Id, std::vector<Trajectory>> m_trajectories;
+    ankerl::unordered_dense::map<Id, std::vector<Trajectory>> m_trajectories;
 
   public:
     /// @brief Construct a TrajectoryCollection from a dataframe.

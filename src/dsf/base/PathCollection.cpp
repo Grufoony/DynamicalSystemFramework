@@ -1,18 +1,18 @@
 #include "PathCollection.hpp"
 
 #include <stdexcept>
-#include <unordered_set>
 
 namespace {
-  std::list<std::vector<dsf::Id>> explodeImpl(dsf::PathCollection const& collection,
-                                              dsf::Id const sourceId,
-                                              dsf::Id const targetId,
-                                              std::unordered_set<dsf::Id>& onStack);
+  std::list<std::vector<dsf::Id>> explodeImpl(
+      dsf::PathCollection const& collection,
+      dsf::Id const sourceId,
+      dsf::Id const targetId,
+      ankerl::unordered_dense::set<dsf::Id>& onStack);
 }  // namespace
 
 std::list<std::vector<dsf::Id>> dsf::PathCollection::explode(Id const sourceId,
                                                              Id const targetId) const {
-  std::unordered_set<Id> onStack;
+  ankerl::unordered_dense::set<Id> onStack;
   return explodeImpl(*this, sourceId, targetId, onStack);
 }
 
@@ -22,7 +22,7 @@ namespace {
   std::list<std::vector<Id>> explodeImpl(dsf::PathCollection const& collection,
                                          Id const sourceId,
                                          Id const targetId,
-                                         std::unordered_set<Id>& onStack) {
+                                         ankerl::unordered_dense::set<Id>& onStack) {
     std::list<std::vector<Id>> paths;
 
     // Base case: if source equals target, return a path with just the source
@@ -44,7 +44,7 @@ namespace {
       return paths;
     }
     struct StackGuard {
-      std::unordered_set<Id>& set;
+      ankerl::unordered_dense::set<Id>& set;
       Id id;
       ~StackGuard() { set.erase(id); }
     } guard{onStack, sourceId};

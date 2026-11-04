@@ -31,6 +31,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <ankerl/unordered_dense.h>
 #include <tbb/concurrent_unordered_map.h>
 
 namespace dsf::mobility {
@@ -57,7 +58,7 @@ namespace dsf::mobility {
                         std::vector<std::unique_ptr<Agent>>,
                         AgentComparator>
         m_movingAgents;
-    std::unordered_map<Id, std::time_t> m_agentsInsertionTimes;
+    ankerl::unordered_dense::map<Id, std::time_t> m_agentsInsertionTimes;
     std::vector<double> m_avgSpeeds;
     std::optional<Counter> m_counter;
     CounterPosition m_counterPosition{CounterPosition::EXIT};
