@@ -192,7 +192,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.setOrigins();
         THEN("Every street becomes an origin with the same weight") {
           CHECK_EQ(dynamics.origins().size(), dynamics.graph().nEdges());
-          CHECK_EQ(std::get<1>(dynamics.origins().front()),
+          CHECK_EQ(dynamics.origins().front().weight,
                    doctest::Approx(1. / dynamics.graph().nEdges()));
         }
       }
@@ -350,7 +350,7 @@ TEST_CASE("FirstOrderDynamics") {
     GIVEN("A graph object") {
       FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
       WHEN("We add agents with a single OD pair") {
-        std::vector<std::tuple<dsf::Id, dsf::Id, double>> ods{{0, 2, 1.}};
+        std::vector<dsf::mobility::ODEntry> ods{{0, 2, 1.}};
         dynamics.setODs(ods);
         dynamics.updatePaths();
         dynamics.addAgents(3, AgentInsertionMethod::ODS);
@@ -364,7 +364,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
       WHEN("We add agents with multiple OD pairs") {
         auto const& graph = dynamics.graph();
-        std::vector<std::tuple<dsf::Id, dsf::Id, double>> ods{
+        std::vector<dsf::mobility::ODEntry> ods{
             {graph.node(1).outgoingEdges().front()->id(),
              graph.node(14).ingoingEdges().front()->id(),
              0.5},
@@ -707,7 +707,7 @@ TEST_CASE("FirstOrderDynamics") {
           writeCsv("origin_id;weight;destinations\n0;0.5;2:1.0,bad\n1;0.5;\n");
           dynamics.importODsFromCSV(csvPath.string());
           REQUIRE_EQ(dynamics.origins().size(), 1);
-          CHECK_EQ(std::get<1>(dynamics.origins().front()), doctest::Approx(1.));
+          CHECK_EQ(dynamics.origins().front().weight, doctest::Approx(1.));
         }
         THEN("Rows with an unknown type or no valid destination are skipped (nodes)") {
           dynamics.setMode(DynamicsMode::NODES);
@@ -2620,7 +2620,7 @@ TEST_CASE("FirstOrderDynamics") {
     auto const [secondStats, secondStreets] = run(69, std::nullopt);
     auto const [reseededStats, reseededStreets] = run(1, 69);
     // Make sure the simulation actually moved agents around
-    CHECK(std::get<2>(firstStats) + std::get<3>(firstStats) > 0);
+    CHECK(firstStats.nArrived + firstStats.nKilled > 0);
     CHECK_EQ(firstStats, secondStats);
     CHECK_EQ(firstStreets, secondStreets);
     CHECK_EQ(firstStats, reseededStats);
@@ -2826,7 +2826,7 @@ TEST_CASE("RoadDynamics Configuration") {
               dyn.evolve();
             }
             CHECK_EQ(dyn.nAgents(), 0);
-            CHECK_EQ(std::get<2>(dyn.agentStats()), 4);
+            CHECK_EQ(dyn.agentStats().nArrived, 4);
             auto const counts{dyn.destinationCounts(false)};
             CHECK_EQ(counts.size(), 1);
             CHECK_EQ(counts.at(2), 4);

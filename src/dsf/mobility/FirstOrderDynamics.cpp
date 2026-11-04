@@ -111,20 +111,19 @@ namespace dsf::mobility {
       }
       case AgentInsertionMethod::ODS: {
         spdlog::info("Importing ODs from CSV with RANDOM_OD_PAIRS method.");
-        std::vector<std::tuple<Id, Id, double>> ODs;
+        std::vector<ODEntry> ODs;
         for (auto const& row : reader) {
           auto const originId = row["origin_id"].get<Id>();
           auto const destinationId = row["destination_id"].get<Id>();
           auto const weight = row["weight"].get<double>();
-          ODs.emplace_back(originId, destinationId, weight);
+          ODs.push_back({originId, destinationId, weight});
         }
         this->setODs(std::move(ODs));
         break;
       }
       case AgentInsertionMethod::CONDITIONAL_RANDOM_ODS: {
         spdlog::info("Importing ODs from CSV with CONDITIONAL_RANDOM_ODS method.");
-        std::unordered_map<Id, std::tuple<double, std::vector<std::tuple<Id, double>>>>
-            conditionalODs;
+        std::unordered_map<Id, ConditionalOrigin> conditionalODs;
         for (auto const& row : reader) {
           auto const originId = row["origin_id"].get<Id>();
           auto const weight = row["weight"].get<double>();
@@ -136,7 +135,7 @@ namespace dsf::mobility {
             continue;
           }
           conditionalODs[originId] =
-              std::make_tuple(weight, std::vector<std::tuple<Id, double>>());
+              ConditionalOrigin{.weight = weight, .destinations = {}};
           std::istringstream ss(destinationsStr);
           std::string destinationPair;
           while (std::getline(ss, destinationPair, ',')) {
@@ -153,8 +152,8 @@ namespace dsf::mobility {
                 static_cast<Id>(std::stoul(destinationPair.substr(0, colonPos)));
             auto const destinationWeight =
                 std::stod(destinationPair.substr(colonPos + 1));
-            std::get<1>(conditionalODs.at(originId))
-                .emplace_back(destinationId, destinationWeight);
+            conditionalODs.at(originId).destinations.push_back(
+                {destinationId, destinationWeight});
           }
         }
         this->setConditionalODs(std::move(conditionalODs));
@@ -233,7 +232,7 @@ namespace dsf::mobility {
       m_ODCumulativeWeights.reserve(m_ODs.size());
       double cumulativeWeight{0.};
       for (auto const& od : m_ODs) {
-        cumulativeWeight += std::get<2>(od);
+        cumulativeWeight += od.weight;
         m_ODCumulativeWeights.push_back(cumulativeWeight);
       }
       if (!m_ODCumulativeWeights.empty()) {
@@ -250,8 +249,7 @@ namespace dsf::mobility {
         selectedOdIdx = m_ODs.size() - 1;
       }
 
-      auto const& originId = std::get<0>(m_ODs[selectedOdIdx]);
-      auto const& destinationId = std::get<1>(m_ODs[selectedOdIdx]);
+      auto const& [originId, destinationId, weight] = m_ODs[selectedOdIdx];
       auto const itineraryIt = this->itineraries().find(destinationId);
       if (itineraryIt == this->itineraries().cend()) {
         spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
@@ -279,10 +277,10 @@ namespace dsf::mobility {
                   nSources,
                   nDestinations);
     if (nSources == 1 && nDestinations == 1 &&
-        std::get<Id>(m_origins.at(0)) == std::get<Id>(m_destinations.at(0))) {
+        m_origins.at(0).id == m_destinations.at(0).id) {
       throw std::invalid_argument(
           std::format("The only origin street {} is also the only destination street.",
-                      std::get<Id>(m_origins.at(0))));
+                      m_origins.at(0).id));
     }
     std::uniform_real_distribution<double> uniformDist{0., 1.};
     auto const originCumulativeWeights{m_cumulativeWeights(m_origins)};
@@ -295,7 +293,7 @@ namespace dsf::mobility {
       // street ids, so the fallback must stay within them: picking a random *node*
       // here would hand a node id to addAgent's source-street parameter.
       if (nSources == 1) {
-        srcId = std::get<Id>(m_origins.at(0));
+        srcId = m_origins.at(0).id;
       } else {
         srcId = m_pickWeighted(
             m_origins, originCumulativeWeights, uniformDist(this->m_generator));
@@ -303,7 +301,7 @@ namespace dsf::mobility {
 
       // Select destination using weighted random selection
       if (nDestinations == 1) {
-        dstId = std::get<Id>(m_destinations.at(0));
+        dstId = m_destinations.at(0).id;
       } else {
         dstId = m_pickWeighted(
             m_destinations, destinationCumulativeWeights, uniformDist(this->m_generator));
@@ -374,7 +372,7 @@ namespace dsf::mobility {
       const auto& destinations = originToDestIt->second;
       auto randValue = uniformDist(this->m_generator);
       Id destinationId{
-          std::get<0>(destinations.back())};  // fallback to last for numerical stability
+          destinations.back().id};  // fallback to last for numerical stability
       for (const auto& [id, weight] : destinations) {
         if (randValue < weight) {
           destinationId = id;
@@ -1266,15 +1264,11 @@ namespace dsf::mobility {
       throw std::invalid_argument(
           std::format("The sum of the weights ({}) must be positive", sumWeights));
     }
-    if (sumWeights == 1.) {
-      std::ranges::copy(streetOrigins, std::back_inserter(m_origins));
-      return;
-    }
-    std::ranges::transform(streetOrigins,
-                           std::back_inserter(m_origins),
-                           [sumWeights](auto const& pair) -> std::pair<Id, double> {
-                             return {pair.first, pair.second / sumWeights};
-                           });
+    // Dividing by a sum of exactly 1 leaves the weights unchanged
+    std::ranges::transform(
+        streetOrigins, std::back_inserter(m_origins), [sumWeights](auto const& pair) {
+          return WeightedId{.id = pair.first, .weight = pair.second / sumWeights};
+        });
   }
   void FirstOrderDynamics::setDestinations(
       std::unordered_map<Id, double> const& destinations) {
@@ -1296,14 +1290,12 @@ namespace dsf::mobility {
       throw std::invalid_argument(
           std::format("The sum of the weights ({}) must be positive", sumWeights));
     }
-    if (sumWeights == 1.) {
-      std::ranges::copy(streetDestinations, std::back_inserter(m_destinations));
-      return;
-    }
+    // Dividing by a sum of exactly 1 leaves the weights unchanged
     std::ranges::transform(streetDestinations,
                            std::back_inserter(m_destinations),
-                           [sumWeights](auto const& pair) -> std::pair<Id, double> {
-                             return {pair.first, pair.second / sumWeights};
+                           [sumWeights](auto const& pair) {
+                             return WeightedId{.id = pair.first,
+                                               .weight = pair.second / sumWeights};
                            });
   }
   void FirstOrderDynamics::setTransitionMatrix(
@@ -1528,9 +1520,9 @@ namespace dsf::mobility {
   void FirstOrderDynamics::setDestinations(std::initializer_list<Id> destinations) {
     this->setDestinations(std::vector<Id>(destinations));
   }
-  void FirstOrderDynamics::setODs(std::vector<std::tuple<Id, Id, double>> const& ODs) {
+  void FirstOrderDynamics::setODs(std::vector<ODEntry> const& ODs) {
     // Translate the ids into street ids, splitting each weight over the expanded pairs
-    std::vector<std::tuple<Id, Id, double>> streetODs;
+    std::vector<ODEntry> streetODs;
     streetODs.reserve(ODs.size());
     for (auto const& [originId, destinationId, weight] : ODs) {
       auto const originStreetIds{m_streetIds(originId)};
@@ -1542,7 +1534,7 @@ namespace dsf::mobility {
                                                          destinationStreetIds.size())};
       for (auto const originStreetId : originStreetIds) {
         for (auto const destinationStreetId : destinationStreetIds) {
-          streetODs.emplace_back(originStreetId, destinationStreetId, pairWeight);
+          streetODs.push_back({originStreetId, destinationStreetId, pairWeight});
         }
       }
     }
@@ -1555,12 +1547,12 @@ namespace dsf::mobility {
     m_ODCumulativeWeights.clear();
     m_ODs.reserve(streetODs.size());
     auto const sumWeights = std::accumulate(
-        streetODs.begin(), streetODs.end(), 0., [this](double sum, auto const& tuple) {
+        streetODs.begin(), streetODs.end(), 0., [this](double sum, ODEntry const& od) {
           // Add itineraries while summing weights
-          if (!this->itineraries().contains(std::get<1>(tuple))) {
-            this->addItinerary(std::get<1>(tuple), std::get<1>(tuple));
+          if (!this->itineraries().contains(od.destination)) {
+            this->addItinerary(od.destination, od.destination);
           }
-          return sum + std::get<2>(tuple);
+          return sum + od.weight;
         });
     if (sumWeights <= 0.) {
       throw std::invalid_argument(
@@ -1571,37 +1563,36 @@ namespace dsf::mobility {
     } else {
       // Copy but divide by weights sum
       std::ranges::transform(
-          streetODs, std::back_inserter(m_ODs), [sumWeights](auto const& tuple) {
-            return std::make_tuple(
-                std::get<0>(tuple), std::get<1>(tuple), std::get<2>(tuple) / sumWeights);
+          streetODs, std::back_inserter(m_ODs), [sumWeights](ODEntry const& od) {
+            return ODEntry{.origin = od.origin,
+                           .destination = od.destination,
+                           .weight = od.weight / sumWeights};
           });
     }
   }
   void FirstOrderDynamics::setConditionalODs(
-      std::unordered_map<Id,
-                         std::tuple<double, std::vector<std::tuple<Id, double>>>> const&
-          conditionalODs) {
+      std::unordered_map<Id, ConditionalOrigin> const& conditionalODs) {
     m_originToDestinations.clear();
     m_originToDestinations.reserve(conditionalODs.size());
     std::unordered_map<Id, double> originWeights;
-    for (auto const& [originId, destinations] : conditionalODs) {
-      auto const& [originWeight, originDestinations] = destinations;
+    for (auto const& [originId, conditionalOrigin] : conditionalODs) {
+      auto const& [originWeight, originDestinations] = conditionalOrigin;
       // Translate the destination ids into street ids, splitting each weight
-      std::vector<std::tuple<Id, double>> streetDestinations;
+      std::vector<WeightedId> streetDestinations;
       streetDestinations.reserve(originDestinations.size());
       for (auto const& [destinationId, weight] : originDestinations) {
         auto const destinationStreetIds{m_streetIds(destinationId)};
         for (auto const destinationStreetId : destinationStreetIds) {
-          streetDestinations.emplace_back(
-              destinationStreetId,
-              weight / static_cast<double>(destinationStreetIds.size()));
+          streetDestinations.push_back(
+              {destinationStreetId,
+               weight / static_cast<double>(destinationStreetIds.size())});
         }
       }
       auto sumDestinationWeights = std::accumulate(
           streetDestinations.begin(),
           streetDestinations.end(),
           0.,
-          [](double sum, auto const& tuple) { return sum + std::get<1>(tuple); });
+          [](double sum, WeightedId const& dest) { return sum + dest.weight; });
       if (sumDestinationWeights <= 0.) {
         throw std::invalid_argument(std::format(
             "The sum of the destination weights ({}) for origin {} must be positive",
@@ -1669,26 +1660,26 @@ namespace dsf::mobility {
                    strIds);
       for (auto const& id : emptyItineraries) {
         auto const destination = m_itineraries.at(id)->destination();
-        std::erase_if(m_ODs, [destination](auto const& tuple) {
-          return std::get<1>(tuple) == destination;
+        std::erase_if(m_ODs, [destination](ODEntry const& od) {
+          return od.destination == destination;
         });
-        std::erase_if(m_destinations, [destination](auto const& tuple) {
-          return std::get<0>(tuple) == destination;
+        std::erase_if(m_destinations, [destination](WeightedId const& dest) {
+          return dest.id == destination;
         });
-        std::erase_if(m_origins, [destination](auto const& tuple) {
-          return std::get<0>(tuple) == destination;
+        std::erase_if(m_origins, [destination](WeightedId const& origin) {
+          return origin.id == destination;
         });
         for (auto& [origin, destinations] : m_originToDestinations) {
-          std::erase_if(destinations, [destination](auto const& tuple) {
-            return std::get<0>(tuple) == destination;
+          std::erase_if(destinations, [destination](WeightedId const& dest) {
+            return dest.id == destination;
           });
         }
         // Remove all origins in m_originToDestinations that have no destinations left
         std::erase_if(m_originToDestinations, [this](auto const& pair) {
           bool const bErase{pair.second.empty()};
           if (bErase) {
-            std::erase_if(m_origins, [&pair](auto const& tuple) {
-              return std::get<0>(tuple) == pair.first;
+            std::erase_if(m_origins, [&pair](WeightedId const& origin) {
+              return origin.id == pair.first;
             });
           }
           return bErase;
@@ -2282,14 +2273,16 @@ namespace dsf::mobility {
   }
 
   Measurement<double> FirstOrderDynamics::meanTravelTime(bool clearData) {
-    Measurement<double> const travelTimes{m_travelDTs | std::views::values};
+    Measurement<double> const travelTimes{
+        m_travelDTs | std::views::transform(&TravelRecord::travelTime)};
     if (clearData) {
       m_travelDTs.clear();
     }
     return travelTimes;
   }
   Measurement<double> FirstOrderDynamics::meanTravelDistance(bool clearData) {
-    Measurement<double> const travelDistances{m_travelDTs | std::views::keys};
+    Measurement<double> const travelDistances{
+        m_travelDTs | std::views::transform(&TravelRecord::distance)};
     if (clearData) {
       m_travelDTs.clear();
     }
@@ -2297,8 +2290,8 @@ namespace dsf::mobility {
   }
   Measurement<double> FirstOrderDynamics::meanTravelSpeed(bool clearData) {
     Measurement<double> const travelSpeeds{
-        m_travelDTs | std::views::transform([](auto const& travelDT) {
-          return travelDT.first / travelDT.second;
+        m_travelDTs | std::views::transform([](TravelRecord const& travelDT) {
+          return travelDT.distance / travelDT.travelTime;
         })};
     if (clearData) {
       m_travelDTs.clear();

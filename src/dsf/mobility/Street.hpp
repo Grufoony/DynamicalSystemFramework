@@ -49,6 +49,13 @@ namespace dsf::mobility {
   /// @brief The position of the counter on the street
   enum class CounterPosition : uint8_t { ENTRY = 0, MIDDLE = 1, EXIT = 2 };
 
+  /// @brief The passage of an agent through a street
+  struct AgentStreetRecord {
+    Id agentId;
+    std::time_t timeIn;
+    std::time_t timeOut;
+  };
+
   /// @brief The Street class represents a street in the network.
   class Street : public Road {
   private:
@@ -62,9 +69,7 @@ namespace dsf::mobility {
     std::optional<Counter> m_counter;
     CounterPosition m_counterPosition{CounterPosition::EXIT};
     static std::function<double(Street const&)> m_estimatedTravelTimeFunction;
-    static std::optional<tbb::concurrent_unordered_map<
-        Id,
-        std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
+    static std::optional<tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>>>
         m_agentData;
 
   public:
@@ -102,9 +107,7 @@ namespace dsf::mobility {
     inline RoadJunction const* target() const noexcept;
 
     static inline void acquireAgentData() {
-      m_agentData = tbb::concurrent_unordered_map<
-          Id,
-          std::vector<std::tuple<Id, std::time_t, std::time_t>>>();
+      m_agentData = tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>>();
     };
     /// @brief Set the street's lane mapping
     /// @param laneMapping The street's lane mapping

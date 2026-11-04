@@ -38,7 +38,12 @@ namespace dsf::mobility {
     bool m_saveTravelData{false};
     bool m_saveAgentData{false};
     bool m_saveTurnCounts{false};
-    std::queue<std::tuple<std::time_t, std::string>> m_dynamicODsUpdate;
+    /// @brief A scheduled reload of the ODs from a CSV file
+    struct ODsUpdate {
+      std::time_t time;
+      std::string file;
+    };
+    std::queue<ODsUpdate> m_dynamicODsUpdate;
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
     /// @param time The time_t to convert
@@ -146,19 +151,17 @@ namespace dsf::mobility {
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
     /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
-    void m_saveTravelDataSQL(
-        const std::string& datetime,
-        const std::int64_t time_step,
-        const std::int64_t simulation_id,
-        tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
+    void m_saveTravelDataSQL(const std::string& datetime,
+                             const std::int64_t time_step,
+                             const std::int64_t simulation_id,
+                             tbb::concurrent_vector<TravelRecord> travelDTs) const;
     /// @brief Save travel data to a CSV file.
     /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
     /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
-    void m_saveTravelDataCSV(
-        const std::string& datetime,
-        const std::int64_t time_step,
-        tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
+    void m_saveTravelDataCSV(const std::string& datetime,
+                             const std::int64_t time_step,
+                             tbb::concurrent_vector<TravelRecord> travelDTs) const;
     /// @brief Initialize the agent data table.
     /// This table contains the agent data of the agents. Columns are:
     /// - id: The entry id (auto-incremented)
@@ -175,17 +178,13 @@ namespace dsf::mobility {
     void m_saveAgentDataSQL(
         const std::int64_t time_step,
         const std::int64_t simulation_id,
-        tbb::concurrent_unordered_map<
-            Id,
-            std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
+        tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentData) const;
     /// @brief Save agent data to a CSV file.
     /// @param time_step The time step of the data entry
     /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the edge id and the value is a vector of tuples containing the edge id, the time step in and the time step out
     void m_saveAgentDataCSV(
         const std::int64_t time_step,
-        tbb::concurrent_unordered_map<
-            Id,
-            std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
+        tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentData) const;
     /// @brief Initialize the turn counts table.
     /// This table contains the turn counts of the agents. Columns are:
     /// - id: The entry id (auto-incremented)
