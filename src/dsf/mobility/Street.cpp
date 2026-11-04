@@ -8,9 +8,7 @@ namespace dsf::mobility {
   std::function<double(Street const&)> Street::m_estimatedTravelTimeFunction =
       [](Street const& street) { return street.length() / street.maxSpeed(); };
 
-  std::optional<
-      tbb::concurrent_unordered_map<Id,
-                                    std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
+  std::optional<tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>>>
       Street::m_agentData = std::nullopt;
 
   void Street::setEstimatedTravelTimeFunction(
@@ -172,8 +170,8 @@ namespace dsf::mobility {
       m_agentsInsertionTimes.erase(itInsertion);
     }
     if (m_agentData.has_value()) {
-      m_agentData->operator[](m_id).emplace_back(
-          pAgent->id(), insertionTime, currentTime);
+      m_agentData->operator[](m_id).push_back(AgentStreetRecord{
+          .agentId = pAgent->id(), .timeIn = insertionTime, .timeOut = currentTime});
     }
 
     if (m_counter.has_value() && m_counterPosition == CounterPosition::EXIT) {

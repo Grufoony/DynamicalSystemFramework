@@ -126,7 +126,7 @@ TEST_CASE("TrafficSimulator JSON config parameters") {
   // Configure saving and run to flush CSVs using the output_basename
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
   simulator.dynamics()->updatePaths();
 
   simulator.saveData(1, true, true, false, false);
@@ -539,7 +539,7 @@ TEST_CASE("TrafficSimulator output prefix") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
   simulator.dynamics()->updatePaths();
 
   simulator.saveData(1, true, true, false, false);
@@ -571,7 +571,7 @@ TEST_CASE("TrafficSimulator SQL persistence") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
   simulator.dynamics()->updatePaths();
 
   simulator.saveData(1, true, true, false, false);
@@ -601,7 +601,7 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
   simulator.dynamics()->updatePaths();
 
   simulator.saveData(1, true, true, false, false);
@@ -654,7 +654,7 @@ TEST_CASE("TrafficSimulator CSV writer semantics") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
   simulator.dynamics()->updatePaths();
   simulator.dynamics()->graph().edge(0).enableCounter("coil;with;separators");
 
@@ -726,7 +726,7 @@ TEST_CASE("TrafficSimulator SQL turn counts persistence") {
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   // Route agents from node 0 to node 2: they must cross both edges.
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 3, 1.0}});
   simulator.dynamics()->updatePaths();
 
   // 4th flag = save turn counts
@@ -789,7 +789,7 @@ TEST_CASE("TrafficSimulator CSV turn counts persistence") {
   // Route agents from edge 0 to edge 3 so that they actually turn (0 -> 2). With
   // destination edge 1 the agent arrives at that edge's source node and is removed
   // without ever turning, so no turn event would be recorded at all.
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 3, 1.0}});
   simulator.dynamics()->updatePaths();
 
   // 4th flag = save turn counts
@@ -840,7 +840,7 @@ TEST_CASE("TrafficSimulator run validation") {
   SUBCASE("Invalid schedules throw") {
     TrafficSimulator simulator;
     simulator.importRoadNetwork(edgesPath.string());
-    simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+    simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
     CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{}), std::runtime_error);
     CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}, 0), std::invalid_argument);
     CHECK_THROWS_AS(simulator.run(1, 0, 1), std::invalid_argument);
@@ -865,7 +865,7 @@ TEST_CASE("TrafficSimulator run schedule") {
   simulator.setName("traffic_simulator_schedule_test");
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
   simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
 
   SUBCASE("An explicit insertion delta time overrides the end time") {
@@ -906,7 +906,7 @@ TEST_CASE("TrafficSimulator slow charge with travel and agent data") {
   simulator.setName("traffic_simulator_slow_charge_test");
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 3, 1.0}});
 
   simulator.saveData(5, false, false, true, true);
   simulator.setTimeFrame(0, 20);

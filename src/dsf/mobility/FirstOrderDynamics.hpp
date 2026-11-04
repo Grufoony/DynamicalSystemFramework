@@ -65,6 +65,37 @@ namespace dsf::mobility {
     ///   from and arrive at the node
     NODES = 1,
   };
+  /// @brief An id with an associated weight (e.g. an origin or a destination)
+  struct WeightedId {
+    Id id;
+    double weight;
+  };
+  /// @brief An origin-destination pair with an associated weight
+  struct ODEntry {
+    Id origin;
+    Id destination;
+    double weight;
+  };
+  /// @brief An origin weight with its conditional (destination, weight) pairs
+  struct ConditionalOrigin {
+    double weight;
+    std::vector<WeightedId> destinations;
+  };
+  /// @brief The distance travelled by an agent and its travel time
+  struct TravelRecord {
+    double distance;
+    double travelTime;
+  };
+  /// @brief Agent counters of a FirstOrderDynamics
+  struct AgentStats {
+    std::size_t nAdded;
+    std::size_t nInserted;
+    std::size_t nArrived;
+    std::size_t nKilled;
+    std::size_t nAgents;
+
+    bool operator==(AgentStats const&) const = default;
+  };
   // Struct to collect street data for batch insert after parallel section
   struct StreetDataRecord {
     std::optional<std::string> coilName;
@@ -94,11 +125,9 @@ namespace dsf::mobility {
   struct StepDataResult {
     std::time_t timeStep{0};
     std::optional<tbb::concurrent_map<Id, StreetDataRecord>> streetData;
-    std::optional<tbb::concurrent_vector<std::pair<double, double>>> travelData;
+    std::optional<tbb::concurrent_vector<TravelRecord>> travelData;
     std::optional<AverageStatsRecord> averageStats;
-    std::optional<tbb::concurrent_unordered_map<
-        Id,
-        std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
+    std::optional<tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>>>
         agentData;
     TurnCountsDict turnCounts;
   };
@@ -108,12 +137,12 @@ namespace dsf::mobility {
     std::vector<std::unique_ptr<Agent>> m_agents;
     std::unordered_map<Id, std::shared_ptr<Itinerary>> m_freeflowItineraries;
     std::unordered_map<Id, std::shared_ptr<Itinerary>> m_itineraries;
-    std::vector<std::tuple<Id, double>> m_origins;
-    std::vector<std::tuple<Id, double>> m_destinations;
-    std::vector<std::tuple<Id, Id, double>> m_ODs;
+    std::vector<WeightedId> m_origins;
+    std::vector<WeightedId> m_destinations;
+    std::vector<ODEntry> m_ODs;
     std::vector<double> m_ODCumulativeWeights;
     // Conditional Origin -> Destinations
-    std::unordered_map<Id, std::vector<std::tuple<Id, double>>> m_originToDestinations;
+    std::unordered_map<Id, std::vector<WeightedId>> m_originToDestinations;
     // ---
     tbb::concurrent_unordered_map<Id, std::size_t> m_originCounts;
     tbb::concurrent_unordered_map<Id, std::size_t> m_destinationCounts;
@@ -132,7 +161,7 @@ namespace dsf::mobility {
     TurnCountsDict m_turnCounts;
     tbb::concurrent_unordered_map<Id, std::unordered_map<Direction, double>>
         m_queuesAtTrafficLights;
-    tbb::concurrent_vector<std::pair<double, double>> m_travelDTs;
+    tbb::concurrent_vector<TravelRecord> m_travelDTs;
     tbb::concurrent_vector<std::unique_ptr<Agent>> m_agentsToReinsert;
     std::time_t m_previousOptimizationTime{0};
 
@@ -164,14 +193,14 @@ namespace dsf::mobility {
     /// @param weightedIds The (id, weight) pairs
     /// @return std::vector<double> The cumulative weights, to be used with m_pickWeighted
     static std::vector<double> m_cumulativeWeights(
-        std::vector<std::tuple<Id, double>> const& weightedIds);
+        std::vector<WeightedId> const& weightedIds);
     /// @brief Pick an id from a weighted list, in O(log n)
     /// @param weightedIds The (id, weight) pairs
     /// @param cumulativeWeights The cumulative weights of weightedIds (see m_cumulativeWeights)
     /// @param randValue A random value in [0, 1)
     /// @return Id The first id whose cumulative weight exceeds randValue, or the last id if
     ///   there is none (e.g. for weights not summing exactly to 1)
-    static Id m_pickWeighted(std::vector<std::tuple<Id, double>> const& weightedIds,
+    static Id m_pickWeighted(std::vector<WeightedId> const& weightedIds,
                              std::span<double const> cumulativeWeights,
                              double randValue);
     /// @brief Find an itinerary with the given destination
@@ -390,14 +419,12 @@ namespace dsf::mobility {
     /// @param destinations The destination ids (as an initializer list), interpreted according to mode()
     void setDestinations(std::initializer_list<Id> destinations);
     /// @brief Set the origin-destination pairs with their associated weights
-    /// @param ODs A vector of tuples (origin id, destination id, weight), ids being interpreted according to mode()
-    void setODs(std::vector<std::tuple<Id, Id, double>> const& ODs);
+    /// @param ODs A vector of (origin id, destination id, weight) entries, ids being interpreted according to mode()
+    void setODs(std::vector<ODEntry> const& ODs);
     /// @brief Set the origin-destination pairs with their associated weights from a map of origins to vectors of destinations and weights.
-    /// @param originToDestinations An unordered map where the keys are origin ids and the values are origin weights and vectors of tuples (destination id, weight), ids being interpreted according to mode()
+    /// @param originToDestinations An unordered map where the keys are origin ids and the values are the origin weights with their (destination id, weight) pairs, ids being interpreted according to mode()
     void setConditionalODs(
-        std::unordered_map<Id,
-                           std::tuple<double, std::vector<std::tuple<Id, double>>>> const&
-            originToDestinations);
+        std::unordered_map<Id, ConditionalOrigin> const& originToDestinations);
     /// @brief Set the destinations, with uniform weights
     /// @param destinations A container of destination ids, interpreted according to mode()
     /// @details The container must have a value_type convertible to Id and begin() and end() methods
@@ -547,16 +574,16 @@ namespace dsf::mobility {
     /// @return DynamicsMode The mode
     inline auto mode() const noexcept { return m_mode; }
     /// @brief Get the origins
-    /// @return std::vector<std::tuple<Id, double>> const& The origin street ids and their weights
+    /// @return std::vector<WeightedId> const& The origin street ids and their weights
     inline auto const& origins() const noexcept { return m_origins; }
     /// @brief Get the origins
-    /// @return std::vector<std::tuple<Id, double>>& The origin street ids and their weights
+    /// @return std::vector<WeightedId>& The origin street ids and their weights
     inline auto& origins() noexcept { return m_origins; }
     /// @brief Get the destinations
-    /// @return std::vector<std::tuple<Id, double>> const& The destination street ids and their weights
+    /// @return std::vector<WeightedId> const& The destination street ids and their weights
     inline auto const& destinations() const noexcept { return m_destinations; }
     /// @brief Get the destinations
-    /// @return std::vector<std::tuple<Id, double>>& The destination street ids and their weights
+    /// @return std::vector<WeightedId>& The destination street ids and their weights
     inline auto& destinations() noexcept { return m_destinations; }
     /// @brief Get the transition matrix used to route random agents
     /// @return std::unordered_map<Id, std::unordered_map<Id, double>> const& The transition matrix.
@@ -622,14 +649,14 @@ namespace dsf::mobility {
     /// @return Measurement<double> The mean flow of the streets and the standard deviation
     Measurement<double> streetMeanFlow(double threshold, bool above) const;
 
-    /// @brief Get agents stats from this Dynamics as the following tuple: (nAddedAgents, nInsertedAgents, nArrivedAgents, nKilledAgents, nAgents)
-    /// @return std::tuple<std::size_t, std::size_t, std::size_t, std::size_t, std::size_t> The tuple containing the agents stats
-    inline auto agentStats() const noexcept {
-      return std::make_tuple(m_nAddedAgents.load(),
-                             m_nInsertedAgents.load(),
-                             m_nArrivedAgents.load(),
-                             m_nKilledAgents.load(),
-                             m_nAgents.load());
+    /// @brief Get agents stats from this Dynamics
+    /// @return AgentStats The numbers of added, inserted, arrived, killed and current agents
+    inline AgentStats agentStats() const noexcept {
+      return AgentStats{.nAdded = m_nAddedAgents.load(),
+                        .nInserted = m_nInsertedAgents.load(),
+                        .nArrived = m_nArrivedAgents.load(),
+                        .nKilled = m_nKilledAgents.load(),
+                        .nAgents = m_nAgents.load()};
     }
     /// @brief Print a summary of the dynamics to an output stream
     /// @param os The output stream to write to (default is std::cout)
@@ -781,7 +808,7 @@ namespace dsf::mobility {
   }
 
   inline std::vector<double> FirstOrderDynamics::m_cumulativeWeights(
-      std::vector<std::tuple<Id, double>> const& weightedIds) {
+      std::vector<WeightedId> const& weightedIds) {
     std::vector<double> cumulativeWeights;
     cumulativeWeights.reserve(weightedIds.size());
     double cumulativeWeight{0.};
@@ -792,17 +819,17 @@ namespace dsf::mobility {
     return cumulativeWeights;
   }
 
-  inline Id FirstOrderDynamics::m_pickWeighted(
-      std::vector<std::tuple<Id, double>> const& weightedIds,
-      std::span<double const> cumulativeWeights,
-      double const randValue) {
+  inline Id FirstOrderDynamics::m_pickWeighted(std::vector<WeightedId> const& weightedIds,
+                                               std::span<double const> cumulativeWeights,
+                                               double const randValue) {
     assert(!weightedIds.empty() && weightedIds.size() == cumulativeWeights.size());
     auto const it{std::ranges::upper_bound(cumulativeWeights, randValue)};
     if (it == cumulativeWeights.end()) {
-      return std::get<0>(weightedIds.back());
+      return weightedIds.back().id;
     }
-    return std::get<0>(weightedIds[static_cast<std::size_t>(
-        std::distance(cumulativeWeights.begin(), it))]);
+    return weightedIds[static_cast<std::size_t>(
+                           std::distance(cumulativeWeights.begin(), it))]
+        .id;
   }
 
   template <bool Uniformly>

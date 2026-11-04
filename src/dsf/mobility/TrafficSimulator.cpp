@@ -212,8 +212,8 @@ namespace dsf::mobility {
                             jsonConfigFile));
           }
           m_dynamicODsUpdate.push(
-              std::make_tuple(static_cast<std::time_t>(timeField.get_uint64().value()),
-                              std::string(fileField.get_string().value())));
+              ODsUpdate{.time = static_cast<std::time_t>(timeField.get_uint64().value()),
+                        .file = std::string(fileField.get_string().value())});
         }
       }
     }
@@ -492,9 +492,8 @@ namespace dsf::mobility {
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
 
     std::optional<std::time_t> nextODUpdateTime =
-        m_dynamicODsUpdate.empty()
-            ? std::nullopt
-            : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        m_dynamicODsUpdate.empty() ? std::nullopt
+                                   : std::make_optional(m_dynamicODsUpdate.front().time);
     if (nextODUpdateTime.has_value() && *nextODUpdateTime != 0) {
       throw std::runtime_error(std::format(
           "First dynamic OD update time must be 0 (initial time). Current value: {}",
@@ -502,12 +501,11 @@ namespace dsf::mobility {
     }
     for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
-        m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
+        m_dynamics->importODsFromCSV(m_dynamicODsUpdate.front().file);
         m_dynamicODsUpdate.pop();
-        nextODUpdateTime =
-            m_dynamicODsUpdate.empty()
-                ? std::nullopt
-                : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        nextODUpdateTime = m_dynamicODsUpdate.empty()
+                               ? std::nullopt
+                               : std::make_optional(m_dynamicODsUpdate.front().time);
         m_dynamics->updatePaths();
       } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
                  (currentStep == 0)) {
@@ -591,9 +589,8 @@ namespace dsf::mobility {
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
 
     std::optional<std::time_t> nextODUpdateTime =
-        m_dynamicODsUpdate.empty()
-            ? std::nullopt
-            : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        m_dynamicODsUpdate.empty() ? std::nullopt
+                                   : std::make_optional(m_dynamicODsUpdate.front().time);
     if (nextODUpdateTime.has_value() && *nextODUpdateTime != 0) {
       throw std::runtime_error(std::format(
           "First dynamic OD update time must be 0 (initial time). Current value: {}",
@@ -603,12 +600,11 @@ namespace dsf::mobility {
     std::size_t previousAgents{0};
     for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
-        m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
+        m_dynamics->importODsFromCSV(m_dynamicODsUpdate.front().file);
         m_dynamicODsUpdate.pop();
-        nextODUpdateTime =
-            m_dynamicODsUpdate.empty()
-                ? std::nullopt
-                : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        nextODUpdateTime = m_dynamicODsUpdate.empty()
+                               ? std::nullopt
+                               : std::make_optional(m_dynamicODsUpdate.front().time);
         m_dynamics->updatePaths();
       } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
                  (currentStep == 0)) {
@@ -1042,7 +1038,7 @@ namespace dsf::mobility {
       const std::string& datetime,
       const std::int64_t time_step,
       const std::int64_t simulation_id,
-      tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
+      tbb::concurrent_vector<TravelRecord> travelDTs) const {
     if (travelDTs.empty()) {
       spdlog::debug("No travel data records to save for time step {}.", time_step);
       return;
@@ -1066,7 +1062,7 @@ namespace dsf::mobility {
   void TrafficSimulator::m_saveTravelDataCSV(
       const std::string& datetime,
       const std::int64_t time_step,
-      tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
+      tbb::concurrent_vector<TravelRecord> travelDTs) const {
     if (travelDTs.empty()) {
       spdlog::debug("No travel data records to save for time step {}.", time_step);
       return;
@@ -1115,9 +1111,8 @@ namespace dsf::mobility {
   void TrafficSimulator::m_saveAgentDataSQL(
       const std::int64_t time_step,
       const std::int64_t simulation_id,
-      tbb::concurrent_unordered_map<Id,
-                                    std::vector<std::tuple<Id, std::time_t, std::time_t>>>
-          agentDataRecords) const {
+      tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentDataRecords)
+      const {
     if (agentDataRecords.empty()) {
       spdlog::debug("No agent data records to save for time step {}.", time_step);
       return;
@@ -1140,9 +1135,8 @@ namespace dsf::mobility {
   }
   void TrafficSimulator::m_saveAgentDataCSV(
       const std::int64_t time_step,
-      tbb::concurrent_unordered_map<Id,
-                                    std::vector<std::tuple<Id, std::time_t, std::time_t>>>
-          agentDataRecords) const {
+      tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentDataRecords)
+      const {
     if (agentDataRecords.empty()) {
       spdlog::debug("No agent data records to save for time step {}.", time_step);
       return;

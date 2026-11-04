@@ -11,7 +11,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 
 inline constexpr std::uint8_t DSF_VERSION_MAJOR = 7;
-inline constexpr std::uint8_t DSF_VERSION_MINOR = 7;
+inline constexpr std::uint8_t DSF_VERSION_MINOR = 8;
 inline constexpr std::uint8_t DSF_VERSION_PATCH = 0;
 
 namespace dsf::detail {

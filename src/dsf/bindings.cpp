@@ -1368,10 +1368,19 @@ Returns:
 
       Returns:
         None)doc")
-      .def("setODs",
-           &dsf::mobility::FirstOrderDynamics::setODs,
-           nb::arg("ods"),
-           R"doc(Set origin-destination pairs for the simulation.
+      .def(
+          "setODs",
+          [](dsf::mobility::FirstOrderDynamics& self,
+             std::vector<std::tuple<dsf::Id, dsf::Id, double>> const& ods) {
+            std::vector<dsf::mobility::ODEntry> entries;
+            entries.reserve(ods.size());
+            for (auto const& [origin, destination, weight] : ods) {
+              entries.push_back({origin, destination, weight});
+            }
+            self.setODs(entries);
+          },
+          nb::arg("ods"),
+          R"doc(Set origin-destination pairs for the simulation.
 
     Args:
       ods (Sequence[tuple[int, int, float]]): (origin id, destination id, weight)
