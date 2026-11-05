@@ -287,8 +287,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   CHECK_EQ(simulator.dynamics()->graph().edge(0).capacity(), 6);
 
   simulator.run(std::vector<std::size_t>{2, 2, 2, 2});
-  CHECK_EQ(simulator.dynamics()->freeflowItineraries().size(),
-           simulator.dynamics()->itineraries().size());
+  CHECK(simulator.dynamics()->router().isBuilt());
 
   auto const dbPath = outputDir / "all_options.db";
   {

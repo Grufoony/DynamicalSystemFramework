@@ -109,12 +109,37 @@ TEST_CASE("Agent methods") {
     std::vector<std::shared_ptr<Itinerary>> trip = {it1, it2, it3};
     Agent a2{0, 0, trip, 0};
     CHECK_EQ(a2.itinerary()->id(), 1);
+    a2.setPath({4, 5});
     a2.updateItinerary();
     CHECK_EQ(a2.itinerary()->id(), 2);
+    CHECK(a2.path().empty());  // The route led to the previous destination
     a2.updateItinerary();
     CHECK_EQ(a2.itinerary()->id(), 3);
+    a2.setPath({4, 5});
     a2.updateItinerary();  // Should not go out of bounds
     CHECK_EQ(a2.itinerary()->id(), 3);
+    CHECK_EQ(a2.path().size(), 2);  // Same destination: the route is kept
+  }
+  SUBCASE("Planned route") {
+    CHECK(agent.path().empty());
+    CHECK_FALSE(agent.nextPlannedStreetId().has_value());
+    CHECK_FALSE(agent.isOnPath(3));
+    agent.setPath({3, 5, 8});
+    CHECK_EQ(agent.pathIndex(), 0);
+    CHECK(agent.isOnPath(3));
+    CHECK_EQ(agent.nextPlannedStreetId().value(), 5);
+    agent.advancePath();
+    CHECK(agent.isOnPath(5));
+    CHECK_FALSE(agent.isOnPath(3));
+    CHECK_EQ(agent.nextPlannedStreetId().value(), 8);
+    agent.advancePath();
+    CHECK_FALSE(agent.nextPlannedStreetId().has_value());
+    CHECK_THROWS_AS(agent.advancePath(), std::logic_error);
+    agent.setPath({1, 2});
+    CHECK_EQ(agent.pathIndex(), 0);
+    agent.clearPath();
+    CHECK(agent.path().empty());
+    CHECK_EQ(agent.pathIndex(), 0);
   }
   SUBCASE("isIntelligent") {
     Agent agent{0, 0, std::make_shared<Itinerary>(0, 5)};
@@ -132,7 +157,9 @@ TEST_CASE("Agent methods") {
     agent.setFreeTime(99);
     agent.setStreetId(88);
     agent.updateItinerary();
+    agent.setPath({88, 89});
     agent.reset(555);
+    CHECK(agent.path().empty());
     CHECK_EQ(agent.spawnTime(), 555);
     CHECK_EQ(agent.freeTime(), 0);
     CHECK_EQ(agent.speed(), 0.);

@@ -120,7 +120,13 @@ namespace dsf::mobility {
     /// - "length": the street's length
     /// - "uniform": 1 for every street
     /// - any other value is used as the name of a numeric custom attribute of the streets
-    /// @param threshold An optional relative tolerance on the path cost: every path whose cost is within distance * (1 + threshold) of the shortest one is kept, so that agents can choose among near-optimal alternatives.
+    /// The weight is used by the path algorithms of the network and by the intelligent agents
+    /// of a FirstOrderDynamics, which plan their route on it when they depart (see Router).
+    /// @param threshold An optional relative tolerance on the path cost. The path algorithms
+    ///   keep every path whose cost is within distance * (1 + threshold) of the shortest one.
+    ///   The agents' routes are planned on street costs multiplied by random factors in
+    ///   [1, 1 + threshold), so that each route costs at most (1 + threshold) times the
+    ///   shortest one and the agents spread over near-optimal alternatives.
     void setEdgeWeight(std::string_view const strv_weight,
                        std::optional<double> const threshold = std::nullopt) final;
 
@@ -265,6 +271,15 @@ namespace dsf::mobility {
     /// @return std::size_t The maximum agent capacity of the graph
     inline auto capacity() const noexcept { return m_capacity; }
 
+    /// @brief Check whether an agent travelling a street may turn into another one
+    /// @param from The street the agent is travelling
+    /// @param to An outgoing street of the target node of from
+    /// @return true if the turn is not forbidden and is not a U-turn, unless the junction is
+    ///   a roundabout or the U-turn is the only legal move (dead end)
+    /// @details The status of the two streets is not checked, but closed streets are not
+    ///   legal alternatives to a U-turn
+    static bool isTurnAllowed(Street const& from, Street const& to);
+
     /// @brief Perform a global Dijkstra search to a target edge from all other edges in the graph (like allPathsTo but working on the dual graph)
     /// @param targetEdgeId The id of the target edge
     /// @return A map where each key is an edge id and the value is a vector of next hop edge ids toward the target
@@ -320,34 +335,10 @@ namespace dsf::mobility {
       for (auto const* pInEdge : turningNode.ingoingEdges()) {
         auto const& inEdge{*pInEdge};
         auto const inEdgeId{inEdge.id()};
-        if (!inEdge.isActive() || inEdge.forbiddenTurns().contains(currentEdgeId)) {
+        if (!inEdge.isActive() || !isTurnAllowed(inEdge, currentEdge)) {
           continue;
         }
 
-        // 1. Detect if this structural pair constitutes a U-turn
-        if ((currentEdge.target() == inEdge.source()) && (!turningNode.isRoundabout())) {
-          // 2. Check if there are any ALTERNATIVE legal moves out of this dead end
-          bool hasAlternativeMove = false;
-          for (auto const* pAltOutEdge : turningNode.outgoingEdges()) {
-            if (pAltOutEdge == &currentEdge) {
-              continue;  // Ignore the U-turn road itself
-            }
-
-            if (pAltOutEdge->isActive() &&
-                !inEdge.forbiddenTurns().contains(pAltOutEdge->id())) {
-              hasAlternativeMove = true;
-              break;  // An alternative escape route exists!
-            }
-          }
-
-          // 3. If an alternative exists, enforce the restriction.
-          // If NO alternative exists (dead end), we skip this 'continue' and allow the U-turn!
-          if (hasAlternativeMove) {
-            continue;
-          }
-        }
-
-        // Standard Dijkstra relaxation continues below...
         if (!currentWeight.has_value()) {
           currentWeight = m_weightFunction(currentEdge);
         }
@@ -443,6 +434,23 @@ namespace dsf::mobility {
     return street;
   }
 
+  inline bool RoadNetwork::isTurnAllowed(Street const& from, Street const& to) {
+    if (from.forbiddenTurns().contains(to.id())) {
+      return false;
+    }
+    auto const& junction{*from.target()};
+    if (to.target() != from.source() || junction.isRoundabout()) {
+      return true;
+    }
+    // A U-turn outside a roundabout is allowed only at a dead end, i.e. when there is no
+    // other legal move out of the junction
+    return std::ranges::none_of(
+        junction.outgoingEdges(), [&](Street const* pAlternative) {
+          return pAlternative != &to && pAlternative->isActive() &&
+                 !from.forbiddenTurns().contains(pAlternative->id());
+        });
+  }
+
   inline PathCollection RoadNetwork::allEdgePathsTo(Id const targetEdgeId) const {
     spdlog::debug("Computing all edge paths to target edge {}", targetEdgeId);
     auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
@@ -472,31 +480,8 @@ namespace dsf::mobility {
 
       for (auto const* pNextEdge : outgoingEdges) {
         auto const nextEdgeId{pNextEdge->id()};
-        if (!pNextEdge->isActive() || pEdge->forbiddenTurns().contains(nextEdgeId)) {
+        if (!pNextEdge->isActive() || !isTurnAllowed(*pEdge, *pNextEdge)) {
           continue;
-        }
-
-        // 1. Detect if this structural pair constitutes a forward U-turn
-        if ((pNextEdge->target() == pEdge->source()) && (!targetNode.isRoundabout())) {
-          // 2. Scan for alternative valid moves out of this intersection
-          bool hasAlternativeMove = false;
-          for (auto const* pAltNextEdge : outgoingEdges) {
-            if (pAltNextEdge == pNextEdge) {
-              continue;  // Ignore the U-turn road itself
-            }
-
-            if (pAltNextEdge->isActive() &&
-                !pEdge->forbiddenTurns().contains(pAltNextEdge->id())) {
-              hasAlternativeMove = true;
-              break;  // An alternative legal escape route exists!
-            }
-          }
-
-          // 3. If an alternative exists, enforce the restriction.
-          // If no alternative exists (dead end cul-de-sac), we skip the continue and allow the U-turn!
-          if (hasAlternativeMove) {
-            continue;
-          }
         }
 
         auto const nextDistToTarget = distToTarget.at(nextEdgeId);

@@ -737,13 +737,20 @@ NB_MODULE(dsf_cpp, m) {
            nb::arg("threshold") = std::nullopt,
            R"doc(Set edge weights for routing and analysis.
 
+      The weight is used by the graph algorithms and by the intelligent agents of a
+      Dynamics, which plan their route on it when they depart. The other agents plan on
+      free-flow travel times.
+
       Args:
         weight (string): Weight type. 'traveltime' is the estimated travel time plus the time
           needed to clear the exit queues (mean lane queue / min(1, transport capacity)),
           'length' the street length, 'uniform' 1 for every street; any other value is the
           name of a numeric custom attribute.
-        threshold (float | None): Optional relative tolerance: paths whose cost is within
-          distance * (1 + threshold) of the shortest one are kept.)doc")
+        threshold (float | None): Optional relative tolerance. For the graph algorithms,
+          paths whose cost is within distance * (1 + threshold) of the shortest one are
+          kept. For the agents of a Dynamics, each street cost is randomly multiplied by a
+          factor in [1, 1 + threshold): each route then costs at most (1 + threshold) times
+          the shortest one, and the agents spread over near-optimal routes.)doc")
       .def(
           "describe",
           [](dsf::mobility::RoadNetwork& self) {
@@ -1064,24 +1071,15 @@ Returns:
       .def(nb::init<dsf::Id, dsf::Id>(),
            nb::arg("id"),
            nb::arg("destination"),
-           R"doc(Create an itinerary with an id and destination node.
+           R"doc(Create an itinerary with an id and a destination street.
 
 Args:
     id (int): Itinerary identifier.
-    destination (int): Destination node id.
+    destination (int): Destination street id. Agents following the itinerary arrive at
+        its source node, without travelling it.
 
 Returns:
     Itinerary: A new itinerary instance.)doc")
-      .def("setPath",
-           &dsf::mobility::Itinerary::setPath,
-           nb::arg("path"),
-           R"doc(Set the path used by this itinerary.
-
-Args:
-    path (Sequence[int]): Sequence of node ids representing the route.
-
-Returns:
-    None)doc")
       .def("id",
            &dsf::mobility::Itinerary::id,
            R"doc(Get the itinerary identifier.
@@ -1090,25 +1088,22 @@ Returns:
     int: The itinerary id.)doc")
       .def("destination",
            &dsf::mobility::Itinerary::destination,
-           R"doc(Get the destination node id.
+           R"doc(Get the destination street id.
 
 Returns:
-    int: The destination node id.)doc");
+    int: The destination street id.)doc");
 
   nb::class_<dsf::mobility::FirstOrderDynamics>(mobility, "Dynamics")
       .def(nb::init<dsf::mobility::RoadNetwork&&,
-                    bool,
                     std::optional<unsigned int>,
                     dsf::mobility::DynamicsMode>(),
            nb::arg("graph"),
-           nb::arg("useCache") = false,
            nb::arg("seed") = std::nullopt,
            nb::arg("mode") = dsf::mobility::DynamicsMode::EDGES,
            R"doc(Create a FirstOrderDynamics instance.
 
     Args:
       graph (RoadNetwork): The road network.
-      useCache (bool, optional): Cache the computed paths on disk.
       seed (int, optional): Seed of the random number generator.
       mode (DynamicsMode, optional): How origin, destination and OD ids are
         interpreted: EDGES (street ids, default) or NODES (node ids).)doc")
@@ -1209,10 +1204,11 @@ Returns:
       .def("setUpdatePathsThrowOnEmpty",
            &dsf::mobility::FirstOrderDynamics::setUpdatePathsThrowOnEmpty,
            nb::arg("throwOnEmpty"),
-           R"doc(Enable or disable throwing an exception when paths are empty.
+           R"doc(Choose what updatePaths does with a destination that cannot be reached.
 
       Args:
-        throwOnEmpty (bool): Whether to throw an exception when paths are empty.
+        throwOnEmpty (bool): If True, updatePaths raises. If False, the itinerary is
+          removed, with every origin, destination and OD pair using it.
 
       Returns:
         None)doc")
@@ -1265,18 +1261,22 @@ Returns:
       .def("setIntelligentAgentsFraction",
            &dsf::mobility::FirstOrderDynamics::setIntelligentAgentsFraction,
            nb::arg("intelligentFraction"),
-           R"doc(Set the fraction of intelligent agents, i.e. following the updated paths.
+           R"doc(Set the fraction of intelligent agents. Default is 0.
 
-      Non-intelligent agents follow the free-flow paths. Default is 0.
+      Every agent plans its route with A* when it departs: intelligent agents on the
+      current traffic, i.e. the network's edge weight (see RoadNetwork.setEdgeWeight), the
+      others on the free-flow travel times. Routes are planned again only when an agent
+      leaves its route, starts a new trip leg or meets a closed street.
 
       Args:
         intelligentFraction (float): Fraction in the range [0, 1].
 
       Returns:
         None)doc")
-      .def("intelligentAgentsFraction",
-           &dsf::mobility::FirstOrderDynamics::intelligentAgentsFraction,
-           R"doc(Get the fraction of intelligent agents, i.e. following the updated paths.
+      .def(
+          "intelligentAgentsFraction",
+          &dsf::mobility::FirstOrderDynamics::intelligentAgentsFraction,
+          R"doc(Get the fraction of intelligent agents, i.e. planning on the current traffic.
 
       Returns:
         float: The fraction in the range [0, 1].)doc")
@@ -1472,12 +1472,14 @@ Returns:
 
     Returns:
       None)doc")
-      .def("updatePaths",
-           &dsf::mobility::FirstOrderDynamics::updatePaths,
-           R"doc(Recompute routing paths for the current network state.
+      .def(
+          "updatePaths",
+          &dsf::mobility::FirstOrderDynamics::updatePaths,
+          R"doc(Rebuild the routing graph and check that every destination can be reached.
 
-    Args:
-      throw_on_empty (bool, optional): Raise if no path can be found.
+    Call it after opening or closing streets, or changing their turns or speeds: agents
+    plan their routes when they depart, on the routing graph. A destination cannot be
+    reached if no open street enters its source node: see setUpdatePathsThrowOnEmpty.
 
     Returns:
       None)doc")
@@ -1507,16 +1509,6 @@ Returns:
             return py_result;
           },
           R"doc(Get the itineraries mapping as a dict[id, Itinerary].)doc")
-      .def(
-          "freeflowItineraries",
-          [](const dsf::mobility::FirstOrderDynamics& self) {
-            nb::dict py_result;
-            for (const auto& [id, pItin] : self.freeflowItineraries()) {
-              py_result[nb::cast(id)] = nb::cast(pItin);
-            }
-            return py_result;
-          },
-          R"doc(Get the free-flow itineraries mapping as a dict[id, Itinerary].)doc")
       .def("addAgentsUniformly",
            &dsf::mobility::FirstOrderDynamics::addAgentsUniformly,
            nb::arg("nAgents"),
@@ -1749,14 +1741,21 @@ Returns:
 
       Returns:
         None)doc")
-      .def("updatePaths",
-           &dsf::mobility::TrafficSimulator::updatePaths,
-           nb::arg("deltaT") = 0,
-           nb::arg("throwOnEmpty") = true,
-           R"doc(Recompute routing paths for the current network state.
+      .def(
+          "updatePaths",
+          &dsf::mobility::TrafficSimulator::updatePaths,
+          nb::arg("deltaT") = 0,
+          nb::arg("throwOnEmpty") = true,
+          R"doc(Configure how often the routing graph is rebuilt (see Dynamics.updatePaths).
+
+      The routing graph is always built at the first time step and after each OD update.
+      Agents plan their routes when they depart, so a periodic rebuild only matters when
+      the network changes during the run.
+
       Args:
-      deltaT (int, optional): Time interval between path updates.
-      throwOnEmpty (bool, optional): Raise exception for empty paths.
+      deltaT (int, optional): Rebuild interval in time steps (0 means never).
+      throwOnEmpty (bool, optional): Raise for a destination that cannot be reached,
+        instead of removing it.
 
       Returns:
       None)doc")
