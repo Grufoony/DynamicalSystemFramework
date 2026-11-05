@@ -1,3 +1,4 @@
+#include "dsf/mobility/Agent.hpp"
 #include "dsf/mobility/RoadNetwork.hpp"
 #include "dsf/mobility/Router.hpp"
 #include "dsf/mobility/Street.hpp"
@@ -85,9 +86,8 @@ namespace {
 
   // Three branches from node 0 to node 2, entered from street 5 (5 -> 0): 0 -> 1 -> 2 and
   // 0 -> 3 -> 2 of 10 m, 0 -> 6 -> 2 of 12 m and 0 -> 7 -> 2 of 20 m. Street 4 leaves node 2.
-  RoadNetwork makeBranches(std::optional<double> const threshold) {
+  RoadNetwork makeBranches() {
     RoadNetwork network;
-    network.setEdgeWeight("length", threshold);
     network.addStreet(0, std::make_pair(0, 1), 5.);
     network.addStreet(1, std::make_pair(1, 2), 5.);
     network.addStreet(2, std::make_pair(0, 3), 5.);
@@ -119,7 +119,7 @@ TEST_CASE("Router") {
         CHECK(router.isBuilt());
         CHECK_EQ(router.nEdges(), 6);
         CHECK_FALSE(router.hasHeuristic());
-        CHECK_EQ(router.threshold(), 0.);
+        CHECK_EQ(router.algorithm(), RouteAlgorithm::ASTAR);
       }
       THEN("A route ends on the first street reaching the goal node") {
         auto const route{router.route(5, 2, RouteWeights::FREE_FLOW)};
@@ -246,9 +246,13 @@ TEST_CASE("Router") {
       RoadNetwork network;
       network.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
       network.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
-      network.setEdgeWeight("length");
       Router router;
+      router.setEdgeWeight("length");
       router.build(network);
+      Router dijkstra;
+      dijkstra.setEdgeWeight("length");
+      dijkstra.setAlgorithm(RouteAlgorithm::DIJKSTRA);
+      dijkstra.build(network);
       std::vector<Id> streetIds, nodeIds;
       for (auto const& [streetId, pStreet] : network.edges()) {
         streetIds.push_back(streetId);
@@ -259,7 +263,7 @@ TEST_CASE("Router") {
       std::ranges::sort(streetIds);
       std::ranges::sort(nodeIds);
       REQUIRE(router.hasHeuristic());
-      THEN("A* finds routes as good as Dijkstra's, for both street costs") {
+      THEN("A* and Dijkstra find the best routes, for both street costs") {
         auto const length = [](Street const& street) { return street.length(); };
         std::size_t nRoutes{0};
         for (std::size_t k{0}; k < 100; ++k) {
@@ -281,8 +285,16 @@ TEST_CASE("Router") {
           CHECK_EQ(router.routeCost(freeFlowRoute, RouteWeights::FREE_FLOW),
                    doctest::Approx(freeFlowCost));
           CHECK(isValidRoute(network, lengthRoute, goalNodeId));
+          auto const lengthCost{bestCost(network, fromStreetId, goalNodeId, length)};
           CHECK_EQ(router.routeCost(lengthRoute, RouteWeights::CURRENT),
-                   doctest::Approx(bestCost(network, fromStreetId, goalNodeId, length)));
+                   doctest::Approx(lengthCost));
+          for (auto const weights : {RouteWeights::FREE_FLOW, RouteWeights::CURRENT}) {
+            auto const route{dijkstra.route(fromStreetId, goalNodeId, weights)};
+            CHECK(isValidRoute(network, route, goalNodeId));
+            CHECK_EQ(dijkstra.routeCost(route, weights),
+                     doctest::Approx(weights == RouteWeights::FREE_FLOW ? freeFlowCost
+                                                                        : lengthCost));
+          }
         }
         CHECK_GT(nRoutes, 90);
       }
@@ -342,8 +354,7 @@ TEST_CASE("Router") {
   }
   SUBCASE("Current weights") {
     GIVEN("A network routed on a custom street cost") {
-      RoadNetwork network{makeBranches(std::nullopt)};
-      network.setEdgeWeight("cost");
+      RoadNetwork network{makeBranches()};
       // Branch costs: 0 -> 1 -> 2 costs 2, 0 -> 3 -> 2 101, 0 -> 6 -> 2 4, 0 -> 7 -> 2 10
       std::unordered_map<Id, double> const costs{{0, 1.},
                                                  {1, 1.},
@@ -359,6 +370,7 @@ TEST_CASE("Router") {
         network.edge(streetId).setAttribute("cost", cost);
       }
       Router router;
+      router.setEdgeWeight("cost");
       router.build(network);
       THEN("The current weights follow the snapshot taken when the router was built") {
         CHECK_EQ(router.route(5, 2, RouteWeights::CURRENT), std::vector<Id>{5, 0, 1});
@@ -367,7 +379,7 @@ TEST_CASE("Router") {
         network.edge(0).setAttribute("cost", 100.);
         THEN("The routes change only once the snapshot is updated") {
           CHECK_EQ(router.route(5, 2, RouteWeights::CURRENT), std::vector<Id>{5, 0, 1});
-          router.updateCurrentWeights(network);
+          router.updateCurrentWeights();
           CHECK_EQ(router.route(5, 2, RouteWeights::CURRENT), std::vector<Id>{5, 6, 7});
           // The free-flow routes do not depend on the network's weight
           CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW), std::vector<Id>{5, 0, 1});
@@ -375,48 +387,64 @@ TEST_CASE("Router") {
       }
     }
   }
-  SUBCASE("Randomised routes") {
-    GIVEN("Two equivalent branches, a slightly longer one and a much longer one") {
-      auto const optimalCost{10. / makeBranches(std::nullopt).edge(0).maxSpeed()};
-      WHEN("The weight has a threshold of 0.5") {
-        auto const network{makeBranches(0.5)};
-        Router router;
-        router.build(network);
-        THEN(
-            "Each seed gives its own route, at most 1.5 times longer than the best one") {
-          CHECK_EQ(router.threshold(), 0.5);
-          std::set<std::vector<Id>> routes;
-          for (std::uint64_t seed{0}; seed < 50; ++seed) {
-            auto const route{router.route(5, 2, RouteWeights::FREE_FLOW, seed)};
-            CHECK(isValidRoute(network, route, 2));
-            CHECK_LE(router.routeCost(route, RouteWeights::FREE_FLOW),
-                     1.5 * optimalCost * (1. + 1e-12));
-            CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW, seed), route);
-            routes.insert(route);
-          }
-          CHECK(routes.contains(std::vector<Id>{5, 0, 1}));
-          CHECK(routes.contains(std::vector<Id>{5, 2, 3}));
-          CHECK_FALSE(routes.contains(std::vector<Id>{5, 8, 9}));
-        }
+  SUBCASE("Edge weights") {
+    // Restore the default estimator, which other tests may have changed
+    auto const freeFlowEstimate = [](Street const& street) {
+      return street.length() / street.maxSpeed();
+    };
+    Street::setEstimatedTravelTimeFunction(freeFlowEstimate);
+    GIVEN("A direct street (0->2) of 1.5 s and a detour (0->1->2) of 2 s") {
+      RoadNetwork network;
+      network.addStreet(0, std::make_pair(0, 1), 1.0, 1.0);
+      network.addStreet(1, std::make_pair(1, 2), 1.0, 1.0);
+      network.addStreet(2, std::make_pair(0, 2), 1.5, 1.0);
+      Router router;
+      router.build(network);
+      THEN("The default travel time weight follows the street estimator") {
+        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT), std::vector<Id>{2});
+        Street::setEstimatedTravelTimeFunction([](Street const& street) {
+          auto const time{street.length() / street.maxSpeed()};
+          return time * time;
+        });
+        router.updateCurrentWeights();
+        // 1 + 1 < 2.25
+        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT),
+                 std::vector<Id>{0, 1});
+        Street::setEstimatedTravelTimeFunction(freeFlowEstimate);
       }
-      WHEN("The weight has a negative threshold") {
-        auto const network{makeBranches(-0.5)};
-        Router router;
-        router.build(network);
-        THEN("It is ignored") { CHECK_EQ(router.threshold(), 0.); }
+      THEN("Named weights give the expected costs") {
+        auto const& street{network.edge(2)};
+        CHECK_EQ(Router::edgeWeightFunction("length")(street), 1.5);
+        CHECK_EQ(Router::edgeWeightFunction("uniform")(street), 1.);
+        CHECK_EQ(Router::edgeWeightFunction("traveltime")(street), doctest::Approx(1.5));
+        CHECK_THROWS_AS(Router::edgeWeightFunction("missing")(street),
+                        std::runtime_error);
       }
-      WHEN("The weight has no threshold") {
-        auto const network{makeBranches(std::nullopt)};
-        Router router;
+      THEN("A missing custom attribute throws when the weights are taken") {
+        router.setEdgeWeight("missing");
+        CHECK_THROWS_AS(router.updateCurrentWeights(), std::runtime_error);
+      }
+    }
+    GIVEN("A queue on the direct street (0->2)") {
+      RoadNetwork network;
+      // 0 -> 1 -> 2 takes 20 s, the two-lane 0 -> 2 takes 12 s plus its queue time
+      network.addStreet(0, std::make_pair(0, 1), 100., 10.);
+      network.addStreet(1, std::make_pair(1, 2), 100., 10.);
+      network.addStreet(2, std::make_pair(0, 2), 120., 10., 2);
+      auto& queuedStreet{network.edge(2)};
+      queuedStreet.addAgent(std::make_unique<Agent>(0, 0), 0);
+      queuedStreet.enqueue(0);
+      Router router;
+      THEN("The travel time weight adds the time to clear the queue") {
+        // One agent over two lanes: 12 + 0.5 / 0.1 = 17 s < 20 s
+        queuedStreet.setTransportCapacity(0.1);
         router.build(network);
-        THEN("Every seed gives the same, shortest route") {
-          auto const route{router.route(5, 2, RouteWeights::FREE_FLOW)};
-          CHECK_EQ(router.routeCost(route, RouteWeights::FREE_FLOW),
-                   doctest::Approx(optimalCost));
-          for (std::uint64_t seed{1}; seed < 20; ++seed) {
-            CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW, seed), route);
-          }
-        }
+        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT), std::vector<Id>{2});
+        // 12 + 0.5 / 0.05 = 22 s > 20 s
+        queuedStreet.setTransportCapacity(0.05);
+        router.updateCurrentWeights();
+        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT),
+                 std::vector<Id>{0, 1});
       }
     }
   }

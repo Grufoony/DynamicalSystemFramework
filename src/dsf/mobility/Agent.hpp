@@ -10,15 +10,16 @@
 
 #pragma once
 
-#include "Itinerary.hpp"
 #include "../utility/Typedef.hpp"
 
 #include <cassert>
 #include <concepts>
+#include <deque>
 #include <format>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -29,18 +30,17 @@ namespace dsf::mobility {
   private:
     Id m_id;
     std::time_t m_spawnTime, m_freeTime;
-    std::vector<std::shared_ptr<Itinerary>> m_trip;
     std::optional<Id> m_streetId;
     std::optional<Id> m_srcNodeId;
     std::optional<Id> m_srcStreetId;  // The first street of the agent's trip
     std::optional<Id> m_nextStreetId;
-    std::size_t m_itineraryIdx;
     double m_speed;
     double m_distance;                     // Travelled distance
     std::optional<double> m_maxDistance;   // Maximum distance for stochastic agents
     std::optional<std::time_t> m_maxTime;  // Maximum time for stochastic agents
-    std::vector<Id> m_path;                // The planned streets (see path())
-    std::size_t m_pathIndex{0};            // The agent's position along m_path
+    // The planned streets still to take after the current one, the next one in front,
+    // followed by the destination street; empty for a random agent
+    std::deque<Id> m_route;
     bool m_bIsIntelligent;  // If true, the agent plans its routes on the current traffic,
                             // otherwise on free-flow travel times (default is false)
 
@@ -48,20 +48,13 @@ namespace dsf::mobility {
     /// @brief Construct a new Agent object
     /// @param id The agent's id
     /// @param spawnTime The agent's spawn time
-    /// @param itineraryId Optional, The agent's destination node. If not provided, the agent is a random agent
+    /// @param destination Optional, the id of the agent's destination street: the agent
+    ///   arrives at its source node, without travelling it. If not provided, the agent is a
+    ///   random agent
     /// @param srcNodeId Optional, The id of the source node of the agent
     Agent(Id const id,
           std::time_t const& spawnTime,
-          std::shared_ptr<Itinerary> itinerary = nullptr,
-          std::optional<Id> srcNodeId = std::nullopt);
-    /// @brief Construct a new Agent object
-    /// @param id The agent's id
-    /// @param spawnTime The agent's spawn time
-    /// @param itineraryIds The agent's itinerary
-    /// @param srcNodeId Optional, The id of the source node of the agent
-    Agent(Id const id,
-          std::time_t const& spawnTime,
-          std::vector<std::shared_ptr<Itinerary>> const& trip,
+          std::optional<Id> destination = std::nullopt,
           std::optional<Id> srcNodeId = std::nullopt);
 
     /// @brief Set the id of the source node of the agent
@@ -112,20 +105,17 @@ namespace dsf::mobility {
     inline void setIntelligent(bool const isIntelligent) noexcept {
       m_bIsIntelligent = isIntelligent;
     }
-    /// @brief Set the agent's planned route
-    /// @param path The ids of the streets to travel, starting from the street the agent is
-    ///   on (or, before its departure, the first street it will travel)
-    /// @details The agent's position along the route is reset to its first street
-    void setPath(std::vector<Id> path) noexcept;
-    /// @brief Drop the agent's planned route, so that it is planned again when needed
-    void clearPath() noexcept;
-    /// @brief Move the agent's position along its planned route to the next street
-    /// @throw std::logic_error if the route has no next street
+    /// @brief Set the streets the agent plans to take after the one it is on (or, before its
+    ///   departure, after its first street)
+    /// @param streets The ids of the streets, in travel order
+    /// @throw std::logic_error if the agent is a random agent
+    void setPath(std::span<Id const> streets);
+    /// @brief Drop the agent's planned streets, so that its route is planned again when
+    ///   needed; the destination is kept
+    void dropPath() noexcept;
+    /// @brief Remove the next planned street, once the agent takes it
+    /// @throw std::logic_error if there is no planned street
     void advancePath();
-
-    /// @brief Move on to the next itinerary of the trip, if any
-    /// @details The planned route, which leads to the previous destination, is dropped
-    void updateItinerary();
     /// @brief Reset the agent
     /// @details Reset the following values:
     /// - street id = std::nullopt
@@ -133,8 +123,7 @@ namespace dsf::mobility {
     /// - speed = 0
     /// - distance = 0
     /// - time = 0
-    /// - itinerary index = 0
-    /// - planned route = none
+    /// - planned streets = none (the destination is kept)
     void reset(std::time_t const& spawnTime);
 
     /// @brief Get the agent's spawn time
@@ -146,10 +135,12 @@ namespace dsf::mobility {
     /// @brief Get the agent's id
     /// @return The agent's id
     inline Id id() const noexcept { return m_id; };
-    /// @brief Get the agent's itinerary
-    /// @return std::shared_ptr<Itinerary> const&, The agent's current itinerary
-    /// @throw std::logic_error if the agent has no itinerary
-    std::shared_ptr<Itinerary> const& itinerary() const;
+    /// @brief Get the agent's destination street
+    /// @return std::optional<Id> The id of the destination street, std::nullopt for a random
+    ///   agent
+    inline std::optional<Id> destination() const noexcept {
+      return m_route.empty() ? std::nullopt : std::make_optional(m_route.back());
+    }
     /// @brief Get the agent's maximum distance
     /// @return The agent's maximum distance, or throw std::logic_error if not set
     inline auto maxDistance() const {
@@ -164,9 +155,6 @@ namespace dsf::mobility {
                  ? m_maxTime.value()
                  : throw std::logic_error("Agent::maxTime: maxTime is not set");
     };
-    /// @brief Get the agent's trip
-    /// @return The agent's trip
-    inline auto const& trip() const noexcept { return m_trip; };
     /// @brief Get the id of the street currently occupied by the agent
     /// @return The id of the street currently occupied by the agent
     inline std::optional<Id> streetId() const noexcept { return m_streetId; };
@@ -187,25 +175,21 @@ namespace dsf::mobility {
     inline double distance() const noexcept { return m_distance; };
     /// @brief Return true if the agent is a random agent
     /// @return True if the agent is a random agent, false otherwise
-    inline bool isRandom() const noexcept { return m_trip.empty(); };
+    inline bool isRandom() const noexcept { return m_route.empty(); };
     /// @brief Return true if the agent is intelligent
     /// @return True if the agent plans its routes on the current traffic, false if it plans
     ///   them on free-flow travel times
     inline bool isIntelligent() const noexcept { return m_bIsIntelligent; };
-    /// @brief Get the agent's planned route
-    /// @return std::vector<Id> const& The ids of the planned streets, empty if there is none
-    inline auto const& path() const noexcept { return m_path; }
-    /// @brief Get the agent's position along its planned route
-    /// @return std::size_t The index in path() of the street the agent is on, at each
-    ///   routing decision (or of the first street it will travel, before its departure)
-    inline auto pathIndex() const noexcept { return m_pathIndex; }
-    /// @brief Get the street following the agent's position along its planned route
-    /// @return std::optional<Id> The street id, or std::nullopt at the end of the route
-    std::optional<Id> nextPlannedStreetId() const noexcept;
-    /// @brief Check whether the agent is where its planned route expects it
-    /// @param streetId The id of the street the agent is on
-    /// @return True if the street at the agent's position along its route is streetId
-    bool isOnPath(Id const streetId) const noexcept;
+    /// @brief Get the next planned street
+    /// @return std::optional<Id> The street id, or std::nullopt if no street is planned
+    inline std::optional<Id> nextPlannedStreetId() const noexcept {
+      return m_route.size() > 1 ? std::make_optional(m_route.front()) : std::nullopt;
+    }
+    /// @brief Get the number of planned streets
+    /// @return std::size_t The number of streets the agent still plans to take
+    inline std::size_t nPlannedStreets() const noexcept {
+      return m_route.empty() ? 0 : m_route.size() - 1;
+    }
     /// @brief Check if a random agent has arrived at its destination
     /// @param currentTime The current simulation time
     /// @return True if the agent has arrived (exceeded max distance or time), false otherwise
@@ -233,15 +217,14 @@ struct std::formatter<dsf::mobility::Agent> {
     return std::format_to(
         ctx.out(),
         "Agent(id: {}, streetId: {}, srcNodeId: {}, nextStreetId: {}, "
-        "itineraryId: {}, speed: {:.2f} m/s, distance: {:.2f} m, "
+        "destination: {}, speed: {:.2f} m/s, distance: {:.2f} m, "
         "spawnTime: {}, freeTime: {})",
         agent.id(),
         agent.streetId().has_value() ? std::to_string(agent.streetId().value()) : "N/A",
         agent.srcNodeId().has_value() ? std::to_string(agent.srcNodeId().value()) : "N/A",
         agent.nextStreetId().has_value() ? std::to_string(agent.nextStreetId().value())
                                          : "N/A",
-        agent.isRandom() ? std::string("RANDOM")
-                         : std::to_string(agent.itinerary()->id()),
+        agent.isRandom() ? std::string("RANDOM") : std::to_string(*agent.destination()),
         agent.speed(),
         agent.distance(),
         agent.spawnTime(),

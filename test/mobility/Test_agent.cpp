@@ -3,22 +3,21 @@
 #include <string>
 
 #include "dsf/mobility/Agent.hpp"
-#include "dsf/mobility/Itinerary.hpp"
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
 using Agent = dsf::mobility::Agent;
-using Itinerary = dsf::mobility::Itinerary;
 
 TEST_CASE("Agent") {
   SUBCASE("Constructors") {
-    GIVEN("An agent and its itinerary") {
-      auto itinerary = std::make_shared<Itinerary>(0, 5);
+    GIVEN("An agent and its destination") {
+      dsf::Id const destination{5};
       WHEN("The Agent is constructed") {
-        Agent agent{0, 0, itinerary};
-        THEN("The agent and itinerary ids are set correctly") {
-          CHECK_EQ(agent.itinerary()->id(), itinerary->id());
+        Agent agent{0, 0, destination};
+        THEN("The agent and its destination are set correctly") {
+          CHECK_EQ(agent.destination(), destination);
+          CHECK_FALSE(agent.isRandom());
           CHECK_FALSE(agent.streetId().has_value());
           CHECK_FALSE(agent.srcNodeId().has_value());
           CHECK_EQ(agent.speed(), 0);
@@ -27,13 +26,13 @@ TEST_CASE("Agent") {
         }
       }
     }
-    GIVEN("An agent, its itinerary, and a node id") {
-      auto itinerary = std::make_shared<Itinerary>(0, 5);
+    GIVEN("An agent, its destination, and a node id") {
+      dsf::Id const destination{5};
       dsf::Id srcNodeId{0};
       WHEN("The Agent is constructed") {
-        Agent agent{0, 0, itinerary, srcNodeId};
-        THEN("The agent and itinerary ids are set correctly") {
-          CHECK_EQ(agent.itinerary()->id(), itinerary->id());
+        Agent agent{0, 0, destination, srcNodeId};
+        THEN("The agent and its destination are set correctly") {
+          CHECK_EQ(agent.destination(), destination);
           CHECK_FALSE(agent.streetId().has_value());
           CHECK(agent.srcNodeId().has_value());
           CHECK_EQ(agent.srcNodeId().value(), srcNodeId);
@@ -43,18 +42,21 @@ TEST_CASE("Agent") {
         }
       }
     }
-    GIVEN("No initinerary ids and no source node id") {
+    GIVEN("No destination and no source node id") {
       WHEN("The agent is constructed") {
         auto randomAgent = Agent{0, 0};
-        THEN("The agent is a random agent") { CHECK(randomAgent.isRandom()); }
+        THEN("The agent is a random agent") {
+          CHECK(randomAgent.isRandom());
+          CHECK_FALSE(randomAgent.destination().has_value());
+          CHECK_THROWS_AS(randomAgent.setPath(std::vector<dsf::Id>{1}), std::logic_error);
+        }
       }
     }
   }
 }
 
 TEST_CASE("Agent methods") {
-  auto itinerary42 = std::make_shared<Itinerary>(42, 100);
-  Agent agent{0, 0, itinerary42, 7};
+  Agent agent{0, 0, dsf::Id{100}, 7};
   SUBCASE("setSrcNodeId and srcNodeId") {
     agent.setSrcNodeId(99);
     CHECK(agent.srcNodeId().has_value());
@@ -102,47 +104,31 @@ TEST_CASE("Agent methods") {
     CHECK_EQ(agent.distance(), d0 + 5.5);
     CHECK_THROWS_AS(agent.incrementDistance(-1.), std::invalid_argument);
   }
-  SUBCASE("updateItinerary advances index") {
-    auto it1 = std::make_shared<Itinerary>(1, 10);
-    auto it2 = std::make_shared<Itinerary>(2, 20);
-    auto it3 = std::make_shared<Itinerary>(3, 30);
-    std::vector<std::shared_ptr<Itinerary>> trip = {it1, it2, it3};
-    Agent a2{0, 0, trip, 0};
-    CHECK_EQ(a2.itinerary()->id(), 1);
-    a2.setPath({4, 5});
-    a2.updateItinerary();
-    CHECK_EQ(a2.itinerary()->id(), 2);
-    CHECK(a2.path().empty());  // The route led to the previous destination
-    a2.updateItinerary();
-    CHECK_EQ(a2.itinerary()->id(), 3);
-    a2.setPath({4, 5});
-    a2.updateItinerary();  // Should not go out of bounds
-    CHECK_EQ(a2.itinerary()->id(), 3);
-    CHECK_EQ(a2.path().size(), 2);  // Same destination: the route is kept
-  }
   SUBCASE("Planned route") {
-    CHECK(agent.path().empty());
+    // The route ends with the destination, which is never planned as a street to take
+    CHECK_EQ(agent.nPlannedStreets(), 0);
     CHECK_FALSE(agent.nextPlannedStreetId().has_value());
-    CHECK_FALSE(agent.isOnPath(3));
-    agent.setPath({3, 5, 8});
-    CHECK_EQ(agent.pathIndex(), 0);
-    CHECK(agent.isOnPath(3));
+    agent.setPath(std::vector<dsf::Id>{3, 5, 8});
+    CHECK_EQ(agent.nPlannedStreets(), 3);
+    CHECK_EQ(agent.nextPlannedStreetId().value(), 3);
+    agent.advancePath();
     CHECK_EQ(agent.nextPlannedStreetId().value(), 5);
     agent.advancePath();
-    CHECK(agent.isOnPath(5));
-    CHECK_FALSE(agent.isOnPath(3));
-    CHECK_EQ(agent.nextPlannedStreetId().value(), 8);
     agent.advancePath();
     CHECK_FALSE(agent.nextPlannedStreetId().has_value());
     CHECK_THROWS_AS(agent.advancePath(), std::logic_error);
-    agent.setPath({1, 2});
-    CHECK_EQ(agent.pathIndex(), 0);
-    agent.clearPath();
-    CHECK(agent.path().empty());
-    CHECK_EQ(agent.pathIndex(), 0);
+    CHECK_EQ(agent.destination(), 100);
+    // A new plan replaces the previous one; dropping it keeps the destination
+    agent.setPath(std::vector<dsf::Id>{1, 2});
+    agent.setPath(std::vector<dsf::Id>{4});
+    CHECK_EQ(agent.nPlannedStreets(), 1);
+    CHECK_EQ(agent.nextPlannedStreetId().value(), 4);
+    agent.dropPath();
+    CHECK_EQ(agent.nPlannedStreets(), 0);
+    CHECK_EQ(agent.destination(), 100);
   }
   SUBCASE("isIntelligent") {
-    Agent agent{0, 0, std::make_shared<Itinerary>(0, 5)};
+    Agent agent{0, 0, dsf::Id{5}};
     CHECK_FALSE(agent.isIntelligent());  // agents are not intelligent by default
     agent.setIntelligent(true);
     CHECK(agent.isIntelligent());
@@ -156,17 +142,15 @@ TEST_CASE("Agent methods") {
     agent.incrementDistance(5.);
     agent.setFreeTime(99);
     agent.setStreetId(88);
-    agent.updateItinerary();
-    agent.setPath({88, 89});
+    agent.setPath(std::vector<dsf::Id>{88, 89});
     agent.reset(555);
-    CHECK(agent.path().empty());
+    CHECK_EQ(agent.nPlannedStreets(), 0);
     CHECK_EQ(agent.spawnTime(), 555);
     CHECK_EQ(agent.freeTime(), 0);
     CHECK_EQ(agent.speed(), 0.);
     CHECK_EQ(agent.distance(), 0.);
-    CHECK_EQ(agent.itinerary()->id(), 42);  // itinerary index reset
+    CHECK_EQ(agent.destination(), 100);  // the destination is kept
     CHECK_FALSE(agent.streetId().has_value());
-    CHECK_EQ(agent.trip().size(), 1);
   }
   SUBCASE("reset restarts from the first street") {
     agent.setSrcStreetId(3);
@@ -185,8 +169,7 @@ TEST_CASE("Agent methods") {
 
 TEST_CASE("Agent formatting") {
   SUBCASE("std::format with complete agent") {
-    auto itinerary42 = std::make_shared<Itinerary>(42, 100);
-    Agent agent{0, 0, itinerary42, 7};
+    Agent agent{0, 0, dsf::Id{42}, 7};
     agent.setStreetId(10);
     agent.setNextStreetId(15);
     agent.setSpeed(13.5);
@@ -198,7 +181,7 @@ TEST_CASE("Agent formatting") {
     CHECK(formatted.find("streetId: 10") != std::string::npos);
     CHECK(formatted.find("srcNodeId: 7") != std::string::npos);
     CHECK(formatted.find("nextStreetId: 15") != std::string::npos);
-    CHECK(formatted.find("itineraryId: 42") != std::string::npos);
+    CHECK(formatted.find("destination: 42") != std::string::npos);
     CHECK(formatted.find("speed: 13.50 m/s") != std::string::npos);
     CHECK(formatted.find("distance: 100.25 m") != std::string::npos);
     CHECK(formatted.find("spawnTime: 0") != std::string::npos);
@@ -213,7 +196,7 @@ TEST_CASE("Agent formatting") {
     CHECK(formatted.find("streetId: N/A") != std::string::npos);
     CHECK(formatted.find("srcNodeId: N/A") != std::string::npos);
     CHECK(formatted.find("nextStreetId: N/A") != std::string::npos);
-    CHECK(formatted.find("itineraryId: RANDOM") != std::string::npos);
+    CHECK(formatted.find("destination: RANDOM") != std::string::npos);
     CHECK(formatted.find("speed: 0.00 m/s") != std::string::npos);
     CHECK(formatted.find("distance: 0.00 m") != std::string::npos);
     CHECK(formatted.find("spawnTime: 5") != std::string::npos);
@@ -221,20 +204,18 @@ TEST_CASE("Agent formatting") {
   }
 
   SUBCASE("std::format with agent with optional nullopts") {
-    auto itinerary99 = std::make_shared<Itinerary>(99, 200);
-    Agent agent{0, 10, itinerary99};
+    Agent agent{0, 10, dsf::Id{99}};
 
     std::string formatted = std::format("{}", agent);
     CHECK(formatted.find("id: 0") != std::string::npos);
     CHECK(formatted.find("streetId: N/A") != std::string::npos);
     CHECK(formatted.find("srcNodeId: N/A") != std::string::npos);
     CHECK(formatted.find("nextStreetId: N/A") != std::string::npos);
-    CHECK(formatted.find("itineraryId: 99") != std::string::npos);
+    CHECK(formatted.find("destination: 99") != std::string::npos);
   }
   SUBCASE("hasArrived") {
     Agent agent{0, 10};  // spawnTime = 10
     CHECK(agent.isRandom());
-    CHECK_THROWS_AS(agent.itinerary(), std::logic_error);
     CHECK_THROWS_AS(agent.setMaxDistance(0.), std::invalid_argument);
 
     // Test Max Distance
@@ -259,8 +240,8 @@ TEST_CASE("Agent formatting") {
     // After expiration
     CHECK(agent.hasArrived(61));
 
-    // Agents with an itinerary arrive at their destination, not by time or distance
-    Agent agentWithItinerary{2, 10, std::make_shared<Itinerary>(1, 1)};
-    CHECK_FALSE(agentWithItinerary.hasArrived(1000));
+    // Agents with a destination arrive there, not by time or distance
+    Agent agentWithDestination{2, 10, dsf::Id{1}};
+    CHECK_FALSE(agentWithDestination.hasArrived(1000));
   }
 }

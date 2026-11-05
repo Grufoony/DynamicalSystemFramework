@@ -27,9 +27,9 @@ static void BM_Street_AddAgent(benchmark::State& state) {
                                100,  // capacity
                                1.0);
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (auto _ : state) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
   }
 }
@@ -37,9 +37,9 @@ static void BM_Street_AddAgent(benchmark::State& state) {
 static void BM_Street_Enqueue(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (int i = 0; i < 50; ++i) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
   }
   size_t queueId = 0;
@@ -54,9 +54,9 @@ static void BM_Street_Enqueue(benchmark::State& state) {
 static void BM_Street_Dequeue(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (int i = 0; i < 50; ++i) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
     street.enqueue(0);
   }
@@ -72,9 +72,9 @@ static void BM_Street_Dequeue(benchmark::State& state) {
 static void BM_Street_nAgents(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (int i = 0; i < 50; ++i) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
     if (i % 2 == 0)
       street.enqueue(0);
@@ -88,9 +88,9 @@ static void BM_Street_nAgents(benchmark::State& state) {
 static void BM_Street_Density(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (int i = 0; i < 50; ++i) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
     if (i % 2 == 0)
       street.enqueue(0);
@@ -104,9 +104,9 @@ static void BM_Street_Density(benchmark::State& state) {
 static void BM_Street_nMovingAgents(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (int i = 0; i < 50; ++i) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
   }
   for (auto _ : state) {
@@ -118,9 +118,9 @@ static void BM_Street_nMovingAgents(benchmark::State& state) {
 static void BM_Street_nExitingAgents(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (int i = 0; i < 50; ++i) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
     street.enqueue(0);
   }
@@ -144,9 +144,9 @@ static void BM_CoilStreet_AddAgent(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   street.enableCounter();
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (auto _ : state) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
   }
 }
@@ -155,9 +155,9 @@ static void BM_CoilStreet_MeanFlow(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   street.enableCounter();
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (int i = 0; i < 50; ++i) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
     street.enqueue(0);
     if (i % 2 == 0) {
@@ -174,9 +174,9 @@ static void BM_CoilStreet_Dequeue(benchmark::State& state) {
   dsf::mobility::Street street(0, {&SOURCE, &TARGET}, 100.0, 13.8888888889, 2, "test", {}, 100, 1.0);
   street.enableCounter();
   std::time_t spawnTime = 0;
-  auto pItinerary = std::make_shared<dsf::mobility::Itinerary>(1, 1);
+  std::optional<dsf::Id> const destination{1};
   for (int i = 0; i < 50; ++i) {
-    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, pItinerary, 0);
+    auto agent = std::make_unique<dsf::mobility::Agent>(0, spawnTime++, destination, 0);
     street.addAgent(std::move(agent), spawnTime);
     street.enqueue(0);
   }

@@ -84,7 +84,6 @@ namespace dsf {
 #include "mobility/FirstOrderDynamics.hpp"
 #include "mobility/TrafficSimulator.hpp"
 #include "mobility/Intersection.hpp"
-#include "mobility/Itinerary.hpp"
 #include "mobility/RoadNetwork.hpp"
 #include "mobility/Router.hpp"
 #include "mobility/Roundabout.hpp"
