@@ -45,9 +45,6 @@ namespace dsf::mobility {
   private:
     std::size_t m_capacity = 0;
 
-    std::unordered_map<Id, double> m_computeEdgeDistancesToTarget(
-        Id const targetEdgeId) const;
-
     /// @brief If every node has coordinates, set the street angles
     /// @details The street angles are set using the node's coordinates.
     void m_setStreetAngles();
@@ -113,23 +110,6 @@ namespace dsf::mobility {
     void autoMapStreetLanes();
     /// @brief Automatically assigns road priorities at intersections, basing on road types
     void autoAssignRoadPriorities();
-    /// @brief Set the edge weight function based on a string identifier
-    /// @param strv_weight The string identifier of the weight function. Supported values are:
-    /// - "traveltime": the street's estimated travel time plus the time needed to clear its exit queues,
-    ///   i.e. estimatedTravelTime() + nExitingAgents(ANY, true) / min(1, transportCapacity())
-    /// - "length": the street's length
-    /// - "uniform": 1 for every street
-    /// - any other value is used as the name of a numeric custom attribute of the streets
-    /// The weight is used by the path algorithms of the network and by the intelligent agents
-    /// of a FirstOrderDynamics, which plan their route on it when they depart (see Router).
-    /// @param threshold An optional relative tolerance on the path cost. The path algorithms
-    ///   keep every path whose cost is within distance * (1 + threshold) of the shortest one.
-    ///   The agents' routes are planned on street costs multiplied by random factors in
-    ///   [1, 1 + threshold), so that each route costs at most (1 + threshold) times the
-    ///   shortest one and the agents spread over near-optimal alternatives.
-    void setEdgeWeight(std::string_view const strv_weight,
-                       std::optional<double> const threshold = std::nullopt) final;
-
     /// @brief Describe the RoadNetwork
     /// @param os The output stream to write the description to (default is std::cout)
     void describe(std::ostream& os = std::cout) const;
@@ -280,79 +260,12 @@ namespace dsf::mobility {
     ///   legal alternatives to a U-turn
     static bool isTurnAllowed(Street const& from, Street const& to);
 
-    /// @brief Perform a global Dijkstra search to a target edge from all other edges in the graph (like allPathsTo but working on the dual graph)
-    /// @param targetEdgeId The id of the target edge
-    /// @return A map where each key is an edge id and the value is a vector of next hop edge ids toward the target
-    /// @throws std::out_of_range if the target edge does not exist
-    /// @details Keeps only transitions that strictly decrease the precomputed
-    ///          shortest distance to target. This makes the hop graph acyclic,
-    ///          so PathCollection::explode remains finite.
-    PathCollection allEdgePathsTo(Id const targetEdgeId) const;
-
     void exportTrafficLights(std::string_view const fileName) const;
 
     /// @brief Export the graph's edges and nodes to two CSV files in the specified folder
     /// @param folder The folder to export the files to
     void exportCSV(std::string_view const folder) const;
   };
-
-  inline std::unordered_map<Id, double> RoadNetwork::m_computeEdgeDistancesToTarget(
-      Id const targetEdgeId) const {
-    std::unordered_map<Id, double> distToTarget;
-    distToTarget.reserve(nEdges());
-    for (auto const& pair : m_edges) {
-      distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
-    }
-
-    // Ordered by (distance, id) like a std::pair<double, Id>, carrying the street
-    struct QueueEntry {
-      double distance;
-      Id edgeId;
-      Street const* pEdge;
-      bool operator>(QueueEntry const& other) const noexcept {
-        return std::tie(distance, edgeId) > std::tie(other.distance, other.edgeId);
-      }
-    };
-    std::priority_queue<QueueEntry, std::vector<QueueEntry>, std::greater<>> pq;
-
-    distToTarget[targetEdgeId] = 0.0;
-    pq.push({0.0, targetEdgeId, &this->edge(targetEdgeId)});
-
-    while (!pq.empty()) {
-      auto const [currentDist, currentEdgeId, pCurrentEdge] = pq.top();
-      pq.pop();
-
-      if (currentDist > distToTarget.at(currentEdgeId)) {
-        continue;
-      }
-
-      auto const& currentEdge = *pCurrentEdge;
-      // The actual junction where the turn happens is the SOURCE of the current edge in backward search
-      auto const& turningNode = *currentEdge.source();
-      // The current edge's weight, computed once and only if a neighbour needs it
-      std::optional<double> currentWeight;
-
-      for (auto const* pInEdge : turningNode.ingoingEdges()) {
-        auto const& inEdge{*pInEdge};
-        auto const inEdgeId{inEdge.id()};
-        if (!inEdge.isActive() || !isTurnAllowed(inEdge, currentEdge)) {
-          continue;
-        }
-
-        if (!currentWeight.has_value()) {
-          currentWeight = m_weightFunction(currentEdge);
-        }
-        auto const candidateDistance = currentDist + *currentWeight;
-        auto& neighborDist = distToTarget.at(inEdgeId);
-        if (candidateDistance < neighborDist) {
-          neighborDist = candidateDistance;
-          pq.push({candidateDistance, inEdgeId, pInEdge});
-        }
-      }
-    }
-
-    return distToTarget;
-  }
 
   template <typename... TArgs>
   void RoadNetwork::importEdges(const std::string& fileName, TArgs&&... args) {
@@ -449,64 +362,6 @@ namespace dsf::mobility {
           return pAlternative != &to && pAlternative->isActive() &&
                  !from.forbiddenTurns().contains(pAlternative->id());
         });
-  }
-
-  inline PathCollection RoadNetwork::allEdgePathsTo(Id const targetEdgeId) const {
-    spdlog::debug("Computing all edge paths to target edge {}", targetEdgeId);
-    auto const distToTarget = m_computeEdgeDistancesToTarget(targetEdgeId);
-    PathCollection result;
-    result.reserve(m_edges.size());
-
-    std::vector<Id> hops;
-
-    for (auto const& [edgeId, pEdge] : m_edges) {
-      if (edgeId == targetEdgeId) {
-        continue;
-      }
-
-      auto const edgeDistToTarget = distToTarget.at(edgeId);
-      if (edgeDistToTarget == std::numeric_limits<double>::infinity()) {
-        continue;
-      }
-
-      double edgeBudget = edgeDistToTarget;
-      if (m_weightThreshold.has_value()) {
-        edgeBudget *= (1.0 + *m_weightThreshold);
-      }
-
-      auto const& targetNode = *pEdge->target();
-      auto const outgoingEdges = targetNode.outgoingEdges();
-      hops.clear();
-
-      for (auto const* pNextEdge : outgoingEdges) {
-        auto const nextEdgeId{pNextEdge->id()};
-        if (!pNextEdge->isActive() || !isTurnAllowed(*pEdge, *pNextEdge)) {
-          continue;
-        }
-
-        auto const nextDistToTarget = distToTarget.at(nextEdgeId);
-        if (nextDistToTarget == std::numeric_limits<double>::infinity()) {
-          continue;
-        }
-
-        // Keep hop transitions acyclic so path expansion remains finite.
-        if (nextDistToTarget + PATH_COST_EPS >= edgeDistToTarget) {
-          continue;
-        }
-
-        // Outgoing edges are distinct, so each id is pushed at most once
-        auto const fullPathCost = m_weightFunction(*pNextEdge) + nextDistToTarget;
-        if (fullPathCost <= edgeBudget + PATH_COST_EPS) {
-          hops.push_back(nextEdgeId);
-        }
-      }
-
-      if (!hops.empty()) {
-        result.emplace(edgeId, hops);
-      }
-    }
-
-    return result;
   }
 
 };  // namespace dsf::mobility

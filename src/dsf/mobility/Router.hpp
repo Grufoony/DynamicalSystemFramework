@@ -6,7 +6,9 @@
 #include "../utility/Typedef.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <span>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -25,6 +27,14 @@ namespace dsf::mobility {
     CURRENT = 1,
   };
 
+  /// @brief The search algorithm of the routes
+  enum class RouteAlgorithm : std::uint8_t {
+    /// @brief A*, with the straight-line distance heuristic when coordinates allow it
+    ASTAR = 0,
+    /// @brief Dijkstra's algorithm, i.e. A* without heuristic
+    DIJKSTRA = 1,
+  };
+
   /// @brief Plans routes on a road network with the A* algorithm
   /// @details The search runs on the streets (the dual graph), so that forbidden turns and the
   ///   U-turn rule of RoadNetwork::isTurnAllowed are honoured. A route ends on the first
@@ -38,48 +48,62 @@ namespace dsf::mobility {
   ///   per unit of distance over all streets, which makes it admissible and consistent for any
   ///   non-negative costs and any coordinate system. Without coordinates on every node touching
   ///   a street the heuristic is zero, i.e. the search is Dijkstra's.
-  ///
-  ///   If the network's weight threshold t (see RoadNetwork::setEdgeWeight) is positive, every
-  ///   street cost is multiplied by a factor in [1, 1 + t), drawn from a hash of the query seed
-  ///   and the street id: the cost of the returned route is then at most (1 + t) times the
-  ///   optimal one, and different seeds spread over near-optimal routes.
   class Router {
   public:
+    /// @brief A street cost function
+    using EdgeWeight = std::function<double(Street const&)>;
+
+    /// @brief Get a street cost function by name
+    /// @param name One of:
+    /// - "traveltime": the street's estimated travel time plus the time needed to clear its
+    ///   exit queues, i.e. estimatedTravelTime() + nExitingAgents(ANY, true) /
+    ///   min(1, transportCapacity())
+    /// - "length": the street's length
+    /// - "uniform": 1 for every street
+    /// - any other value is used as the name of a numeric custom attribute of the streets
+    /// @return EdgeWeight The cost function
+    static EdgeWeight edgeWeightFunction(std::string_view name);
+    /// @brief Set the street costs of the routes planned on the current weights
+    /// @param name The name of the cost function (see edgeWeightFunction), "traveltime" by
+    ///   default
+    /// @details It takes effect at the next snapshot (see updateCurrentWeights)
+    void setEdgeWeight(std::string_view name);
+    /// @brief Set the search algorithm
+    /// @param algorithm The algorithm (A* by default)
+    inline void setAlgorithm(RouteAlgorithm const algorithm) noexcept {
+      m_algorithm = algorithm;
+    }
+    /// @brief Get the search algorithm
+    inline auto algorithm() const noexcept { return m_algorithm; }
+
     /// @brief Build the routing graph of a network
     /// @param network The road network
     /// @details Also takes a snapshot of the current weights (see updateCurrentWeights)
     void build(RoadNetwork const& network);
-    /// @brief Take a snapshot of the current street weights, i.e. RoadNetwork::edgeWeight
-    /// @param network The road network the router was built from
+    /// @brief Take a snapshot of the current street weights (see setEdgeWeight)
     /// @details The streets are evaluated in parallel: no street may change meanwhile.
-    void updateCurrentWeights(RoadNetwork const& network);
+    void updateCurrentWeights();
 
     /// @brief Plan a route from a street to a node
     /// @param fromStreetId The street the route starts with: its own cost is not counted
     /// @param goalNodeId The node to reach
     /// @param weights The street costs to plan on
-    /// @param seed The seed of the cost perturbation, used only with a positive threshold
     /// @return std::vector<Id> The ids of the streets to travel, from fromStreetId to the first
     ///   street whose target is goalNodeId, or an empty vector if the node cannot be reached
     /// @throws std::out_of_range if the street or the node is not in the routing graph
-    std::vector<Id> route(Id fromStreetId,
-                          Id goalNodeId,
-                          RouteWeights weights,
-                          std::uint64_t seed = 0) const;
+    std::vector<Id> route(Id fromStreetId, Id goalNodeId, RouteWeights weights) const;
     /// @brief Plan a route from a node to a node
     /// @param fromNodeId The node the route starts from: the cost of the first street counts
     /// @param goalNodeId The node to reach
     /// @param weights The street costs to plan on
-    /// @param seed The seed of the cost perturbation, used only with a positive threshold
     /// @return std::vector<Id> The ids of the streets to travel, from an open outgoing street of
     ///   fromNodeId to the first street whose target is goalNodeId, or an empty vector if the
     ///   node cannot be reached
     /// @throws std::out_of_range if a node is not in the routing graph
     std::vector<Id> routeFromNode(Id fromNodeId,
                                   Id goalNodeId,
-                                  RouteWeights weights,
-                                  std::uint64_t seed = 0) const;
-    /// @brief Get the cost of a route, without perturbation
+                                  RouteWeights weights) const;
+    /// @brief Get the cost of a route
     /// @param route The ids of the streets of the route
     /// @param weights The street costs to use
     /// @return double The sum of the costs of the streets of the route, but the first
@@ -92,26 +116,12 @@ namespace dsf::mobility {
     ///   RoadNetwork::isTurnAllowed), false otherwise or if a street is unknown
     bool isTurnAllowed(Id fromStreetId, Id toStreetId) const;
 
-    /// @brief Mix a seed with a key, e.g. the id of an agent, into a new seed
-    /// @param seed The seed
-    /// @param key The key
-    /// @return std::uint64_t The mixed seed (SplitMix64)
-    static constexpr std::uint64_t mixSeed(std::uint64_t seed,
-                                           std::uint64_t key) noexcept {
-      auto z{seed + 0x9E3779B97F4A7C15ULL * (key + 1)};
-      z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-      z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-      return z ^ (z >> 31);
-    }
-
     /// @brief Check whether the router has been built
     inline bool isBuilt() const noexcept { return !m_turnOffsets.empty(); }
     /// @brief Get the number of streets of the routing graph
     inline std::size_t nEdges() const noexcept { return m_streetIds.size(); }
-    /// @brief Check whether the search uses the straight-line distance heuristic
+    /// @brief Check whether the coordinates allow the straight-line distance heuristic
     inline bool hasHeuristic() const noexcept { return m_bHeuristic; }
-    /// @brief Get the relative tolerance of the cost perturbation (0 if none)
-    inline double threshold() const noexcept { return m_threshold; }
 
   private:
     struct WeightSet {
@@ -149,7 +159,8 @@ namespace dsf::mobility {
     std::vector<std::uint32_t> m_turnOffsets, m_turns;
     std::vector<std::uint32_t> m_nodeOutOffsets, m_nodeOut;
     WeightSet m_freeFlow, m_current;
-    double m_threshold{0.};
+    EdgeWeight m_edgeWeight{edgeWeightFunction("traveltime")};
+    RouteAlgorithm m_algorithm{RouteAlgorithm::ASTAR};
     bool m_bHeuristic{false};
     mutable tbb::enumerable_thread_specific<SearchBuffers> m_buffers;
 
@@ -164,7 +175,6 @@ namespace dsf::mobility {
     std::vector<Id> m_search(std::span<std::uint32_t const> starts,
                              bool bCountStartCost,
                              std::uint32_t goalNode,
-                             WeightSet const& weightSet,
-                             std::uint64_t seed) const;
+                             WeightSet const& weightSet) const;
   };
 }  // namespace dsf::mobility

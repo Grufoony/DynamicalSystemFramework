@@ -83,10 +83,7 @@ int main() {
 
   // Create the dynamics
   FirstOrderDynamics dynamics{std::move(graph), 69};
-  dynamics.addItinerary(25, 25);
   dynamics.updatePaths();
-
-  auto pItinerary = dynamics.itineraries().at(25);
 
   // lauch progress bar
   thread_t t([MAX_TIME]() {
@@ -110,7 +107,7 @@ int main() {
         coil.resetCounter();
       }
       for (std::size_t i{0}; i < *it; ++i) {
-        dynamics.addAgent(pItinerary, 1);
+        dynamics.addAgent(25, 1);
       }
     }
     dynamics.evolve();

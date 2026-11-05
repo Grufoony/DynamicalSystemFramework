@@ -17,9 +17,6 @@ namespace dsf::mobility {
     for (auto const& [nodeId, pNode] : this->graph().nodes()) {
       m_nodeIndices.push_back(nodeId);
     }
-    for (auto const& [nodeId, weight] : this->m_destinations) {
-      m_itineraries.emplace(nodeId, std::make_shared<Itinerary>(nodeId, nodeId));
-    }
   }
 
   void FirstOrderDynamics::importODsFromCSV(std::string_view const fileName,
@@ -175,23 +172,19 @@ namespace dsf::mobility {
   std::vector<Id> FirstOrderDynamics::m_planRoute(Agent const& agent,
                                                   Id const fromStreetId) const {
     // Agents arrive at the source node of their destination street
-    auto const goalNodeId{
-        this->graph().edge(agent.itinerary()->destination()).source()->id()};
+    auto const goalNodeId{this->graph().edge(*agent.destination()).source()->id()};
     return m_router.route(
         fromStreetId,
         goalNodeId,
-        agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
-        Router::mixSeed(this->seed(), agent.id()));
+        agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW);
   }
   std::vector<Id> FirstOrderDynamics::m_planRouteFromNode(Agent const& agent,
                                                           Id const fromNodeId) const {
-    auto const goalNodeId{
-        this->graph().edge(agent.itinerary()->destination()).source()->id()};
+    auto const goalNodeId{this->graph().edge(*agent.destination()).source()->id()};
     return m_router.routeFromNode(
         fromNodeId,
         goalNodeId,
-        agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
-        Router::mixSeed(this->seed(), agent.id()));
+        agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW);
   }
   void FirstOrderDynamics::m_assignIntelligence(std::unique_ptr<Agent> const& pAgent) {
     if (m_intelligentFraction <= 0. || pAgent->isRandom()) {
@@ -220,13 +213,12 @@ namespace dsf::mobility {
     }
     if (m_ODs.size() == 1) {
       auto [originId, destinationId, weight] = m_ODs.at(0);
-      auto const itineraryIt = this->itineraries().find(destinationId);
-      if (itineraryIt == this->itineraries().cend()) {
-        spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
+      if (!m_destinationStreets.contains(destinationId)) {
+        spdlog::warn("Skipping ODS insertion: destination {} not found", destinationId);
         return;
       }
       for (std::size_t i = 0; i < nAgents; ++i) {
-        this->addAgent(itineraryIt->second, originId);
+        this->addAgent(destinationId, originId);
       }
       return;
     }
@@ -253,12 +245,11 @@ namespace dsf::mobility {
       }
 
       auto const& [originId, destinationId, weight] = m_ODs[selectedOdIdx];
-      auto const itineraryIt = this->itineraries().find(destinationId);
-      if (itineraryIt == this->itineraries().cend()) {
-        spdlog::warn("Skipping ODS insertion: itinerary {} not found", destinationId);
+      if (!m_destinationStreets.contains(destinationId)) {
+        spdlog::warn("Skipping ODS insertion: destination {} not found", destinationId);
         continue;
       }
-      this->addAgent(itineraryIt->second, originId);
+      this->addAgent(destinationId, originId);
     }
   }
   void FirstOrderDynamics::m_addAgentsRandomODs(std::size_t nAgents) {
@@ -310,10 +301,8 @@ namespace dsf::mobility {
             m_destinations, destinationCumulativeWeights, uniformDist(this->m_generator));
       }
 
-      // Find the itinerary with the given destination
-      auto const itineraryIt{m_findItinerary(*dstId)};
-      if (itineraryIt == this->itineraries().cend()) {
-        spdlog::error("Itinerary with destination {} not found. Skipping agent.", *dstId);
+      if (!m_destinationStreets.contains(*dstId)) {
+        spdlog::error("Destination {} not found. Skipping agent.", *dstId);
         continue;
       }
 
@@ -324,20 +313,8 @@ namespace dsf::mobility {
         continue;
       }
 
-      this->addAgent(itineraryIt->second, *srcId);
+      this->addAgent(*dstId, *srcId);
     }
-  }
-  std::unordered_map<Id, std::shared_ptr<Itinerary>>::const_iterator
-  FirstOrderDynamics::m_findItinerary(Id const destinationId) const {
-    // Itineraries built from destinations or ODs are keyed by their destination: try that
-    // O(1) lookup before scanning for user-added ones with a different id
-    auto const it{m_itineraries.find(destinationId)};
-    if (it != m_itineraries.cend() && it->second->destination() == destinationId) {
-      return it;
-    }
-    return std::ranges::find_if(m_itineraries, [destinationId](auto const& itinerary) {
-      return itinerary.second->destination() == destinationId;
-    });
   }
   void FirstOrderDynamics::m_addAgentsConditionalRandomODs(std::size_t nAgents) {
     m_nAddedAgents += nAgents;
@@ -381,11 +358,8 @@ namespace dsf::mobility {
         }
         randValue -= weight;
       }
-      // Find the itinerary with the given destination
-      auto const itineraryIt{m_findItinerary(destinationId)};
-      if (itineraryIt == this->itineraries().cend()) {
-        spdlog::error("Itinerary with destination {} not found. Skipping agent.",
-                      destinationId);
+      if (!m_destinationStreets.contains(destinationId)) {
+        spdlog::error("Destination {} not found. Skipping agent.", destinationId);
         continue;
       }
       // Routes are planned at departure, which drops the agents that cannot reach their
@@ -394,7 +368,7 @@ namespace dsf::mobility {
         spdlog::debug("Origin {} is also the destination. Skipping agent.", originId);
         continue;
       }
-      this->addAgent(itineraryIt->second, originId);
+      this->addAgent(destinationId, originId);
     }
   }
 
@@ -514,33 +488,33 @@ namespace dsf::mobility {
     auto const* pStreetCurrent{m_currentStreet(pAgent, pCurrentStreet)};
     if (pStreetCurrent == nullptr) {
       // Departure from a node: the route also chooses the first street
-      if (pAgent->path().empty()) {
-        pAgent->setPath(m_planRouteFromNode(*pAgent, pNode->id()));
-        if (pAgent->path().empty()) {
-          spdlog::debug(
-              "No route for {} from {}. Returning no transition.", *pAgent, *pNode);
-          return nullptr;
-        }
+      auto const route{m_planRouteFromNode(*pAgent, pNode->id())};
+      if (route.empty()) {
+        spdlog::debug(
+            "No route for {} from {}. Returning no transition.", *pAgent, *pNode);
+        return nullptr;
       }
-      plannedStreetId = pAgent->path()[pAgent->pathIndex()];
+      plannedStreetId = route.front();
+      pAgent->setPath(std::span{route}.subspan(1));
     } else {
       pPreviousNode = pStreetCurrent->source();
       pForbiddenTurns = &pStreetCurrent->forbiddenTurns();
-      auto optPlannedStreetId{pAgent->isOnPath(pStreetCurrent->id())
-                                  ? pAgent->nextPlannedStreetId()
-                                  : std::nullopt};
+      auto optPlannedStreetId{pAgent->nextPlannedStreetId()};
       if (!optPlannedStreetId.has_value() ||
           !m_router.isTurnAllowed(pStreetCurrent->id(), *optPlannedStreetId)) {
-        // The agent left its route, started a new trip leg or meets a closed street:
-        // plan the rest of the trip from here
-        pAgent->setPath(m_planRoute(*pAgent, pStreetCurrent->id()));
-        optPlannedStreetId = pAgent->nextPlannedStreetId();
-        if (!optPlannedStreetId.has_value()) {
+        // No plan yet (the agent left its route, or was put directly on a street), or a
+        // closed street ahead: plan the rest of the trip from here
+        auto const route{m_planRoute(*pAgent, pStreetCurrent->id())};
+        // A route of the current street only would mean the agent has arrived
+        if (route.size() < 2) {
           spdlog::debug("No route for {} from {}. Returning no transition.",
                         *pAgent,
                         *pStreetCurrent);
+          pAgent->dropPath();
           return nullptr;
         }
+        pAgent->setPath(std::span{route}.subspan(1));
+        optPlannedStreetId = route[1];
       }
       plannedStreetId = *optPlannedStreetId;
     }
@@ -602,7 +576,7 @@ namespace dsf::mobility {
     if (pNextStreet != nullptr) {
       if (pNextStreet->id() != plannedStreetId) {
         // A deviation (see setErrorProbability): plan again at the next junction
-        pAgent->clearPath();
+        pAgent->dropPath();
       } else if (pStreetCurrent != nullptr) {
         pAgent->advancePath();
       }
@@ -624,16 +598,9 @@ namespace dsf::mobility {
         break;
       }
       pAgent->setSpeed(0.);
-      bool bArrived{false};
+      // The agent arrives at the source node of its destination street
       if (!pAgent->isRandom() &&
-          this->graph().edge(pAgent->itinerary()->destination()).source() == pNode) {
-        // Move on to the next itinerary of the trip, if any: the agent has arrived
-        // only if this street still leads to the destination
-        pAgent->updateItinerary();
-        bArrived =
-            this->graph().edge(pAgent->itinerary()->destination()).source() == pNode;
-      }
-      if (bArrived) {
+          this->graph().edge(*pAgent->destination()).source() == pNode) {
         std::uniform_int_distribution<size_t> laneDist{0,
                                                        static_cast<size_t>(nLanes - 1)};
         pStreet->enqueue(laneDist(rng));
@@ -910,7 +877,7 @@ namespace dsf::mobility {
         }
       }
       if (!pAgentTemp->isRandom()) {
-        auto const& dstStreet{this->graph().edge(pAgentTemp->itinerary()->destination())};
+        auto const& dstStreet{this->graph().edge(*pAgentTemp->destination())};
         if (dstStreet.source() == destinationNode) {
           bArrived = true;
           pAgentTemp->setNextStreetId(dstStreet.id());
@@ -1111,7 +1078,9 @@ namespace dsf::mobility {
     };
     // 1. Select, in order, the agents which depart in this time step
     std::vector<std::size_t> departingIndices;
-    std::vector<Agent*> agentsToRoute;
+    // Indices in m_agents of the departing agents to route, and whether a route was found
+    std::vector<std::size_t> agentsToRoute;
+    std::vector<std::uint8_t> bRoutable(m_agents.size(), 1);
     for (std::size_t i{0}; i < m_agents.size(); ++i) {
       auto& pAgent{m_agents[i]};
       if (!pAgent->srcNodeId().has_value()) {
@@ -1158,14 +1127,14 @@ namespace dsf::mobility {
         spdlog::debug("Skipping {} due to full input {}", *pAgent, *nextStreet);
         if (pAgent->isIntelligent()) {
           // Plan again on the traffic of the actual departure
-          pAgent->clearPath();
+          pAgent->dropPath();
         }
         continue;
       }
       ++nDepartures[pSourceNode];
       departingIndices.push_back(i);
-      if (!pAgent->isRandom() && pAgent->path().empty()) {
-        agentsToRoute.push_back(pAgent.get());
+      if (!pAgent->isRandom() && pAgent->nPlannedStreets() == 0) {
+        agentsToRoute.push_back(i);
       }
     }
     // 2. Plan the routes of the departing agents: each search is independent
@@ -1174,8 +1143,13 @@ namespace dsf::mobility {
         tbb::parallel_for(tbb::blocked_range<std::size_t>(0, agentsToRoute.size()),
                           [&](tbb::blocked_range<std::size_t> const& range) {
                             for (auto i{range.begin()}; i != range.end(); ++i) {
-                              auto& agent{*agentsToRoute[i]};
-                              agent.setPath(m_planRoute(agent, *agent.nextStreetId()));
+                              auto const index{agentsToRoute[i]};
+                              auto& agent{*m_agents[index]};
+                              auto const route{m_planRoute(agent, *agent.nextStreetId())};
+                              bRoutable[index] = route.empty() ? 0 : 1;
+                              if (!route.empty()) {
+                                agent.setPath(std::span{route}.subspan(1));
+                              }
                             }
                           });
       });
@@ -1185,7 +1159,7 @@ namespace dsf::mobility {
     // of erasing (and shifting the tail) for each of them
     for (auto const i : departingIndices) {
       auto& pAgent{m_agents[i]};
-      if (!pAgent->isRandom() && pAgent->path().empty()) {
+      if (bRoutable[i] == 0) {
         m_dropPendingAgent(pAgent);
         continue;
       }
@@ -1244,6 +1218,13 @@ namespace dsf::mobility {
           "The intelligent fraction ({}) must be in [0, 1]", intelligentFraction));
     }
     m_intelligentFraction = intelligentFraction;
+  }
+  void FirstOrderDynamics::setEdgeWeight(std::string_view const weight) {
+    m_router.setEdgeWeight(weight);
+    if (m_router.isBuilt()) {
+      // Validate the new cost function, e.g. a missing custom attribute, right away
+      this->m_taskArena.execute([this] { m_router.updateCurrentWeights(); });
+    }
   }
   void FirstOrderDynamics::setPassageProbability(double passageProbability) {
     if (passageProbability < 0. || passageProbability > 1.) {
@@ -1351,13 +1332,13 @@ namespace dsf::mobility {
         m_mode == DynamicsMode::NODES
             ? (nodeStreetDestinations = m_toStreetWeights(destinations))
             : destinations};
-    m_itineraries.clear();
+    m_destinationStreets.clear();
     m_destinations.clear();
     m_destinations.reserve(streetDestinations.size());
     double sumWeights{0.};
     for (auto const& [destinationId, weight] : streetDestinations) {
       sumWeights += weight;
-      this->addItinerary(destinationId, destinationId);
+      m_destinationStreets.insert(destinationId);
     }
     if (sumWeights <= 0.) {
       throw std::invalid_argument(
@@ -1621,10 +1602,8 @@ namespace dsf::mobility {
     m_ODs.reserve(streetODs.size());
     auto const sumWeights = std::accumulate(
         streetODs.begin(), streetODs.end(), 0., [this](double sum, ODEntry const& od) {
-          // Add itineraries while summing weights
-          if (!this->itineraries().contains(od.destination)) {
-            this->addItinerary(od.destination, od.destination);
-          }
+          // Add the destinations while summing weights
+          m_destinationStreets.insert(od.destination);
           return sum + od.weight;
         });
     if (sumWeights <= 0.) {
@@ -1673,9 +1652,7 @@ namespace dsf::mobility {
             originId));
       }
       for (auto& [destinationId, weight] : streetDestinations) {
-        if (!this->itineraries().contains(destinationId)) {
-          this->addItinerary(destinationId, destinationId);
-        }
+        m_destinationStreets.insert(destinationId);
         weight /= sumDestinationWeights;
       }
       // Each origin street gets the origin's destinations (setOrigins splits its weight)
@@ -1701,13 +1678,10 @@ namespace dsf::mobility {
     // Agents arrive at the source node of their destination street: it must be entered by
     // an open street
     std::vector<Id> emptyItineraries;
-    for (auto const& [id, pItinerary] : m_itineraries) {
-      auto const destinationId{pItinerary->destination()};
+    for (auto const destinationId : m_destinationStreets) {
       if (!this->graph().edges().contains(destinationId)) {
         throw std::out_of_range(
-            std::format("The destination street {} of itinerary {} does not exist",
-                        destinationId,
-                        id));
+            std::format("The destination street {} does not exist", destinationId));
       }
       auto const& ingoingEdges{
           this->graph().edge(destinationId).source()->ingoingEdges()};
@@ -1717,17 +1691,14 @@ namespace dsf::mobility {
       }
       if (m_updatepathsThrowOnEmpty) {
         throw std::runtime_error(
-            std::format("No path found for itinerary {} with destination street {}",
-                        id,
-                        destinationId));
+            std::format("No path found to destination street {}", destinationId));
       }
-      spdlog::warn(
-          "No path found for itinerary {} with destination street {}", id, destinationId);
-      emptyItineraries.push_back(id);
+      spdlog::warn("No path found to destination street {}", destinationId);
+      emptyItineraries.push_back(destinationId);
     }
     // The waiting agents plan their routes on the new routing graph
     for (auto& pAgent : m_agents) {
-      pAgent->clearPath();
+      pAgent->dropPath();
     }
     if (!emptyItineraries.empty()) {
       auto const strIds = std::accumulate(
@@ -1737,11 +1708,10 @@ namespace dsf::mobility {
           [](std::string const& a, Id const& b) {
             return a.empty() ? std::to_string(b) : a + ", " + std::to_string(b);
           });
-      spdlog::warn("Removing {} itineraries with no valid path from the dynamics ({}).",
+      spdlog::warn("Removing {} destinations with no valid path from the dynamics ({}).",
                    emptyItineraries.size(),
                    strIds);
-      for (auto const& id : emptyItineraries) {
-        auto const destination = m_itineraries.at(id)->destination();
+      for (auto const destination : emptyItineraries) {
         std::erase_if(m_ODs, [destination](ODEntry const& od) {
           return od.destination == destination;
         });
@@ -1766,14 +1736,14 @@ namespace dsf::mobility {
           }
           return bErase;
         });
-        m_itineraries.erase(id);
+        m_destinationStreets.erase(destination);
       }
     }
     spdlog::debug("End updating paths.");
   }
 
   void FirstOrderDynamics::addAgentsUniformly(std::size_t nAgents,
-                                              std::optional<Id> optItineraryId) {
+                                              std::optional<Id> optDestinationId) {
     m_nAddedAgents += nAgents;
     if (m_timeToleranceFactor.has_value() && !m_agents.empty()) {
       auto const nStagnantAgents{m_agents.size()};
@@ -1785,19 +1755,17 @@ namespace dsf::mobility {
       m_nAgents -= nStagnantAgents;
       m_nKilledAgents += nStagnantAgents;
     }
-    if (optItineraryId.has_value() && !this->itineraries().contains(*optItineraryId)) {
+    if (optDestinationId.has_value() &&
+        !this->graph().edges().contains(*optDestinationId)) {
       throw std::invalid_argument(
-          std::format("No itineraries available. Cannot add agents with itinerary id {}",
-                      *optItineraryId));
+          std::format("Cannot add agents with destination {}: the street does not exist",
+                      *optDestinationId));
     }
-    bool const bRandomItinerary{!optItineraryId.has_value() &&
-                                !this->itineraries().empty()};
-    std::shared_ptr<Itinerary> pItinerary;
-    if (optItineraryId.has_value()) {
-      pItinerary = this->itineraries().at(*optItineraryId);
-    }
-    std::uniform_int_distribution<std::size_t> itineraryDist{
-        0, this->itineraries().size() - 1};
+    bool const bRandomDestination{!optDestinationId.has_value() &&
+                                  !m_destinationStreets.empty()};
+    auto destinationId{optDestinationId};
+    std::uniform_int_distribution<std::size_t> destinationDist{
+        0, m_destinationStreets.size() - 1};
     std::uniform_int_distribution<std::size_t> streetDist{0, this->graph().nEdges() - 1};
     if (this->nAgents() + nAgents > this->graph().capacity()) {
       throw std::overflow_error(std::format(
@@ -1808,10 +1776,10 @@ namespace dsf::mobility {
           this->graph().capacity()));
     }
     for (std::size_t i{0}; i < nAgents; ++i) {
-      if (bRandomItinerary) {
-        auto itineraryIt{this->itineraries().cbegin()};
-        std::advance(itineraryIt, itineraryDist(this->m_generator));
-        pItinerary = itineraryIt->second;
+      if (bRandomDestination) {
+        auto destinationIt{m_destinationStreets.cbegin()};
+        std::advance(destinationIt, destinationDist(this->m_generator));
+        destinationId = *destinationIt;
       }
       auto streetIt = this->graph().edges().begin();
       while (true) {
@@ -1823,7 +1791,7 @@ namespace dsf::mobility {
         streetIt = this->graph().edges().begin();
       }
       auto const [streetId, street] = *streetIt;
-      this->addAgent(pItinerary, streetId);
+      this->addAgent(destinationId, streetId);
       auto& pAgent{this->m_agents.back()};
       pAgent->setStreetId();
       pAgent->setSpeed(this->m_speedFunction(*street));
@@ -1834,31 +1802,18 @@ namespace dsf::mobility {
     }
   }
 
-  void FirstOrderDynamics::addAgent(std::vector<std::shared_ptr<Itinerary>> const& trip,
+  void FirstOrderDynamics::addAgent(std::optional<Id> optDestinationId,
                                     std::optional<Id> optSrcStreetId) {
     std::unique_ptr<Agent> pAgent;
     if (!optSrcStreetId.has_value()) {
-      pAgent = std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), trip);
+      pAgent =
+          std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), optDestinationId);
     } else {
       auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
-      pAgent = std::make_unique<Agent>(
-          m_nInsertedAgents, this->time_step(), trip, srcStreet.source()->id());
-      pAgent->setSrcStreetId(srcStreet.id());
-      pAgent->setNextStreetId(srcStreet.id());
-    }
-    m_assignIntelligence(pAgent);
-    addAgent(std::move(pAgent));
-  }
-
-  void FirstOrderDynamics::addAgent(std::shared_ptr<Itinerary> pItinerary,
-                                    std::optional<Id> optSrcStreetId) {
-    std::unique_ptr<Agent> pAgent;
-    if (!optSrcStreetId.has_value()) {
-      pAgent = std::make_unique<Agent>(m_nInsertedAgents, this->time_step(), pItinerary);
-    } else {
-      auto const& srcStreet{this->graph().edge(*optSrcStreetId)};
-      pAgent = std::make_unique<Agent>(
-          m_nInsertedAgents, this->time_step(), pItinerary, srcStreet.source()->id());
+      pAgent = std::make_unique<Agent>(m_nInsertedAgents,
+                                       this->time_step(),
+                                       optDestinationId,
+                                       srcStreet.source()->id());
       pAgent->setSrcStreetId(srcStreet.id());
       pAgent->setNextStreetId(srcStreet.id());
     }
@@ -1911,14 +1866,6 @@ namespace dsf::mobility {
             "\"RANDOM\", \"RANDOM_WEIGHTED_ORIGIN\", \"ODS\", \"RANDOM_ODS\", "
             "\"CONDITIONAL_RANDOM_ODS\" and \"UNIFORM\"");
     }
-  }
-
-  void FirstOrderDynamics::addItinerary(std::shared_ptr<Itinerary> itinerary) {
-    if (m_itineraries.contains(itinerary->id())) {
-      throw std::invalid_argument(
-          std::format("Itinerary with id {} already exists.", itinerary->id()));
-    }
-    m_itineraries.emplace(itinerary->id(), std::move(itinerary));
   }
 
   StepDataResult FirstOrderDynamics::evolve(StepDataRequest const& dataRequest) {
@@ -2054,7 +2001,7 @@ namespace dsf::mobility {
     });
     if (m_bIntelligentAgents) {
       // The traffic the intelligent agents plan on: no street changes until the next step
-      this->m_taskArena.execute([this] { m_router.updateCurrentWeights(this->graph()); });
+      this->m_taskArena.execute([this] { m_router.updateCurrentWeights(); });
     }
     spdlog::debug("Init evolving agents at time {}", this->time_step());
     this->m_evolveAgents();

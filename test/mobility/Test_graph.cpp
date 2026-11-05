@@ -1,4 +1,5 @@
 #include "dsf/mobility/RoadNetwork.hpp"
+#include "dsf/mobility/Router.hpp"
 #include "dsf/base/Node.hpp"
 #include "dsf/mobility/Road.hpp"
 #include "dsf/mobility/Street.hpp"
@@ -1535,705 +1536,6 @@ TEST_CASE("RoadNetwork") {
   }
 }
 
-TEST_CASE("Dijkstra") {
-  SUBCASE("Case 1") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 3.);
-    graph.addStreet(1, std::make_pair(1, 2), 2.);
-    graph.addStreet(2, std::make_pair(2, 3), 4.);
-    graph.addStreet(3, std::make_pair(3, 0), 5.);
-    graph.addStreet(4, std::make_pair(0, 2), 6.);
-
-    auto const pathMap = graph.allPathsTo(2);
-    CHECK_FALSE(pathMap.contains(2));
-    CHECK_EQ(pathMap.at(3).size(), 1);
-    CHECK_EQ(pathMap.at(3)[0], 0);
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 1);
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 2);
-  }
-
-  SUBCASE("Case 2") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 1.);
-    graph.addStreet(1, std::make_pair(1, 2), 1.);
-    graph.addStreet(2, std::make_pair(0, 2), 6.);
-
-    auto const pathMap = graph.allPathsTo(2);
-    CHECK_FALSE(pathMap.contains(2));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 1);
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 2);
-  }
-
-  SUBCASE("Case 3") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 5.);
-    graph.addStreet(1, std::make_pair(1, 2), 4.);
-    graph.addStreet(2, std::make_pair(0, 2), 6.);
-
-    auto const pathMap = graph.allPathsTo(2);
-    CHECK_FALSE(pathMap.contains(2));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 2);
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 2);
-  }
-
-  SUBCASE("Case 4") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 3.);
-    graph.addStreet(1, std::make_pair(0, 2), 1.);
-    graph.addStreet(2, std::make_pair(1, 2), 7.);
-    graph.addStreet(3, std::make_pair(2, 3), 2.);
-    graph.addStreet(4, std::make_pair(1, 4), 1.);
-    graph.addStreet(5, std::make_pair(1, 3), 5.);
-    graph.addStreet(6, std::make_pair(3, 4), 7.);
-    graph.addStreet(7, std::make_pair(1, 0), 3.);
-    graph.addStreet(8, std::make_pair(2, 0), 1.);
-    graph.addStreet(9, std::make_pair(2, 1), 7.);
-    graph.addStreet(10, std::make_pair(3, 2), 2.);
-    graph.addStreet(11, std::make_pair(4, 1), 1.);
-    graph.addStreet(12, std::make_pair(3, 1), 5.);
-    graph.addStreet(13, std::make_pair(4, 3), 7.);
-
-    auto const pathMap = graph.allPathsTo(4);
-    CHECK_FALSE(pathMap.contains(4));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 1);
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 4);
-    CHECK_EQ(pathMap.at(2).size(), 1);
-    CHECK_EQ(pathMap.at(2)[0], 0);
-    CHECK_EQ(pathMap.at(3).size(), 1);
-    CHECK_EQ(pathMap.at(3)[0], 1);
-  }
-
-  SUBCASE("Case 5") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 2.);
-    graph.addStreet(1, std::make_pair(0, 2), 6.);
-    graph.addStreet(2, std::make_pair(1, 3), 5.);
-    graph.addStreet(3, std::make_pair(2, 3), 8.);
-    graph.addStreet(4, std::make_pair(3, 5), 15.);
-    graph.addStreet(5, std::make_pair(3, 4), 10.);
-    graph.addStreet(6, std::make_pair(4, 5), 6.);
-    graph.addStreet(7, std::make_pair(4, 6), 2.);
-    graph.addStreet(8, std::make_pair(5, 6), 6.);
-    graph.addStreet(9, std::make_pair(1, 0), 2.);
-    graph.addStreet(10, std::make_pair(2, 0), 6.);
-    graph.addStreet(11, std::make_pair(3, 1), 5.);
-    graph.addStreet(12, std::make_pair(3, 2), 8.);
-    graph.addStreet(13, std::make_pair(5, 3), 15.);
-    graph.addStreet(14, std::make_pair(4, 3), 10.);
-    graph.addStreet(15, std::make_pair(5, 4), 6.);
-    graph.addStreet(16, std::make_pair(6, 4), 2.);
-    graph.addStreet(17, std::make_pair(6, 5), 6.);
-
-    auto const pathMap = graph.allPathsTo(6);
-    CHECK_FALSE(pathMap.contains(6));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 1);
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 3);
-    CHECK_EQ(pathMap.at(2).size(), 1);
-    CHECK_EQ(pathMap.at(2)[0], 3);
-    CHECK_EQ(pathMap.at(3).size(), 1);
-    CHECK_EQ(pathMap.at(3)[0], 4);
-    CHECK_EQ(pathMap.at(4).size(), 1);
-    CHECK_EQ(pathMap.at(4)[0], 6);
-    CHECK_EQ(pathMap.at(5).size(), 1);
-    CHECK_EQ(pathMap.at(5)[0], 6);
-  }
-
-  SUBCASE("Case 6") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 7.);
-    graph.addStreet(1, std::make_pair(0, 2), 9.);
-    graph.addStreet(2, std::make_pair(0, 5), 14.);
-    graph.addStreet(3, std::make_pair(1, 3), 15.);
-    graph.addStreet(4, std::make_pair(1, 2), 10.);
-    graph.addStreet(5, std::make_pair(2, 3), 11.);
-    graph.addStreet(6, std::make_pair(2, 5), 2.);
-    graph.addStreet(7, std::make_pair(3, 4), 6.);
-    graph.addStreet(8, std::make_pair(5, 4), 9.);
-    graph.addStreet(9, std::make_pair(1, 0), 7.);
-    graph.addStreet(10, std::make_pair(2, 0), 9.);
-    graph.addStreet(11, std::make_pair(5, 0), 14.);
-    graph.addStreet(12, std::make_pair(3, 1), 15.);
-    graph.addStreet(13, std::make_pair(2, 1), 10.);
-    graph.addStreet(14, std::make_pair(3, 2), 11.);
-    graph.addStreet(15, std::make_pair(5, 2), 2.);
-    graph.addStreet(16, std::make_pair(4, 3), 6.);
-    graph.addStreet(17, std::make_pair(4, 5), 9.);
-
-    auto const pathMap = graph.allPathsTo(4);
-    CHECK_FALSE(pathMap.contains(4));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 2);
-    CHECK_EQ(pathMap.at(1).size(), 2);
-    CHECK_EQ(pathMap.at(1)[0], 3);
-    CHECK_EQ(pathMap.at(1)[1], 2);
-    CHECK_EQ(pathMap.at(2).size(), 1);
-    CHECK_EQ(pathMap.at(2)[0], 5);
-    CHECK_EQ(pathMap.at(3).size(), 1);
-    CHECK_EQ(pathMap.at(3)[0], 4);
-    CHECK_EQ(pathMap.at(5).size(), 1);
-    CHECK_EQ(pathMap.at(5)[0], 4);
-  }
-
-  SUBCASE("Case 7") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(1, 2), 1.);
-    graph.addStreet(1, std::make_pair(0, 2), 6.);
-    graph.addStreet(2, std::make_pair(2, 0), 6.);
-
-    auto const pathMap = graph.allPathsTo(1);
-    CHECK(pathMap.empty());
-  }
-
-  SUBCASE("Case 8") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(1, 2), 1.);
-    graph.addStreet(1, std::make_pair(0, 2), 6.);
-    graph.addStreet(2, std::make_pair(2, 0), 6.);
-
-    CHECK_THROWS_AS(graph.allPathsTo(3), std::out_of_range);
-  }
-
-  SUBCASE("Case 9 - Equal Lengths") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
-    // check correct import
-    CHECK_EQ(graph.nNodes(), 120);
-    CHECK_EQ(graph.nEdges(), 436);
-
-    auto const path = graph.allPathsTo(118);
-    CHECK_EQ(path.size(), 119);
-    CHECK_FALSE(path.contains(118));
-  }
-}
-
-TEST_CASE("ShortestPath") {
-  SUBCASE("Simple Path") {
-    // Create a simple network: 0 -> 1 -> 2
-    //                          |         ^
-    //                          +-> 3 ----+
-    // Path 0->1->2 has length 200, path 0->3->2 has length 300
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
-    graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
-    graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
-    graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
-
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(1, std::make_pair(1, 2), 100.0);
-    graph.addStreet(2, std::make_pair(0, 3), 150.0);
-    graph.addStreet(3, std::make_pair(3, 2), 150.0);
-
-    auto pathMap = graph.shortestPath(0, 2);
-
-    // Verify the shortest path is 0 -> 1 -> 2
-    REQUIRE(pathMap.contains(0));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 1);
-
-    REQUIRE(pathMap.contains(1));
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 2);
-
-    // Target node should not be in the map
-    CHECK_FALSE(pathMap.contains(2));
-
-    // Node 3 is not on the shortest path
-    CHECK_FALSE(pathMap.contains(3));
-  }
-
-  SUBCASE("Same Source and Target") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-
-    auto pathMap = graph.shortestPath(0, 0);
-
-    // When source equals target, should return empty map (no hops needed)
-    CHECK(pathMap.empty());
-  }
-
-  SUBCASE("No Path Exists") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(1, std::make_pair(2, 3), 100.0);
-
-    auto pathMap = graph.shortestPath(0, 3);
-
-    // No path exists, should return empty map
-    CHECK(pathMap.empty());
-  }
-
-  SUBCASE("Invalid Source Node") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-
-    CHECK_THROWS_AS(graph.shortestPath(99, 1), std::out_of_range);
-  }
-
-  SUBCASE("Invalid Target Node") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-
-    CHECK_THROWS_AS(graph.shortestPath(0, 99), std::out_of_range);
-  }
-
-  SUBCASE("Multiple Paths - Choose Shortest") {
-    // Diamond-shaped network
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addStreet(0, std::make_pair(0, 1), 10.0);
-    graph.addStreet(1, std::make_pair(0, 2), 100.0);
-    graph.addStreet(2, std::make_pair(1, 3), 10.0);
-    graph.addStreet(3, std::make_pair(2, 3), 10.0);
-
-    auto pathMap = graph.shortestPath(0, 3);
-
-    // Verify the shortest path is 0 -> 1 -> 3 (length 20)
-    REQUIRE(pathMap.contains(0));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 1);
-
-    REQUIRE(pathMap.contains(1));
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 3);
-
-    // Node 2 is not on the shortest path (0->2->3 has length 110)
-    CHECK_FALSE(pathMap.contains(2));
-    CHECK_FALSE(pathMap.contains(3));
-  }
-
-  SUBCASE("Complex Network with Coordinates") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
-    graph.addNode(1, dsf::geometry::Point(10.0, 0.0));
-    graph.addNode(2, dsf::geometry::Point(0.0, 10.0));
-    graph.addNode(3, dsf::geometry::Point(10.0, 10.0));
-
-    graph.addStreet(0, std::make_pair(0, 1), 50.0);
-    graph.addStreet(1, std::make_pair(0, 2), 50.0);
-    graph.addStreet(2, std::make_pair(1, 3), 50.0);
-    graph.addStreet(3, std::make_pair(2, 3), 50.0);
-
-    auto pathMap = graph.shortestPath(0, 3);
-
-    // Both paths have same length (100), so node 0 should have two next hops
-    REQUIRE(pathMap.contains(0));
-    CHECK_EQ(pathMap.at(0).size(), 2);
-    CHECK(std::find(pathMap.at(0).begin(), pathMap.at(0).end(), 1) !=
-          pathMap.at(0).end());
-    CHECK(std::find(pathMap.at(0).begin(), pathMap.at(0).end(), 2) !=
-          pathMap.at(0).end());
-
-    REQUIRE(pathMap.contains(1));
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 3);
-
-    REQUIRE(pathMap.contains(2));
-    CHECK_EQ(pathMap.at(2).size(), 1);
-    CHECK_EQ(pathMap.at(2)[0], 3);
-  }
-
-  SUBCASE("Large Network") {
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length");
-    graph.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
-    graph.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
-
-    CHECK_EQ(graph.nNodes(), 120);
-    CHECK_EQ(graph.nEdges(), 436);
-
-    auto pathMap = graph.shortestPath(0, 119);
-
-    // Verify that a path exists
-    CHECK_FALSE(pathMap.empty());
-
-    // Source should have next hops
-    REQUIRE(pathMap.contains(0));
-    CHECK_GT(pathMap.at(0).size(), 0);
-
-    // Target should not be in the map
-    CHECK_FALSE(pathMap.contains(119));
-
-    // Verify connectivity: for each node in pathMap, verify edges exist to next hops
-    for (auto const& [nodeId, nextHops] : pathMap) {
-      for (auto const& nextHop : nextHops) {
-        CHECK_NOTHROW(graph.edge(nodeId, nextHop));
-      }
-    }
-  }
-
-  SUBCASE("Equivalent Paths with Threshold") {
-    // Create a network with two equal-length paths
-    // 0 -> 1 -> 3 (length 20)
-    // 0 -> 2 -> 3 (length 20)
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length", 0.01);
-    graph.addStreet(0, std::make_pair(0, 1), 10.0);
-    graph.addStreet(1, std::make_pair(0, 2), 10.0);
-    graph.addStreet(2, std::make_pair(1, 3), 10.0);
-    graph.addStreet(3, std::make_pair(2, 3), 10.0);
-
-    auto pathMap = graph.shortestPath(0, 3);
-
-    // Check that node 0 has multiple next hops (both 1 and 2)
-    REQUIRE(pathMap.contains(0));
-    CHECK_EQ(pathMap.at(0).size(), 2);
-    CHECK(std::find(pathMap.at(0).begin(), pathMap.at(0).end(), 1) !=
-          pathMap.at(0).end());
-    CHECK(std::find(pathMap.at(0).begin(), pathMap.at(0).end(), 2) !=
-          pathMap.at(0).end());
-
-    // Both intermediate nodes should lead to target
-    REQUIRE(pathMap.contains(1));
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 3);
-
-    REQUIRE(pathMap.contains(2));
-    CHECK_EQ(pathMap.at(2).size(), 1);
-    CHECK_EQ(pathMap.at(2)[0], 3);
-
-    // Test explode function to get all path combinations
-    auto allPaths = pathMap.explode(0, 3);
-    CHECK_EQ(allPaths.size(), 2);
-
-    // Verify both paths are present
-    bool foundPath1 = false;
-    bool foundPath2 = false;
-    for (auto const& path : allPaths) {
-      if (path.size() == 3 && path[0] == 0 && path[1] == 1 && path[2] == 3) {
-        foundPath1 = true;
-      }
-      if (path.size() == 3 && path[0] == 0 && path[1] == 2 && path[2] == 3) {
-        foundPath2 = true;
-      }
-    }
-    CHECK(foundPath1);
-    CHECK(foundPath2);
-  }
-
-  SUBCASE("PathCollection::explode - Complex Multiple Paths") {
-    /* Create a more complex network with multiple equivalent paths
-          1 -> 3
-        /        \
-        0        5
-        \      /
-          2 -> 4
-      All edges have equal length, so there are multiple shortest paths */
-    RoadNetwork graph{};
-    graph.setEdgeWeight("length", 0.01);
-    graph.addStreet(0, std::make_pair(0, 1), 10.0);
-    graph.addStreet(1, std::make_pair(0, 2), 10.0);
-    graph.addStreet(2, std::make_pair(1, 3), 10.0);
-    graph.addStreet(3, std::make_pair(2, 4), 10.0);
-    graph.addStreet(4, std::make_pair(3, 5), 10.0);
-    graph.addStreet(5, std::make_pair(4, 5), 10.0);
-
-    auto pathMap = graph.shortestPath(0, 5);
-
-    // Test explode function
-    auto allPaths = pathMap.explode(0, 5);
-    CHECK_EQ(allPaths.size(), 2);
-
-    // Verify the two paths are: 0 -> 1 -> 3 -> 5 and 0 -> 2 -> 4 -> 5
-    bool foundPath1 = false;
-    bool foundPath2 = false;
-    for (auto const& path : allPaths) {
-      CHECK_EQ(path.size(), 4);
-      CHECK_EQ(path[0], 0);
-      CHECK_EQ(path[3], 5);
-
-      if (path[1] == 1 && path[2] == 3) {
-        foundPath1 = true;
-      }
-      if (path[1] == 2 && path[2] == 4) {
-        foundPath2 = true;
-      }
-    }
-    CHECK(foundPath1);
-    CHECK(foundPath2);
-  }
-
-  SUBCASE("Threshold - deep alternative paths") {
-    RoadNetwork graph{};
-    graph.addStreet(999, std::make_pair(999, 0), 1.);
-    graph.addStreet(0, std::make_pair(0, 1), 3.);
-    graph.addStreet(1, std::make_pair(1, 2), 3.);
-    graph.addStreet(2, std::make_pair(2, 4), 3.);
-    graph.addStreet(3, std::make_pair(0, 3), 5.);
-    graph.addStreet(4, std::make_pair(3, 4), 5.);
-    graph.addStreet(5, std::make_pair(4, 5), 10.);
-    graph.setEdgeWeight("length", 0.7);
-
-    auto const pathMap = graph.allPathsTo(4);
-    CHECK_EQ(pathMap.at(0).size(), 2);
-
-    // Verify identical behavior matching edge path selections
-    auto const edgePathMap = graph.allEdgePathsTo(5);
-    REQUIRE(edgePathMap.contains(999));
-    CHECK_EQ(edgePathMap.at(999).size(), 2);
-    CHECK(std::find(edgePathMap.at(999).begin(), edgePathMap.at(999).end(), 0) !=
-          edgePathMap.at(999).end());  // s1 (Edge 0)
-    CHECK(std::find(edgePathMap.at(999).begin(), edgePathMap.at(999).end(), 3) !=
-          edgePathMap.at(999).end());  // s4 (Edge 3)
-  }
-
-  SUBCASE("Threshold - full path budget without accumulation") {
-    // Best path: 0 -> 1 -> 2 -> 5 = 10.0
-    // Alternative: 0 -> 1 -> 3 -> 5 = 10.89 (within 10%)
-    // Over-budget path: 0 -> 1 -> 3 -> 4 -> 5 = 11.39 (must be excluded)
-
-    RoadNetwork graph{};
-    graph.addStreet(0, std::make_pair(0, 1), 1.0);
-    graph.addStreet(1, std::make_pair(1, 2), 4.0);
-    graph.addStreet(2, std::make_pair(2, 5), 5.0);
-    graph.addStreet(3, std::make_pair(1, 3), 4.89);
-    graph.addStreet(4, std::make_pair(3, 5), 5.0);
-    graph.addStreet(5, std::make_pair(3, 4), 0.5);
-    graph.addStreet(6, std::make_pair(4, 5), 5.0);
-    graph.setEdgeWeight("length", 0.1);
-
-    auto const pathMap = graph.shortestPath(0, 5);
-
-    auto const allPaths = pathMap.explode(0, 5);
-    CHECK_EQ(allPaths.size(), 2);
-
-    bool foundBestPath{false};
-    bool foundValidAlternative{false};
-    bool foundOverBudgetPath{false};
-
-    for (auto const& path : allPaths) {
-      double totalWeight{0.0};
-      for (std::size_t i = 0; i + 1 < path.size(); ++i) {
-        totalWeight += graph.edge(path[i], path[i + 1]).length();
-      }
-      CHECK_LE(totalWeight, 11.0 + 1e-9);
-
-      if (path.size() == 4 && path[0] == 0 && path[1] == 1 && path[2] == 2 &&
-          path[3] == 5) {
-        foundBestPath = true;
-      }
-      if (path.size() == 4 && path[0] == 0 && path[1] == 1 && path[2] == 3 &&
-          path[3] == 5) {
-        foundValidAlternative = true;
-      }
-      if (path.size() == 5 && path[0] == 0 && path[1] == 1 && path[2] == 3 &&
-          path[3] == 4 && path[4] == 5) {
-        foundOverBudgetPath = true;
-      }
-    }
-
-    CHECK(foundBestPath);
-    CHECK(foundValidAlternative);
-    CHECK_FALSE(foundOverBudgetPath);
-  }
-
-  SUBCASE("PathCollection::explode - Many Equivalent Paths") {
-    // Create a grid-like network with many equivalent paths
-    //   0 -> 1 -> 2
-    //   |    |    |
-    //   v    v    v
-    //   3 -> 4 -> 5
-    // All horizontal and vertical edges have equal length
-    RoadNetwork graph{};
-    graph.addStreet(0, std::make_pair(0, 1), 10.0);
-    graph.addStreet(1, std::make_pair(1, 2), 10.0);
-    graph.addStreet(2, std::make_pair(0, 3), 10.0);
-    graph.addStreet(3, std::make_pair(1, 4), 10.0);
-    graph.addStreet(4, std::make_pair(2, 5), 10.0);
-    graph.addStreet(5, std::make_pair(3, 4), 10.0);
-    graph.addStreet(6, std::make_pair(4, 5), 10.0);
-    graph.setEdgeWeight("length", 0.01);
-
-    auto pathMap = graph.shortestPath(0, 5);
-
-    // Test explode function
-    auto allPaths = pathMap.explode(0, 5);
-
-    // All shortest paths from 0 to 5 have length 40 (4 edges).
-    // There are 3 such shortest paths: 0->1->2->5, 0->1->4->5, and 0->3->4->5.
-    CHECK_GT(allPaths.size(), 0);
-
-    // Verify all paths start at 0 and end at 5
-    for (auto const& path : allPaths) {
-      CHECK_EQ(path[0], 0);
-      CHECK_EQ(path[path.size() - 1], 5);
-    }
-  }
-
-  SUBCASE("PathCollection::explode - Single Path") {
-    // Create a simple linear network
-    RoadNetwork graph{};
-    graph.addStreet(0, std::make_pair(0, 1), 10.0);
-    graph.addStreet(1, std::make_pair(1, 2), 10.0);
-    graph.addStreet(2, std::make_pair(2, 3), 10.0);
-    graph.setEdgeWeight("length");
-
-    auto pathMap = graph.shortestPath(0, 3);
-
-    // Test explode function - should return only one path
-    auto allPaths = pathMap.explode(0, 3);
-    CHECK_EQ(allPaths.size(), 1);
-
-    auto const& path = allPaths.front();
-    CHECK_EQ(path.size(), 4);
-    CHECK_EQ(path[0], 0);
-    CHECK_EQ(path[1], 1);
-    CHECK_EQ(path[2], 2);
-    CHECK_EQ(path[3], 3);
-  }
-
-  SUBCASE("PathCollection::explode - No Path") {
-    // Create a PathCollection with no path to target
-    PathCollection pathMap;
-    pathMap[0] = {1, 2};
-    pathMap[1] = {3};
-    pathMap[2] = {4};
-    // No path from 0 to 5
-    CHECK_THROWS(pathMap.explode(0, 5));
-  }
-
-  SUBCASE("PathCollection::explode - Same Source and Target") {
-    // Test when source equals target
-    PathCollection pathMap;
-    pathMap[0] = {1, 2};
-    pathMap[1] = {3};
-
-    auto allPaths = pathMap.explode(0, 0);
-    CHECK_EQ(allPaths.size(), 1);
-
-    auto const& path = allPaths.front();
-    CHECK_EQ(path.size(), 1);
-    CHECK_EQ(path[0], 0);
-  }
-
-  SUBCASE("DefaultWeight_UsesStreetEstimatedTravelTime") {
-    Street::setEstimatedTravelTimeFunction(
-        [](Street const& street) { return street.length() / street.maxSpeed(); });
-
-    RoadNetwork graph{};
-    graph.addStreet(0, std::make_pair(0, 1), 1.0, 1.0);
-    graph.addStreet(1, std::make_pair(1, 2), 1.0, 1.0);
-    graph.addStreet(2, std::make_pair(0, 2), 1.5, 1.0);
-
-    auto defaultPath = graph.shortestPath(0, 2);
-    REQUIRE(defaultPath.contains(0));
-    REQUIRE_EQ(defaultPath.at(0).size(), 1);
-    CHECK_EQ(defaultPath.at(0).at(0), 2);
-
-    Street::setEstimatedTravelTimeFunction([](Street const& street) {
-      auto const t = street.length() / street.maxSpeed();
-      return t * t;
-    });
-
-    auto customPath = graph.shortestPath(0, 2);
-    REQUIRE(customPath.contains(0));
-    REQUIRE_EQ(customPath.at(0).size(), 1);
-    CHECK_EQ(customPath.at(0).at(0), 1);
-
-    Street::setEstimatedTravelTimeFunction([](Street const& resetStreet) {
-      return resetStreet.length() / resetStreet.maxSpeed();
-    });
-  }
-
-  SUBCASE("TravelTimeWeight_UsesStreetEstimatedTravelTime") {
-    Street::setEstimatedTravelTimeFunction(
-        [](Street const& street) { return street.length() / street.maxSpeed(); });
-
-    RoadNetwork graph{};
-    graph.setEdgeWeight("traveltime");
-    graph.addStreet(0, std::make_pair(0, 1), 1.0, 1.0);
-    graph.addStreet(1, std::make_pair(1, 2), 1.0, 1.0);
-    graph.addStreet(2, std::make_pair(0, 2), 1.5, 1.0);
-
-    auto defaultPath = graph.shortestPath(0, 2);
-    REQUIRE(defaultPath.contains(0));
-    REQUIRE_EQ(defaultPath.at(0).size(), 1);
-    CHECK_EQ(defaultPath.at(0).at(0), 2);
-
-    Street::setEstimatedTravelTimeFunction([](Street const& street) {
-      auto const t = street.length() / street.maxSpeed();
-      return t * t;
-    });
-
-    auto customPath = graph.shortestPath(0, 2);
-    REQUIRE(customPath.contains(0));
-    REQUIRE_EQ(customPath.at(0).size(), 1);
-    CHECK_EQ(customPath.at(0).at(0), 1);
-
-    Street::setEstimatedTravelTimeFunction([](Street const& resetStreet) {
-      return resetStreet.length() / resetStreet.maxSpeed();
-    });
-  }
-
-  SUBCASE("TravelTimeWeight_AddsQueueDelay") {
-    Street::setEstimatedTravelTimeFunction(
-        [](Street const& street) { return street.length() / street.maxSpeed(); });
-
-    RoadNetwork graph{};
-    graph.setEdgeWeight("traveltime");
-    // 0 -> 1 -> 2 takes 20 s, the two-lane 0 -> 2 takes 12 s plus its queue time
-    graph.addStreet(0, std::make_pair(0, 1), 100., 10.);
-    graph.addStreet(1, std::make_pair(1, 2), 100., 10.);
-    graph.addStreet(2, std::make_pair(0, 2), 120., 10., 2);
-    graph.addStreet(3, std::make_pair(4, 0), 100., 10.);
-    graph.addStreet(4, std::make_pair(2, 3), 100., 10.);
-
-    auto& queuedStreet = graph.edge(2);
-    queuedStreet.addAgent(std::make_unique<Agent>(0, 0), 0);
-    queuedStreet.enqueue(0);
-
-    // One agent over two lanes: 12 + 0.5 / 0.1 = 17 s < 20 s
-    queuedStreet.setTransportCapacity(0.1);
-    auto nodePath = graph.shortestPath(0, 2);
-    REQUIRE(nodePath.contains(0));
-    REQUIRE_EQ(nodePath.at(0).size(), 1);
-    CHECK_EQ(nodePath.at(0).at(0), 2);
-    auto edgePath = graph.allEdgePathsTo(4);
-    REQUIRE(edgePath.contains(3));
-    REQUIRE_EQ(edgePath.at(3).size(), 1);
-    CHECK_EQ(edgePath.at(3).at(0), 2);
-
-    // 12 + 0.5 / 0.05 = 22 s > 20 s
-    queuedStreet.setTransportCapacity(0.05);
-    nodePath = graph.shortestPath(0, 2);
-    REQUIRE(nodePath.contains(0));
-    REQUIRE_EQ(nodePath.at(0).size(), 1);
-    CHECK_EQ(nodePath.at(0).at(0), 1);
-    edgePath = graph.allEdgePathsTo(4);
-    REQUIRE(edgePath.contains(3));
-    REQUIRE_EQ(edgePath.at(3).size(), 1);
-    CHECK_EQ(edgePath.at(3).at(0), 0);
-
-    Street::setEstimatedTravelTimeFunction([](Street const& resetStreet) {
-      return resetStreet.length() / resetStreet.maxSpeed();
-    });
-  }
-}
-
 TEST_CASE("RoadStatus") {
   SUBCASE("setStreetStatusById") {
     RoadNetwork graph{};
@@ -2302,202 +1604,6 @@ TEST_CASE("RoadStatus") {
     graph.setStreetStatusByName("Roma", RoadStatus::CLOSED);
     CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::CLOSED);
     CHECK_EQ(graph.edge(1).roadStatus(), RoadStatus::CLOSED);
-  }
-}
-
-TEST_CASE("ShortestPath with closed roads") {
-  SUBCASE("Closed road forces alternative path") {
-    // Create a network: 0 -> 1 -> 2
-    //                    |         ^
-    //                    +-> 3 ----+
-    // Path 0->1->2 has length 200, path 0->3->2 has length 300
-    // If we close 0->1, shortest path should go through 3
-    RoadNetwork graph{};
-    graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
-    graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
-    graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
-    graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
-
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(1, std::make_pair(1, 2), 100.0);
-    graph.addStreet(2, std::make_pair(0, 3), 150.0);
-    graph.addStreet(3, std::make_pair(3, 2), 150.0);
-    graph.setEdgeWeight("length");
-
-    // Initially, shortest path is 0 -> 1 -> 2
-    auto pathMap = graph.shortestPath(0, 2);
-    REQUIRE(pathMap.contains(0));
-    CHECK_EQ(pathMap.at(0)[0], 1);
-
-    // Close street 0->1
-    graph.setStreetStatusById(0, RoadStatus::CLOSED);
-
-    // Now shortest path should be 0 -> 3 -> 2
-    pathMap = graph.shortestPath(0, 2);
-    REQUIRE(pathMap.contains(0));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 3);
-
-    REQUIRE(pathMap.contains(3));
-    CHECK_EQ(pathMap.at(3).size(), 1);
-    CHECK_EQ(pathMap.at(3)[0], 2);
-  }
-
-  SUBCASE("No path when all routes closed") {
-    // Create a linear network: 0 -> 1 -> 2
-    RoadNetwork graph{};
-    graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
-    graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
-    graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
-
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(1, std::make_pair(1, 2), 100.0);
-    graph.setEdgeWeight("length");
-
-    // Close the middle street
-    graph.setStreetStatusById(1, RoadStatus::CLOSED);
-
-    // No path should exist from 0 to 2
-    auto pathMap = graph.shortestPath(0, 2);
-    CHECK(pathMap.empty());
-  }
-
-  SUBCASE("Reopening road restores path") {
-    RoadNetwork graph{};
-    graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
-    graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
-    graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
-
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(1, std::make_pair(1, 2), 100.0);
-    graph.setEdgeWeight("length", 0.);
-
-    // Close and then reopen
-    graph.setStreetStatusById(0, RoadStatus::CLOSED);
-    auto pathMap = graph.shortestPath(0, 2);
-    CHECK(pathMap.empty());
-
-    graph.setStreetStatusById(0, RoadStatus::OPEN);
-    pathMap = graph.shortestPath(0, 2);
-    CHECK_FALSE(pathMap.empty());
-    REQUIRE(pathMap.contains(0));
-    CHECK_EQ(pathMap.at(0)[0], 1);
-  }
-}
-
-TEST_CASE("allPathsTo with closed roads") {
-  SUBCASE("Closed road excluded from paths") {
-    // Create a network: 0 -> 1 -> 2
-    //                    |         ^
-    //                    +-> 3 ----+
-    RoadNetwork graph{};
-    graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
-    graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
-    graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
-    graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
-
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(1, std::make_pair(1, 2), 100.0);
-    graph.addStreet(2, std::make_pair(0, 3), 150.0);
-    graph.addStreet(3, std::make_pair(3, 2), 150.0);
-    graph.addStreet(4, std::make_pair(2, 4), 100.0);
-    graph.setEdgeWeight("length");
-
-    // Close street 0->1
-    graph.setStreetStatusById(0, RoadStatus::CLOSED);
-
-    // allPathsTo should not include node 1 as next hop from 0
-    auto pathMap = graph.allPathsTo(2);
-
-    REQUIRE(pathMap.contains(0));
-    // Node 0 should only have node 3 as next hop (not 1, since 0->1 is closed)
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 3);
-
-    // Node 1 should still have a path to 2 via 1->2 (which is still open)
-    REQUIRE(pathMap.contains(1));
-    CHECK_EQ(pathMap.at(1).size(), 1);
-    CHECK_EQ(pathMap.at(1)[0], 2);
-
-    // Test allEdgePathsTo mirrors this filtering with edge IDs
-    auto edgePathMap = graph.allEdgePathsTo(4);
-
-    CHECK_EQ(edgePathMap.size(), 3);
-
-    REQUIRE(edgePathMap.contains(1));
-    CHECK_EQ(edgePathMap.at(1).size(), 1);
-    CHECK_EQ(edgePathMap.at(1)[0], 4);  // Outgoing s24 (Edge 4)
-
-    REQUIRE(edgePathMap.contains(2));
-    CHECK_EQ(edgePathMap.at(2).size(), 1);
-    CHECK_EQ(edgePathMap.at(2)[0], 3);  // Outgoing s32 (Edge 3)
-
-    REQUIRE(edgePathMap.contains(3));
-    CHECK_EQ(edgePathMap.at(3).size(), 1);
-    CHECK_EQ(edgePathMap.at(3)[0], 4);  // Outgoing s24 (Edge 4)
-  }
-
-  SUBCASE("All paths blocked to target") {
-    RoadNetwork graph{};
-    graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
-    graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
-    graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
-
-    graph.addStreet(0, std::make_pair(0, 1), 100.0);
-    graph.addStreet(1, std::make_pair(1, 2), 100.0);
-    graph.addStreet(2, std::make_pair(2, 3), 100.0);
-    graph.setEdgeWeight("length");
-
-    // Close the only path to node 2
-    graph.setStreetStatusById(1, RoadStatus::CLOSED);
-
-    auto pathMap = graph.allPathsTo(2);
-    CHECK(pathMap.empty());
-
-    // Test allEdgePathsTo behaves identically
-    auto edgePathMap = graph.allEdgePathsTo(2);
-    CHECK(edgePathMap.empty());
-  }
-
-  SUBCASE("Closing road by name affects allPathsTo") {
-    RoadNetwork graph{};
-    graph.addNode(0, dsf::geometry::Point(0.0, 0.0));
-    graph.addNode(1, dsf::geometry::Point(1.0, 0.0));
-    graph.addNode(2, dsf::geometry::Point(2.0, 0.0));
-    graph.addNode(3, dsf::geometry::Point(1.0, 1.0));
-
-    graph.addStreet(0, std::make_pair(0, 1), 100.0, 13.8888, 1, "Main Road");
-    graph.addStreet(1, std::make_pair(1, 2), 100.0, 13.8888, 1, "Main Road");
-    graph.addStreet(2, std::make_pair(0, 3), 150.0, 13.8888, 1, "Side Road");
-    graph.addStreet(3, std::make_pair(3, 2), 150.0, 13.8888, 1, "Side Road");
-    graph.addStreet(4, std::make_pair(2, 4), 100.0, 13.8888, 1, "Unknown Road");
-    graph.setEdgeWeight("length");
-
-    // Close all "Main Road" streets
-    graph.setStreetStatusByName("Main Road", RoadStatus::CLOSED);
-
-    auto pathMap = graph.allPathsTo(2);
-
-    // From node 0, only path should be via node 3
-    REQUIRE(pathMap.contains(0));
-    CHECK_EQ(pathMap.at(0).size(), 1);
-    CHECK_EQ(pathMap.at(0)[0], 3);
-
-    // Node 1 should have no path to 2 (since 1->2 is closed)
-    CHECK_FALSE(pathMap.contains(1));
-
-    // Test allEdgePathsTo honors the named infrastructure exclusions
-    auto edgePathMap = graph.allEdgePathsTo(4);
-
-    CHECK_EQ(edgePathMap.size(), 2);
-
-    REQUIRE(edgePathMap.contains(2));
-    CHECK_EQ(edgePathMap.at(2).size(), 1);
-    CHECK_EQ(edgePathMap.at(2)[0], 3);  // Outgoing s32 (Edge 3)
-
-    REQUIRE(edgePathMap.contains(3));
-    CHECK_EQ(edgePathMap.at(3).size(), 1);
-    CHECK_EQ(edgePathMap.at(3)[0], 4);  // Outgoing s24 (Edge 4)
   }
 }
 
@@ -2669,8 +1775,7 @@ TEST_CASE("BetweennessCentrality") {
     graph.addStreet(0, std::make_pair(0, 1), 10.0);
     graph.addStreet(1, std::make_pair(1, 2), 10.0);
     graph.addStreet(2, std::make_pair(2, 3), 10.0);
-    graph.setEdgeWeight("uniform");
-    graph.computeBetweennessCentralities();
+    graph.computeBetweennessCentralities(Router::edgeWeightFunction("uniform"));
 
     // Node 0: source only, never an intermediate -> BC = 0
     REQUIRE(graph.node(0).getAttribute<double>("betweennessCentrality").has_value());
@@ -2700,8 +1805,7 @@ TEST_CASE("BetweennessCentrality") {
     graph.addStreet(0, std::make_pair(0, 1), 10.0);
     graph.addStreet(1, std::make_pair(0, 2), 10.0);
     graph.addStreet(2, std::make_pair(0, 3), 10.0);
-    graph.setEdgeWeight("uniform");
-    graph.computeBetweennessCentralities();
+    graph.computeBetweennessCentralities(Router::edgeWeightFunction("uniform"));
 
     for (Id i = 0; i <= 3; ++i) {
       REQUIRE(graph.node(i).getAttribute<double>("betweennessCentrality").has_value());
@@ -2724,8 +1828,7 @@ TEST_CASE("BetweennessCentrality") {
     graph.addStreet(1, std::make_pair(0, 2), 10.0);
     graph.addStreet(2, std::make_pair(1, 3), 10.0);
     graph.addStreet(3, std::make_pair(2, 3), 30.0);
-    graph.setEdgeWeight("length");
-    graph.computeBetweennessCentralities();
+    graph.computeBetweennessCentralities(Router::edgeWeightFunction("length"));
 
     // Node 1 is on the only shortest path 0->3 -> BC = 1
     REQUIRE(graph.node(1).getAttribute<double>("betweennessCentrality").has_value());
@@ -2741,8 +1844,7 @@ TEST_CASE("BetweennessCentrality") {
   SUBCASE("Single edge") {
     RoadNetwork graph{};
     graph.addStreet(0, std::make_pair(0, 1), 10.0);
-    graph.setEdgeWeight("uniform");
-    graph.computeBetweennessCentralities();
+    graph.computeBetweennessCentralities(Router::edgeWeightFunction("uniform"));
 
     REQUIRE(graph.node(0).getAttribute<double>("betweennessCentrality").has_value());
     CHECK_EQ(*graph.node(0).getAttribute<double>("betweennessCentrality"),
@@ -2758,8 +1860,7 @@ TEST_CASE("BetweennessCentrality") {
     RoadNetwork graph{};
     graph.addStreet(0, std::make_pair(0, 1), 10.0);
     graph.addStreet(1, std::make_pair(2, 3), 10.0);
-    graph.setEdgeWeight("uniform");
-    graph.computeBetweennessCentralities();
+    graph.computeBetweennessCentralities(Router::edgeWeightFunction("uniform"));
 
     for (Id i = 0; i <= 3; ++i) {
       REQUIRE(graph.node(i).getAttribute<double>("betweennessCentrality").has_value());
@@ -2780,8 +1881,7 @@ TEST_CASE("EdgeBetweennessCentrality") {
     graph.addStreet(0, std::make_pair(0, 1), 10.0);
     graph.addStreet(1, std::make_pair(1, 2), 10.0);
     graph.addStreet(2, std::make_pair(2, 3), 10.0);
-    graph.setEdgeWeight("uniform");
-    graph.computeEdgeBetweennessCentralities();
+    graph.computeEdgeBetweennessCentralities(Router::edgeWeightFunction("uniform"));
 
     REQUIRE(graph.edge(static_cast<Id>(0))
                 .getAttribute<double>("betweennessCentrality")
@@ -2822,8 +1922,7 @@ TEST_CASE("EdgeBetweennessCentrality") {
     graph.addStreet(1, std::make_pair(0, 2), 10.0);
     graph.addStreet(2, std::make_pair(1, 3), 10.0);
     graph.addStreet(3, std::make_pair(2, 3), 30.0);
-    graph.setEdgeWeight("length");
-    graph.computeEdgeBetweennessCentralities();
+    graph.computeEdgeBetweennessCentralities(Router::edgeWeightFunction("length"));
 
     // Edge 0->1: used by 0->1 and 0->3 (via 0->1->3) => EBC = 2
     REQUIRE(graph.edge(static_cast<Id>(0))
@@ -2861,8 +1960,7 @@ TEST_CASE("EdgeBetweennessCentrality") {
   SUBCASE("Single edge") {
     RoadNetwork graph{};
     graph.addStreet(0, std::make_pair(0, 1), 10.0);
-    graph.setEdgeWeight("uniform");
-    graph.computeEdgeBetweennessCentralities();
+    graph.computeEdgeBetweennessCentralities(Router::edgeWeightFunction("uniform"));
 
     // Only one path: 0->1, using edge 0 => EBC = 1
     REQUIRE(graph.edge(static_cast<Id>(0))
@@ -2882,8 +1980,8 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     standardGraph.addStreet(0, std::make_pair(0, 1), 10.0);
     standardGraph.addStreet(1, std::make_pair(1, 2), 10.0);
     standardGraph.addStreet(2, std::make_pair(2, 3), 10.0);
-    standardGraph.setEdgeWeight("uniform");
-    standardGraph.computeEdgeBetweennessCentralities();
+    standardGraph.computeEdgeBetweennessCentralities(
+        Router::edgeWeightFunction("uniform"));
 
     size_t const nNodes = standardGraph.nNodes();
     double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
@@ -2907,8 +2005,8 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     yenGraph.addStreet(0, std::make_pair(0, 1), 10.0);
     yenGraph.addStreet(1, std::make_pair(1, 2), 10.0);
     yenGraph.addStreet(2, std::make_pair(2, 3), 10.0);
-    yenGraph.setEdgeWeight("uniform");
-    yenGraph.computeEdgeKBetweennessCentralities(1);
+    yenGraph.computeEdgeKBetweennessCentralities(Router::edgeWeightFunction("uniform"),
+                                                 1);
 
     auto const yenBc0 =
         yenGraph.edge(static_cast<Id>(0)).getAttribute<double>("betweennessCentrality");
@@ -2931,16 +2029,14 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     graphK1.addStreet(1, std::make_pair(0, 2), 10.0);
     graphK1.addStreet(2, std::make_pair(1, 3), 10.0);
     graphK1.addStreet(3, std::make_pair(2, 3), 10.0);
-    graphK1.setEdgeWeight("uniform");
-    graphK1.computeEdgeKBetweennessCentralities(1);
+    graphK1.computeEdgeKBetweennessCentralities(Router::edgeWeightFunction("uniform"), 1);
 
     RoadNetwork graphK2{};
     graphK2.addStreet(0, std::make_pair(0, 1), 10.0);
     graphK2.addStreet(1, std::make_pair(0, 2), 10.0);
     graphK2.addStreet(2, std::make_pair(1, 3), 10.0);
     graphK2.addStreet(3, std::make_pair(2, 3), 10.0);
-    graphK2.setEdgeWeight("uniform");
-    graphK2.computeEdgeKBetweennessCentralities(2);
+    graphK2.computeEdgeKBetweennessCentralities(Router::edgeWeightFunction("uniform"), 2);
 
     bool hasStrictIncrease = false;
     Id const edgeIds[] = {
@@ -2969,8 +2065,8 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     standardGraph.addStreet(1, std::make_pair(0, 2), 10.0);
     standardGraph.addStreet(2, std::make_pair(1, 3), 10.0);
     standardGraph.addStreet(3, std::make_pair(2, 3), 10.0);
-    standardGraph.setEdgeWeight("uniform");
-    standardGraph.computeEdgeBetweennessCentralities();
+    standardGraph.computeEdgeBetweennessCentralities(
+        Router::edgeWeightFunction("uniform"));
 
     std::size_t const nNodes = standardGraph.nNodes();
     double const norm = static_cast<double>((nNodes - 1) * (nNodes - 2));
@@ -2981,8 +2077,8 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     yenGraph.addStreet(1, std::make_pair(0, 2), 10.0);
     yenGraph.addStreet(2, std::make_pair(1, 3), 10.0);
     yenGraph.addStreet(3, std::make_pair(2, 3), 10.0);
-    yenGraph.setEdgeWeight("uniform");
-    yenGraph.computeEdgeKBetweennessCentralities(1);
+    yenGraph.computeEdgeKBetweennessCentralities(Router::edgeWeightFunction("uniform"),
+                                                 1);
 
     Id const edgeIds[] = {
         static_cast<Id>(0), static_cast<Id>(1), static_cast<Id>(2), static_cast<Id>(3)};
@@ -3004,8 +2100,7 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     graph.addStreet(1, std::make_pair(0, 2), 10.0);
     graph.addStreet(2, std::make_pair(1, 3), 10.0);
     graph.addStreet(3, std::make_pair(2, 3), 10.0);
-    graph.setEdgeWeight("uniform");
-    graph.computeEdgeKBetweennessCentralities(2);
+    graph.computeEdgeKBetweennessCentralities(Router::edgeWeightFunction("uniform"), 2);
 
     Id const edgeIds[] = {
         static_cast<Id>(0), static_cast<Id>(1), static_cast<Id>(2), static_cast<Id>(3)};
@@ -3034,8 +2129,7 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     graph.addStreet(3, std::make_pair(2, 4), 10.0);
     graph.addStreet(4, std::make_pair(0, 3), 10.0);
     graph.addStreet(5, std::make_pair(3, 4), 10.0);
-    graph.setEdgeWeight("uniform");
-    graph.computeEdgeKBetweennessCentralities(3);
+    graph.computeEdgeKBetweennessCentralities(Router::edgeWeightFunction("uniform"), 3);
 
     // Verify all 6 edges appear in the computations
     Id const edgeIds[] = {static_cast<Id>(0),
@@ -3066,8 +2160,7 @@ TEST_CASE("computeEdgeKBetweennessCentralities") {
     graphK2.addStreet(3, std::make_pair(2, 4), 10.0);
     graphK2.addStreet(4, std::make_pair(0, 3), 10.0);
     graphK2.addStreet(5, std::make_pair(3, 4), 10.0);
-    graphK2.setEdgeWeight("uniform");
-    graphK2.computeEdgeKBetweennessCentralities(2);
+    graphK2.computeEdgeKBetweennessCentralities(Router::edgeWeightFunction("uniform"), 2);
 
     bool hasIncrease = false;
     for (Id const edgeId : edgeIds) {

@@ -2,7 +2,6 @@
 
 #include "Edge.hpp"
 #include "Node.hpp"
-#include "PathCollection.hpp"
 #include "../utility/PtrMapView.hpp"
 #include "../utility/Typedef.hpp"
 
@@ -32,21 +31,12 @@
 #include <tbb/parallel_for.h>
 
 namespace dsf {
-  /// @brief Absolute tolerance used when comparing path costs
-  inline constexpr double PATH_COST_EPS = 1e-12;
-
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
   class Network {
   protected:
     std::unordered_map<Id, std::unique_ptr<node_t>> m_nodes;
     std::unordered_map<Id, std::unique_ptr<edge_t>> m_edges;
-
-    std::function<double(edge_t const&)> m_weightFunction =
-        []([[maybe_unused]] edge_t const& edge) {
-          return 1.0;  // Default = unweighted graph
-        };
-    std::optional<double> m_weightThreshold = std::nullopt;
 
     static constexpr auto m_cantorHash(Id u, Id v) noexcept {
       return ((u + v) * (u + v + 1)) / 2 + v;
@@ -98,13 +88,10 @@ namespace dsf {
       return newNode;
     }
 
-  private:
-    std::unordered_map<Id, double> m_computeDistancesToTarget(Id const targetNodeId) const;
-
-    std::unordered_map<Id, double> m_computeDistancesFromSource(
-        Id const sourceNodeId) const;
-
   public:
+    /// @brief An edge cost function
+    using EdgeWeight = std::function<double(edge_t const&)>;
+
     /// @brief Construct a new empty Network object
     Network() = default;
 
@@ -143,16 +130,6 @@ namespace dsf {
                std::constructible_from<TEdge, Id, std::pair<Node*, Node*>, TArgs...>)
     TEdge& addEdge(Id const edgeId, std::pair<Id, Id> const nodeIds, TArgs&&... args);
 
-    virtual void setEdgeWeight(std::string_view const strv_weight,
-                               std::optional<double> const threshold = std::nullopt) = 0;
-    /// @brief Get the weight of an edge, according to the current weight function
-    /// @param edge The edge
-    /// @return double The edge's weight
-    inline double edgeWeight(edge_t const& edge) const { return m_weightFunction(edge); }
-    /// @brief Get the relative tolerance on path costs set with the weight function
-    /// @return std::optional<double> The threshold, if any
-    inline auto weightThreshold() const noexcept { return m_weightThreshold; }
-
     /// @brief Get a node by id
     /// @param nodeId The id of the node to get
     /// @return const node_t& A const reference to the node with the given id
@@ -190,33 +167,13 @@ namespace dsf {
       return dynamic_cast<TEdge&>(edge(edgeId));
     }
 
-    /// @brief Perform a global Dijkstra search to a target node from all other nodes in the graph
-    /// @param threshold Relative tolerance on full path cost from each node to the target
-    /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target
-    /// @throws std::out_of_range if the target node does not exist
-    /// @details Keeps only transitions that strictly decrease the precomputed
-    ///          shortest distance to target. This makes the hop graph acyclic,
-    ///          so PathCollection::explode remains finite.
-    PathCollection allPathsTo(Id const targetId) const;
-
-    /// @brief Find the shortest path between two nodes using Dijkstra's algorithm
-    /// @param sourceId The id of the source node
-    /// @param targetId The id of the target node
-    /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target. Returns an empty map if no path exists
-    /// @throws std::out_of_range if the source or target node does not exist
-    /// @details Uses Dijkstra's algorithm to compute strict distances to target, then
-    ///          includes only transitions that both: (1) strictly decrease the
-    ///          target distance (acyclic), and (2) are consistent with shortest
-    ///          source-distance labels. The second constraint keeps the returned
-    ///          PathCollection sound when exploded, i.e. it avoids combining
-    ///          prefix-dependent hops into over-budget paths.
-    PathCollection shortestPath(Id const sourceId, Id const targetId) const;
-
     /// @brief Compute node weighted betweenness centralities using Brandes' algorithm
-    void computeBetweennessCentralities();
+    /// @param weight The cost of each edge
+    void computeBetweennessCentralities(EdgeWeight const& weight);
 
     /// @brief Compute edge weighted betweenness centralities using Brandes' algorithm
-    void computeEdgeBetweennessCentralities();
+    /// @param weight The cost of each edge
+    void computeEdgeBetweennessCentralities(EdgeWeight const& weight);
 
     /// @brief Compute edge betweenness centralities using Yen's K-shortest paths.
     ///
@@ -232,9 +189,11 @@ namespace dsf {
     ///          each thread maintains its own accumulator map, which are merged
     ///          sequentially once all threads finish.
     ///
+    /// @param  weight         The cost of each edge.
     /// @param  K              Maximum number of shortest paths per (s, t) pair.
     ///                        K = 1 reproduces single-shortest-path betweenness.
-    void computeEdgeKBetweennessCentralities(std::size_t const K);
+    void computeEdgeKBetweennessCentralities(EdgeWeight const& weight,
+                                             std::size_t const K);
   };
 
   template <typename node_t, typename edge_t>
@@ -355,308 +314,7 @@ namespace dsf {
 
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline std::unordered_map<Id, double>
-  Network<node_t, edge_t>::m_computeDistancesToTarget(Id const targetId) const {
-    std::unordered_map<Id, double> distToTarget;
-    distToTarget.reserve(nNodes());
-    for (auto const& pair : m_nodes) {
-      distToTarget.emplace(pair.first, std::numeric_limits<double>::infinity());
-    }
-
-    std::priority_queue<std::pair<double, Id>,
-                        std::vector<std::pair<double, Id>>,
-                        std::greater<>>
-        pq;
-
-    distToTarget[targetId] = 0.0;
-    pq.push({0.0, targetId});
-
-    while (!pq.empty()) {
-      auto const [currentDist, currentNode] = pq.top();
-      pq.pop();
-
-      if (currentDist > distToTarget.at(currentNode)) {
-        continue;
-      }
-
-      for (auto const* pInEdge : m_inEdges(this->node(currentNode))) {
-        auto const& inEdge{*pInEdge};
-        if (!inEdge.isActive()) {
-          continue;
-        }
-
-        auto const neighborId = inEdge.source()->id();
-        auto const candidateDistance = currentDist + m_weightFunction(inEdge);
-        auto& neighborDist = distToTarget.at(neighborId);
-        if (candidateDistance < neighborDist) {
-          neighborDist = candidateDistance;
-          pq.push({candidateDistance, neighborId});
-        }
-      }
-    }
-
-    return distToTarget;
-  }
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline std::unordered_map<Id, double>
-  Network<node_t, edge_t>::m_computeDistancesFromSource(Id const sourceId) const {
-    std::unordered_map<Id, double> distFromSource;
-    distFromSource.reserve(nNodes());
-    for (auto const& pair : m_nodes) {
-      distFromSource.emplace(pair.first, std::numeric_limits<double>::infinity());
-    }
-
-    std::priority_queue<std::pair<double, Id>,
-                        std::vector<std::pair<double, Id>>,
-                        std::greater<>>
-        pq;
-
-    distFromSource[sourceId] = 0.0;
-    pq.push({0.0, sourceId});
-
-    while (!pq.empty()) {
-      auto const [currentDist, currentNode] = pq.top();
-      pq.pop();
-
-      if (currentDist > distFromSource.at(currentNode)) {
-        continue;
-      }
-
-      for (auto const* pOutEdge : m_outEdges(this->node(currentNode))) {
-        auto const& outEdge{*pOutEdge};
-        if (!outEdge.isActive()) {
-          continue;
-        }
-
-        auto const neighborId = outEdge.target()->id();
-        auto const candidateDistance = currentDist + m_weightFunction(outEdge);
-        auto& neighborDist = distFromSource.at(neighborId);
-        if (candidateDistance < neighborDist) {
-          neighborDist = candidateDistance;
-          pq.push({candidateDistance, neighborId});
-        }
-      }
-    }
-
-    return distFromSource;
-  }
-
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline PathCollection Network<node_t, edge_t>::allPathsTo(Id const targetId) const {
-    auto const distToTarget = m_computeDistancesToTarget(targetId);
-    PathCollection result;
-    for (auto const& [nodeId, pNode] : m_nodes) {
-      if (nodeId == targetId) {
-        continue;
-      }
-
-      auto const nodeDistToTarget = distToTarget.at(nodeId);
-      if (nodeDistToTarget == std::numeric_limits<double>::infinity()) {
-        continue;
-      }
-
-      double nodeBudget = nodeDistToTarget;
-      if (m_weightThreshold.has_value()) {
-        nodeBudget *= (1.0 + *m_weightThreshold);
-      }
-      auto const outgoingEdges{m_outEdges(*pNode)};
-      std::vector<Id> hops;
-      hops.reserve(outgoingEdges.size());
-
-      for (auto const* pOutEdge : outgoingEdges) {
-        auto const& outEdge{*pOutEdge};
-        if (!outEdge.isActive()) {
-          continue;
-        }
-
-        auto const nextNodeId = outEdge.target()->id();
-        auto const nextDistToTarget = distToTarget.at(nextNodeId);
-        if (nextDistToTarget == std::numeric_limits<double>::infinity()) {
-          continue;
-        }
-
-        // Keep hop transitions acyclic so path expansion remains finite.
-        if (nextDistToTarget + PATH_COST_EPS >= nodeDistToTarget) {
-          continue;
-        }
-
-        auto const fullPathCost = m_weightFunction(outEdge) + nextDistToTarget;
-        if (fullPathCost <= nodeBudget + PATH_COST_EPS &&
-            std::ranges::find(hops, nextNodeId) == hops.end()) {
-          hops.push_back(nextNodeId);
-        }
-      }
-
-      if (!hops.empty()) {
-        result[nodeId] = hops;
-      }
-    }
-
-    return result;
-  }
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  inline PathCollection Network<node_t, edge_t>::shortestPath(Id const sourceId,
-                                                              Id const targetId) const {
-    if (sourceId == targetId) {
-      return PathCollection{};
-    }
-    if (!this->nodes().contains(sourceId)) {
-      throw std::out_of_range(
-          std::format("Source node with id {} does not exist in the graph", sourceId));
-    }
-    if (!this->nodes().contains(targetId)) {
-      throw std::out_of_range(
-          std::format("Target node with id {} does not exist in the graph", targetId));
-    }
-
-    auto const distToTarget = m_computeDistancesToTarget(targetId);
-
-    auto const sourceBestDistance = distToTarget.at(sourceId);
-    if (sourceBestDistance == std::numeric_limits<double>::infinity()) {
-      return PathCollection{};
-    }
-
-    double sourceBudget = sourceBestDistance;
-    if (m_weightThreshold.has_value()) {
-      sourceBudget *= (1.0 + *m_weightThreshold);
-    }
-    auto const distFromSource = m_computeDistancesFromSource(sourceId);
-
-    PathCollection candidate;
-    std::unordered_map<Id, std::vector<Id>> reverseCandidate;
-
-    for (auto const& [nodeId, pNode] : this->nodes()) {
-      auto const nodeDistFromSource = distFromSource.at(nodeId);
-      auto const nodeDistToTarget = distToTarget.at(nodeId);
-      if (nodeDistFromSource == std::numeric_limits<double>::infinity() ||
-          nodeDistToTarget == std::numeric_limits<double>::infinity()) {
-        continue;
-      }
-
-      for (auto const* pOutEdge : m_outEdges(*pNode)) {
-        auto const& outEdge{*pOutEdge};
-        if (!outEdge.isActive()) {
-          continue;
-        }
-
-        auto const nextNodeId = outEdge.target()->id();
-        auto const nextDistToTarget = distToTarget.at(nextNodeId);
-        if (nextDistToTarget == std::numeric_limits<double>::infinity()) {
-          continue;
-        }
-
-        // Keep transitions acyclic and convergent for finite path expansion.
-        if (nextDistToTarget + PATH_COST_EPS >= nodeDistToTarget) {
-          continue;
-        }
-
-        auto const edgeWeight = m_weightFunction(outEdge);
-        auto const nextDistFromSource = distFromSource.at(nextNodeId);
-        auto const projectedDistFromSource = nodeDistFromSource + edgeWeight;
-
-        // Keep intermediate transitions source-distance-consistent so all
-        // prefixes to a node share the same cost label.
-        if (nextNodeId != targetId &&
-            (projectedDistFromSource > nextDistFromSource + PATH_COST_EPS ||
-             projectedDistFromSource + PATH_COST_EPS < nextDistFromSource)) {
-          continue;
-        }
-
-        auto const optimisticCost = projectedDistFromSource + nextDistToTarget;
-        if (optimisticCost > sourceBudget + PATH_COST_EPS) {
-          continue;
-        }
-
-        auto& hops = candidate[nodeId];
-        if (std::ranges::find(hops, nextNodeId) == hops.end()) {
-          hops.push_back(nextNodeId);
-
-          auto& reverseHops = reverseCandidate[nextNodeId];
-          if (std::ranges::find(reverseHops, nodeId) == reverseHops.end()) {
-            reverseHops.push_back(nodeId);
-          }
-        }
-      }
-    }
-
-    std::unordered_set<Id> reachableFromSource;
-    std::vector<Id> stack{sourceId};
-    while (!stack.empty()) {
-      auto const currentNode = stack.back();
-      stack.pop_back();
-
-      if (!reachableFromSource.insert(currentNode).second) {
-        continue;
-      }
-
-      auto const it = candidate.find(currentNode);
-      if (it == candidate.end()) {
-        continue;
-      }
-
-      for (auto const nextNodeId : it->second) {
-        if (!reachableFromSource.contains(nextNodeId)) {
-          stack.push_back(nextNodeId);
-        }
-      }
-    }
-
-    std::unordered_set<Id> canReachTarget;
-    stack.push_back(targetId);
-    while (!stack.empty()) {
-      auto const currentNode = stack.back();
-      stack.pop_back();
-
-      if (!canReachTarget.insert(currentNode).second) {
-        continue;
-      }
-
-      auto const it = reverseCandidate.find(currentNode);
-      if (it == reverseCandidate.end()) {
-        continue;
-      }
-
-      for (auto const previousNodeId : it->second) {
-        if (!canReachTarget.contains(previousNodeId)) {
-          stack.push_back(previousNodeId);
-        }
-      }
-    }
-
-    if (!reachableFromSource.contains(targetId)) {
-      return PathCollection{};
-    }
-
-    PathCollection result;
-    for (auto const& [nodeId, hops] : candidate) {
-      if (!reachableFromSource.contains(nodeId) || !canReachTarget.contains(nodeId)) {
-        continue;
-      }
-
-      std::vector<Id> filteredHops;
-      filteredHops.reserve(hops.size());
-      for (auto const nextNodeId : hops) {
-        if (reachableFromSource.contains(nextNodeId) &&
-            canReachTarget.contains(nextNodeId) &&
-            std::ranges::find(filteredHops, nextNodeId) == filteredHops.end()) {
-          filteredHops.push_back(nextNodeId);
-        }
-      }
-
-      if (!filteredHops.empty()) {
-        result[nodeId] = std::move(filteredHops);
-      }
-    }
-
-    return result;
-  }
-
-  template <typename node_t, typename edge_t>
-    requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  void Network<node_t, edge_t>::computeBetweennessCentralities() {
+  void Network<node_t, edge_t>::computeBetweennessCentralities(EdgeWeight const& weight) {
     for (auto& [nodeId, pNode] : m_nodes) {
       pNode->setAttribute("betweennessCentrality", 0.0);
     }
@@ -726,7 +384,7 @@ namespace dsf {
           if (visited.contains(w)) {
             continue;
           }
-          double const edgeWeight = m_weightFunction(edgeObj);
+          double const edgeWeight = weight(edgeObj);
           double const newDist = vData.dist + edgeWeight;
 
           if (newDist < wData.dist) {
@@ -771,7 +429,8 @@ namespace dsf {
   // ─────────────────────────────────────────────────────────────────────────
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  void Network<node_t, edge_t>::computeEdgeBetweennessCentralities() {
+  void Network<node_t, edge_t>::computeEdgeBetweennessCentralities(
+      EdgeWeight const& weight) {
     // Initialise all edge BC values to 0.
     for (auto& [edgeId, pEdge] : m_edges) {
       pEdge->setAttribute("betweennessCentrality", 0.0);
@@ -842,7 +501,7 @@ namespace dsf {
           if (visited.contains(w)) {
             continue;
           }
-          double const edgeWeight = m_weightFunction(edgeObj);
+          double const edgeWeight = weight(edgeObj);
           double const newDist = vData.dist + edgeWeight;
 
           if (newDist < wData.dist) {
@@ -887,7 +546,8 @@ namespace dsf {
   // ─────────────────────────────────────────────────────────────────────────
   template <typename node_t, typename edge_t>
     requires(std::is_base_of_v<Node, node_t> && std::is_base_of_v<Edge, edge_t>)
-  void Network<node_t, edge_t>::computeEdgeKBetweennessCentralities(std::size_t const K) {
+  void Network<node_t, edge_t>::computeEdgeKBetweennessCentralities(
+      EdgeWeight const& weight, std::size_t const K) {
     for (auto& [eId, pEdge] : m_edges) {
       pEdge->setAttribute("betweennessCentrality", 0.0);
     }
@@ -905,7 +565,7 @@ namespace dsf {
     // K>1 uses Yen's algorithm to find K shortest loopless paths and counts
     // edge contributions across all K paths.
     if (K == 1) {
-      computeEdgeBetweennessCentralities();
+      computeEdgeBetweennessCentralities(weight);
       // Re-normalise: computeEdgeBetweennessCentralities leaves raw Brandes
       // values; apply the same norm as the K>1 path below.
       auto const norm = static_cast<double>((N_NODES - 1) * (N_NODES - 2));
@@ -986,7 +646,7 @@ namespace dsf {
               continue;
             }
             auto const nextIdx = nodeIndex.at(edgeObj.target()->id());
-            auto const nd = currentDist + m_weightFunction(edgeObj);
+            auto const nd = currentDist + weight(edgeObj);
             if (nd < dist[nextIdx]) {
               dist[nextIdx] = nd;
               parentEdge[nextIdx] = edgeId;
@@ -1100,7 +760,7 @@ namespace dsf {
                   continue;
                 }
                 auto const nextIdx = nodeIndex.at(nextNode);
-                auto const nd = currentDist + m_weightFunction(edgeObj);
+                auto const nd = currentDist + weight(edgeObj);
                 if (nd < spurDist[nextIdx]) {
                   spurDist[nextIdx] = nd;
                   spurParentEdge[nextIdx] = eId;
@@ -1118,7 +778,7 @@ namespace dsf {
             candidatePath.edges = rootPath;
             candidatePath.cost = 0.0;
             for (auto const eId : rootPath) {
-              candidatePath.cost += m_weightFunction(*m_edges.at(eId));
+              candidatePath.cost += weight(*m_edges.at(eId));
             }
 
             std::vector<Id> spurPath;

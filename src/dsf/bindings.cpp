@@ -55,6 +55,11 @@ NB_MODULE(dsf_cpp, m) {
       .value("NODES", dsf::mobility::DynamicsMode::NODES)
       .export_values();
 
+  nb::enum_<dsf::mobility::RouteAlgorithm>(mobility, "RouteAlgorithm")
+      .value("ASTAR", dsf::mobility::RouteAlgorithm::ASTAR)
+      .value("DIJKSTRA", dsf::mobility::RouteAlgorithm::DIJKSTRA)
+      .export_values();
+
   // Bind TrafficLightOptimization enum
   nb::enum_<dsf::TrafficLightOptimization>(mobility, "TrafficLightOptimization")
       .value("SINGLE_TAIL", dsf::TrafficLightOptimization::SINGLE_TAIL)
@@ -731,26 +736,6 @@ NB_MODULE(dsf_cpp, m) {
           "autoMapStreetLanes",
           &dsf::mobility::RoadNetwork::autoMapStreetLanes,
           R"doc(Auto-map lanes for streets using heuristics based on geometry and attributes.)doc")
-      .def("setEdgeWeight",
-           &dsf::mobility::RoadNetwork::setEdgeWeight,
-           nb::arg("weight"),
-           nb::arg("threshold") = std::nullopt,
-           R"doc(Set edge weights for routing and analysis.
-
-      The weight is used by the graph algorithms and by the intelligent agents of a
-      Dynamics, which plan their route on it when they depart. The other agents plan on
-      free-flow travel times.
-
-      Args:
-        weight (string): Weight type. 'traveltime' is the estimated travel time plus the time
-          needed to clear the exit queues (mean lane queue / min(1, transport capacity)),
-          'length' the street length, 'uniform' 1 for every street; any other value is the
-          name of a numeric custom attribute.
-        threshold (float | None): Optional relative tolerance. For the graph algorithms,
-          paths whose cost is within distance * (1 + threshold) of the shortest one are
-          kept. For the agents of a Dynamics, each street cost is randomly multiplied by a
-          factor in [1, 1 + threshold): each route then costs at most (1 + threshold) times
-          the shortest one, and the agents spread over near-optimal routes.)doc")
       .def(
           "describe",
           [](dsf::mobility::RoadNetwork& self) {
@@ -910,31 +895,42 @@ NB_MODULE(dsf_cpp, m) {
       Args:
         streetId (int): Street identifier.
         name (str): Optional name for the coil.)doc")
-      .def("shortestPath",
-           &dsf::mobility::RoadNetwork::shortestPath,
-           nb::arg("sourceId"),
-           nb::arg("targetId"),
-           R"doc(Compute the shortest path between two node ids.
+      .def(
+          "computeBetweennessCentralities",
+          [](dsf::mobility::RoadNetwork& self, std::string_view weight) {
+            self.computeBetweennessCentralities(
+                dsf::mobility::Router::edgeWeightFunction(weight));
+          },
+          nb::arg("weight") = "traveltime",
+          R"doc(Compute betweenness centralities for nodes in the network.
 
       Args:
-        sourceId (int): Source node id.
-        targetId (int): Target node id.
-
-      Returns:
-        list[int]: Sequence of node ids representing the shortest path.)doc")
-      .def("computeBetweennessCentralities",
-           &dsf::mobility::RoadNetwork::computeBetweennessCentralities,
-           R"doc(Compute betweenness centralities for nodes in the network.)doc")
-      .def("computeEdgeBetweennessCentralities",
-           &dsf::mobility::RoadNetwork::computeEdgeBetweennessCentralities,
-           R"doc(Compute betweenness centralities for edges in the network.)doc")
-      .def("computeEdgeKBetweennessCentralities",
-           &dsf::mobility::RoadNetwork::computeEdgeKBetweennessCentralities,
-           nb::arg("k"),
-           R"doc(Compute k-edge betweenness centralities.
+        weight (str): The edge cost: 'traveltime' (default), 'length', 'uniform' or the
+          name of a numeric custom attribute.)doc")
+      .def(
+          "computeEdgeBetweennessCentralities",
+          [](dsf::mobility::RoadNetwork& self, std::string_view weight) {
+            self.computeEdgeBetweennessCentralities(
+                dsf::mobility::Router::edgeWeightFunction(weight));
+          },
+          nb::arg("weight") = "traveltime",
+          R"doc(Compute betweenness centralities for edges in the network.
 
       Args:
-        k (int): Parameter controlling the computation.)doc")
+        weight (str): The edge cost (see computeBetweennessCentralities).)doc")
+      .def(
+          "computeEdgeKBetweennessCentralities",
+          [](dsf::mobility::RoadNetwork& self, std::size_t k, std::string_view weight) {
+            self.computeEdgeKBetweennessCentralities(
+                dsf::mobility::Router::edgeWeightFunction(weight), k);
+          },
+          nb::arg("k"),
+          nb::arg("weight") = "traveltime",
+          R"doc(Compute k-edge betweenness centralities.
+
+      Args:
+        k (int): Parameter controlling the computation.
+        weight (str): The edge cost (see computeBetweennessCentralities).)doc")
       .def(
           "nodeBetweennessCentralities",
           [](const dsf::mobility::RoadNetwork& self) {
@@ -964,28 +960,6 @@ NB_MODULE(dsf_cpp, m) {
           "    dict[int, float | None]: A dictionary mapping edge id to its "
           "betweenness centrality value (None if not computed).")
       .def(
-          "allPathsTo",
-          [](const dsf::mobility::RoadNetwork& self, dsf::Id targetId) {
-            return self.allPathsTo(targetId);
-          },
-          nb::arg("targetId"),
-          R"doc(Compute all paths leading to a target node.
-      Args:
-        targetId (int): Target node id.
-      Returns:
-        PathCollection: A collection of paths leading to the target node.)doc")
-      .def(
-          "allEdgePathsTo",
-          [](const dsf::mobility::RoadNetwork& self, dsf::Id targetId) {
-            return self.allEdgePathsTo(targetId);
-          },
-          nb::arg("targetId"),
-          R"doc(Compute all edge paths leading to a target edge.
-      Args:
-        targetId (int): Target edge id.
-      Returns:
-        PathCollection: A collection of edge paths leading to the target edge.)doc")
-      .def(
           "exportCSV",
           [](const dsf::mobility::RoadNetwork& self, const std::string& outputDir) {
             self.exportCSV(outputDir);
@@ -995,103 +969,6 @@ NB_MODULE(dsf_cpp, m) {
 
       Args:
         outputDir (str): Destination directory path.)doc");
-
-  nb::class_<dsf::PathCollection>(mobility, "PathCollection")
-      .def(nb::init<>(), "Create an empty PathCollection")
-      .def(
-          "__getitem__",
-          [](const dsf::PathCollection& self, dsf::Id key) {
-            auto it = self.find(key);
-            if (it == self.end()) {
-              throw nb::key_error("Key not found");
-            }
-            return it->second;
-          },
-          nb::arg("key"),
-          "Get the next hops for a given node id")
-      .def(
-          "__setitem__",
-          [](dsf::PathCollection& self, dsf::Id key, std::vector<dsf::Id> value) {
-            self[key] = value;
-          },
-          nb::arg("key"),
-          nb::arg("value"),
-          "Set the next hops for a given node id")
-      .def(
-          "__contains__",
-          [](const dsf::PathCollection& self, dsf::Id key) {
-            return self.find(key) != self.end();
-          },
-          nb::arg("key"),
-          "Check if a node id exists in the collection")
-      .def(
-          "__len__",
-          [](const dsf::PathCollection& self) { return self.size(); },
-          "Get the number of nodes in the collection")
-      .def(
-          "keys",
-          [](const dsf::PathCollection& self) {
-            std::vector<dsf::Id> keys;
-            keys.reserve(self.size());
-            for (const auto& [key, _] : self) {
-              keys.push_back(key);
-            }
-            return keys;
-          },
-          "Get all node ids in the collection")
-      .def(
-          "items",
-          [](const dsf::PathCollection& self) {
-            nb::dict items;
-            for (const auto& [key, value] : self) {
-              items[nb::cast(key)] = nb::cast(value);
-            }
-            return items;
-          },
-          "Get all items (node id, next hops) in the collection")
-      .def(
-          "explode",
-          [](const dsf::PathCollection& pc, dsf::Id source, dsf::Id target) {
-            auto result = pc.explode(source, target);
-
-            return std::vector<std::vector<dsf::Id>>(result.begin(), result.end());
-          },
-          nb::arg("sourceId"),
-          nb::arg("targetId"),
-          R"doc(Build a path from a source node to a target node.
-
-Args:
-    sourceId (int): Starting node id.
-    targetId (int): Ending node id.
-
-Returns:
-    PathCollection: A path collection containing the computed route.)doc");
-
-  nb::class_<dsf::mobility::Itinerary>(mobility, "Itinerary")
-      .def(nb::init<dsf::Id, dsf::Id>(),
-           nb::arg("id"),
-           nb::arg("destination"),
-           R"doc(Create an itinerary with an id and a destination street.
-
-Args:
-    id (int): Itinerary identifier.
-    destination (int): Destination street id. Agents following the itinerary arrive at
-        its source node, without travelling it.
-
-Returns:
-    Itinerary: A new itinerary instance.)doc")
-      .def("id",
-           &dsf::mobility::Itinerary::id,
-           R"doc(Get the itinerary identifier.
-
-Returns:
-    int: The itinerary id.)doc")
-      .def("destination",
-           &dsf::mobility::Itinerary::destination,
-           R"doc(Get the destination street id.
-
-Returns:
-    int: The destination street id.)doc");
 
   nb::class_<dsf::mobility::FirstOrderDynamics>(mobility, "Dynamics")
       .def(nb::init<dsf::mobility::RoadNetwork&&,
@@ -1207,7 +1084,7 @@ Returns:
            R"doc(Choose what updatePaths does with a destination that cannot be reached.
 
       Args:
-        throwOnEmpty (bool): If True, updatePaths raises. If False, the itinerary is
+        throwOnEmpty (bool): If True, updatePaths raises. If False, the destination is
           removed, with every origin, destination and OD pair using it.
 
       Returns:
@@ -1263,10 +1140,10 @@ Returns:
            nb::arg("intelligentFraction"),
            R"doc(Set the fraction of intelligent agents. Default is 0.
 
-      Every agent plans its route with A* when it departs: intelligent agents on the
-      current traffic, i.e. the network's edge weight (see RoadNetwork.setEdgeWeight), the
+      Every agent plans its route when it departs (see setRouteAlgorithm): intelligent
+      agents on the current traffic, i.e. the street costs of setEdgeWeight, the
       others on the free-flow travel times. Routes are planned again only when an agent
-      leaves its route, starts a new trip leg or meets a closed street.
+      leaves its route or meets a closed street.
 
       Args:
         intelligentFraction (float): Fraction in the range [0, 1].
@@ -1484,40 +1361,47 @@ Returns:
     Returns:
       None)doc")
       .def(
-          "addItinerary",
-          [](dsf::mobility::FirstOrderDynamics& self, dsf::Id id, dsf::Id destination) {
-            self.addItinerary(id, destination);
+          "destinationStreets",
+          [](const dsf::mobility::FirstOrderDynamics& self) {
+            return self.destinationStreets();
           },
-          nb::arg("id"),
-          nb::arg("destination"),
-          R"doc(Add an itinerary by id and destination.
+          R"doc(Get the destination streets of the origins, destinations and OD pairs.
+
+    Returns:
+      set[int]: The destination street ids (whatever mode()).)doc")
+      .def("setEdgeWeight",
+           &dsf::mobility::FirstOrderDynamics::setEdgeWeight,
+           nb::arg("weight"),
+           R"doc(Set the street costs intelligent agents plan their routes on.
 
     Args:
-      id (int): Itinerary id.
-      destination (int): Destination street id (whatever mode()). Agents
-        following the itinerary arrive at its source node, without travelling it.
+      weight (str): 'traveltime' (default) is the estimated travel time plus the time
+        needed to clear the exit queues (mean lane queue / min(1, transport capacity)),
+        'length' the street length, 'uniform' 1 for every street; any other value is the
+        name of a numeric custom attribute.
 
     Returns:
       None)doc")
-      .def(
-          "itineraries",
-          [](const dsf::mobility::FirstOrderDynamics& self) {
-            nb::dict py_result;
-            for (const auto& [id, pItin] : self.itineraries()) {
-              py_result[nb::cast(id)] = nb::cast(pItin);
-            }
-            return py_result;
-          },
-          R"doc(Get the itineraries mapping as a dict[id, Itinerary].)doc")
+      .def("setRouteAlgorithm",
+           &dsf::mobility::FirstOrderDynamics::setRouteAlgorithm,
+           nb::arg("algorithm"),
+           R"doc(Set the algorithm the routes are planned with.
+
+    Args:
+      algorithm (RouteAlgorithm): ASTAR (default) or DIJKSTRA.
+
+    Returns:
+      None)doc")
       .def("addAgentsUniformly",
            &dsf::mobility::FirstOrderDynamics::addAgentsUniformly,
            nb::arg("nAgents"),
-           nb::arg("itineraryId") = std::nullopt,
-           R"doc(Add agents uniformly across the configured origins.
+           nb::arg("destinationId") = std::nullopt,
+           R"doc(Add agents uniformly on the streets of the network.
 
     Args:
       nAgents (int): Number of agents to add.
-      itineraryId (int | None, optional): Itinerary to assign.
+      destinationId (int | None, optional): The agents' destination street. If None,
+        each agent gets a random one of destinationStreets().
 
     Returns:
       None)doc")

@@ -9,6 +9,9 @@
 #include <limits>
 #include <numbers>
 #include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <variant>
 
 #include <spdlog/spdlog.h>
 #include <tbb/blocked_range.h>
@@ -36,11 +39,6 @@ namespace dsf::mobility {
         return lhs.street > rhs.street;
       }
     };
-
-    // A uniform value in [0, 1) from a seed and a key
-    double unitNoise(std::uint64_t const seed, std::uint64_t const key) noexcept {
-      return static_cast<double>(Router::mixSeed(seed, key) >> 11) * 0x1.0p-53;
-    }
   }  // namespace
 
   void Router::SearchBuffers::prepare(std::size_t const nStreets) {
@@ -55,6 +53,46 @@ namespace dsf::mobility {
       generation = 1;
     }
     heap.clear();
+  }
+
+  Router::EdgeWeight Router::edgeWeightFunction(std::string_view const name) {
+    if (name == "traveltime") {
+      return [](Street const& street) {
+        // Each lane releases at most one agent per time step, with probability equal to the
+        // transport capacity: the mean lane queue takes queue / min(1, tc) steps to clear.
+        auto const queueTime{street.nExitingAgents(Direction::ANY, true) /
+                             std::min(1., street.transportCapacity())};
+        return street.estimatedTravelTime() + queueTime;
+      };
+    }
+    if (name == "length") {
+      return [](Street const& street) { return street.length(); };
+    }
+    if (name == "uniform") {
+      return []([[maybe_unused]] Street const& street) { return 1.0; };
+    }
+    // Custom attribute. Own the name: the caller's buffer (e.g. the JSON config parser) may
+    // not outlive the function
+    return [attribute = std::string{name}](Street const& street) {
+      auto it = street.attributes().find(attribute);
+      if (it == street.attributes().end()) {
+        throw std::runtime_error(
+            std::format("Attribute {} not found in street {}", attribute, street.id()));
+      }
+      return std::visit(
+          [](auto&& value) -> double {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_arithmetic_v<T>) {
+              return static_cast<double>(value);
+            } else {
+              throw std::runtime_error("Custom weight attribute is not a numeric type.");
+            }
+          },
+          it->second);
+    };
+  }
+  void Router::setEdgeWeight(std::string_view const name) {
+    m_edgeWeight = edgeWeightFunction(name);
   }
 
   void Router::build(RoadNetwork const& network) {
@@ -124,20 +162,11 @@ namespace dsf::mobility {
     }
     m_freeFlow.heuristicFactor = m_heuristicFactor(m_freeFlow.weights);
 
-    m_threshold = network.weightThreshold().value_or(0.);
-    if (m_threshold < 0.) {
-      spdlog::warn("Negative weight threshold ({}) ignored: routes are exact.",
-                   m_threshold);
-      m_threshold = 0.;
-    }
-
-    updateCurrentWeights(network);
-    spdlog::debug(
-        "Built the routing graph: {} streets, {} turns, heuristic {}, threshold {}",
-        nStreets,
-        m_turns.size(),
-        m_bHeuristic ? "on" : "off",
-        m_threshold);
+    updateCurrentWeights();
+    spdlog::debug("Built the routing graph: {} streets, {} turns, heuristic {}",
+                  nStreets,
+                  m_turns.size(),
+                  m_bHeuristic ? "available" : "unavailable");
   }
 
   void Router::m_buildHeuristic(RoadNetwork const& network, std::span<Id const> nodeIds) {
@@ -212,14 +241,14 @@ namespace dsf::mobility {
     return factor * (1. - HEURISTIC_MARGIN);
   }
 
-  void Router::updateCurrentWeights(RoadNetwork const& network) {
+  void Router::updateCurrentWeights() {
     auto const nStreets{m_streetIds.size()};
     m_current.weights.resize(nStreets);
     if (!m_bHeuristic) {
       tbb::parallel_for(tbb::blocked_range<std::size_t>(0, nStreets),
                         [&](tbb::blocked_range<std::size_t> const& range) {
                           for (auto i{range.begin()}; i != range.end(); ++i) {
-                            m_current.weights[i] = network.edgeWeight(*m_streets[i]);
+                            m_current.weights[i] = m_edgeWeight(*m_streets[i]);
                           }
                         });
       m_current.heuristicFactor = 0.;
@@ -231,7 +260,7 @@ namespace dsf::mobility {
         std::numeric_limits<double>::infinity(),
         [&](tbb::blocked_range<std::size_t> const& range, double minFactor) {
           for (auto i{range.begin()}; i != range.end(); ++i) {
-            auto const weight{network.edgeWeight(*m_streets[i])};
+            auto const weight{m_edgeWeight(*m_streets[i])};
             m_current.weights[i] = weight;
             if (m_streetDistances[i] > 0.) {
               minFactor = std::min(minFactor, weight / m_streetDistances[i]);
@@ -268,17 +297,15 @@ namespace dsf::mobility {
 
   std::vector<Id> Router::route(Id const fromStreetId,
                                 Id const goalNodeId,
-                                RouteWeights const weights,
-                                std::uint64_t const seed) const {
+                                RouteWeights const weights) const {
     auto const start{m_streetIndex(fromStreetId)};
     return m_search(
-        std::span{&start, 1}, false, m_nodeIndex(goalNodeId), m_weightSet(weights), seed);
+        std::span{&start, 1}, false, m_nodeIndex(goalNodeId), m_weightSet(weights));
   }
 
   std::vector<Id> Router::routeFromNode(Id const fromNodeId,
                                         Id const goalNodeId,
-                                        RouteWeights const weights,
-                                        std::uint64_t const seed) const {
+                                        RouteWeights const weights) const {
     auto const node{m_nodeIndex(fromNodeId)};
     auto const goal{m_nodeIndex(goalNodeId)};
     return m_search(
@@ -286,8 +313,7 @@ namespace dsf::mobility {
                                      m_nodeOutOffsets[node + 1] - m_nodeOutOffsets[node]),
         true,
         goal,
-        m_weightSet(weights),
-        seed);
+        m_weightSet(weights));
   }
 
   double Router::routeCost(std::span<Id const> route, RouteWeights const weights) const {
@@ -314,8 +340,7 @@ namespace dsf::mobility {
   std::vector<Id> Router::m_search(std::span<std::uint32_t const> starts,
                                    bool const bCountStartCost,
                                    std::uint32_t const goalNode,
-                                   WeightSet const& weightSet,
-                                   std::uint64_t const seed) const {
+                                   WeightSet const& weightSet) const {
     assert(weightSet.weights.size() == m_streetIds.size());
     auto& buffers{m_buffers.local()};
     buffers.prepare(m_streetIds.size());
@@ -325,7 +350,9 @@ namespace dsf::mobility {
     auto& stamp{buffers.stamp};
     auto& heap{buffers.heap};
 
-    auto const factor{weightSet.heuristicFactor};
+    // Dijkstra's algorithm is A* without heuristic
+    auto const factor{m_algorithm == RouteAlgorithm::ASTAR ? weightSet.heuristicFactor
+                                                           : 0.};
     auto const goalX{factor > 0. ? m_nodeX[goalNode] : 0.};
     auto const goalY{factor > 0. ? m_nodeY[goalNode] : 0.};
     auto const heuristic = [&](std::uint32_t const street) {
@@ -335,13 +362,7 @@ namespace dsf::mobility {
       auto const node{m_streetTargets[street]};
       return factor * std::hypot(m_nodeX[node] - goalX, m_nodeY[node] - goalY);
     };
-    auto const streetCost = [&](std::uint32_t const street) {
-      auto const weight{weightSet.weights[street]};
-      if (m_threshold > 0.) {
-        return weight * (1. + m_threshold * unitNoise(seed, m_streetIds[street]));
-      }
-      return weight;
-    };
+    auto const& streetCost{weightSet.weights};
     // Record a cheaper way to reach a street, and queue it
     auto const relax =
         [&](std::uint32_t const street, double const g, std::uint32_t const from) {
@@ -356,7 +377,7 @@ namespace dsf::mobility {
         };
 
     for (auto const street : starts) {
-      relax(street, bCountStartCost ? streetCost(street) : 0., NO_STREET);
+      relax(street, bCountStartCost ? streetCost[street] : 0., NO_STREET);
     }
     while (!heap.empty()) {
       std::ranges::pop_heap(heap, HeapOrder{});
@@ -376,7 +397,7 @@ namespace dsf::mobility {
       }
       for (auto i{m_turnOffsets[street]}; i < m_turnOffsets[street + 1]; ++i) {
         auto const next{m_turns[i]};
-        relax(next, g + streetCost(next), street);
+        relax(next, g + streetCost[next], street);
       }
     }
     return {};

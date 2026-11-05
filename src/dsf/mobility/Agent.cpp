@@ -5,35 +5,21 @@
 namespace dsf::mobility {
   Agent::Agent(Id const id,
                std::time_t const& spawnTime,
-               std::shared_ptr<Itinerary> itinerary,
+               std::optional<Id> destination,
                std::optional<Id> srcNodeId)
       : m_id{id},
         m_spawnTime{spawnTime},
         m_freeTime{0},
-        m_trip{itinerary != nullptr ? std::vector<std::shared_ptr<Itinerary>>{itinerary}
-                                    : std::vector<std::shared_ptr<Itinerary>>{}},
         m_srcNodeId{srcNodeId},
         m_srcStreetId{std::nullopt},
         m_nextStreetId{std::nullopt},
-        m_itineraryIdx{0},
         m_speed{0.},
         m_distance{0.},
-        m_bIsIntelligent{false} {}
-  Agent::Agent(Id const id,
-               std::time_t const& spawnTime,
-               std::vector<std::shared_ptr<Itinerary>> const& trip,
-               std::optional<Id> srcNodeId)
-      : m_id{id},
-        m_spawnTime{spawnTime},
-        m_freeTime{spawnTime},
-        m_trip{trip},
-        m_srcNodeId{srcNodeId},
-        m_srcStreetId{std::nullopt},
-        m_nextStreetId{std::nullopt},
-        m_itineraryIdx{0},
-        m_speed{0.},
-        m_distance{0.},
-        m_bIsIntelligent{false} {}
+        m_bIsIntelligent{false} {
+    if (destination.has_value()) {
+      m_route.push_back(*destination);
+    }
+  }
 
   void Agent::setSrcNodeId(Id srcNodeId) { m_srcNodeId = srcNodeId; }
   void Agent::setSpawnTime(std::time_t const& spawnTime) { m_spawnTime = spawnTime; }
@@ -70,37 +56,26 @@ namespace dsf::mobility {
     }
     m_distance += distance;
   }
-  void Agent::setPath(std::vector<Id> path) noexcept {
-    m_path = std::move(path);
-    m_pathIndex = 0;
+  void Agent::setPath(std::span<Id const> streets) {
+    if (isRandom()) {
+      throw std::logic_error(
+          std::format("Agent {} is a random agent and cannot plan a route", m_id));
+    }
+    dropPath();
+    m_route.insert(m_route.begin(), streets.begin(), streets.end());
   }
-  void Agent::clearPath() noexcept {
-    m_path.clear();
-    m_pathIndex = 0;
+  void Agent::dropPath() noexcept {
+    if (m_route.size() > 1) {
+      m_route.erase(m_route.begin(), m_route.end() - 1);
+    }
   }
   void Agent::advancePath() {
-    if (m_pathIndex + 1 >= m_path.size()) {
-      throw std::logic_error(
-          std::format("Agent {} is at the end of its planned route", m_id));
+    if (m_route.size() < 2) {
+      throw std::logic_error(std::format("Agent {} has no planned street to take", m_id));
     }
-    ++m_pathIndex;
-  }
-  std::optional<Id> Agent::nextPlannedStreetId() const noexcept {
-    if (m_pathIndex + 1 >= m_path.size()) {
-      return std::nullopt;
-    }
-    return m_path[m_pathIndex + 1];
-  }
-  bool Agent::isOnPath(Id const streetId) const noexcept {
-    return m_pathIndex < m_path.size() && m_path[m_pathIndex] == streetId;
+    m_route.pop_front();
   }
 
-  void Agent::updateItinerary() {
-    if (!m_trip.empty() && m_itineraryIdx < m_trip.size() - 1) {
-      ++m_itineraryIdx;
-      clearPath();
-    }
-  }
   void Agent::reset(std::time_t const& spawnTime) {
     m_spawnTime = spawnTime;
     m_freeTime = 0;
@@ -108,15 +83,7 @@ namespace dsf::mobility {
     m_nextStreetId = m_srcStreetId;
     m_speed = 0.;
     m_distance = 0.;
-    m_itineraryIdx = 0;
-    clearPath();
+    dropPath();
   }
 
-  std::shared_ptr<Itinerary> const& Agent::itinerary() const {
-    if (isRandom()) {
-      throw std::logic_error(
-          std::format("Agent {} is a random agent and has no itinerary", m_id));
-    }
-    return m_trip[m_itineraryIdx];
-  }
 }  // namespace dsf::mobility
