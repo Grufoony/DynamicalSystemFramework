@@ -145,6 +145,13 @@ namespace dsf {
 
     virtual void setEdgeWeight(std::string_view const strv_weight,
                                std::optional<double> const threshold = std::nullopt) = 0;
+    /// @brief Get the weight of an edge, according to the current weight function
+    /// @param edge The edge
+    /// @return double The edge's weight
+    inline double edgeWeight(edge_t const& edge) const { return m_weightFunction(edge); }
+    /// @brief Get the relative tolerance on path costs set with the weight function
+    /// @return std::optional<double> The threshold, if any
+    inline auto weightThreshold() const noexcept { return m_weightThreshold; }
 
     /// @brief Get a node by id
     /// @param nodeId The id of the node to get

@@ -87,7 +87,7 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("Constructor") {
     GIVEN("A graph object") {
       WHEN("A dynamics object is created") {
-        FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+        FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
         THEN("The node and the street sets are the same") {
           CHECK_EQ(dynamics.graph().nNodes(), 120);
           CHECK_EQ(dynamics.graph().nEdges(), 436);
@@ -106,7 +106,7 @@ TEST_CASE("FirstOrderDynamics") {
         // Two phases of 1 tick each → cycleTime() == 2
         tl.addPhase(TrafficLightPhase{1});
         tl.addPhase(TrafficLightPhase{1});
-        FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+        FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
         THEN("The node is a traffic light") {
           CHECK(dynamics.graph().node(0).isTrafficLight());
           CHECK_EQ(tl.cycleTime(), 2);
@@ -114,18 +114,18 @@ TEST_CASE("FirstOrderDynamics") {
       }
       WHEN("We transform a node into a roundabout and create the dynamics") {
         defaultNetwork.makeRoundabout(0);
-        FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+        FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
         THEN("The node is a roundabout") {
           CHECK(dynamics.graph().node(0).isRoundabout());
         }
       }
       WHEN("We put a coil on the street and create the dynamics") {
         defaultNetwork.addCoil(8);
-        FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+        FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
         THEN("The street has a coil") { CHECK(dynamics.graph().edge(8).hasCoil()); }
       }
       WHEN("We call summary") {
-        FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+        FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
         std::ostringstream oss;
         dynamics.summary(oss);
         std::string summaryStr = oss.str();
@@ -143,7 +143,7 @@ TEST_CASE("FirstOrderDynamics") {
   }
   SUBCASE("setConcurrency") {
     GIVEN("A dynamics object") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       WHEN("We set concurrency to 2") {
         dynamics.setConcurrency(2);
         THEN("The concurrency is 2") { CHECK_EQ(dynamics.concurrency(), 2UL); }
@@ -166,7 +166,7 @@ TEST_CASE("FirstOrderDynamics") {
   }
   SUBCASE("setDestinations") {
     GIVEN("A dynamics object and a destination node") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       WHEN("We add a span of destination nodes") {
         std::array<dsf::Id, 3> nodes{0, 1, 2};
         dynamics.setDestinations(nodes);
@@ -206,7 +206,7 @@ TEST_CASE("FirstOrderDynamics") {
   }
   SUBCASE("addAgent") {
     GIVEN("A dynamics object, a source node and a destination node") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       dynamics.addItinerary(2, 2);
       WHEN("We add the agent") {
         dynamics.addAgent(dynamics.itineraries().at(2), 0);
@@ -222,7 +222,7 @@ TEST_CASE("FirstOrderDynamics") {
   }
   SUBCASE("addAgentsUniformly") {
     GIVEN("A dynamics object and an itinerary") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       WHEN("We add a random agent") {
         dynamics.addItinerary(2, 2);
@@ -235,7 +235,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
     GIVEN("A dynamics object and many itineraries") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.addItinerary(1, 1);
@@ -290,7 +290,7 @@ TEST_CASE("FirstOrderDynamics") {
   }
   SUBCASE("addAgents - RANDOM_ODS") {
     GIVEN("A graph object") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       WHEN("We add one agent for existing itinerary") {
         std::unordered_map<dsf::Id, double> src{{0, 1.}};
         std::unordered_map<dsf::Id, double> dst{{2, 1.}};
@@ -348,7 +348,7 @@ TEST_CASE("FirstOrderDynamics") {
   }
   SUBCASE("addAgents - ODS") {
     GIVEN("A graph object") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       WHEN("We add agents with a single OD pair") {
         std::vector<dsf::mobility::ODEntry> ods{{0, 2, 1.}};
         dynamics.setODs(ods);
@@ -406,8 +406,7 @@ TEST_CASE("FirstOrderDynamics") {
         randomNetwork.importNodeProperties(
             (DATA_FOLDER / "manhattan_nodes.csv").string());
         randomNetwork.setEdgeWeight("length");
-        FirstOrderDynamics dynamics{
-            std::move(randomNetwork), false, 69, DynamicsMode::NODES};
+        FirstOrderDynamics dynamics{std::move(randomNetwork), 69, DynamicsMode::NODES};
         dynamics.importODsFromCSV((DATA_FOLDER / "ods_random_ods.csv").string());
         dynamics.updatePaths();
         dynamics.addAgents(3, AgentInsertionMethod::RANDOM_ODS);
@@ -430,7 +429,7 @@ TEST_CASE("FirstOrderDynamics") {
         }
         SUBCASE("addAgents - CONDITIONAL_RANDOM_ODS") {
           GIVEN("A graph object") {
-            FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+            FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
 
             WHEN("We add one agent with a single origin and single destination") {
               // origin 0 → destination 2 with 100% probability
@@ -589,7 +588,7 @@ TEST_CASE("FirstOrderDynamics") {
                 (DATA_FOLDER / "manhattan_nodes.csv").string());
             randomNetwork.setEdgeWeight("length");
             FirstOrderDynamics dynamics{
-                std::move(randomNetwork), false, 69, DynamicsMode::NODES};
+                std::move(randomNetwork), 69, DynamicsMode::NODES};
 
             WHEN("We import a valid conditional OD CSV") {
               // Expected file format (semicolon-separated):
@@ -635,7 +634,7 @@ TEST_CASE("FirstOrderDynamics") {
         odNetwork.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
         odNetwork.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
         odNetwork.setEdgeWeight("length");
-        FirstOrderDynamics dynamics2{std::move(odNetwork), false, 69};
+        FirstOrderDynamics dynamics2{std::move(odNetwork), 69};
         CHECK_NOTHROW(
             dynamics2.importODsFromCSV((DATA_FOLDER / "ods_od_pairs.csv").string(), ';'));
 
@@ -652,7 +651,7 @@ TEST_CASE("FirstOrderDynamics") {
         randomNetwork.importNodeProperties(
             (DATA_FOLDER / "manhattan_nodes.csv").string());
         randomNetwork.setEdgeWeight("length");
-        FirstOrderDynamics dynamics{std::move(randomNetwork), false, 69};
+        FirstOrderDynamics dynamics{std::move(randomNetwork), 69};
         // Note: The test files use semicolon, so we test the default works
         dynamics.importODsFromCSV((DATA_FOLDER / "ods_random_ods.csv").string());
 
@@ -664,7 +663,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
 
       WHEN("We import CSV files with partial or invalid rows") {
-        FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+        FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
         auto const csvPath = std::filesystem::temp_directory_path() / "dsf_ods_rows.csv";
         auto const writeCsv = [&csvPath](std::string const& content) {
           std::ofstream out{csvPath};
@@ -760,7 +759,7 @@ TEST_CASE("FirstOrderDynamics") {
       auto const p{0.1};
       auto const n{100};
       // graph.adjustNodeCapacities();
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setPassageProbability(p);
       WHEN("We add some agent") {
@@ -782,7 +781,7 @@ TEST_CASE("FirstOrderDynamics") {
     // In the manhattan fixture street 2 goes 0 -> 1 and node 1 has the outgoing streets
     // 3 (1 -> 0, i.e. the U-turn), 4 (1 -> 11) and 6 (1 -> 2).
     GIVEN("A dynamics object") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       THEN("The transition matrix is empty by default") {
         CHECK(dynamics.transitionMatrix().empty());
       }
@@ -915,7 +914,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
     GIVEN("A dynamics object with agents starting on street 2") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       auto constexpr nAgents{20};
       auto constexpr nSteps{500};
@@ -973,7 +972,7 @@ TEST_CASE("FirstOrderDynamics") {
   }
   SUBCASE("setUTurnPenaltyFactor") {
     GIVEN("A dynamics object") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       WHEN("We set a valid U-turn penalty factor") {
         dynamics.setUTurnPenaltyFactor(0.5);
         THEN("The call succeeds") { CHECK_NOTHROW(dynamics.setUTurnPenaltyFactor(0.5)); }
@@ -987,7 +986,7 @@ TEST_CASE("FirstOrderDynamics") {
   }
   SUBCASE("addAgents") {
     GIVEN("A dynamics object and one itinerary") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       dynamics.addItinerary(2, 2);
       WHEN("We add an agent with itinerary 2") {
         dynamics.addAgent(dynamics.itineraries().at(2), 0);
@@ -1004,35 +1003,43 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
-  SUBCASE("Update paths") {
-    GIVEN("A dynamics object, many streets and an itinerary") {
+  SUBCASE("Routing") {
+    GIVEN("A dynamics object with a short (0->1->2) and a direct (0->2) branch") {
       RoadNetwork graph2;
       graph2.setEdgeWeight("length", 0.0);
       graph2.addStreet(0, std::make_pair(0, 1), 2.);
       graph2.addStreet(1, std::make_pair(1, 2), 5.);
       graph2.addStreet(2, std::make_pair(0, 2), 10.);
       graph2.addStreet(3, std::make_pair(2, 3), 5.);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
-      WHEN("We add an itinerary and update the paths") {
-        dynamics.addItinerary(std::make_shared<Itinerary>(0, 3));
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
+      dynamics.addItinerary(std::make_shared<Itinerary>(0, 3));
+      WHEN("We update the paths") {
         dynamics.updatePaths();
-        THEN(
-            "The number of itineraries is 1 and the path is updated and "
-            "correctly "
-            "formed") {
-          CHECK_EQ(dynamics.itineraries().size(), 1);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().size(), 3);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().at(0).size(), 1);
-          CHECK(dynamics.itineraries().at(0)->path().at(0)[0] == 1);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().at(1).size(), 1);
-          CHECK(dynamics.itineraries().at(0)->path().at(1)[0] == 3);
-          CHECK_FALSE(dynamics.itineraries().at(0)->path().at(0)[0] == 2);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().at(2).size(), 1);
-          CHECK(dynamics.itineraries().at(0)->path().at(2)[0] == 3);
+        THEN("The routes lead to the source node of the destination street") {
+          auto const& router{dynamics.router()};
+          REQUIRE(router.isBuilt());
+          CHECK_EQ(router.nEdges(), 4);
+          CHECK_EQ(router.route(0, 2, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1});
+          // From a node, the cost of the first street counts: 2 + 5 < 10
+          CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{0, 1});
+        }
+        AND_WHEN("An agent without a source street departs from node 0") {
+          dynamics.addAgent(
+              std::make_unique<Agent>(0, 0, dynamics.itineraries().at(0), 0));
+          dynamics.evolve();  // The agent plans its route and enters node 0
+          dynamics.evolve();  // The agent enters street 0
+          THEN("Its route also chooses the first street") {
+            auto const& street{dynamics.graph().edge(0)};
+            REQUIRE_EQ(street.nAgents(), 1);
+            auto const& pAgent{street.movingAgents().top()};
+            CHECK_EQ(pAgent->path(), std::vector<Id>{0, 1});
+            CHECK_EQ(pAgent->pathIndex(), 0);
+          }
         }
       }
     }
-    GIVEN("A Dynamics object with a graph with 6 nodes and 7 streets") {
+    GIVEN("A dynamics object with a dead end (4->5->4) next to the route") {
       RoadNetwork graph2{};
       graph2.addEdge(0, std::make_pair(0, 1), 10.);
       graph2.addEdge(1, std::make_pair(1, 2), 10.);
@@ -1041,119 +1048,34 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addEdge(4, std::make_pair(4, 1), 10.);
       graph2.addEdge(5, std::make_pair(4, 5), 10.);
       graph2.addEdge(6, std::make_pair(5, 4), 10.);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
-      dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-      WHEN("We add an iitinerary to edge 2 and update paths") {
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
+      WHEN("We add an itinerary to street 2 and update the paths") {
         dynamics.addItinerary(2, 2);
         dynamics.updatePaths();
-        THEN("The itinerary is correct, excluding paths passing in the same node twice") {
-          auto const& path = dynamics.itineraries().at(2)->path();
-          CHECK_EQ(path.size(), 6);
-          CHECK_EQ(path.at(0).size(), 1);
-          CHECK(path.at(0)[0] == 1);
-          CHECK_EQ(path.at(1).size(), 1);
-          CHECK(path.at(1)[0] == 2);
-          CHECK_FALSE(path.contains(2));
-          CHECK_EQ(path.at(3).size(), 1);
-          CHECK(path.at(3)[0] == 5);
-          CHECK_EQ(path.at(4).size(), 1);
-          CHECK(path.at(4)[0] == 1);
-          CHECK_EQ(path.at(5).size(), 1);
-          CHECK(path.at(5)[0] == 6);
-          CHECK_EQ(path.at(6).size(), 1);
-          CHECK(path.at(6)[0] == 4);
+        THEN("U-turns are planned only at dead ends") {
+          auto const& router{dynamics.router()};
+          CHECK_EQ(router.route(0, 2, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1});
+          CHECK_EQ(router.route(1, 2, RouteWeights::FREE_FLOW), std::vector<Id>{1});
+          // Street 3 cannot turn back at node 4, where street 5 leads on: the route goes
+          // around the dead end first
+          CHECK_EQ(router.route(3, 2, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{3, 5, 6, 4, 1});
         }
       }
     }
-    GIVEN(
-        "A dynamics objects, many streets and many itinearies with same "
-        "destination") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+    GIVEN("A dynamics object on the Manhattan network") {
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       dynamics.addItinerary(0, 118);
-      dynamics.addItinerary(1, 118);
-      dynamics.addItinerary(2, 118);
-      dynamics.addItinerary(3, 118);
-      dynamics.updatePaths();
       WHEN("We update the paths") {
         dynamics.updatePaths();
-        THEN("The paths are updated and correctly formed") {
-          CHECK_EQ(dynamics.itineraries().size(), 4);
-          for (auto const& it : dynamics.itineraries()) {
-            auto const& path = it.second->path();
-            for (uint16_t i{0}; i < path.size(); ++i) {
-              if (i == it.second->destination()) {
-                CHECK_FALSE(path.contains(i));
-              } else {
-                CHECK(path.contains(i));
-              }
-            }
+        THEN("Every street has a route to the destination") {
+          auto const& router{dynamics.router()};
+          CHECK(router.hasHeuristic());
+          auto const goalNodeId{dynamics.graph().edge(118).source()->id()};
+          for (auto const& [streetId, pStreet] : dynamics.graph().edges()) {
+            CHECK_FALSE(
+                router.route(streetId, goalNodeId, RouteWeights::FREE_FLOW).empty());
           }
-        }
-      }
-    }
-    GIVEN("A dynamics objects, many streets and an itinerary with bifurcations") {
-      RoadNetwork graph;
-      graph.setEdgeWeight("length");
-      graph.addStreet(0, std::make_pair(0, 1), 5.);
-      graph.addStreet(1, std::make_pair(1, 2), 5.);
-      graph.addStreet(2, std::make_pair(0, 3), 5.);
-      graph.addStreet(3, std::make_pair(3, 2), 5.);
-      graph.addStreet(4, std::make_pair(2, 4), 5.);
-      graph.addStreet(5, std::make_pair(5, 0), 5.);
-      FirstOrderDynamics dynamics{std::move(graph), false, 69};
-      dynamics.addItinerary(0, 4);
-      WHEN("We update the paths") {
-        dynamics.updatePaths();
-        THEN("The path is updated and correctly formed") {
-          auto const& path{dynamics.itineraries().at(0)->path()};
-          CHECK_EQ(dynamics.itineraries().size(), 1);
-          CHECK_EQ(path.size(), 5);
-          CHECK_EQ(path.at(5).size(), 2);
-          CHECK_EQ(path.at(5)[0], 0);
-          CHECK_EQ(path.at(5)[1], 2);
-          CHECK_EQ(path.at(0).size(), 1);
-          CHECK_EQ(path.at(0)[0], 1);
-          CHECK_EQ(path.at(1).size(), 1);
-          CHECK_EQ(path.at(1)[0], 4);
-          CHECK_EQ(path.at(2).size(), 1);
-          CHECK_EQ(path.at(2)[0], 3);
-          CHECK_EQ(path.at(3).size(), 1);
-          CHECK_EQ(path.at(3)[0], 4);
-          CHECK_FALSE(path.contains(4));
-        }
-      }
-    }
-    GIVEN(
-        "A dynamics objects, many streets and an itinerary with bifurcations (TIME "
-        "WEIGHTED)") {
-      RoadNetwork graph;
-      graph.addStreet(0, std::make_pair(0, 1), 5., 50.);
-      graph.addStreet(1, std::make_pair(1, 2), 7., 70.);
-      graph.addStreet(2, std::make_pair(0, 3), 9., 90.);
-      graph.addStreet(3, std::make_pair(3, 2), 10., 100.);
-      graph.addStreet(4, std::make_pair(2, 4), 11., 110.);
-      graph.addStreet(5, std::make_pair(5, 0), 12., 120.);
-      FirstOrderDynamics dynamics{std::move(graph), false, 69};
-      dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
-      dynamics.addItinerary(0, 4);
-      WHEN("We update the paths") {
-        dynamics.updatePaths();
-        THEN("The path is updated and correctly formed") {
-          auto const& path{dynamics.itineraries().at(0)->path()};
-          CHECK_EQ(dynamics.itineraries().size(), 1);
-          CHECK_EQ(path.size(), 5);
-          CHECK_EQ(path.at(5).size(), 2);
-          CHECK_EQ(path.at(5)[0], 0);
-          CHECK_EQ(path.at(5)[1], 2);
-          CHECK_EQ(path.at(0).size(), 1);
-          CHECK_EQ(path.at(0)[0], 1);
-          CHECK_EQ(path.at(1).size(), 1);
-          CHECK_EQ(path.at(1)[0], 4);
-          CHECK_EQ(path.at(2).size(), 1);
-          CHECK_EQ(path.at(2)[0], 3);
-          CHECK_EQ(path.at(3).size(), 1);
-          CHECK_EQ(path.at(3)[0], 4);
-          CHECK_FALSE(path.contains(4));
         }
       }
     }
@@ -1163,38 +1085,155 @@ TEST_CASE("FirstOrderDynamics") {
       std::string weightName{"custom_cost"};
       graph.setEdgeWeight(weightName);
       weightName = "xxxxxxxxxxx";
+      // The custom cost favours the long branch 0->3->2, the free-flow travel time the
+      // short one 0->1->2
       auto& s1 = graph.addStreet(0, std::make_pair(0, 1), 5.);
       s1.setAttribute("custom_cost", 100.0);
       auto& s2 = graph.addStreet(1, std::make_pair(1, 2), 5.);
       s2.setAttribute("custom_cost", 100.0);
-      auto& s3 = graph.addStreet(2, std::make_pair(0, 3), 5.);
+      auto& s3 = graph.addStreet(2, std::make_pair(0, 3), 6.);
       s3.setAttribute("custom_cost", 1.0);
-      auto& s4 = graph.addStreet(3, std::make_pair(3, 2), 5.);
+      auto& s4 = graph.addStreet(3, std::make_pair(3, 2), 6.);
       s4.setAttribute("custom_cost", 1.0);
       auto& s5 = graph.addStreet(4, std::make_pair(2, 4), 5.);
       s5.setAttribute("custom_cost", 1.0);
       auto& s6 = graph.addStreet(5, std::make_pair(5, 0), 5.);
       s6.setAttribute("custom_cost", 1.0);
-      FirstOrderDynamics dynamics{std::move(graph), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph), 69};
       dynamics.addItinerary(0, 4);
 
       WHEN("We update the paths") {
         dynamics.updatePaths();
-        THEN("The custom attribute-based weight drives the selected branch") {
-          auto const& path{dynamics.itineraries().at(0)->path()};
-          CHECK_EQ(dynamics.itineraries().size(), 1);
-          CHECK_EQ(path.size(), 5);
-          CHECK_EQ(path.at(5).size(), 1);
-          CHECK_EQ(path.at(5)[0], 2);
-          CHECK_EQ(path.at(0).size(), 1);
-          CHECK_EQ(path.at(0)[0], 1);
-          CHECK_EQ(path.at(1).size(), 1);
-          CHECK_EQ(path.at(1)[0], 4);
-          CHECK_EQ(path.at(2).size(), 1);
-          CHECK_EQ(path.at(2)[0], 3);
-          CHECK_EQ(path.at(3).size(), 1);
-          CHECK_EQ(path.at(3)[0], 4);
-          CHECK_FALSE(path.contains(4));
+        THEN("Only the routes on the current weights follow the custom attribute") {
+          auto const& router{dynamics.router()};
+          CHECK_EQ(router.route(5, 2, RouteWeights::CURRENT), std::vector<Id>{5, 2, 3});
+          CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW), std::vector<Id>{5, 0, 1});
+        }
+        AND_WHEN("A free-flow agent and an intelligent agent depart from street 5") {
+          dynamics.initTurnCounts();
+          for (Id const agentId : {0, 1}) {
+            auto pAgent =
+                std::make_unique<Agent>(agentId, 0, dynamics.itineraries().at(0), 5);
+            pAgent->setSrcStreetId(5);
+            pAgent->setNextStreetId(5);
+            pAgent->setIntelligent(agentId == 1);
+            dynamics.addAgent(std::move(pAgent));
+          }
+          for (int i{0}; i < 20 && dynamics.nAgents() > 0; ++i) {
+            dynamics.evolve();
+          }
+          THEN("Only the intelligent agent takes the branch of the custom attribute") {
+            CHECK_EQ(dynamics.agentStats().nArrived, 2);
+            CHECK_EQ(dynamics.turnCounts().at(5).at(0), 1);
+            CHECK_EQ(dynamics.turnCounts().at(5).at(2), 1);
+          }
+        }
+      }
+    }
+    GIVEN("A network with two equivalent branches (0->1->2 and 0->3->2)") {
+      // Counts the agents turning from street 5 into each branch
+      auto const routeAgents = [](std::optional<double> const threshold) {
+        RoadNetwork graph;
+        graph.setEdgeWeight("length", threshold);
+        graph.addStreet(0, std::make_pair(0, 1), 5.);
+        graph.addStreet(1, std::make_pair(1, 2), 5.);
+        graph.addStreet(2, std::make_pair(0, 3), 5.);
+        graph.addStreet(3, std::make_pair(3, 2), 5.);
+        graph.addStreet(4, std::make_pair(2, 4), 5.);
+        graph.addStreet(5, std::make_pair(5, 0), 5.);
+        FirstOrderDynamics dynamics{std::move(graph), 69};
+        dynamics.initTurnCounts();
+        dynamics.addItinerary(0, 4);
+        dynamics.updatePaths();
+        for (int i{0}; i < 20; ++i) {
+          dynamics.addAgent(dynamics.itineraries().at(0), 5);
+        }
+        for (int i{0}; i < 200 && dynamics.nAgents() > 0; ++i) {
+          dynamics.evolve();
+        }
+        auto const& turnCounts{dynamics.turnCounts()};
+        return std::make_pair(turnCounts.at(5).at(0), turnCounts.at(5).at(2));
+      };
+      WHEN("The weight has no threshold") {
+        auto const [nFirst, nSecond] = routeAgents(std::nullopt);
+        THEN("Every agent follows the same branch") {
+          CHECK_EQ(nFirst + nSecond, 20);
+          CHECK((nFirst == 0 || nSecond == 0));
+        }
+      }
+      WHEN("The weight has a threshold") {
+        auto const [nFirst, nSecond] = routeAgents(0.5);
+        THEN("The agents spread over both branches") {
+          CHECK_EQ(nFirst + nSecond, 20);
+          CHECK_GT(nFirst, 0);
+          CHECK_GT(nSecond, 0);
+        }
+      }
+    }
+    GIVEN("An origin street from which the destination cannot be reached") {
+      // Node 3 is entered by street 3 only, from node 4, which street 0 cannot reach
+      RoadNetwork graph;
+      graph.addStreet(0, std::make_pair(0, 1), 10.);
+      graph.addStreet(1, std::make_pair(1, 2), 10.);
+      graph.addStreet(2, std::make_pair(3, 4), 10.);
+      graph.addStreet(3, std::make_pair(4, 3), 10.);
+      FirstOrderDynamics dynamics{std::move(graph), 69};
+      dynamics.addItinerary(2, 2);
+      dynamics.updatePaths();
+      WHEN("An agent without a source street tries to depart from node 0") {
+        dynamics.addAgent(std::make_unique<Agent>(0, 0, dynamics.itineraries().at(2), 0));
+        dynamics.evolve();
+        THEN("It is dropped") {
+          CHECK_EQ(dynamics.agentStats().nKilled, 1);
+          CHECK(dynamics.agents().empty());
+          CHECK_FALSE(dynamics.meanTravelSpeed().is_valid);
+        }
+      }
+      WHEN("The agent tries to depart") {
+        dynamics.addAgent(dynamics.itineraries().at(2), 0);
+        dynamics.evolve();
+        THEN("It is dropped, without travel nor destination records") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+              dynamics.agentStats();
+          CHECK_EQ(nInserted, 1);
+          CHECK_EQ(nArrived, 0);
+          CHECK_EQ(nKilled, 1);
+          CHECK_EQ(nCurrent, 0);
+          CHECK(dynamics.agents().empty());
+          CHECK(dynamics.destinationCounts().empty());
+          CHECK_FALSE(dynamics.meanTravelSpeed().is_valid);
+        }
+      }
+    }
+    GIVEN("An intelligent agent which always deviates from its route") {
+      // The route 0 -> 1 leads to node 2: at node 1 the agent turns into street 2 instead,
+      // and comes back through street 3
+      RoadNetwork graph;
+      graph.addStreet(0, std::make_pair(0, 1), 10.);
+      graph.addStreet(1, std::make_pair(1, 2), 10.);
+      graph.addStreet(2, std::make_pair(1, 3), 10.);
+      graph.addStreet(3, std::make_pair(3, 2), 10.);
+      graph.addStreet(4, std::make_pair(2, 4), 10.);
+      FirstOrderDynamics dynamics{std::move(graph), 69};
+      dynamics.setErrorProbability(1.);
+      dynamics.setIntelligentAgentsFraction(1.);
+      dynamics.initTurnCounts();
+      dynamics.addItinerary(4, 4);
+      dynamics.addAgent(dynamics.itineraries().at(4), 0);
+      // The agent plans again in the street kernel, on the weights taken here
+      dynamics.updatePaths();
+      WHEN("We evolve the dynamics") {
+        for (int i{0}; i < 20 && dynamics.nAgents() > 0; ++i) {
+          dynamics.evolve();
+        }
+        THEN("It plans its route again after the deviation, and arrives") {
+          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
+              dynamics.agentStats();
+          CHECK_EQ(nArrived, 1);
+          CHECK_EQ(nKilled, 0);
+          CHECK_EQ(dynamics.turnCounts().at(0).at(1), 0);
+          CHECK_EQ(dynamics.turnCounts().at(0).at(2), 1);
+          CHECK_EQ(dynamics.turnCounts().at(2).at(3), 1);
         }
       }
     }
@@ -1202,7 +1241,7 @@ TEST_CASE("FirstOrderDynamics") {
       RoadNetwork graph;
       graph.setEdgeWeight("length");
       graph.addStreet(0, std::make_pair(0, 1), 10.);
-      FirstOrderDynamics dynamics{std::move(graph), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph), 69};
 
       WHEN(
           "We add an impossible itinerary (to source node) and update paths with "
@@ -1228,7 +1267,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
-  SUBCASE("Freeflow itineraries") {
+  SUBCASE("Intelligent agents") {
     GIVEN("A network with a short (0->1->2) and a long (0->3->2) branch") {
       // Streets 0-1 form the short branch, 2-3 the long one; 4 is the destination street
       // and 5 feeds node 0.
@@ -1239,7 +1278,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph.addStreet(3, std::make_pair(3, 2), 120.);
       graph.addStreet(4, std::make_pair(2, 4), 10.);
       graph.addStreet(5, std::make_pair(5, 0), 10.);
-      FirstOrderDynamics dynamics{std::move(graph), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(0, 4);
       auto const parkOnShortBranch = [&dynamics](Id const nAgents) {
@@ -1251,16 +1290,19 @@ TEST_CASE("FirstOrderDynamics") {
           street.addAgent(std::move(pAgent), 0);
         }
       };
-      auto const sendAgentsThroughNode0 = [&dynamics]() {
+      auto const addAgentOnStreet5 = [&dynamics](Id const agentId,
+                                                 bool const bIntelligent) {
+        auto pAgent =
+            std::make_unique<Agent>(agentId, 0, dynamics.itineraries().at(0), 5);
+        pAgent->setSrcStreetId(5);
+        pAgent->setNextStreetId(5);
+        pAgent->setIntelligent(bIntelligent);
+        dynamics.addAgent(std::move(pAgent));
+      };
+      auto const sendAgentsThroughNode0 = [&dynamics, &addAgentOnStreet5]() {
         // A free-flow agent and an intelligent agent enter from street 5
-        auto const& pItinerary{dynamics.itineraries().at(0)};
-        for (Id const agentId : {0, 1}) {
-          auto pAgent = std::make_unique<Agent>(0, 0, pItinerary, 5);
-          pAgent->setSrcStreetId(5);
-          pAgent->setNextStreetId(5);
-          pAgent->setIntelligent(agentId != 0);
-          dynamics.addAgent(std::move(pAgent));
-        }
+        addAgentOnStreet5(0, false);
+        addAgentOnStreet5(1, true);
         for (int i{0}; i < 6; ++i) {
           dynamics.evolve();
         }
@@ -1274,124 +1316,130 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.setIntelligentAgentsFraction(0.3);
         CHECK_EQ(dynamics.intelligentAgentsFraction(), 0.3);
       }
-      THEN("There are no free-flow itineraries before updating the paths") {
-        CHECK(dynamics.freeflowItineraries().empty());
-      }
-      WHEN("The paths are updated on the empty network") {
+      WHEN("The short branch gets congested after the paths are updated") {
         dynamics.updatePaths();
-        THEN("The free-flow itineraries match the current ones") {
-          REQUIRE_EQ(dynamics.freeflowItineraries().size(), 1);
-          auto const& pFreeflow{dynamics.freeflowItineraries().at(0)};
-          auto const& pCurrent{dynamics.itineraries().at(0)};
-          CHECK_NE(pFreeflow, pCurrent);
-          CHECK_EQ(pFreeflow->destination(), pCurrent->destination());
-          CHECK_EQ(pFreeflow->path(), pCurrent->path());
-          CHECK_EQ(pFreeflow->path().at(5), std::vector<Id>{0});
+        parkOnShortBranch(18);
+        THEN("The current weights still date back to the update") {
+          CHECK_EQ(dynamics.router().route(5, 2, RouteWeights::CURRENT),
+                   std::vector<Id>{5, 0, 1});
         }
-        AND_WHEN("The short branch gets congested and the paths are updated again") {
-          parkOnShortBranch(18);
+        AND_WHEN("A free-flow agent and an intelligent agent reach node 0") {
+          sendAgentsThroughNode0();
+          THEN(
+              "The intelligent agent plans on the traffic at its departure and takes "
+              "the long branch, the free-flow agent the short one") {
+            auto const& shortBranch{dynamics.graph().edge(0).movingAgents()};
+            auto const& longBranch{dynamics.graph().edge(2).movingAgents()};
+            REQUIRE_EQ(shortBranch.size(), 19);
+            REQUIRE_EQ(longBranch.size(), 1);
+            CHECK_FALSE(shortBranch.top()->isIntelligent());
+            CHECK_EQ(shortBranch.top()->path(), std::vector<Id>{5, 0, 1});
+            CHECK(longBranch.top()->isIntelligent());
+            CHECK_EQ(longBranch.top()->path(), std::vector<Id>{5, 2, 3});
+          }
+        }
+      }
+      WHEN("An intelligent agent waits for a free source while the short branch fills") {
+        dynamics.updatePaths();
+        // The free-flow agent takes the only slot of node 5
+        addAgentOnStreet5(0, false);
+        addAgentOnStreet5(1, true);
+        dynamics.evolve();
+        REQUIRE_EQ(dynamics.agents().size(), 1);
+        CHECK(dynamics.agents().front()->path().empty());
+        parkOnShortBranch(18);
+        for (int i{0}; i < 5; ++i) {
+          dynamics.evolve();
+        }
+        THEN("It plans on the traffic of its actual departure") {
+          auto const& longBranch{dynamics.graph().edge(2).movingAgents()};
+          REQUIRE_EQ(longBranch.size(), 1);
+          CHECK(longBranch.top()->isIntelligent());
+        }
+      }
+      WHEN("Four agents travel the short branch when the paths are updated") {
+        // Their density slows the short branch to 8.57 + 7.2 = 15.77 s, still faster
+        // than the 17.28 s of the long one
+        parkOnShortBranch(4);
+        dynamics.updatePaths();
+        THEN("The route on the current weights keeps the short branch") {
+          CHECK_EQ(dynamics.graph().edge(0).estimatedTravelTime(),
+                   doctest::Approx(100. / (13.8888888889 * (1. - 0.8 * 0.2))));
+          CHECK_EQ(dynamics.router().route(5, 2, RouteWeights::CURRENT),
+                   std::vector<Id>{5, 0, 1});
+        }
+        AND_WHEN("The same agents queue at the end of the short branch") {
+          // Queued, they no longer slow the street down but cost 4 s of queue time:
+          // 7.2 + 4 + 7.2 = 18.4 s
+          auto& street{dynamics.graph().edge(0)};
+          while (!street.movingAgents().empty()) {
+            street.enqueue(0);
+          }
           dynamics.updatePaths();
-          THEN("Only the current itinerary moves to the long branch") {
-            CHECK_EQ(dynamics.itineraries().at(0)->path().at(5), std::vector<Id>{2});
-            CHECK_EQ(dynamics.freeflowItineraries().at(0)->path().at(5),
-                     std::vector<Id>{0});
+          THEN("Only the route on the current weights moves to the long branch") {
+            CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(7.2));
+            CHECK_EQ(dynamics.router().route(5, 2, RouteWeights::CURRENT),
+                     std::vector<Id>{5, 2, 3});
+            CHECK_EQ(dynamics.router().route(5, 2, RouteWeights::FREE_FLOW),
+                     std::vector<Id>{5, 0, 1});
           }
           AND_WHEN("A free-flow agent and an intelligent agent reach node 0") {
             sendAgentsThroughNode0();
             THEN(
-                "The free-flow agent takes the short branch, the intelligent the long "
-                "one") {
-              auto const& shortBranch{dynamics.graph().edge(0).movingAgents()};
+                "The free-flow agent joins the queued branch, the intelligent one "
+                "avoids it") {
+              auto const& shortBranch{dynamics.graph().edge(0)};
               auto const& longBranch{dynamics.graph().edge(2).movingAgents()};
-              REQUIRE_EQ(shortBranch.size(), 19);
+              CHECK_EQ(shortBranch.nExitingAgents(), 4);
+              REQUIRE_EQ(shortBranch.movingAgents().size(), 1);
               REQUIRE_EQ(longBranch.size(), 1);
-              CHECK_FALSE(shortBranch.top()->isIntelligent());
+              CHECK_FALSE(shortBranch.movingAgents().top()->isIntelligent());
               CHECK(longBranch.top()->isIntelligent());
+              // The queue does not slow down the agents entering the street
+              CHECK_EQ(shortBranch.movingAgents().top()->speed(),
+                       doctest::Approx(shortBranch.maxSpeed()));
             }
           }
         }
-        AND_WHEN("Four agents travel the short branch and the paths are updated again") {
-          // Their density slows the short branch to 8.57 + 7.2 = 15.77 s, still faster
-          // than the 17.28 s of the long one
-          parkOnShortBranch(4);
-          dynamics.updatePaths();
-          THEN("The current itinerary keeps the short branch") {
-            CHECK_EQ(dynamics.graph().edge(0).estimatedTravelTime(),
-                     doctest::Approx(100. / (13.8888888889 * (1. - 0.8 * 0.2))));
-            CHECK_EQ(dynamics.itineraries().at(0)->path().at(5), std::vector<Id>{0});
-          }
-          AND_WHEN("The same agents queue at the end of the short branch") {
-            // Queued, they no longer slow the street down but cost 4 s of queue time:
-            // 7.2 + 4 + 7.2 = 18.4 s
-            auto& street{dynamics.graph().edge(0)};
-            while (!street.movingAgents().empty()) {
-              street.enqueue(0);
-            }
-            dynamics.updatePaths();
-            THEN("Only the current itinerary moves to the long branch") {
-              CHECK_EQ(street.estimatedTravelTime(), doctest::Approx(7.2));
-              CHECK_EQ(dynamics.itineraries().at(0)->path().at(5), std::vector<Id>{2});
-              CHECK_EQ(dynamics.freeflowItineraries().at(0)->path().at(5),
-                       std::vector<Id>{0});
-            }
-            AND_WHEN("A free-flow agent and an intelligent agent reach node 0") {
-              sendAgentsThroughNode0();
-              THEN(
-                  "The free-flow agent joins the queued branch, the intelligent one "
-                  "avoids it") {
-                auto const& shortBranch{dynamics.graph().edge(0)};
-                auto const& longBranch{dynamics.graph().edge(2).movingAgents()};
-                CHECK_EQ(shortBranch.nExitingAgents(), 4);
-                REQUIRE_EQ(shortBranch.movingAgents().size(), 1);
-                REQUIRE_EQ(longBranch.size(), 1);
-                CHECK_FALSE(shortBranch.movingAgents().top()->isIntelligent());
-                CHECK(longBranch.top()->isIntelligent());
-                // The queue does not slow down the agents entering the street
-                CHECK_EQ(shortBranch.movingAgents().top()->speed(),
-                         doctest::Approx(shortBranch.maxSpeed()));
-              }
-            }
+      }
+      WHEN("Agents are added with the default intelligent fraction") {
+        for (int i{0}; i < 20; ++i) {
+          dynamics.addAgent(dynamics.itineraries().at(0), 5);
+        }
+        THEN("No agent is intelligent") {
+          for (auto const& pAgent : dynamics.agents()) {
+            CHECK_FALSE(pAgent->isIntelligent());
           }
         }
-        AND_WHEN("Agents are added with the default intelligent fraction") {
-          for (int i{0}; i < 20; ++i) {
-            dynamics.addAgent(dynamics.itineraries().at(0), 5);
-          }
-          THEN("No agent is intelligent") {
-            for (auto const& pAgent : dynamics.agents()) {
-              CHECK_FALSE(pAgent->isIntelligent());
-            }
+      }
+      WHEN("Agents are added with an intelligent fraction of 1") {
+        dynamics.setIntelligentAgentsFraction(1.);
+        for (int i{0}; i < 20; ++i) {
+          dynamics.addAgent(dynamics.itineraries().at(0), 5);
+        }
+        dynamics.addAgent(
+            std::vector<std::shared_ptr<Itinerary>>{dynamics.itineraries().at(0)});
+        dynamics.addAgent();
+        THEN("Every agent with an itinerary is intelligent, random ones are not") {
+          REQUIRE_EQ(dynamics.agents().size(), 22);
+          for (auto const& pAgent : dynamics.agents()) {
+            CHECK_EQ(pAgent->isIntelligent(), !pAgent->isRandom());
           }
         }
-        AND_WHEN("Agents are added with an intelligent fraction of 1") {
-          dynamics.setIntelligentAgentsFraction(1.);
-          for (int i{0}; i < 20; ++i) {
-            dynamics.addAgent(dynamics.itineraries().at(0), 5);
-          }
-          dynamics.addAgent(
-              std::vector<std::shared_ptr<Itinerary>>{dynamics.itineraries().at(0)});
-          dynamics.addAgent();
-          THEN("Every agent with an itinerary is intelligent, random ones are not") {
-            REQUIRE_EQ(dynamics.agents().size(), 22);
-            for (auto const& pAgent : dynamics.agents()) {
-              CHECK_EQ(pAgent->isIntelligent(), !pAgent->isRandom());
-            }
-          }
+      }
+      WHEN("Agents are added with an intelligent fraction of 0.2") {
+        dynamics.setIntelligentAgentsFraction(0.2);
+        for (int i{0}; i < 500; ++i) {
+          dynamics.addAgent(dynamics.itineraries().at(0), 5);
         }
-        AND_WHEN("Agents are added with an intelligent fraction of 0.2") {
-          dynamics.setIntelligentAgentsFraction(0.2);
-          for (int i{0}; i < 500; ++i) {
-            dynamics.addAgent(dynamics.itineraries().at(0), 5);
-          }
-          THEN("About a fifth of the agents is intelligent") {
-            auto const nIntelligent =
-                std::count_if(dynamics.agents().cbegin(),
-                              dynamics.agents().cend(),
-                              [](auto const& pAgent) { return pAgent->isIntelligent(); });
-            // Asymmetric fraction: an inverted draw (~400) would fail this check
-            CHECK_GT(nIntelligent, 60);
-            CHECK_LT(nIntelligent, 140);
-          }
+        THEN("About a fifth of the agents is intelligent") {
+          auto const nIntelligent =
+              std::count_if(dynamics.agents().cbegin(),
+                            dynamics.agents().cend(),
+                            [](auto const& pAgent) { return pAgent->isIntelligent(); });
+          // Asymmetric fraction: an inverted draw (~400) would fail this check
+          CHECK_GT(nIntelligent, 60);
+          CHECK_LT(nIntelligent, 140);
         }
       }
       WHEN("Node 0 becomes a roundabout after the dynamics is built") {
@@ -1402,7 +1450,8 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.graph().edge(5).target(), &roundabout);
           CHECK_EQ(dynamics.graph().edge(0).source(), &roundabout);
           CHECK_EQ(dynamics.graph().edge(2).source(), &roundabout);
-          CHECK_EQ(dynamics.itineraries().at(0)->path().at(5), std::vector<Id>{0});
+          CHECK_EQ(dynamics.router().route(5, 2, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{5, 0, 1});
           CHECK_EQ(dynamics.graph().edge(0).movingAgents().size(), 2);
           CHECK(dynamics.graph().edge(2).movingAgents().empty());
         }
@@ -1411,10 +1460,9 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.addItinerary(1, 5);
         dynamics.setUpdatePathsThrowOnEmpty(false);
         dynamics.updatePaths();
-        THEN("It is also missing from the free-flow itineraries") {
+        THEN("Only the other itinerary is left") {
           CHECK_FALSE(dynamics.itineraries().contains(1));
-          CHECK_FALSE(dynamics.freeflowItineraries().contains(1));
-          CHECK(dynamics.freeflowItineraries().contains(0));
+          CHECK(dynamics.itineraries().contains(0));
         }
       }
     }
@@ -1426,7 +1474,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addStreet(0, std::make_pair(0, 1), 13.8888888889);
       graph2.addStreet(1, std::make_pair(1, 2), 13.8888888889);
       graph2.addStreet(2, std::make_pair(2, 3), 13.8888888889);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -1456,7 +1504,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph.addStreet(1, std::make_pair(1, 2), 5.);
       graph.addStreet(2, std::make_pair(0, 2), 10.);
       graph.addStreet(3, std::make_pair(2, 3), 5.);
-      FirstOrderDynamics dynamics{std::move(graph), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(3, 3);
       dynamics.updatePaths();
@@ -1493,7 +1541,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addStreet(0, std::make_pair(0, 1), 13.8888888889);
       graph2.addStreet(1, std::make_pair(1, 2), 13.8888888889);
       graph2.addStreet(2, std::make_pair(2, 3), 13.8888888889);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -1521,7 +1569,7 @@ TEST_CASE("FirstOrderDynamics") {
       s1.setTransportCapacity(0.3);
       graph2.addStreet(1, std::make_pair(1, 2), 13.8888888889);
       graph2.addStreet(2, std::make_pair(2, 3), 13.8888888889);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(std::make_shared<Itinerary>(0, 2));
       dynamics.updatePaths();
@@ -1554,7 +1602,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addStreet(1, std::make_pair(1, 2), 13.8888888889);
       graph2.addStreet(2, std::make_pair(2, 3), 13.8888888889);
       graph2.setEdgeWeight("length");
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -1585,7 +1633,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
     GIVEN("A dynamics with many random agents reinserted when they arrive") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 69};
+      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
       dynamics.setReinsertAgents(true);
       // Short trips, so that many agents arrive concurrently during the parallel
       // street evolution
@@ -1611,7 +1659,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addStreet(2, std::make_pair(2, 3), 30., 15.);
       graph2.addStreet(3, std::make_pair(3, 4), 30., 15.);
       graph2.makeRoundabout(2);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setDestinations({2, 3});
       dynamics.updatePaths();
@@ -1678,7 +1726,7 @@ TEST_CASE("FirstOrderDynamics") {
         p.addGreen(16, dsf::Direction::ANY);
         tl.addPhase(p);
       }
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(8, 8);
       dynamics.updatePaths();
@@ -1784,7 +1832,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.adjustNodeCapacities();
       graph2.autoMapStreetLanes();
 
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setDestinations({105, 126, 137, 148});
       dynamics.updatePaths();
@@ -1866,7 +1914,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.adjustNodeCapacities();
       graph2.autoMapStreetLanes();
 
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setDestinations({105, 126, 137, 148});
       dynamics.updatePaths();
@@ -1946,7 +1994,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
       // The original counter started at 3 — reproduce with advanceBy
       tl.advanceBy(3);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setDestinations({105, 126, 137, 148});
       dynamics.updatePaths();
@@ -2031,7 +2079,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addStreet(2, std::make_pair(2, 5), 10., 10.);
       auto& rb = graph2.makeRoundabout(1);
       graph2.adjustNodeCapacities();
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(0, 0);
       dynamics.addItinerary(2, 2);
@@ -2077,7 +2125,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addStreet(0, std::make_pair(0, 1), 3.);
       graph2.addStreet(5, std::make_pair(1, 2), 1.);
       graph2.addStreet(6, std::make_pair(2, 3), 1.);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 6);
       dynamics.updatePaths();
@@ -2105,7 +2153,7 @@ TEST_CASE("FirstOrderDynamics") {
       s1.setTransportCapacity(0.3);
       graph2.addStreet(1, std::make_pair(1, 2), 1.);
       graph2.addStreet(2, std::make_pair(2, 3), 1.);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -2154,7 +2202,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addStreet(2, std::make_pair(2, 3), 30., 15.);
       graph2.edge(1).setTransportCapacity(streetCapacity);
       graph2.node(1).setTransportCapacity(nodeCapacity);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -2207,7 +2255,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.setEdgeWeight("length");
       graph2.addStreet(0, std::make_pair(0, 1), 300., 15.);
       graph2.addStreet(1, std::make_pair(1, 2), 300., 15.);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(1, 1);
       dynamics.updatePaths();
@@ -2245,7 +2293,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addStreet(1, std::make_pair(1, 2), 30., 15.);
       graph2.addStreet(2, std::make_pair(2, 3), 30., 15.);
       REQUIRE_EQ(graph2.edge(0).capacity(), 1);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.addItinerary(2, 2);
       dynamics.updatePaths();
@@ -2301,33 +2349,6 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
-  SUBCASE("Path cache") {
-    auto const makeNetwork = []() {
-      RoadNetwork graph;
-      graph.setEdgeWeight("length");
-      graph.addStreet(0, std::make_pair(0, 1), 10.);
-      graph.addStreet(1, std::make_pair(1, 2), 10.);
-      graph.addStreet(2, std::make_pair(2, 3), 10.);
-      return graph;
-    };
-    auto const cacheFile = std::filesystem::path{CACHE_FOLDER} / "4242.ity";
-    std::filesystem::remove(cacheFile);
-    GIVEN("A dynamics object with the cache enabled") {
-      FirstOrderDynamics dynamics{makeNetwork(), true, 69};
-      dynamics.addItinerary(4242, 2);
-      dynamics.updatePaths();
-      THEN("The path is saved and reloaded by another dynamics object") {
-        CHECK(std::filesystem::exists(cacheFile));
-        FirstOrderDynamics cached{makeNetwork(), true, 69};
-        cached.addItinerary(4242, 2);
-        cached.updatePaths();
-        CHECK_FALSE(cached.itineraries().at(4242)->path().empty());
-        CHECK_EQ(cached.itineraries().at(4242)->path(),
-                 dynamics.itineraries().at(4242)->path());
-      }
-    }
-    std::filesystem::remove(cacheFile);
-  }
   SUBCASE("Stagnant agents") {
     GIVEN("An agent waiting at a traffic light which is never green for it") {
       RoadNetwork graph2;
@@ -2339,7 +2360,7 @@ TEST_CASE("FirstOrderDynamics") {
       TrafficLightPhase phase{10};
       phase.addGreen(2);
       tl.addPhase(phase);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.addItinerary(1, 1);
       dynamics.updatePaths();
       dynamics.addAgent(dynamics.itineraries().at(1), 0);
@@ -2364,7 +2385,7 @@ TEST_CASE("FirstOrderDynamics") {
       // A 5 m street only has room for one vehicle
       graph2.addStreet(0, std::make_pair(0, 1), 5.);
       graph2.addStreet(1, std::make_pair(1, 2), 100.);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setODs({{0, 1, 1.}});
       dynamics.updatePaths();
       dynamics.killStagnantAgents(1.);
@@ -2403,7 +2424,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph2.addEdge<Street>(22, std::make_pair(2, 22), 10., 10.);
       graph2.addEdge<Street>(33, std::make_pair(3, 33), 10., 10.);
       graph2.addEdge<Street>(44, std::make_pair(4, 44), 10., 10.);
-      FirstOrderDynamics dynamics{std::move(graph2), false, 69};
+      FirstOrderDynamics dynamics{std::move(graph2), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.graph().node(0).setCapacity(3);
       dynamics.graph().node(0).setTransportCapacity(1);
@@ -2491,7 +2512,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph.adjustNodeCapacities();
       graph.setEdgeWeight("length");
 
-      FirstOrderDynamics dynamics{std::move(graph), false, 42};
+      FirstOrderDynamics dynamics{std::move(graph), 42};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dynamics.setOrigins({{0, 1.0}});
 
@@ -2541,7 +2562,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph.adjustNodeCapacities();
       graph.setEdgeWeight("length");
 
-      FirstOrderDynamics dynamics{std::move(graph), false, 123};
+      FirstOrderDynamics dynamics{std::move(graph), 123};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.);
       dynamics.setOrigins({{0, 1.0}});
 
@@ -2592,7 +2613,7 @@ TEST_CASE("FirstOrderDynamics") {
       network.importEdges((DATA_FOLDER / "manhattan_edges.csv").string());
       network.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
       network.setEdgeWeight("length");
-      FirstOrderDynamics dynamics{std::move(network), false, constructorSeed};
+      FirstOrderDynamics dynamics{std::move(network), constructorSeed};
       dynamics.setConcurrency(1);
       if (newSeed.has_value()) {
         dynamics.setSeed(*newSeed);
@@ -2636,7 +2657,7 @@ TEST_CASE("RoadDynamics Configuration") {
   defaultNetwork.importNodeProperties((DATA_FOLDER / "manhattan_nodes.csv").string());
   defaultNetwork.autoMapStreetLanes();
 
-  FirstOrderDynamics dynamics{std::move(defaultNetwork), false, 42};
+  FirstOrderDynamics dynamics{std::move(defaultNetwork), 42};
 
   SUBCASE("originCounts and destinationCounts") {
     GIVEN("A simple network with origin and destination nodes") {
@@ -2645,7 +2666,7 @@ TEST_CASE("RoadDynamics Configuration") {
       graph2.addStreet(0, std::make_pair(0, 1), 13.8888888889);
       graph2.addStreet(1, std::make_pair(1, 2), 13.8888888889);
       graph2.addStreet(2, std::make_pair(2, 3), 13.8888888889);
-      FirstOrderDynamics dyn{std::move(graph2), false, 42};
+      FirstOrderDynamics dyn{std::move(graph2), 42};
       dyn.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dyn.addItinerary(2, 2);
       dyn.updatePaths();
@@ -2708,7 +2729,7 @@ TEST_CASE("RoadDynamics Configuration") {
       graph2.addStreet(1, std::make_pair(1, 2), 13.8888888889);
       graph2.addStreet(2, std::make_pair(1, 3), 13.8888888889);
       graph2.addStreet(3, std::make_pair(4, 0), 13.8888888889);
-      FirstOrderDynamics dyn{std::move(graph2), false, 42};
+      FirstOrderDynamics dyn{std::move(graph2), 42};
       dyn.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       dyn.setDestinations({1, 2});
       dyn.updatePaths();
@@ -2742,7 +2763,7 @@ TEST_CASE("RoadDynamics Configuration") {
       graph2.addStreet(11, std::make_pair(1, 2), 13.8888888889);
       graph2.addStreet(12, std::make_pair(2, 3), 13.8888888889);
       graph2.addStreet(13, std::make_pair(2, 4), 13.8888888889);
-      FirstOrderDynamics dyn{std::move(graph2), false, 42};
+      FirstOrderDynamics dyn{std::move(graph2), 42};
 
       auto const sortedIds = [](auto const& weightedIds) {
         std::vector<Id> ids;
@@ -2887,7 +2908,7 @@ TEST_CASE("SpeedFunction::CONSTANT") {
   };
   SUBCASE("Arguments") {
     GIVEN("A dynamics object") {
-      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      FirstOrderDynamics dynamics{makeNetwork(), 42};
       THEN("The constant speed function takes no arguments") {
         CHECK_NOTHROW(dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT));
       }
@@ -2903,7 +2924,7 @@ TEST_CASE("SpeedFunction::CONSTANT") {
   }
   SUBCASE("Estimated travel time") {
     GIVEN("A dynamics object using the constant speed function") {
-      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      FirstOrderDynamics dynamics{makeNetwork(), 42};
       dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
       THEN("Empty streets are traversed in free flow") {
         CHECK_EQ(dynamics.graph().edge(0).estimatedTravelTime(), doctest::Approx(10.));
@@ -2952,7 +2973,7 @@ TEST_CASE("SpeedFunction::CONSTANT") {
       return result;
     };
     GIVEN("A dynamics object using the constant speed function") {
-      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      FirstOrderDynamics dynamics{makeNetwork(), 42};
       dynamics.setSpeedFunction(dsf::SpeedFunction::CONSTANT);
       WHEN("We evolve the dynamics until the streets are loaded") {
         load(dynamics);
@@ -2971,7 +2992,7 @@ TEST_CASE("SpeedFunction::CONSTANT") {
       }
     }
     GIVEN("The same dynamics using the linear speed function") {
-      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      FirstOrderDynamics dynamics{makeNetwork(), 42};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
       WHEN("We evolve the dynamics until the streets are loaded") {
         load(dynamics);
@@ -2988,7 +3009,7 @@ TEST_CASE("SpeedFunction::CONSTANT") {
       }
     }
     GIVEN("The same dynamics using a custom speed function") {
-      FirstOrderDynamics dynamics{makeNetwork(), false, 42};
+      FirstOrderDynamics dynamics{makeNetwork(), 42};
       dynamics.setSpeedFunction(dsf::SpeedFunction::CUSTOM, [](Street const& street) {
         return street.maxSpeed() / 2.;
       });

@@ -39,8 +39,10 @@ namespace dsf::mobility {
     double m_distance;                     // Travelled distance
     std::optional<double> m_maxDistance;   // Maximum distance for stochastic agents
     std::optional<std::time_t> m_maxTime;  // Maximum time for stochastic agents
-    bool m_bIsIntelligent;  // If true, the agent follows the updated paths, otherwise the
-                            // free-flow ones (default is false)
+    std::vector<Id> m_path;                // The planned streets (see path())
+    std::size_t m_pathIndex{0};            // The agent's position along m_path
+    bool m_bIsIntelligent;  // If true, the agent plans its routes on the current traffic,
+                            // otherwise on free-flow travel times (default is false)
 
   public:
     /// @brief Construct a new Agent object
@@ -93,9 +95,9 @@ namespace dsf::mobility {
     /// @param distance The value to increment the agent's distance byù
     /// @throw std::invalid_argument, if distance is negative
     void incrementDistance(double distance);
-    /// @brief Update the agent's itinerary
-    /// @details If possible, the agent's itinerary is updated by removing the first element
-    /// from the itinerary's vector.
+    /// @brief Set the agent's maximum distance
+    /// @param maxDistance The agent's maximum distance
+    /// @throw std::invalid_argument, if maxDistance is not positive
     inline void setMaxDistance(double const maxDistance) {
       maxDistance > 0. ? m_maxDistance = maxDistance
                        : throw std::invalid_argument(
@@ -105,12 +107,24 @@ namespace dsf::mobility {
     /// @param maxTime The agent's maximum time
     inline void setMaxTime(std::time_t const maxTime) { m_maxTime = maxTime; }
     /// @brief Set whether the agent is intelligent
-    /// @param isIntelligent If true, the agent routes on the periodically updated best paths,
-    ///   otherwise on the free-flow ones (computed on the empty network)
+    /// @param isIntelligent If true, the agent plans its routes on the current traffic,
+    ///   otherwise on free-flow travel times
     inline void setIntelligent(bool const isIntelligent) noexcept {
       m_bIsIntelligent = isIntelligent;
     }
+    /// @brief Set the agent's planned route
+    /// @param path The ids of the streets to travel, starting from the street the agent is
+    ///   on (or, before its departure, the first street it will travel)
+    /// @details The agent's position along the route is reset to its first street
+    void setPath(std::vector<Id> path) noexcept;
+    /// @brief Drop the agent's planned route, so that it is planned again when needed
+    void clearPath() noexcept;
+    /// @brief Move the agent's position along its planned route to the next street
+    /// @throw std::logic_error if the route has no next street
+    void advancePath();
 
+    /// @brief Move on to the next itinerary of the trip, if any
+    /// @details The planned route, which leads to the previous destination, is dropped
     void updateItinerary();
     /// @brief Reset the agent
     /// @details Reset the following values:
@@ -120,6 +134,7 @@ namespace dsf::mobility {
     /// - distance = 0
     /// - time = 0
     /// - itinerary index = 0
+    /// - planned route = none
     void reset(std::time_t const& spawnTime);
 
     /// @brief Get the agent's spawn time
@@ -174,9 +189,23 @@ namespace dsf::mobility {
     /// @return True if the agent is a random agent, false otherwise
     inline bool isRandom() const noexcept { return m_trip.empty(); };
     /// @brief Return true if the agent is intelligent
-    /// @return True if the agent routes on the periodically updated best paths, false if it
-    ///   routes on the free-flow ones
+    /// @return True if the agent plans its routes on the current traffic, false if it plans
+    ///   them on free-flow travel times
     inline bool isIntelligent() const noexcept { return m_bIsIntelligent; };
+    /// @brief Get the agent's planned route
+    /// @return std::vector<Id> const& The ids of the planned streets, empty if there is none
+    inline auto const& path() const noexcept { return m_path; }
+    /// @brief Get the agent's position along its planned route
+    /// @return std::size_t The index in path() of the street the agent is on, at each
+    ///   routing decision (or of the first street it will travel, before its departure)
+    inline auto pathIndex() const noexcept { return m_pathIndex; }
+    /// @brief Get the street following the agent's position along its planned route
+    /// @return std::optional<Id> The street id, or std::nullopt at the end of the route
+    std::optional<Id> nextPlannedStreetId() const noexcept;
+    /// @brief Check whether the agent is where its planned route expects it
+    /// @param streetId The id of the street the agent is on
+    /// @return True if the street at the agent's position along its route is streetId
+    bool isOnPath(Id const streetId) const noexcept;
     /// @brief Check if a random agent has arrived at its destination
     /// @param currentTime The current simulation time
     /// @return True if the agent has arrived (exceeded max distance or time), false otherwise

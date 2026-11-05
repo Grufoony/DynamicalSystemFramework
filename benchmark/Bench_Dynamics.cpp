@@ -34,7 +34,7 @@ static RoadNetwork makeForliNetwork() {
 }
 
 static std::unique_ptr<FirstOrderDynamics> makeForliDynamics() {
-  auto pDynamics = std::make_unique<FirstOrderDynamics>(makeForliNetwork(), false, SEED);
+  auto pDynamics = std::make_unique<FirstOrderDynamics>(makeForliNetwork(), SEED);
   pDynamics->prepareNetwork();
   pDynamics->setUpdatePathsThrowOnEmpty(false);
   return pDynamics;

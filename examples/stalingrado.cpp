@@ -82,7 +82,7 @@ int main() {
   auto& coil = graph.edge(19);
 
   // Create the dynamics
-  FirstOrderDynamics dynamics{std::move(graph), false, 69};
+  FirstOrderDynamics dynamics{std::move(graph), 69};
   dynamics.addItinerary(25, 25);
   dynamics.updatePaths();
 

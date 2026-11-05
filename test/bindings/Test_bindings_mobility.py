@@ -174,20 +174,12 @@ def test_dynamics_constant_speed_function_rejects_argument(dynamics):
         dynamics.setSpeedFunction(mobility.SpeedFunction.CONSTANT, 0.8)
 
 
-def test_dynamics_freeflow_itineraries(dynamics):
+def test_dynamics_intelligent_agents_fraction(dynamics):
     assert dynamics.intelligentAgentsFraction() == 0.0
     dynamics.setIntelligentAgentsFraction(0.3)
     assert dynamics.intelligentAgentsFraction() == pytest.approx(0.3)
     with pytest.raises(ValueError):
         dynamics.setIntelligentAgentsFraction(1.5)
-
-    assert dynamics.freeflowItineraries() == {}
-    dynamics.addItinerary(4, 4)
-    dynamics.updatePaths()
-
-    freeflow = dynamics.freeflowItineraries()
-    assert set(freeflow) == set(dynamics.itineraries()) == {4}
-    assert freeflow[4].destination() == 4
 
 
 def test_dynamics_mode_defaults_to_edges(dynamics):

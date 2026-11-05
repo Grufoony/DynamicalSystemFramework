@@ -70,9 +70,35 @@ namespace dsf::mobility {
     }
     m_distance += distance;
   }
+  void Agent::setPath(std::vector<Id> path) noexcept {
+    m_path = std::move(path);
+    m_pathIndex = 0;
+  }
+  void Agent::clearPath() noexcept {
+    m_path.clear();
+    m_pathIndex = 0;
+  }
+  void Agent::advancePath() {
+    if (m_pathIndex + 1 >= m_path.size()) {
+      throw std::logic_error(
+          std::format("Agent {} is at the end of its planned route", m_id));
+    }
+    ++m_pathIndex;
+  }
+  std::optional<Id> Agent::nextPlannedStreetId() const noexcept {
+    if (m_pathIndex + 1 >= m_path.size()) {
+      return std::nullopt;
+    }
+    return m_path[m_pathIndex + 1];
+  }
+  bool Agent::isOnPath(Id const streetId) const noexcept {
+    return m_pathIndex < m_path.size() && m_path[m_pathIndex] == streetId;
+  }
+
   void Agent::updateItinerary() {
     if (!m_trip.empty() && m_itineraryIdx < m_trip.size() - 1) {
       ++m_itineraryIdx;
+      clearPath();
     }
   }
   void Agent::reset(std::time_t const& spawnTime) {
@@ -83,6 +109,7 @@ namespace dsf::mobility {
     m_speed = 0.;
     m_distance = 0.;
     m_itineraryIdx = 0;
+    clearPath();
   }
 
   std::shared_ptr<Itinerary> const& Agent::itinerary() const {

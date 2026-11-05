@@ -252,9 +252,14 @@ namespace dsf::mobility {
     void importRoadNetwork(std::string_view const edgesFile,
                            std::string_view const nodePropertiesFile = std::string_view());
 
-    /// @brief Configure the path-update cadence forwarded to the dynamics engine.
-    /// @param deltaT The update cadence in time steps.
-    /// @param throw_on_empty Whether an empty itinerary path should throw.
+    /// @brief Configure how often the routing graph is rebuilt (see
+    ///   FirstOrderDynamics::updatePaths)
+    /// @details The routing graph is always built at the first time step and after each OD
+    ///   update. Agents plan their routes when they depart, so a periodic rebuild only matters
+    ///   when the network changes during the run.
+    /// @param deltaT The rebuild cadence in time steps (0 means never)
+    /// @param throw_on_empty Whether a destination which cannot be reached throws, or is
+    ///   removed
     void updatePaths(std::time_t const deltaT = 0, bool const throw_on_empty = true);
 
     /// @brief Configure the data-saving behavior.
