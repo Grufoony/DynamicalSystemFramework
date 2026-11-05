@@ -152,6 +152,7 @@ namespace dsf::mobility {
     std::string m_speedFunctionDescription;
     double m_uturnPenaltyFactor = 0.1;
     double m_intelligentFraction = 0.;
+    std::size_t m_kShortestPaths = 3;
     DynamicsMode m_mode{DynamicsMode::EDGES};
     bool m_updatepathsThrowOnEmpty = true;
     bool m_reinsertAgents = false;
@@ -188,6 +189,14 @@ namespace dsf::mobility {
     void m_dropPendingAgent(std::unique_ptr<Agent>& pAgent);
     /// @brief Build the router if it was never built or the network has changed its streets
     void m_ensureRouter();
+    /// @brief Choose one of an agent's routes (see Router::chooseRoute)
+    /// @param agent The agent
+    /// @param routes The routes, sorted by cost
+    /// @param fromId The street or node the routes start from, to vary the draw
+    /// @return std::vector<Id> The chosen route, empty if there is none
+    std::vector<Id> m_chooseRoute(Agent const& agent,
+                                  std::vector<Route> routes,
+                                  Id fromId) const;
     /// @brief Plan the route of a non-random agent from a street to its destination
     /// @param agent The agent
     /// @param fromStreetId The street the route starts with
@@ -407,13 +416,23 @@ namespace dsf::mobility {
     /// @param intelligentFraction The fraction, in [0, 1]
     /// @details When it is added, each non-random agent is flagged as intelligent with this
     ///   probability (default is 0, i.e. no intelligent agents). Every agent plans its route
-    ///   with A* when it departs: intelligent agents on the current traffic, i.e. the
-    ///   network's edge weight (see RoadNetwork::setEdgeWeight), the others on the free-flow
-    ///   travel times (length / maxSpeed). Routes are not planned again, unless the agent
+    ///   when it departs (see setKShortestPaths): intelligent agents on the current traffic,
+    ///   i.e. the network's edge weight (see RoadNetwork::setEdgeWeight), the others on the
+    ///   free-flow travel times (length / maxSpeed). Routes are not planned again, unless the agent
     ///   leaves its route, starts a new trip leg or meets a closed street: intelligent agents
     ///   then use the street weights of the previous time step.
     /// @throw std::invalid_argument If the fraction is not in [0, 1]
     void setIntelligentAgentsFraction(double const intelligentFraction);
+    /// @brief Set the number of routes each agent chooses from
+    /// @param k The number of routes, at least 1 (default is 3)
+    /// @details When it plans its route, an agent computes its k shortest routes with Yen's
+    ///   algorithm and picks one with probability proportional to exp(-cost / lowest cost).
+    ///   With k = 1 every agent takes the shortest route.
+    /// @throw std::invalid_argument If k is 0
+    void setKShortestPaths(std::size_t const k);
+    /// @brief Get the number of routes each agent chooses from
+    /// @return std::size_t The number of routes
+    inline auto kShortestPaths() const noexcept { return m_kShortestPaths; }
     /// @brief Set how origin, destination and OD ids are interpreted
     /// @param mode DynamicsMode::EDGES for street ids, DynamicsMode::NODES for node ids
     /// @details In EDGES mode an agent starts from the source node of its origin street and
@@ -502,7 +521,7 @@ namespace dsf::mobility {
     void resetTurnCounts();
     /// @brief Rebuild the routing graph and check that every destination can be reached
     /// @details The routing graph (see Router) holds the network's open streets, allowed
-    ///   turns, free-flow travel times and weight threshold: call this method after changing
+    ///   turns and free-flow travel times: call this method after changing
     ///   any of them. Agents plan their routes when they depart, so this method does not
     ///   change the routes of the agents already travelling, unless their next street gets
     ///   closed. A destination cannot be reached if no open street enters its source node.

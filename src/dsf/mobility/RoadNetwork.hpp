@@ -122,13 +122,9 @@ namespace dsf::mobility {
     /// - any other value is used as the name of a numeric custom attribute of the streets
     /// The weight is used by the path algorithms of the network and by the intelligent agents
     /// of a FirstOrderDynamics, which plan their route on it when they depart (see Router).
-    /// @param threshold An optional relative tolerance on the path cost. The path algorithms
-    ///   keep every path whose cost is within distance * (1 + threshold) of the shortest one.
-    ///   The agents' routes are planned on street costs multiplied by random factors in
-    ///   [1, 1 + threshold), so that each route costs at most (1 + threshold) times the
-    ///   shortest one and the agents spread over near-optimal alternatives.
-    void setEdgeWeight(std::string_view const strv_weight,
-                       std::optional<double> const threshold = std::nullopt) final;
+    /// The path algorithms keep every equally short path. The agents choose among their k
+    /// shortest routes instead (see FirstOrderDynamics::setKShortestPaths).
+    void setEdgeWeight(std::string_view const strv_weight) final;
 
     /// @brief Describe the RoadNetwork
     /// @param os The output stream to write the description to (default is std::cout)
@@ -469,10 +465,7 @@ namespace dsf::mobility {
         continue;
       }
 
-      double edgeBudget = edgeDistToTarget;
-      if (m_weightThreshold.has_value()) {
-        edgeBudget *= (1.0 + *m_weightThreshold);
-      }
+      double const edgeBudget = edgeDistToTarget;
 
       auto const& targetNode = *pEdge->target();
       auto const outgoingEdges = targetNode.outgoingEdges();

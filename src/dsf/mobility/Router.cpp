@@ -36,11 +36,6 @@ namespace dsf::mobility {
         return lhs.street > rhs.street;
       }
     };
-
-    // A uniform value in [0, 1) from a seed and a key
-    double unitNoise(std::uint64_t const seed, std::uint64_t const key) noexcept {
-      return static_cast<double>(Router::mixSeed(seed, key) >> 11) * 0x1.0p-53;
-    }
   }  // namespace
 
   void Router::SearchBuffers::prepare(std::size_t const nStreets) {
@@ -48,10 +43,12 @@ namespace dsf::mobility {
       cost.assign(nStreets, 0.);
       parent.assign(nStreets, NO_STREET);
       stamp.assign(nStreets, 0);
+      banStamp.assign(nStreets, 0);
       generation = 0;
     }
     if (++generation == 0) {
       std::ranges::fill(stamp, 0);
+      std::ranges::fill(banStamp, 0);
       generation = 1;
     }
     heap.clear();
@@ -124,20 +121,11 @@ namespace dsf::mobility {
     }
     m_freeFlow.heuristicFactor = m_heuristicFactor(m_freeFlow.weights);
 
-    m_threshold = network.weightThreshold().value_or(0.);
-    if (m_threshold < 0.) {
-      spdlog::warn("Negative weight threshold ({}) ignored: routes are exact.",
-                   m_threshold);
-      m_threshold = 0.;
-    }
-
     updateCurrentWeights(network);
-    spdlog::debug(
-        "Built the routing graph: {} streets, {} turns, heuristic {}, threshold {}",
-        nStreets,
-        m_turns.size(),
-        m_bHeuristic ? "on" : "off",
-        m_threshold);
+    spdlog::debug("Built the routing graph: {} streets, {} turns, heuristic {}",
+                  nStreets,
+                  m_turns.size(),
+                  m_bHeuristic ? "on" : "off");
   }
 
   void Router::m_buildHeuristic(RoadNetwork const& network, std::span<Id const> nodeIds) {
@@ -266,28 +254,51 @@ namespace dsf::mobility {
     return weights == RouteWeights::CURRENT ? m_current : m_freeFlow;
   }
 
+  std::span<std::uint32_t const> Router::m_nodeOutgoing(std::uint32_t const node) const {
+    return std::span{m_nodeOut}.subspan(
+        m_nodeOutOffsets[node], m_nodeOutOffsets[node + 1] - m_nodeOutOffsets[node]);
+  }
+  std::vector<Id> Router::m_toIds(std::span<std::uint32_t const> streets) const {
+    std::vector<Id> ids;
+    ids.reserve(streets.size());
+    for (auto const street : streets) {
+      ids.push_back(m_streetIds[street]);
+    }
+    return ids;
+  }
+
   std::vector<Id> Router::route(Id const fromStreetId,
                                 Id const goalNodeId,
-                                RouteWeights const weights,
-                                std::uint64_t const seed) const {
+                                RouteWeights const weights) const {
     auto const start{m_streetIndex(fromStreetId)};
-    return m_search(
-        std::span{&start, 1}, false, m_nodeIndex(goalNodeId), m_weightSet(weights), seed);
+    return m_toIds(m_search(
+        std::span{&start, 1}, false, m_nodeIndex(goalNodeId), m_weightSet(weights)));
   }
 
   std::vector<Id> Router::routeFromNode(Id const fromNodeId,
                                         Id const goalNodeId,
-                                        RouteWeights const weights,
-                                        std::uint64_t const seed) const {
+                                        RouteWeights const weights) const {
     auto const node{m_nodeIndex(fromNodeId)};
-    auto const goal{m_nodeIndex(goalNodeId)};
-    return m_search(
-        std::span{m_nodeOut}.subspan(m_nodeOutOffsets[node],
-                                     m_nodeOutOffsets[node + 1] - m_nodeOutOffsets[node]),
-        true,
-        goal,
-        m_weightSet(weights),
-        seed);
+    return m_toIds(m_search(
+        m_nodeOutgoing(node), true, m_nodeIndex(goalNodeId), m_weightSet(weights)));
+  }
+
+  std::vector<Route> Router::kShortestRoutes(Id const fromStreetId,
+                                             Id const goalNodeId,
+                                             RouteWeights const weights,
+                                             std::size_t const k) const {
+    auto const start{m_streetIndex(fromStreetId)};
+    return m_kShortest(
+        std::span{&start, 1}, false, m_nodeIndex(goalNodeId), m_weightSet(weights), k);
+  }
+
+  std::vector<Route> Router::kShortestRoutesFromNode(Id const fromNodeId,
+                                                     Id const goalNodeId,
+                                                     RouteWeights const weights,
+                                                     std::size_t const k) const {
+    auto const node{m_nodeIndex(fromNodeId)};
+    return m_kShortest(
+        m_nodeOutgoing(node), true, m_nodeIndex(goalNodeId), m_weightSet(weights), k);
   }
 
   double Router::routeCost(std::span<Id const> route, RouteWeights const weights) const {
@@ -311,11 +322,13 @@ namespace dsf::mobility {
     return std::ranges::find(turns, itTo->second) != turns.end();
   }
 
-  std::vector<Id> Router::m_search(std::span<std::uint32_t const> starts,
-                                   bool const bCountStartCost,
-                                   std::uint32_t const goalNode,
-                                   WeightSet const& weightSet,
-                                   std::uint64_t const seed) const {
+  std::vector<std::uint32_t> Router::m_search(
+      std::span<std::uint32_t const> starts,
+      bool const bCountStartCost,
+      std::uint32_t const goalNode,
+      WeightSet const& weightSet,
+      std::span<std::uint32_t const> bannedStreets,
+      std::span<std::uint32_t const> bannedFirstTurns) const {
     assert(weightSet.weights.size() == m_streetIds.size());
     auto& buffers{m_buffers.local()};
     buffers.prepare(m_streetIds.size());
@@ -324,6 +337,10 @@ namespace dsf::mobility {
     auto& parent{buffers.parent};
     auto& stamp{buffers.stamp};
     auto& heap{buffers.heap};
+    auto& banStamp{buffers.banStamp};
+    for (auto const street : bannedStreets) {
+      banStamp[street] = generation;
+    }
 
     auto const factor{weightSet.heuristicFactor};
     auto const goalX{factor > 0. ? m_nodeX[goalNode] : 0.};
@@ -335,17 +352,12 @@ namespace dsf::mobility {
       auto const node{m_streetTargets[street]};
       return factor * std::hypot(m_nodeX[node] - goalX, m_nodeY[node] - goalY);
     };
-    auto const streetCost = [&](std::uint32_t const street) {
-      auto const weight{weightSet.weights[street]};
-      if (m_threshold > 0.) {
-        return weight * (1. + m_threshold * unitNoise(seed, m_streetIds[street]));
-      }
-      return weight;
-    };
+    auto const& streetCost{weightSet.weights};
     // Record a cheaper way to reach a street, and queue it
     auto const relax =
         [&](std::uint32_t const street, double const g, std::uint32_t const from) {
-          if (stamp[street] == generation && cost[street] <= g) {
+          if (banStamp[street] == generation ||
+              (stamp[street] == generation && cost[street] <= g)) {
             return;
           }
           stamp[street] = generation;
@@ -356,7 +368,7 @@ namespace dsf::mobility {
         };
 
     for (auto const street : starts) {
-      relax(street, bCountStartCost ? streetCost(street) : 0., NO_STREET);
+      relax(street, bCountStartCost ? streetCost[street] : 0., NO_STREET);
     }
     while (!heap.empty()) {
       std::ranges::pop_heap(heap, HeapOrder{});
@@ -367,18 +379,143 @@ namespace dsf::mobility {
         continue;  // A cheaper way to this street was found after queueing this one
       }
       if (m_streetTargets[street] == goalNode) {
-        std::vector<Id> route;
+        std::vector<std::uint32_t> route;
         for (auto current{street}; current != NO_STREET; current = parent[current]) {
-          route.push_back(m_streetIds[current]);
+          route.push_back(current);
         }
         std::ranges::reverse(route);
         return route;
       }
+      bool const bStart{parent[street] == NO_STREET};
       for (auto i{m_turnOffsets[street]}; i < m_turnOffsets[street + 1]; ++i) {
         auto const next{m_turns[i]};
-        relax(next, g + streetCost(next), street);
+        if (bStart &&
+            std::ranges::find(bannedFirstTurns, next) != bannedFirstTurns.end()) {
+          continue;
+        }
+        relax(next, g + streetCost[next], street);
       }
     }
     return {};
+  }
+
+  std::vector<Route> Router::m_kShortest(std::span<std::uint32_t const> starts,
+                                         bool const bNodeStart,
+                                         std::uint32_t const goalNode,
+                                         WeightSet const& weightSet,
+                                         std::size_t const k) const {
+    auto const& weights{weightSet.weights};
+    // The cost of a route: from a node, its first street counts too
+    auto const costOf = [&](std::span<std::uint32_t const> streets) {
+      double cost{0.};
+      for (std::size_t i{bNodeStart ? 0u : 1u}; i < streets.size(); ++i) {
+        cost += weights[streets[i]];
+      }
+      return cost;
+    };
+    std::vector<IndexRoute> accepted;
+    if (k == 0) {
+      return {};
+    }
+    auto firstRoute{m_search(starts, bNodeStart, goalNode, weightSet)};
+    if (firstRoute.empty()) {
+      return {};
+    }
+    auto const firstCost{costOf(firstRoute)};
+    accepted.push_back({std::move(firstRoute), firstCost});
+    // Candidates, in order of discovery: the cheapest one is accepted at each round
+    std::vector<IndexRoute> candidates;
+    auto const isKnown = [&](std::vector<std::uint32_t> const& streets) {
+      auto const sameStreets = [&](IndexRoute const& route) {
+        return route.streets == streets;
+      };
+      return std::ranges::any_of(accepted, sameStreets) ||
+             std::ranges::any_of(candidates, sameStreets);
+    };
+    std::vector<std::uint32_t> bannedTurns, otherStarts;
+    while (accepted.size() < k) {
+      auto const previous{accepted.back().streets};
+      if (bNodeStart) {
+        // Spur at the start node: the first streets of the accepted routes are banned
+        otherStarts.clear();
+        for (auto const street : starts) {
+          if (std::ranges::none_of(accepted, [street](IndexRoute const& route) {
+                return route.streets.front() == street;
+              })) {
+            otherStarts.push_back(street);
+          }
+        }
+        auto spurRoute{m_search(otherStarts, true, goalNode, weightSet)};
+        if (!spurRoute.empty() && !isKnown(spurRoute)) {
+          auto const cost{costOf(spurRoute)};
+          candidates.push_back({std::move(spurRoute), cost});
+        }
+      }
+      for (std::size_t spur{0}; spur + 1 < previous.size(); ++spur) {
+        auto const root{std::span{previous}.first(spur + 1)};
+        // The route may not go back on the root, nor follow an accepted route sharing it
+        bannedTurns.clear();
+        for (auto const& route : accepted) {
+          if (route.streets.size() > spur + 1 &&
+              std::ranges::equal(std::span{route.streets}.first(spur + 1), root)) {
+            bannedTurns.push_back(route.streets[spur + 1]);
+          }
+        }
+        auto const spurRoute{m_search(std::span{&previous[spur], 1},
+                                      false,
+                                      goalNode,
+                                      weightSet,
+                                      root.first(spur),
+                                      bannedTurns)};
+        if (spurRoute.empty()) {
+          continue;
+        }
+        std::vector<std::uint32_t> streets(root.begin(), root.end() - 1);
+        streets.insert(streets.end(), spurRoute.begin(), spurRoute.end());
+        if (!isKnown(streets)) {
+          auto const cost{costOf(streets)};
+          candidates.push_back({std::move(streets), cost});
+        }
+      }
+      if (candidates.empty()) {
+        break;
+      }
+      auto const itBest{std::ranges::min_element(candidates, {}, &IndexRoute::cost)};
+      accepted.push_back(std::move(*itBest));
+      candidates.erase(itBest);
+    }
+    std::vector<Route> routes;
+    routes.reserve(accepted.size());
+    for (auto const& route : accepted) {
+      routes.push_back({m_toIds(route.streets), route.cost});
+    }
+    return routes;
+  }
+
+  std::size_t Router::chooseRoute(std::span<Route const> routes,
+                                  double const randomValue) {
+    if (routes.size() < 2) {
+      return 0;
+    }
+    auto const lowestCost{std::ranges::min(routes, {}, &Route::cost).cost};
+    if (!(lowestCost > 0.) || !std::isfinite(lowestCost)) {
+      return static_cast<std::size_t>(std::ranges::distance(
+          routes.begin(), std::ranges::min_element(routes, {}, &Route::cost)));
+    }
+    // exp(-cost / lowest) is proportional to exp(-(cost - lowest) / lowest), which cannot
+    // underflow for the best route
+    std::vector<double> cumulativeWeights;
+    cumulativeWeights.reserve(routes.size());
+    double total{0.};
+    for (auto const& route : routes) {
+      total += std::exp(-(route.cost - lowestCost) / lowestCost);
+      cumulativeWeights.push_back(total);
+    }
+    auto const target{randomValue * total};
+    auto const it{std::ranges::upper_bound(cumulativeWeights, target)};
+    if (it == cumulativeWeights.end()) {
+      return routes.size() - 1;
+    }
+    return static_cast<std::size_t>(std::ranges::distance(cumulativeWeights.begin(), it));
   }
 }  // namespace dsf::mobility

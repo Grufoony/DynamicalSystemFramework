@@ -172,26 +172,44 @@ namespace dsf::mobility {
     spdlog::debug("Building the routing graph");
     this->m_taskArena.execute([this] { m_router.build(this->graph()); });
   }
+  std::vector<Id> FirstOrderDynamics::m_chooseRoute(Agent const& agent,
+                                                    std::vector<Route> routes,
+                                                    Id const fromId) const {
+    if (routes.empty()) {
+      return {};
+    }
+    // A hash of the seed, the agent and where it plans from: routes draw nothing from the
+    // engines, and do not depend on the thread planning them
+    auto const randomValue{Router::unitValue(
+        Router::mixSeed(Router::mixSeed(this->seed(), agent.id()), fromId))};
+    return std::move(routes[Router::chooseRoute(routes, randomValue)].streets);
+  }
   std::vector<Id> FirstOrderDynamics::m_planRoute(Agent const& agent,
                                                   Id const fromStreetId) const {
     // Agents arrive at the source node of their destination street
     auto const goalNodeId{
         this->graph().edge(agent.itinerary()->destination()).source()->id()};
-    return m_router.route(
-        fromStreetId,
-        goalNodeId,
-        agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
-        Router::mixSeed(this->seed(), agent.id()));
+    return m_chooseRoute(
+        agent,
+        m_router.kShortestRoutes(
+            fromStreetId,
+            goalNodeId,
+            agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
+            m_kShortestPaths),
+        fromStreetId);
   }
   std::vector<Id> FirstOrderDynamics::m_planRouteFromNode(Agent const& agent,
                                                           Id const fromNodeId) const {
     auto const goalNodeId{
         this->graph().edge(agent.itinerary()->destination()).source()->id()};
-    return m_router.routeFromNode(
-        fromNodeId,
-        goalNodeId,
-        agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
-        Router::mixSeed(this->seed(), agent.id()));
+    return m_chooseRoute(
+        agent,
+        m_router.kShortestRoutesFromNode(
+            fromNodeId,
+            goalNodeId,
+            agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
+            m_kShortestPaths),
+        fromNodeId);
   }
   void FirstOrderDynamics::m_assignIntelligence(std::unique_ptr<Agent> const& pAgent) {
     if (m_intelligentFraction <= 0. || pAgent->isRandom()) {
@@ -1244,6 +1262,12 @@ namespace dsf::mobility {
           "The intelligent fraction ({}) must be in [0, 1]", intelligentFraction));
     }
     m_intelligentFraction = intelligentFraction;
+  }
+  void FirstOrderDynamics::setKShortestPaths(std::size_t const k) {
+    if (k == 0) {
+      throw std::invalid_argument("The number of routes per agent must be at least 1");
+    }
+    m_kShortestPaths = k;
   }
   void FirstOrderDynamics::setPassageProbability(double passageProbability) {
     if (passageProbability < 0. || passageProbability > 1.) {

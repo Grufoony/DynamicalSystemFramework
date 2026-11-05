@@ -1886,12 +1886,12 @@ TEST_CASE("ShortestPath") {
     }
   }
 
-  SUBCASE("Equivalent Paths with Threshold") {
+  SUBCASE("Equivalent Paths") {
     // Create a network with two equal-length paths
     // 0 -> 1 -> 3 (length 20)
     // 0 -> 2 -> 3 (length 20)
     RoadNetwork graph{};
-    graph.setEdgeWeight("length", 0.01);
+    graph.setEdgeWeight("length");
     graph.addStreet(0, std::make_pair(0, 1), 10.0);
     graph.addStreet(1, std::make_pair(0, 2), 10.0);
     graph.addStreet(2, std::make_pair(1, 3), 10.0);
@@ -1944,7 +1944,7 @@ TEST_CASE("ShortestPath") {
           2 -> 4
       All edges have equal length, so there are multiple shortest paths */
     RoadNetwork graph{};
-    graph.setEdgeWeight("length", 0.01);
+    graph.setEdgeWeight("length");
     graph.addStreet(0, std::make_pair(0, 1), 10.0);
     graph.addStreet(1, std::make_pair(0, 2), 10.0);
     graph.addStreet(2, std::make_pair(1, 3), 10.0);
@@ -1977,7 +1977,7 @@ TEST_CASE("ShortestPath") {
     CHECK(foundPath2);
   }
 
-  SUBCASE("Threshold - deep alternative paths") {
+  SUBCASE("Longer alternative paths are not kept") {
     RoadNetwork graph{};
     graph.addStreet(999, std::make_pair(999, 0), 1.);
     graph.addStreet(0, std::make_pair(0, 1), 3.);
@@ -1986,26 +1986,20 @@ TEST_CASE("ShortestPath") {
     graph.addStreet(3, std::make_pair(0, 3), 5.);
     graph.addStreet(4, std::make_pair(3, 4), 5.);
     graph.addStreet(5, std::make_pair(4, 5), 10.);
-    graph.setEdgeWeight("length", 0.7);
+    graph.setEdgeWeight("length");
 
+    // 0 -> 1 -> 2 -> 4 (9) is shorter than 0 -> 3 -> 4 (10)
     auto const pathMap = graph.allPathsTo(4);
-    CHECK_EQ(pathMap.at(0).size(), 2);
+    CHECK_EQ(pathMap.at(0), std::vector<Id>{1});
 
-    // Verify identical behavior matching edge path selections
+    // Same selection on the streets
     auto const edgePathMap = graph.allEdgePathsTo(5);
     REQUIRE(edgePathMap.contains(999));
-    CHECK_EQ(edgePathMap.at(999).size(), 2);
-    CHECK(std::find(edgePathMap.at(999).begin(), edgePathMap.at(999).end(), 0) !=
-          edgePathMap.at(999).end());  // s1 (Edge 0)
-    CHECK(std::find(edgePathMap.at(999).begin(), edgePathMap.at(999).end(), 3) !=
-          edgePathMap.at(999).end());  // s4 (Edge 3)
+    CHECK_EQ(edgePathMap.at(999), std::vector<Id>{0});
   }
 
-  SUBCASE("Threshold - full path budget without accumulation") {
-    // Best path: 0 -> 1 -> 2 -> 5 = 10.0
-    // Alternative: 0 -> 1 -> 3 -> 5 = 10.89 (within 10%)
-    // Over-budget path: 0 -> 1 -> 3 -> 4 -> 5 = 11.39 (must be excluded)
-
+  SUBCASE("Only the shortest path is kept") {
+    // Best path: 0 -> 1 -> 2 -> 5 = 10.0; 0 -> 1 -> 3 -> 5 = 10.89 is longer
     RoadNetwork graph{};
     graph.addStreet(0, std::make_pair(0, 1), 1.0);
     graph.addStreet(1, std::make_pair(1, 2), 4.0);
@@ -2014,41 +2008,11 @@ TEST_CASE("ShortestPath") {
     graph.addStreet(4, std::make_pair(3, 5), 5.0);
     graph.addStreet(5, std::make_pair(3, 4), 0.5);
     graph.addStreet(6, std::make_pair(4, 5), 5.0);
-    graph.setEdgeWeight("length", 0.1);
+    graph.setEdgeWeight("length");
 
-    auto const pathMap = graph.shortestPath(0, 5);
-
-    auto const allPaths = pathMap.explode(0, 5);
-    CHECK_EQ(allPaths.size(), 2);
-
-    bool foundBestPath{false};
-    bool foundValidAlternative{false};
-    bool foundOverBudgetPath{false};
-
-    for (auto const& path : allPaths) {
-      double totalWeight{0.0};
-      for (std::size_t i = 0; i + 1 < path.size(); ++i) {
-        totalWeight += graph.edge(path[i], path[i + 1]).length();
-      }
-      CHECK_LE(totalWeight, 11.0 + 1e-9);
-
-      if (path.size() == 4 && path[0] == 0 && path[1] == 1 && path[2] == 2 &&
-          path[3] == 5) {
-        foundBestPath = true;
-      }
-      if (path.size() == 4 && path[0] == 0 && path[1] == 1 && path[2] == 3 &&
-          path[3] == 5) {
-        foundValidAlternative = true;
-      }
-      if (path.size() == 5 && path[0] == 0 && path[1] == 1 && path[2] == 3 &&
-          path[3] == 4 && path[4] == 5) {
-        foundOverBudgetPath = true;
-      }
-    }
-
-    CHECK(foundBestPath);
-    CHECK(foundValidAlternative);
-    CHECK_FALSE(foundOverBudgetPath);
+    auto const allPaths = graph.shortestPath(0, 5).explode(0, 5);
+    REQUIRE_EQ(allPaths.size(), 1);
+    CHECK_EQ(allPaths.front(), std::vector<Id>{0, 1, 2, 5});
   }
 
   SUBCASE("PathCollection::explode - Many Equivalent Paths") {
@@ -2066,7 +2030,7 @@ TEST_CASE("ShortestPath") {
     graph.addStreet(4, std::make_pair(2, 5), 10.0);
     graph.addStreet(5, std::make_pair(3, 4), 10.0);
     graph.addStreet(6, std::make_pair(4, 5), 10.0);
-    graph.setEdgeWeight("length", 0.01);
+    graph.setEdgeWeight("length");
 
     auto pathMap = graph.shortestPath(0, 5);
 
@@ -2370,7 +2334,7 @@ TEST_CASE("ShortestPath with closed roads") {
 
     graph.addStreet(0, std::make_pair(0, 1), 100.0);
     graph.addStreet(1, std::make_pair(1, 2), 100.0);
-    graph.setEdgeWeight("length", 0.);
+    graph.setEdgeWeight("length");
 
     // Close and then reopen
     graph.setStreetStatusById(0, RoadStatus::CLOSED);

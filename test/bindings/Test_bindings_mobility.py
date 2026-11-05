@@ -182,6 +182,14 @@ def test_dynamics_intelligent_agents_fraction(dynamics):
         dynamics.setIntelligentAgentsFraction(1.5)
 
 
+def test_dynamics_k_shortest_paths(dynamics):
+    assert dynamics.kShortestPaths() == 3
+    dynamics.setKShortestPaths(1)
+    assert dynamics.kShortestPaths() == 1
+    with pytest.raises(ValueError):
+        dynamics.setKShortestPaths(0)
+
+
 def test_dynamics_mode_defaults_to_edges(dynamics):
     assert dynamics.mode() == mobility.DynamicsMode.EDGES
     dynamics.setDestinations([1])

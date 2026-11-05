@@ -46,7 +46,6 @@ namespace dsf {
         []([[maybe_unused]] edge_t const& edge) {
           return 1.0;  // Default = unweighted graph
         };
-    std::optional<double> m_weightThreshold = std::nullopt;
 
     static constexpr auto m_cantorHash(Id u, Id v) noexcept {
       return ((u + v) * (u + v + 1)) / 2 + v;
@@ -143,15 +142,11 @@ namespace dsf {
                std::constructible_from<TEdge, Id, std::pair<Node*, Node*>, TArgs...>)
     TEdge& addEdge(Id const edgeId, std::pair<Id, Id> const nodeIds, TArgs&&... args);
 
-    virtual void setEdgeWeight(std::string_view const strv_weight,
-                               std::optional<double> const threshold = std::nullopt) = 0;
+    virtual void setEdgeWeight(std::string_view const strv_weight) = 0;
     /// @brief Get the weight of an edge, according to the current weight function
     /// @param edge The edge
     /// @return double The edge's weight
     inline double edgeWeight(edge_t const& edge) const { return m_weightFunction(edge); }
-    /// @brief Get the relative tolerance on path costs set with the weight function
-    /// @return std::optional<double> The threshold, if any
-    inline auto weightThreshold() const noexcept { return m_weightThreshold; }
 
     /// @brief Get a node by id
     /// @param nodeId The id of the node to get
@@ -191,8 +186,8 @@ namespace dsf {
     }
 
     /// @brief Perform a global Dijkstra search to a target node from all other nodes in the graph
-    /// @param threshold Relative tolerance on full path cost from each node to the target
-    /// @return A map where each key is a node id and the value is a vector of next hop node ids toward the target
+    /// @return A map where each key is a node id and the value is a vector of the next hop node ids
+    ///   on a shortest path toward the target (several when equally short paths exist)
     /// @throws std::out_of_range if the target node does not exist
     /// @details Keeps only transitions that strictly decrease the precomputed
     ///          shortest distance to target. This makes the hop graph acyclic,
@@ -457,10 +452,7 @@ namespace dsf {
         continue;
       }
 
-      double nodeBudget = nodeDistToTarget;
-      if (m_weightThreshold.has_value()) {
-        nodeBudget *= (1.0 + *m_weightThreshold);
-      }
+      double const nodeBudget = nodeDistToTarget;
       auto const outgoingEdges{m_outEdges(*pNode)};
       std::vector<Id> hops;
       hops.reserve(outgoingEdges.size());
@@ -519,10 +511,7 @@ namespace dsf {
       return PathCollection{};
     }
 
-    double sourceBudget = sourceBestDistance;
-    if (m_weightThreshold.has_value()) {
-      sourceBudget *= (1.0 + *m_weightThreshold);
-    }
+    double const sourceBudget = sourceBestDistance;
     auto const distFromSource = m_computeDistancesFromSource(sourceId);
 
     PathCollection candidate;

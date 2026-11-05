@@ -8,6 +8,7 @@
 
 #include <tbb/tbb.h>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -1006,12 +1007,13 @@ TEST_CASE("FirstOrderDynamics") {
   SUBCASE("Routing") {
     GIVEN("A dynamics object with a short (0->1->2) and a direct (0->2) branch") {
       RoadNetwork graph2;
-      graph2.setEdgeWeight("length", 0.0);
+      graph2.setEdgeWeight("length");
       graph2.addStreet(0, std::make_pair(0, 1), 2.);
       graph2.addStreet(1, std::make_pair(1, 2), 5.);
       graph2.addStreet(2, std::make_pair(0, 2), 10.);
       graph2.addStreet(3, std::make_pair(2, 3), 5.);
       FirstOrderDynamics dynamics{std::move(graph2), 69};
+      dynamics.setKShortestPaths(1);
       dynamics.addItinerary(std::make_shared<Itinerary>(0, 3));
       WHEN("We update the paths") {
         dynamics.updatePaths();
@@ -1100,6 +1102,7 @@ TEST_CASE("FirstOrderDynamics") {
       auto& s6 = graph.addStreet(5, std::make_pair(5, 0), 5.);
       s6.setAttribute("custom_cost", 1.0);
       FirstOrderDynamics dynamics{std::move(graph), 69};
+      dynamics.setKShortestPaths(1);
       dynamics.addItinerary(0, 4);
 
       WHEN("We update the paths") {
@@ -1130,43 +1133,54 @@ TEST_CASE("FirstOrderDynamics") {
         }
       }
     }
-    GIVEN("A network with two equivalent branches (0->1->2 and 0->3->2)") {
+    GIVEN("Four branches from street 5 to node 2, of 10, 10, 12 and 40 m") {
       // Counts the agents turning from street 5 into each branch
-      auto const routeAgents = [](std::optional<double> const threshold) {
+      auto const routeAgents = [](std::size_t const k) {
         RoadNetwork graph;
-        graph.setEdgeWeight("length", threshold);
+        graph.setEdgeWeight("length");
         graph.addStreet(0, std::make_pair(0, 1), 5.);
         graph.addStreet(1, std::make_pair(1, 2), 5.);
         graph.addStreet(2, std::make_pair(0, 3), 5.);
         graph.addStreet(3, std::make_pair(3, 2), 5.);
         graph.addStreet(4, std::make_pair(2, 4), 5.);
         graph.addStreet(5, std::make_pair(5, 0), 5.);
+        graph.addStreet(6, std::make_pair(0, 6), 6.);
+        graph.addStreet(7, std::make_pair(6, 2), 6.);
+        graph.addStreet(8, std::make_pair(0, 7), 20.);
+        graph.addStreet(9, std::make_pair(7, 2), 20.);
         FirstOrderDynamics dynamics{std::move(graph), 69};
+        CHECK_EQ(dynamics.kShortestPaths(), 3);
+        CHECK_THROWS_AS(dynamics.setKShortestPaths(0), std::invalid_argument);
+        dynamics.setKShortestPaths(k);
         dynamics.initTurnCounts();
         dynamics.addItinerary(0, 4);
         dynamics.updatePaths();
-        for (int i{0}; i < 20; ++i) {
+        for (int i{0}; i < 30; ++i) {
           dynamics.addAgent(dynamics.itineraries().at(0), 5);
         }
-        for (int i{0}; i < 200 && dynamics.nAgents() > 0; ++i) {
+        for (int i{0}; i < 300 && dynamics.nAgents() > 0; ++i) {
           dynamics.evolve();
         }
-        auto const& turnCounts{dynamics.turnCounts()};
-        return std::make_pair(turnCounts.at(5).at(0), turnCounts.at(5).at(2));
+        CHECK_EQ(dynamics.agentStats().nArrived, 30);
+        auto const& turnCounts{dynamics.turnCounts().at(5)};
+        return std::array<std::size_t, 4>{
+            turnCounts.at(0), turnCounts.at(2), turnCounts.at(6), turnCounts.at(8)};
       };
-      WHEN("The weight has no threshold") {
-        auto const [nFirst, nSecond] = routeAgents(std::nullopt);
+      WHEN("Each agent takes its shortest route") {
+        auto const counts{routeAgents(1)};
         THEN("Every agent follows the same branch") {
-          CHECK_EQ(nFirst + nSecond, 20);
-          CHECK((nFirst == 0 || nSecond == 0));
+          CHECK_EQ(std::ranges::max(counts), 30);
         }
       }
-      WHEN("The weight has a threshold") {
-        auto const [nFirst, nSecond] = routeAgents(0.5);
-        THEN("The agents spread over both branches") {
-          CHECK_EQ(nFirst + nSecond, 20);
-          CHECK_GT(nFirst, 0);
-          CHECK_GT(nSecond, 0);
+      WHEN("Each agent chooses among its 3 shortest routes") {
+        auto const counts{routeAgents(3)};
+        THEN("The agents spread over the three shortest branches only") {
+          CHECK_GT(counts[0], 0);
+          CHECK_GT(counts[1], 0);
+          CHECK_GT(counts[2], 0);
+          CHECK_EQ(counts[3], 0);
+          // The 12 m branch is less likely than the 10 m ones
+          CHECK_LT(counts[2], std::max(counts[0], counts[1]));
         }
       }
     }
@@ -1215,6 +1229,7 @@ TEST_CASE("FirstOrderDynamics") {
       graph.addStreet(3, std::make_pair(3, 2), 10.);
       graph.addStreet(4, std::make_pair(2, 4), 10.);
       FirstOrderDynamics dynamics{std::move(graph), 69};
+      dynamics.setKShortestPaths(1);
       dynamics.setErrorProbability(1.);
       dynamics.setIntelligentAgentsFraction(1.);
       dynamics.initTurnCounts();
@@ -1280,6 +1295,8 @@ TEST_CASE("FirstOrderDynamics") {
       graph.addStreet(5, std::make_pair(5, 0), 10.);
       FirstOrderDynamics dynamics{std::move(graph), 69};
       dynamics.setSpeedFunction(dsf::SpeedFunction::LINEAR, 0.8);
+      // Each agent takes its shortest route, to tell the two kinds apart
+      dynamics.setKShortestPaths(1);
       dynamics.addItinerary(0, 4);
       auto const parkOnShortBranch = [&dynamics](Id const nAgents) {
         auto& street{dynamics.graph().edge(0)};

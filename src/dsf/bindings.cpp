@@ -734,7 +734,6 @@ NB_MODULE(dsf_cpp, m) {
       .def("setEdgeWeight",
            &dsf::mobility::RoadNetwork::setEdgeWeight,
            nb::arg("weight"),
-           nb::arg("threshold") = std::nullopt,
            R"doc(Set edge weights for routing and analysis.
 
       The weight is used by the graph algorithms and by the intelligent agents of a
@@ -745,12 +744,7 @@ NB_MODULE(dsf_cpp, m) {
         weight (string): Weight type. 'traveltime' is the estimated travel time plus the time
           needed to clear the exit queues (mean lane queue / min(1, transport capacity)),
           'length' the street length, 'uniform' 1 for every street; any other value is the
-          name of a numeric custom attribute.
-        threshold (float | None): Optional relative tolerance. For the graph algorithms,
-          paths whose cost is within distance * (1 + threshold) of the shortest one are
-          kept. For the agents of a Dynamics, each street cost is randomly multiplied by a
-          factor in [1, 1 + threshold): each route then costs at most (1 + threshold) times
-          the shortest one, and the agents spread over near-optimal routes.)doc")
+          name of a numeric custom attribute.)doc")
       .def(
           "describe",
           [](dsf::mobility::RoadNetwork& self) {
@@ -1258,6 +1252,26 @@ Returns:
 
       Returns:
         None)doc")
+      .def("setKShortestPaths",
+           &dsf::mobility::FirstOrderDynamics::setKShortestPaths,
+           nb::arg("k"),
+           R"doc(Set the number of routes each agent chooses from. Default is 3.
+
+      When it plans its route, an agent computes its k shortest routes (Yen's algorithm)
+      and picks one with probability proportional to exp(-cost / lowest cost). With k = 1
+      every agent takes the shortest route.
+
+      Args:
+        k (int): The number of routes, at least 1.
+
+      Returns:
+        None)doc")
+      .def("kShortestPaths",
+           &dsf::mobility::FirstOrderDynamics::kShortestPaths,
+           R"doc(Get the number of routes each agent chooses from.
+
+      Returns:
+        int: The number of routes.)doc")
       .def("setIntelligentAgentsFraction",
            &dsf::mobility::FirstOrderDynamics::setIntelligentAgentsFraction,
            nb::arg("intelligentFraction"),

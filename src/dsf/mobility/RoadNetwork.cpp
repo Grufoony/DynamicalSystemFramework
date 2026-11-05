@@ -1097,8 +1097,7 @@ namespace dsf::mobility {
         nNotAssigned.load());
   }
 
-  void RoadNetwork::setEdgeWeight(std::string_view const strv_weight,
-                                  std::optional<double> const threshold) {
+  void RoadNetwork::setEdgeWeight(std::string_view const strv_weight) {
     if (strv_weight == "traveltime") {
       m_weightFunction = [](Street const& street) {
         // Each lane releases at most one agent per time step, with probability equal to the
@@ -1133,7 +1132,6 @@ namespace dsf::mobility {
             attrValue);
       };
     }
-    m_weightThreshold = threshold;
   }
 
   void RoadNetwork::describe(std::ostream& os) const {

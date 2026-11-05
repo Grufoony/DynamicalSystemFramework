@@ -217,20 +217,22 @@ static void BM_Router_UpdateCurrentWeights(benchmark::State& state) {
     router.updateCurrentWeights(network);
   }
 }
-// One A* query per iteration; range(0) selects the street costs (see RouteWeights)
+// One query per iteration; range(0) selects the street costs (see RouteWeights), range(1)
+// the number of routes (1 is A*, more is Yen's algorithm)
 static void BM_Router_Route(benchmark::State& state) {
   auto const& network = sharedForliNetwork();
   dsf::mobility::Router router;
   router.build(network);
   auto const weights{static_cast<dsf::mobility::RouteWeights>(state.range(0))};
+  auto const k{static_cast<std::size_t>(state.range(1))};
   auto const queries{routeQueries(network, 1000)};
   std::size_t i{0}, nRoutes{0}, nReachable{0};
   for (auto _ : state) {
     auto const& [streetId, nodeId] = queries[i];
-    auto route{router.route(streetId, nodeId, weights)};
-    nReachable += route.empty() ? 0 : 1;
+    auto routes{router.kShortestRoutes(streetId, nodeId, weights, k)};
+    nReachable += routes.empty() ? 0 : 1;
     ++nRoutes;
-    benchmark::DoNotOptimize(route);
+    benchmark::DoNotOptimize(routes);
     i = (i + 1) % queries.size();
   }
   state.counters["reachable"] =
@@ -249,7 +251,10 @@ BENCHMARK(BM_RoadNetwork_AllPathsTo);
 BENCHMARK(BM_RoadNetwork_AllEdgePathsTo);
 BENCHMARK(BM_Router_Build)->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_Router_UpdateCurrentWeights)->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_Router_Route)->Arg(0)->Arg(1)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_Router_Route)
+    ->ArgsProduct({{0, 1}, {1, 3}})
+    ->ArgNames({"weights", "k"})
+    ->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_RoadNetwork_CSVImport_Forli)->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_RoadNetwork_AdjustNodeCapacities)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_RoadNetwork_AutoAssignRoadPriorities)->Unit(benchmark::kMicrosecond);

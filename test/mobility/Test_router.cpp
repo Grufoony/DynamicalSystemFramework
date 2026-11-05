@@ -4,7 +4,9 @@
 #include "dsf/geometry/Point.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <span>
 #include <filesystem>
 #include <functional>
 #include <limits>
@@ -85,9 +87,9 @@ namespace {
 
   // Three branches from node 0 to node 2, entered from street 5 (5 -> 0): 0 -> 1 -> 2 and
   // 0 -> 3 -> 2 of 10 m, 0 -> 6 -> 2 of 12 m and 0 -> 7 -> 2 of 20 m. Street 4 leaves node 2.
-  RoadNetwork makeBranches(std::optional<double> const threshold) {
+  RoadNetwork makeBranches() {
     RoadNetwork network;
-    network.setEdgeWeight("length", threshold);
+    network.setEdgeWeight("length");
     network.addStreet(0, std::make_pair(0, 1), 5.);
     network.addStreet(1, std::make_pair(1, 2), 5.);
     network.addStreet(2, std::make_pair(0, 3), 5.);
@@ -119,7 +121,6 @@ TEST_CASE("Router") {
         CHECK(router.isBuilt());
         CHECK_EQ(router.nEdges(), 6);
         CHECK_FALSE(router.hasHeuristic());
-        CHECK_EQ(router.threshold(), 0.);
       }
       THEN("A route ends on the first street reaching the goal node") {
         auto const route{router.route(5, 2, RouteWeights::FREE_FLOW)};
@@ -259,6 +260,32 @@ TEST_CASE("Router") {
       std::ranges::sort(streetIds);
       std::ranges::sort(nodeIds);
       REQUIRE(router.hasHeuristic());
+      THEN("Yen's first route is the shortest and the next ones cost no less") {
+        for (std::size_t k{0}; k < 30; ++k) {
+          auto const fromStreetId{streetIds[(37 * k) % streetIds.size()]};
+          auto const goalNodeId{nodeIds[(53 * k + 11) % nodeIds.size()]};
+          auto const routes{router.kShortestRoutes(
+              fromStreetId, goalNodeId, RouteWeights::FREE_FLOW, 4)};
+          auto const best{bestCost(network, fromStreetId, goalNodeId, freeFlowTime)};
+          if (best == std::numeric_limits<double>::infinity()) {
+            CHECK(routes.empty());
+            continue;
+          }
+          REQUIRE_FALSE(routes.empty());
+          CHECK_EQ(routes.front().cost, doctest::Approx(best));
+          std::set<std::vector<Id>> distinct;
+          for (std::size_t i{0}; i < routes.size(); ++i) {
+            CHECK(isValidRoute(network, routes[i].streets, goalNodeId));
+            CHECK_EQ(router.routeCost(routes[i].streets, RouteWeights::FREE_FLOW),
+                     doctest::Approx(routes[i].cost));
+            if (i > 0) {
+              CHECK_GE(routes[i].cost, routes[i - 1].cost - 1e-9);
+            }
+            distinct.insert(routes[i].streets);
+          }
+          CHECK_EQ(distinct.size(), routes.size());
+        }
+      }
       THEN("A* finds routes as good as Dijkstra's, for both street costs") {
         auto const length = [](Street const& street) { return street.length(); };
         std::size_t nRoutes{0};
@@ -342,7 +369,7 @@ TEST_CASE("Router") {
   }
   SUBCASE("Current weights") {
     GIVEN("A network routed on a custom street cost") {
-      RoadNetwork network{makeBranches(std::nullopt)};
+      RoadNetwork network{makeBranches()};
       network.setEdgeWeight("cost");
       // Branch costs: 0 -> 1 -> 2 costs 2, 0 -> 3 -> 2 101, 0 -> 6 -> 2 4, 0 -> 7 -> 2 10
       std::unordered_map<Id, double> const costs{{0, 1.},
@@ -375,49 +402,95 @@ TEST_CASE("Router") {
       }
     }
   }
-  SUBCASE("Randomised routes") {
-    GIVEN("Two equivalent branches, a slightly longer one and a much longer one") {
-      auto const optimalCost{10. / makeBranches(std::nullopt).edge(0).maxSpeed()};
-      WHEN("The weight has a threshold of 0.5") {
-        auto const network{makeBranches(0.5)};
-        Router router;
-        router.build(network);
-        THEN(
-            "Each seed gives its own route, at most 1.5 times longer than the best one") {
-          CHECK_EQ(router.threshold(), 0.5);
-          std::set<std::vector<Id>> routes;
-          for (std::uint64_t seed{0}; seed < 50; ++seed) {
-            auto const route{router.route(5, 2, RouteWeights::FREE_FLOW, seed)};
-            CHECK(isValidRoute(network, route, 2));
-            CHECK_LE(router.routeCost(route, RouteWeights::FREE_FLOW),
-                     1.5 * optimalCost * (1. + 1e-12));
-            CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW, seed), route);
-            routes.insert(route);
-          }
-          CHECK(routes.contains(std::vector<Id>{5, 0, 1}));
-          CHECK(routes.contains(std::vector<Id>{5, 2, 3}));
-          CHECK_FALSE(routes.contains(std::vector<Id>{5, 8, 9}));
+  SUBCASE("K shortest routes") {
+    GIVEN("Four branches from street 5 to node 2, of 10, 10, 12 and 20 m") {
+      auto const network{makeBranches()};
+      Router router;
+      router.build(network);
+      auto const unit{1. / network.edge(0).maxSpeed()};
+      THEN("Yen's algorithm finds the shortest ones, in order of cost") {
+        auto const routes{router.kShortestRoutes(5, 2, RouteWeights::FREE_FLOW, 3)};
+        REQUIRE_EQ(routes.size(), 3);
+        CHECK_EQ(routes[0].streets, std::vector<Id>{5, 0, 1});
+        CHECK_EQ(routes[1].streets, std::vector<Id>{5, 2, 3});
+        CHECK_EQ(routes[2].streets, std::vector<Id>{5, 6, 7});
+        CHECK_EQ(routes[0].cost, doctest::Approx(10. * unit));
+        CHECK_EQ(routes[1].cost, doctest::Approx(10. * unit));
+        CHECK_EQ(routes[2].cost, doctest::Approx(12. * unit));
+      }
+      THEN("Asking for more routes than there are gives them all") {
+        auto const routes{router.kShortestRoutes(5, 2, RouteWeights::FREE_FLOW, 10)};
+        REQUIRE_EQ(routes.size(), 4);
+        CHECK_EQ(routes[3].streets, std::vector<Id>{5, 8, 9});
+        CHECK_EQ(routes[3].cost, doctest::Approx(20. * unit));
+      }
+      THEN("A single route is the shortest one") {
+        auto const routes{router.kShortestRoutes(5, 2, RouteWeights::FREE_FLOW, 1)};
+        REQUIRE_EQ(routes.size(), 1);
+        CHECK_EQ(routes[0].streets, router.route(5, 2, RouteWeights::FREE_FLOW));
+        CHECK(router.kShortestRoutes(5, 2, RouteWeights::FREE_FLOW, 0).empty());
+      }
+      THEN("From a node, the routes also differ by their first street") {
+        auto const routes{
+            router.kShortestRoutesFromNode(0, 2, RouteWeights::FREE_FLOW, 4)};
+        REQUIRE_EQ(routes.size(), 4);
+        std::set<Id> firstStreets;
+        for (auto const& route : routes) {
+          firstStreets.insert(route.streets.front());
         }
+        CHECK_EQ(firstStreets, std::set<Id>{0, 2, 6, 8});
+        // From a node, the cost of the first street counts
+        CHECK_EQ(routes[0].cost, doctest::Approx(10. * unit));
+        CHECK_EQ(routes[3].cost, doctest::Approx(20. * unit));
       }
-      WHEN("The weight has a negative threshold") {
-        auto const network{makeBranches(-0.5)};
-        Router router;
-        router.build(network);
-        THEN("It is ignored") { CHECK_EQ(router.threshold(), 0.); }
+      THEN("A goal which cannot be reached gives no route") {
+        CHECK(router.kShortestRoutes(4, 2, RouteWeights::FREE_FLOW, 3).empty());
+        CHECK(router.kShortestRoutesFromNode(4, 2, RouteWeights::FREE_FLOW, 3).empty());
       }
-      WHEN("The weight has no threshold") {
-        auto const network{makeBranches(std::nullopt)};
-        Router router;
-        router.build(network);
-        THEN("Every seed gives the same, shortest route") {
-          auto const route{router.route(5, 2, RouteWeights::FREE_FLOW)};
-          CHECK_EQ(router.routeCost(route, RouteWeights::FREE_FLOW),
-                   doctest::Approx(optimalCost));
-          for (std::uint64_t seed{1}; seed < 20; ++seed) {
-            CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW, seed), route);
-          }
-        }
+    }
+    GIVEN("A dead end (4->5->4) next to the shortest route") {
+      RoadNetwork network;
+      network.addStreet(0, std::make_pair(0, 1), 10.);
+      network.addStreet(1, std::make_pair(1, 2), 10.);
+      network.addStreet(2, std::make_pair(2, 3), 10.);
+      network.addStreet(3, std::make_pair(1, 4), 10.);
+      network.addStreet(4, std::make_pair(4, 1), 10.);
+      network.addStreet(5, std::make_pair(4, 5), 10.);
+      network.addStreet(6, std::make_pair(5, 4), 10.);
+      Router router;
+      router.build(network);
+      THEN("The alternative passes by nodes twice, but never travels a street twice") {
+        auto const routes{router.kShortestRoutes(0, 2, RouteWeights::FREE_FLOW, 3)};
+        REQUIRE_EQ(routes.size(), 2);
+        CHECK_EQ(routes[0].streets, std::vector<Id>{0, 1});
+        CHECK_EQ(routes[1].streets, std::vector<Id>{0, 3, 5, 6, 4, 1});
       }
+    }
+  }
+  SUBCASE("Route choice") {
+    std::vector<Route> const routes{{{0}, 10.}, {{1}, 10.}, {{2}, 12.}, {{3}, 20.}};
+    THEN("Routes are chosen with probability proportional to exp(-cost / lowest cost)") {
+      std::vector<double> weights;
+      double total{0.};
+      for (auto const& route : routes) {
+        weights.push_back(std::exp(-route.cost / 10.));
+        total += weights.back();
+      }
+      constexpr std::size_t N{100000};
+      std::vector<std::size_t> counts(routes.size(), 0);
+      for (std::size_t j{0}; j < N; ++j) {
+        ++counts[Router::chooseRoute(routes, (static_cast<double>(j) + 0.5) / N)];
+      }
+      for (std::size_t i{0}; i < routes.size(); ++i) {
+        CHECK_EQ(static_cast<double>(counts[i]) / N,
+                 doctest::Approx(weights[i] / total).epsilon(1e-3));
+      }
+    }
+    THEN("Degenerate cases pick the cheapest route") {
+      CHECK_EQ(Router::chooseRoute(std::span<Route const>{routes}.first(1), 0.99), 0);
+      CHECK_EQ(Router::chooseRoute({}, 0.5), 0);
+      std::vector<Route> const freeRoutes{{{0}, 1.}, {{1}, 0.}};
+      CHECK_EQ(Router::chooseRoute(freeRoutes, 0.5), 1);
     }
   }
 }

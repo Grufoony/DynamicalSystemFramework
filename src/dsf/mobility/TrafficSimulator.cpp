@@ -247,10 +247,14 @@ namespace dsf::mobility {
       m_dynamics->graph().setEdgeWeight(
           require_field(setEdgeWeightParams, "road_network.set_edge_weight", "weight")
               .get_string()
-              .value(),
-          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "threshold")
-              .get_double()
               .value());
+      if (!setEdgeWeightParams["threshold"].error()) {
+        spdlog::warn(
+            "road_network.set_edge_weight.threshold is no longer supported and is "
+            "ignored: "
+            "agents choose among their k shortest routes (see "
+            "dynamics.k_shortest_paths).");
+      }
     }
     // Dynamics config
     {
@@ -299,6 +303,10 @@ namespace dsf::mobility {
             std::format("Invalid 'agent_insertion_method' value in JSON file '{}': {}",
                         jsonConfigFile,
                         agentInsertionMethod));
+      }
+      if (!dynamicsConfig["k_shortest_paths"].error()) {
+        m_dynamics->setKShortestPaths(static_cast<std::size_t>(
+            dynamicsConfig["k_shortest_paths"].get_uint64().value()));
       }
       if (!dynamicsConfig["error_probability"].error()) {
         m_dynamics->setErrorProbability(
