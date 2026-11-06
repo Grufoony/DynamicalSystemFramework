@@ -8,6 +8,7 @@
 #include <format>
 #include <limits>
 #include <numbers>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -55,14 +56,25 @@ namespace dsf::mobility {
     heap.clear();
   }
 
-  Router::EdgeWeight Router::edgeWeightFunction(std::string_view const name) {
+  namespace {
+    // The estimated travel time of a street plus the time needed to clear its exit queues
+    double travelTime(Street const& street) {
+      // Each lane releases at most one agent per time step, with probability equal to the
+      // transport capacity: the mean lane queue takes queue / min(1, tc) steps to clear.
+      auto const queueTime{street.nExitingAgents(Direction::ANY, true) /
+                           std::min(1., street.transportCapacity())};
+      return street.estimatedTravelTime() + queueTime;
+    }
+  }  // namespace
+
+  Router::EdgeWeight Router::edgeWeightFunction(std::string_view const name,
+                                                double const distanceCost) {
     if (name == "traveltime") {
-      return [](Street const& street) {
-        // Each lane releases at most one agent per time step, with probability equal to the
-        // transport capacity: the mean lane queue takes queue / min(1, tc) steps to clear.
-        auto const queueTime{street.nExitingAgents(Direction::ANY, true) /
-                             std::min(1., street.transportCapacity())};
-        return street.estimatedTravelTime() + queueTime;
+      return travelTime;
+    }
+    if (name == "generalized") {
+      return [distanceCost](Street const& street) {
+        return travelTime(street) + distanceCost * street.length();
       };
     }
     if (name == "length") {
@@ -91,8 +103,36 @@ namespace dsf::mobility {
           it->second);
     };
   }
-  void Router::setEdgeWeight(std::string_view const name) {
+  void Router::setEdgeWeight(std::string_view const name,
+                             double const distanceCost,
+                             std::optional<double> const sigma) {
+    if (distanceCost < 0. || sigma.value_or(0.) < 0.) {
+      throw std::invalid_argument(
+          std::format("The distance cost ({}) and its spread ({}) must not be negative",
+                      distanceCost,
+                      sigma.value_or(0.)));
+    }
+    if (name == "generalized") {
+      // The distance cost is added to each route, with each agent's own factor
+      m_edgeWeight = edgeWeightFunction("traveltime");
+      m_distanceCost = distanceCost;
+      m_distanceSigma = sigma;
+      return;
+    }
     m_edgeWeight = edgeWeightFunction(name);
+    m_distanceCost = 0.;
+    m_distanceSigma.reset();
+  }
+  double Router::distanceFactor(std::uint64_t const seed,
+                                double const distanceCost,
+                                std::optional<double> const sigma) {
+    if (!sigma.has_value()) {
+      return distanceCost;
+    }
+    std::mt19937_64 engine{seed};
+    // exp(m + sigma · Z) has mean exp(m + sigma² / 2): m = -sigma² / 2 makes it 1
+    std::lognormal_distribution<double> distribution{-*sigma * *sigma / 2., *sigma};
+    return distanceCost * distribution(engine);
   }
 
   void Router::build(RoadNetwork const& network) {
@@ -157,10 +197,13 @@ namespace dsf::mobility {
     m_buildHeuristic(network, nodeIds);
 
     m_freeFlow.weights.resize(nStreets);
+    m_streetLengths.resize(nStreets);
     for (std::size_t i{0}; i < nStreets; ++i) {
+      m_streetLengths[i] = m_streets[i]->length();
       m_freeFlow.weights[i] = m_streets[i]->length() / m_streets[i]->maxSpeed();
     }
     m_freeFlow.heuristicFactor = m_heuristicFactor(m_freeFlow.weights);
+    m_lengthHeuristicFactor = m_heuristicFactor(m_streetLengths);
 
     updateCurrentWeights();
     spdlog::debug("Built the routing graph: {} streets, {} turns, heuristic {}",
@@ -297,15 +340,20 @@ namespace dsf::mobility {
 
   std::vector<Id> Router::route(Id const fromStreetId,
                                 Id const goalNodeId,
-                                RouteWeights const weights) const {
+                                RouteWeights const weights,
+                                double const distanceFactor) const {
     auto const start{m_streetIndex(fromStreetId)};
-    return m_search(
-        std::span{&start, 1}, false, m_nodeIndex(goalNodeId), m_weightSet(weights));
+    return m_search(std::span{&start, 1},
+                    false,
+                    m_nodeIndex(goalNodeId),
+                    m_weightSet(weights),
+                    distanceFactor);
   }
 
   std::vector<Id> Router::routeFromNode(Id const fromNodeId,
                                         Id const goalNodeId,
-                                        RouteWeights const weights) const {
+                                        RouteWeights const weights,
+                                        double const distanceFactor) const {
     auto const node{m_nodeIndex(fromNodeId)};
     auto const goal{m_nodeIndex(goalNodeId)};
     return m_search(
@@ -313,14 +361,18 @@ namespace dsf::mobility {
                                      m_nodeOutOffsets[node + 1] - m_nodeOutOffsets[node]),
         true,
         goal,
-        m_weightSet(weights));
+        m_weightSet(weights),
+        distanceFactor);
   }
 
-  double Router::routeCost(std::span<Id const> route, RouteWeights const weights) const {
+  double Router::routeCost(std::span<Id const> route,
+                           RouteWeights const weights,
+                           double const distanceFactor) const {
     auto const& weightSet{m_weightSet(weights)};
     double cost{0.};
     for (std::size_t i{1}; i < route.size(); ++i) {
-      cost += weightSet.weights[m_streetIndex(route[i])];
+      auto const street{m_streetIndex(route[i])};
+      cost += weightSet.weights[street] + distanceFactor * m_streetLengths[street];
     }
     return cost;
   }
@@ -340,7 +392,8 @@ namespace dsf::mobility {
   std::vector<Id> Router::m_search(std::span<std::uint32_t const> starts,
                                    bool const bCountStartCost,
                                    std::uint32_t const goalNode,
-                                   WeightSet const& weightSet) const {
+                                   WeightSet const& weightSet,
+                                   double const distanceFactor) const {
     assert(weightSet.weights.size() == m_streetIds.size());
     auto& buffers{m_buffers.local()};
     buffers.prepare(m_streetIds.size());
@@ -350,9 +403,12 @@ namespace dsf::mobility {
     auto& stamp{buffers.stamp};
     auto& heap{buffers.heap};
 
-    // Dijkstra's algorithm is A* without heuristic
-    auto const factor{m_algorithm == RouteAlgorithm::ASTAR ? weightSet.heuristicFactor
-                                                           : 0.};
+    // Dijkstra's algorithm is A* without heuristic. With a distance cost, each term of the
+    // cost is bounded by its own factor, so their sum bounds the cost
+    auto const factor{m_algorithm == RouteAlgorithm::ASTAR
+                          ? weightSet.heuristicFactor +
+                                distanceFactor * m_lengthHeuristicFactor
+                          : 0.};
     auto const goalX{factor > 0. ? m_nodeX[goalNode] : 0.};
     auto const goalY{factor > 0. ? m_nodeY[goalNode] : 0.};
     auto const heuristic = [&](std::uint32_t const street) {
@@ -362,7 +418,9 @@ namespace dsf::mobility {
       auto const node{m_streetTargets[street]};
       return factor * std::hypot(m_nodeX[node] - goalX, m_nodeY[node] - goalY);
     };
-    auto const& streetCost{weightSet.weights};
+    auto const streetCost = [&](std::uint32_t const street) {
+      return weightSet.weights[street] + distanceFactor * m_streetLengths[street];
+    };
     // Record a cheaper way to reach a street, and queue it
     auto const relax =
         [&](std::uint32_t const street, double const g, std::uint32_t const from) {
@@ -377,7 +435,7 @@ namespace dsf::mobility {
         };
 
     for (auto const street : starts) {
-      relax(street, bCountStartCost ? streetCost[street] : 0., NO_STREET);
+      relax(street, bCountStartCost ? streetCost(street) : 0., NO_STREET);
     }
     while (!heap.empty()) {
       std::ranges::pop_heap(heap, HeapOrder{});
@@ -397,7 +455,7 @@ namespace dsf::mobility {
       }
       for (auto i{m_turnOffsets[street]}; i < m_turnOffsets[street + 1]; ++i) {
         auto const next{m_turns[i]};
-        relax(next, g + streetCost[next], street);
+        relax(next, g + streetCost(next), street);
       }
     }
     return {};

@@ -186,11 +186,13 @@ static void BM_Router_Route(benchmark::State& state) {
   router.setAlgorithm(static_cast<dsf::mobility::RouteAlgorithm>(state.range(1)));
   router.build(network);
   auto const weights{static_cast<dsf::mobility::RouteWeights>(state.range(0))};
+  // range(2): distance cost of the routes, in thousandths of s/m
+  auto const distanceFactor{static_cast<double>(state.range(2)) / 1000.};
   auto const queries{routeQueries(network, 1000)};
   std::size_t i{0}, nRoutes{0}, nReachable{0};
   for (auto _ : state) {
     auto const& [streetId, nodeId] = queries[i];
-    auto route{router.route(streetId, nodeId, weights)};
+    auto route{router.route(streetId, nodeId, weights, distanceFactor)};
     nReachable += route.empty() ? 0 : 1;
     ++nRoutes;
     benchmark::DoNotOptimize(route);
@@ -210,8 +212,8 @@ BENCHMARK(BM_RoadNetwork_EdgeRandomAccess);
 BENCHMARK(BM_Router_Build)->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_Router_UpdateCurrentWeights)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_Router_Route)
-    ->ArgsProduct({{0, 1}, {0, 1}})
-    ->ArgNames({"weights", "dijkstra"})
+    ->ArgsProduct({{0, 1}, {0, 1}, {0, 100}})
+    ->ArgNames({"weights", "dijkstra", "distance_mspm"})
     ->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_RoadNetwork_CSVImport_Forli)->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_RoadNetwork_AdjustNodeCapacities)->Unit(benchmark::kMicrosecond);

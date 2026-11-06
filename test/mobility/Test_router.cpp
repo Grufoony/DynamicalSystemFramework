@@ -298,6 +298,26 @@ TEST_CASE("Router") {
         }
         CHECK_GT(nRoutes, 90);
       }
+      THEN("A* stays exact with a distance cost added to the streets") {
+        constexpr double distanceFactor{0.05};
+        auto const generalized = [](Street const& street) {
+          return freeFlowTime(street) + distanceFactor * street.length();
+        };
+        for (std::size_t k{0}; k < 50; ++k) {
+          auto const fromStreetId{streetIds[(41 * k + 3) % streetIds.size()]};
+          auto const goalNodeId{nodeIds[(29 * k + 7) % nodeIds.size()]};
+          auto const best{bestCost(network, fromStreetId, goalNodeId, generalized)};
+          auto const route{router.route(
+              fromStreetId, goalNodeId, RouteWeights::FREE_FLOW, distanceFactor)};
+          if (best == std::numeric_limits<double>::infinity()) {
+            CHECK(route.empty());
+            continue;
+          }
+          CHECK(isValidRoute(network, route, goalNodeId));
+          CHECK_EQ(router.routeCost(route, RouteWeights::FREE_FLOW, distanceFactor),
+                   doctest::Approx(best));
+        }
+      }
     }
     GIVEN("A cheap route moving away from the goal and a costly straight one") {
       // From street 5 (5 -> 0) to node 2: 0 -> 1 -> 2 is straight but 5 m long, while
@@ -446,6 +466,67 @@ TEST_CASE("Router") {
         CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT),
                  std::vector<Id>{0, 1});
       }
+    }
+  }
+  SUBCASE("Distance cost") {
+    GIVEN("A fast but long branch (0->1->2) and a slow but short one (0->3->2)") {
+      // Free flow: 100 s and 2000 m against 120 s and 1200 m, even at 0.025 s/m
+      RoadNetwork network;
+      network.addStreet(0, std::make_pair(0, 1), 1000., 20.);
+      network.addStreet(1, std::make_pair(1, 2), 1000., 20.);
+      network.addStreet(2, std::make_pair(0, 3), 600., 10.);
+      network.addStreet(3, std::make_pair(3, 2), 600., 10.);
+      network.addStreet(5, std::make_pair(5, 0), 10., 10.);
+      Router router;
+      router.build(network);
+      THEN("The distance cost moves the route to the short branch") {
+        CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW), std::vector<Id>{5, 0, 1});
+        CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW, 0.02),
+                 std::vector<Id>{5, 0, 1});
+        CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW, 0.1),
+                 std::vector<Id>{5, 2, 3});
+        CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::FREE_FLOW, 0.1),
+                 doctest::Approx(120. + 0.1 * 1200.));
+      }
+      THEN("The generalized weight adds the distance cost to the travel time") {
+        auto const& street{network.edge(2)};
+        CHECK_EQ(Router::edgeWeightFunction("generalized", 0.1)(street),
+                 doctest::Approx(Router::edgeWeightFunction("traveltime")(street) + 60.));
+      }
+      THEN("Selecting it sets the distance cost of the routes, not the current weights") {
+        CHECK_EQ(router.distanceCost(), 0.);
+        router.setEdgeWeight("generalized", 0.2, 0.5);
+        CHECK_EQ(router.distanceCost(), 0.2);
+        CHECK_EQ(router.distanceSigma().value(), 0.5);
+        router.updateCurrentWeights();
+        CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::CURRENT),
+                 doctest::Approx(120.));
+        router.setEdgeWeight("generalized", 0.2);
+        CHECK_FALSE(router.distanceSigma().has_value());
+        router.setEdgeWeight("length");
+        CHECK_EQ(router.distanceCost(), 0.);
+        CHECK_FALSE(router.distanceSigma().has_value());
+        CHECK_THROWS_AS(router.setEdgeWeight("generalized", -0.1), std::invalid_argument);
+        CHECK_THROWS_AS(router.setEdgeWeight("generalized", 0.1, -1.),
+                        std::invalid_argument);
+      }
+    }
+    THEN("Each agent's distance cost is log-normal around the mean") {
+      constexpr std::size_t N{10000};
+      double sum{0.};
+      std::size_t nBelowMean{0};
+      for (std::uint64_t seed{0}; seed < N; ++seed) {
+        auto const factor{Router::distanceFactor(seed, 0.1, 1.)};
+        CHECK_GT(factor, 0.);
+        sum += factor;
+        nBelowMean += factor < 0.1 ? 1 : 0;
+      }
+      CHECK_EQ(sum / N, doctest::Approx(0.1).epsilon(0.05));
+      // P(X < 1) = P(Z < sigma / 2) = 0.69 for sigma = 1
+      CHECK_EQ(static_cast<double>(nBelowMean) / N, doctest::Approx(0.69).epsilon(0.03));
+      CHECK_EQ(Router::distanceFactor(42, 0.1, std::nullopt), 0.1);
+      CHECK_EQ(Router::distanceFactor(42, 0.1, 0.), 0.1);
+      CHECK_EQ(Router::distanceFactor(42, 0.1, 1.), Router::distanceFactor(42, 0.1, 1.));
     }
   }
 }

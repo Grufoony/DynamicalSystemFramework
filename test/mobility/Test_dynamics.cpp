@@ -1151,6 +1151,56 @@ TEST_CASE("FirstOrderDynamics") {
         }
       }
     }
+    GIVEN("A fast but long branch (0->1->2) and a slow but short one (0->3->2)") {
+      // Free flow: 100 s and 2000 m against 120 s and 1200 m, even at 0.025 s/m
+      auto const routeAgents = [](std::string_view const weight,
+                                  double const distanceCost,
+                                  std::optional<double> const sigma) {
+        RoadNetwork graph;
+        graph.addStreet(0, std::make_pair(0, 1), 1000., 20.);
+        graph.addStreet(1, std::make_pair(1, 2), 1000., 20.);
+        graph.addStreet(2, std::make_pair(0, 3), 600., 10.);
+        graph.addStreet(3, std::make_pair(3, 2), 600., 10.);
+        graph.addStreet(4, std::make_pair(2, 4), 10., 10.);
+        graph.addStreet(5, std::make_pair(5, 0), 10., 10.);
+        FirstOrderDynamics dynamics{std::move(graph), 69};
+        dynamics.setEdgeWeight(weight, distanceCost, sigma);
+        dynamics.initTurnCounts();
+        dynamics.updatePaths();
+        for (int i{0}; i < 40; ++i) {
+          dynamics.addAgent(4, 5);
+        }
+        for (int i{0}; i < 1000 && dynamics.nAgents() > 0; ++i) {
+          dynamics.evolve();
+        }
+        CHECK_EQ(dynamics.agentStats().nArrived, 40);
+        auto const& turnCounts{dynamics.turnCounts().at(5)};
+        return std::make_pair(turnCounts.at(0), turnCounts.at(2));
+      };
+      WHEN("The free-flow agents plan on travel time") {
+        auto const [nFast, nShort] = routeAgents("traveltime", 0.1, 1.);
+        THEN("They all take the fast branch") {
+          CHECK_EQ(nFast, 40);
+          CHECK_EQ(nShort, 0);
+        }
+      }
+      WHEN("They plan on the generalized cost, with the same high distance cost") {
+        auto const [nFast, nShort] = routeAgents("generalized", 0.1, std::nullopt);
+        THEN("They all take the short branch") {
+          CHECK_EQ(nFast, 0);
+          CHECK_EQ(nShort, 40);
+        }
+      }
+      WHEN("Their distance costs spread around the break-even") {
+        // 0.02 s/m alone keeps every agent on the fast branch
+        auto const [nFast, nShort] = routeAgents("generalized", 0.02, 1.);
+        THEN("They use both branches, most of them the fast one") {
+          CHECK_EQ(nFast + nShort, 40);
+          CHECK_GT(nShort, 0);
+          CHECK_GT(nFast, nShort);
+        }
+      }
+    }
     GIVEN("An origin street from which the destination cannot be reached") {
       // Node 3 is entered by street 3 only, from node 4, which street 0 cannot reach
       RoadNetwork graph;
