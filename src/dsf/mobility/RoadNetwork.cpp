@@ -638,7 +638,7 @@ namespace dsf::mobility {
     this->m_edges.rehash(0);
   }
 
-  RoadNetwork::RoadNetwork() { this->setEdgeWeight("traveltime"); }
+  RoadNetwork::RoadNetwork() = default;
 
   std::size_t RoadNetwork::nCoils() const {
     return std::ranges::count_if(m_edges | std::views::values, &Street::hasCoil);
@@ -1095,45 +1095,6 @@ namespace dsf::mobility {
         "streets.",
         nAssigned.load(),
         nNotAssigned.load());
-  }
-
-  void RoadNetwork::setEdgeWeight(std::string_view const strv_weight,
-                                  std::optional<double> const threshold) {
-    if (strv_weight == "traveltime") {
-      m_weightFunction = [](Street const& street) {
-        // Each lane releases at most one agent per time step, with probability equal to the
-        // transport capacity: the mean lane queue takes queue / min(1, tc) steps to clear.
-        auto const queueTime{street.nExitingAgents(Direction::ANY, true) /
-                             std::min(1., street.transportCapacity())};
-        return street.estimatedTravelTime() + queueTime;
-      };
-    } else if (strv_weight == "length") {
-      m_weightFunction = [](Street const& street) { return street.length(); };
-    } else if (strv_weight == "uniform") {
-      m_weightFunction = []([[maybe_unused]] Street const& street) { return 1.0; };
-    } else {  // Custom attribute
-      // Own the name: the caller's buffer (e.g. the JSON config parser) may not outlive the lambda
-      m_weightFunction = [attribute = std::string{strv_weight}](Street const& street) {
-        auto it = street.attributes().find(attribute);
-        if (it == street.attributes().end()) {
-          throw std::runtime_error(
-              std::format("Attribute {} not found in street {}", attribute, street.id()));
-        }
-        auto const& attrValue = it->second;
-        return std::visit(
-            [](auto&& value) -> double {
-              using T = std::decay_t<decltype(value)>;
-              if constexpr (std::is_arithmetic_v<T>) {
-                return static_cast<double>(value);
-              } else {
-                throw std::runtime_error(
-                    "Custom weight attribute is not a numeric type.");
-              }
-            },
-            attrValue);
-      };
-    }
-    m_weightThreshold = threshold;
   }
 
   void RoadNetwork::describe(std::ostream& os) const {

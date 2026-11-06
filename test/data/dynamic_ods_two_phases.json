@@ -10,8 +10,7 @@
   },
   "road_network": {
     "edges_file": "manhattan_edges.csv",
-    "node_properties_file": "manhattan_nodes.csv",
-    "set_edge_weight": { "weight": "length", "threshold": 1e9 }
+    "node_properties_file": "manhattan_nodes.csv"
   },
   "dynamics": {
     "agent_insertion_method": "ODS"

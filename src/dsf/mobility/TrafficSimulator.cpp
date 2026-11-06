@@ -242,15 +242,17 @@ namespace dsf::mobility {
             roadNetworkConfig["mean_vehicle_length"].get_double().value());
       }
       importRoadNetwork(edgesFile.string(), nodePropertiesFile.string());
-      auto const setEdgeWeightParams =
-          require_field(roadNetworkConfig, "road_network", "set_edge_weight");
-      m_dynamics->graph().setEdgeWeight(
-          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "weight")
-              .get_string()
-              .value(),
-          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "threshold")
-              .get_double()
-              .value());
+      if (auto const setEdgeWeightParams = roadNetworkConfig["set_edge_weight"];
+          !setEdgeWeightParams.error()) {
+        spdlog::warn(
+            "road_network.set_edge_weight is deprecated: use dynamics.edge_weight "
+            "instead "
+            "(any threshold is ignored).");
+        m_dynamics->setEdgeWeight(
+            require_field(setEdgeWeightParams, "road_network.set_edge_weight", "weight")
+                .get_string()
+                .value());
+      }
     }
     // Dynamics config
     {
@@ -264,6 +266,34 @@ namespace dsf::mobility {
       }
       if (!dynamicsConfig["max_concurrency"].error()) {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
+      }
+      if (!dynamicsConfig["edge_weight"].error()) {
+        // The distance cost and its spread are used by "generalized"
+        auto const distanceCost{
+            dynamicsConfig["distance_cost"].error()
+                ? 0.1
+                : dynamicsConfig["distance_cost"].get_double().value()};
+        auto const distanceCostSigma{
+            dynamicsConfig["distance_cost_sigma"].error()
+                ? std::nullopt
+                : std::make_optional(
+                      dynamicsConfig["distance_cost_sigma"].get_double().value())};
+        m_dynamics->setEdgeWeight(dynamicsConfig["edge_weight"].get_string().value(),
+                                  distanceCost,
+                                  distanceCostSigma);
+      }
+      if (!dynamicsConfig["route_algorithm"].error()) {
+        auto const algorithm{dynamicsConfig["route_algorithm"].get_string().value()};
+        if (algorithm == "ASTAR") {
+          m_dynamics->setRouteAlgorithm(RouteAlgorithm::ASTAR);
+        } else if (algorithm == "DIJKSTRA") {
+          m_dynamics->setRouteAlgorithm(RouteAlgorithm::DIJKSTRA);
+        } else {
+          throw std::runtime_error(
+              std::format("Invalid 'route_algorithm' value in JSON file '{}': {}",
+                          jsonConfigFile,
+                          algorithm));
+        }
       }
       bool const bHasMode{!dynamicsConfig["mode"].error()};
       if (bHasMode) {

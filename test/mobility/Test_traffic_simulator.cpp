@@ -108,7 +108,7 @@ TEST_CASE("TrafficSimulator JSON config parameters") {
     out << "  \"road_network\": {\n";
     out << "    \"edges_file\": \"edges.csv\",\n";
     out << "    \"node_properties_file\": \"nodes.csv\",\n";
-    out << "    \"set_edge_weight\": { \"weight\": \"length\", \"threshold\": 1.0 }\n";
+    out << "    \"set_edge_weight\": { \"weight\": \"length\" }\n";
     out << "  },\n";
     out << "  \"dynamics\": {\n";
     out << "    \"agent_insertion_method\": \"ODS\"\n";
@@ -185,7 +185,7 @@ TEST_CASE("TrafficSimulator JSON config - transition matrix") {
     out << "  \"road_network\": {\n";
     out << "    \"edges_file\": \"edges.csv\",\n";
     out << "    \"node_properties_file\": \"nodes.csv\",\n";
-    out << "    \"set_edge_weight\": { \"weight\": \"length\", \"threshold\": 1.0 }\n";
+    out << "    \"set_edge_weight\": { \"weight\": \"length\" }\n";
     out << "  },\n";
     out << "  \"dynamics\": {\n";
     out << "    \"agent_insertion_method\": \"RANDOM\",\n";
@@ -256,10 +256,13 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   "road_network": {
     "edges_file": "edges.csv",
     "node_properties_file": "nodes.csv",
-    "mean_vehicle_length": 2.5,
-    "set_edge_weight": { "weight": "length", "threshold": 1.0 }
+    "mean_vehicle_length": 2.5
   },
   "dynamics": {
+    "edge_weight": "generalized",
+    "distance_cost": 0.05,
+    "distance_cost_sigma": 0.5,
+    "route_algorithm": "DIJKSTRA",
     "seed": 42,
     "max_concurrency": 2,
     "mode": "EDGES",
@@ -282,13 +285,15 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   CHECK_EQ(simulator.dynamics()->origins().size(), 1);
   CHECK_EQ(simulator.dynamics()->destinations().size(), 1);
   CHECK_EQ(simulator.dynamics()->intelligentAgentsFraction(), 0.5);
+  CHECK_EQ(simulator.dynamics()->router().algorithm(), RouteAlgorithm::DIJKSTRA);
+  CHECK_EQ(simulator.dynamics()->router().distanceCost(), 0.05);
+  CHECK_EQ(simulator.dynamics()->router().distanceSigma().value(), 0.5);
   // The streets have no capacity column: it follows from the mean vehicle length
   CHECK_EQ(Road::meanVehicleLength(), 2.5);
   CHECK_EQ(simulator.dynamics()->graph().edge(0).capacity(), 6);
 
   simulator.run(std::vector<std::size_t>{2, 2, 2, 2});
-  CHECK_EQ(simulator.dynamics()->freeflowItineraries().size(),
-           simulator.dynamics()->itineraries().size());
+  CHECK(simulator.dynamics()->router().isBuilt());
 
   auto const dbPath = outputDir / "all_options.db";
   {
@@ -327,7 +332,7 @@ TEST_CASE("TrafficSimulator JSON config errors") {
   };
   std::string const roadNetwork{
       R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
-      R"("nodes.csv", "set_edge_weight": { "weight": "length", "threshold": 1.0 } })"};
+      R"("nodes.csv", "set_edge_weight": { "weight": "length" } })"};
   auto const importConfig = [&](std::string const& content) {
     writeFile(jsonPath, content);
     TrafficSimulator simulator;
@@ -365,8 +370,16 @@ TEST_CASE("TrafficSimulator JSON config errors") {
             "",
             R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
             R"("nodes.csv", "mean_vehicle_length": 0.0, "set_edge_weight": )"
-            R"({ "weight": "length", "threshold": 1.0 } })")),
+            R"({ "weight": "length" } })")),
         std::invalid_argument);
+  }
+  SUBCASE("The route algorithm is unknown") {
+    CHECK_THROWS_AS(
+        importConfig(makeConfig("",
+                                roadNetwork + R"(, "dynamics": { )"
+                                              R"("route_algorithm": "FOO", )"
+                                              R"("agent_insertion_method": "ODS" })")),
+        std::runtime_error);
   }
   SUBCASE("The agent insertion method is unknown") {
     CHECK_THROWS_AS(

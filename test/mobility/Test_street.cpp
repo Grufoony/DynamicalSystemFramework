@@ -255,11 +255,11 @@ TEST_CASE("Street") {
     }
   }
   SUBCASE("addAgent") {
-    Agent a1{0, 0, nullptr, 0};
+    Agent a1{0, 0, std::nullopt, 0};
     a1.setFreeTime(5);
-    Agent a2{1, 0, nullptr, 0};
+    Agent a2{1, 0, std::nullopt, 0};
     a2.setFreeTime(3);
-    Agent a3{2, 0, nullptr, 0};
+    Agent a3{2, 0, std::nullopt, 0};
     a3.setFreeTime(7);
 
     Street street{1, nodes(0, 1), 3.5};
@@ -274,10 +274,10 @@ TEST_CASE("Street") {
     /*This tests the insertion of an agent in a street's queue*/
 
     // define some agents
-    Agent a1{0, 0, nullptr, 0};  // they are all in street 1
-    Agent a2{1, 0, nullptr, 0};
-    Agent a3{2, 0, nullptr, 0};
-    Agent a4{3, 0, nullptr, 0};
+    Agent a1{0, 0, std::nullopt, 0};  // they are all in street 1
+    Agent a2{1, 0, std::nullopt, 0};
+    Agent a3{2, 0, std::nullopt, 0};
+    Agent a4{3, 0, std::nullopt, 0};
 
     Street street{1, nodes(0, 1), 3.5};
     // fill the queue
@@ -305,10 +305,10 @@ TEST_CASE("Street") {
     /*This tests the exit of an agent from a street's queue*/
 
     // define some agents
-    Agent a1{0, 0, nullptr, 0};  // they are all in street 1
-    Agent a2{1, 0, nullptr, 0};
-    Agent a3{2, 0, nullptr, 0};
-    Agent a4{3, 0, nullptr, 0};
+    Agent a1{0, 0, std::nullopt, 0};  // they are all in street 1
+    Agent a2{1, 0, std::nullopt, 0};
+    Agent a3{2, 0, std::nullopt, 0};
+    Agent a4{3, 0, std::nullopt, 0};
 
     Street street{1, nodes(0, 1), 3.5};
     // fill the queue
@@ -336,7 +336,7 @@ TEST_CASE("Street") {
     GIVEN("A two-lane street with transport capacity 0.5") {
       Street street{1, nodes(0, 1), 30., 13.8888888889, 2};
       street.setTransportCapacity(0.5);
-      Agent agent{0, 0, nullptr, 0};
+      Agent agent{0, 0, std::nullopt, 0};
       street.addAgent(std::make_unique<Agent>(agent), 0);
       street.enqueue(0);
       street.refillFlowAccumulator(0, 0);
@@ -385,7 +385,7 @@ TEST_CASE("Street with a coil") {
       CHECK_EQ(street.counterName(), "EntryCoil");
       CHECK_THROWS_AS(street.enableCounter("OtherCoil"), std::runtime_error);
       WHEN("An agent is added") {
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
         THEN("The input flow is one immediately") { CHECK_EQ(street.counts(), 1); }
         street.enqueue(0);
         THEN("The input flow is still one") { CHECK_EQ(street.counts(), 1); }
@@ -399,7 +399,7 @@ TEST_CASE("Street with a coil") {
       street.enableCounter("", dsf::mobility::CounterPosition::MIDDLE);
       CHECK_EQ(street.counterName(), "Coil_1");
       WHEN("An agent is added") {
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
         THEN("The input flow is zero") { CHECK_EQ(street.counts(), 0); }
         street.enqueue(0);
         THEN("The input flow is one once enqueued") { CHECK_EQ(street.counts(), 1); }
@@ -415,7 +415,7 @@ TEST_CASE("Street with a coil") {
       street.enableCounter("ExitCoil", dsf::mobility::CounterPosition::EXIT);
       CHECK_EQ(street.counterName(), "ExitCoil");
       WHEN("An agent is added and enqueued") {
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
         street.enqueue(0);
         THEN("The input flow is zero") { CHECK_EQ(street.counts(), 0); }
         street.dequeue(0, 1);
@@ -438,9 +438,9 @@ TEST_CASE("Street with a coil") {
 
       WHEN("Agents are added and dequeued at different times") {
         // Add agents at time 0
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
-        street.addAgent(std::make_unique<Agent>(1, 0, nullptr, 0), 0);
-        street.addAgent(std::make_unique<Agent>(2, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
+        street.addAgent(std::make_unique<Agent>(1, 0, std::nullopt, 0), 0);
+        street.addAgent(std::make_unique<Agent>(2, 0, std::nullopt, 0), 0);
 
         // Enqueue them
         street.enqueue(0);
@@ -474,12 +474,12 @@ TEST_CASE("Street with a coil") {
 
       WHEN("Agents exit at different times") {
         // Agent 0 added at time 0, exits at time 10 (speed = 100/10 = 10 m/s)
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
         street.enqueue(0);
         street.dequeue(0, 10);
 
         // Agent 1 added at time 0, exits at time 5 (speed = 100/5 = 20 m/s)
-        street.addAgent(std::make_unique<Agent>(1, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(1, 0, std::nullopt, 0), 0);
         street.enqueue(0);
         street.dequeue(0, 5);
 
@@ -780,8 +780,8 @@ TEST_CASE("Street formatting") {
     Street street{30, nodes(10, 20), 50.0, 15.0, 1};
 
     // Add some agents
-    auto agent1 = std::make_unique<Agent>(0, 0, nullptr);
-    auto agent2 = std::make_unique<Agent>(1, 0, nullptr);
+    auto agent1 = std::make_unique<Agent>(0, 0, std::nullopt);
+    auto agent2 = std::make_unique<Agent>(1, 0, std::nullopt);
     street.addAgent(std::move(agent1), 0);
     street.addAgent(std::move(agent2), 0);
 
