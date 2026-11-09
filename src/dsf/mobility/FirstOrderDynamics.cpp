@@ -1743,7 +1743,6 @@ namespace dsf::mobility {
           })) {
         continue;
       }
-      spdlog::error("No path found to destination street {}", destinationId);
       unreachable.push_back(destinationId);
     }
     if (unreachable.empty()) {
