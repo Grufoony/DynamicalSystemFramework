@@ -257,7 +257,7 @@ namespace dsf::mobility {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
       }
       if (!dynamicsConfig["edge_weight"].error()) {
-        // The distance cost and its spread are used by "generalized"
+        // The distance cost and its spread are used by "datt"
         auto const distanceCost{
             dynamicsConfig["distance_cost"].error()
                 ? 0.1

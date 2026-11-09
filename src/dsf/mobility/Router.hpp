@@ -51,8 +51,9 @@ namespace dsf::mobility {
   ///   a street the heuristic is zero, i.e. the search is Dijkstra's.
   ///
   ///   Routes may add a per-agent distance cost, distanceFactor · length, to the street costs
-  ///   (see setEdgeWeight with "generalized" and distanceFactor), as in MATSim's generalized
-  ///   cost: agents trading travel time for distance differently spread over more routes.
+  ///   (see setEdgeWeight with "datt", the detour-avoiding travel time, and distanceFactor),
+  ///   as in MATSim's generalized cost: agents trading travel time for distance differently
+  ///   spread over more routes.
   class Router {
   public:
     /// @brief A street cost function
@@ -65,26 +66,26 @@ namespace dsf::mobility {
     ///   min(1, transportCapacity())
     /// - "length": the street's length
     /// - "uniform": 1 for every street
-    /// - "generalized": "traveltime" plus distanceCost · length
+    /// - "datt" (detour-avoiding travel time): "traveltime" plus distanceCost · length
     /// - any other value is used as the name of a numeric custom attribute of the streets
-    /// @param distanceCost The cost of a unit of length of "generalized", in time per unit of
+    /// @param distanceCost The cost of a unit of length of "datt", in time per unit of
     ///   length (s/m): 0.1 makes a metre cost as much as driving it at 10 m/s
     /// @return EdgeWeight The cost function
     static EdgeWeight edgeWeightFunction(std::string_view name,
                                          double distanceCost = 0.1);
     /// @brief Set the street costs of the routes
     /// @param name The name of the cost function (see edgeWeightFunction), "traveltime" by
-    ///   default. It sets the current weights; "generalized" also adds a distance cost to
+    ///   default. It sets the current weights; "datt" also adds a distance cost to
     ///   every route, free-flow ones included (see distanceFactor)
-    /// @param distanceCost The mean cost of a unit of length of "generalized", in s/m
+    /// @param distanceCost The mean cost of a unit of length of "datt", in s/m
     /// @param sigma Optional, the spread of the per-agent factor of the distance cost of
-    ///   "generalized" (see distanceFactor). Without it, every agent has the same cost
+    ///   "datt" (see distanceFactor). Without it, every agent has the same cost
     /// @details The current weights change at the next snapshot (see updateCurrentWeights)
     /// @throws std::invalid_argument if distanceCost or sigma is negative
     void setEdgeWeight(std::string_view name,
                        double distanceCost = 0.1,
                        std::optional<double> sigma = std::nullopt);
-    /// @brief Get the mean distance cost of the routes, in s/m (0 unless "generalized")
+    /// @brief Get the mean distance cost of the routes, in s/m (0 unless "datt")
     inline double distanceCost() const noexcept { return m_distanceCost; }
     /// @brief Get the spread of the per-agent factor of the distance cost, if any
     inline std::optional<double> distanceSigma() const noexcept {

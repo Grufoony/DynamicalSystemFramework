@@ -42,11 +42,11 @@ def test_traffic_simulator_import_counts(manhattan_edges_path, manhattan_nodes_p
 
 def test_dynamics_edge_weight_and_route_algorithm(dynamics):
     dynamics.setEdgeWeight("length")
-    dynamics.setEdgeWeight("generalized", 0.1, 1.0)
-    dynamics.setEdgeWeight("generalized", distanceCost=0.05)
-    dynamics.setEdgeWeight("generalized", distanceCost=0.05, sigma=None)
+    dynamics.setEdgeWeight("datt", 0.1, 1.0)
+    dynamics.setEdgeWeight("datt", distanceCost=0.05)
+    dynamics.setEdgeWeight("datt", distanceCost=0.05, sigma=None)
     with pytest.raises(ValueError):
-        dynamics.setEdgeWeight("generalized", -0.1)
+        dynamics.setEdgeWeight("datt", -0.1)
     dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.DIJKSTRA)
     dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.ASTAR)
     dynamics.setDestinations([1])

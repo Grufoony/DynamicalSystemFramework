@@ -72,7 +72,7 @@ namespace dsf::mobility {
     if (name == "traveltime") {
       return travelTime;
     }
-    if (name == "generalized") {
+    if (name == "datt") {
       return [distanceCost](Street const& street) {
         return travelTime(street) + distanceCost * street.length();
       };
@@ -112,7 +112,7 @@ namespace dsf::mobility {
                       distanceCost,
                       sigma.value_or(0.)));
     }
-    if (name == "generalized") {
+    if (name == "datt") {
       // The distance cost is added to each route, with each agent's own factor
       m_edgeWeight = edgeWeightFunction("traveltime");
       m_distanceCost = distanceCost;

@@ -906,7 +906,7 @@ NB_MODULE(dsf_cpp, m) {
 
       Args:
         weight (str): The edge cost: 'traveltime' (default), 'length', 'uniform',
-          'generalized' (traveltime + 0.1 s/m * length) or the name of a numeric custom
+          'datt' (detour-avoiding travel time: traveltime + 0.1 s/m * length) or the name of a numeric custom
           attribute.)doc")
       .def(
           "computeEdgeBetweennessCentralities",
@@ -1359,13 +1359,13 @@ Returns:
     Args:
       weight (str): 'traveltime' (default) is the estimated travel time plus the time
         needed to clear the exit queues (mean lane queue / min(1, transport capacity)),
-        'length' the street length, 'uniform' 1 for every street; 'generalized' is
-        'traveltime' plus k * length, as in MATSim's generalized cost; any other value is
-        the name of a numeric custom attribute. With 'generalized' every agent, free-flow
+        'length' the street length, 'uniform' 1 for every street; 'datt' (detour-avoiding
+        travel time) is 'traveltime' plus k * length, as in MATSim's generalized cost; any other value is
+        the name of a numeric custom attribute. With 'datt' every agent, free-flow
         ones included, adds its own k * length to the street costs, k being log-normal
         with mean distanceCost and spread sigma: agents trading time for distance
         differently spread over more routes.
-      distanceCost (float): The mean k of 'generalized', in s/m. 0.1 makes a metre cost
+      distanceCost (float): The mean k of 'datt', in s/m. 0.1 makes a metre cost
         as much as driving it at 36 km/h; values between 0.05 and 0.2 are sensible in a
         city.
       sigma (float | None): The spread of the agents' k (log-normal shape; MATSim's

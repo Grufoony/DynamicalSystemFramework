@@ -1168,8 +1168,8 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(nShort, 0);
         }
       }
-      WHEN("They plan on the generalized cost, with the same high distance cost") {
-        auto const [nFast, nShort] = routeAgents("generalized", 0.1, std::nullopt);
+      WHEN("They plan on the datt cost, with the same high distance cost") {
+        auto const [nFast, nShort] = routeAgents("datt", 0.1, std::nullopt);
         THEN("They all take the short branch") {
           CHECK_EQ(nFast, 0);
           CHECK_EQ(nShort, 40);
@@ -1177,7 +1177,7 @@ TEST_CASE("FirstOrderDynamics") {
       }
       WHEN("Their distance costs spread around the break-even") {
         // 0.02 s/m alone keeps every agent on the fast branch
-        auto const [nFast, nShort] = routeAgents("generalized", 0.02, 1.);
+        auto const [nFast, nShort] = routeAgents("datt", 0.02, 1.);
         THEN("They use both branches, most of them the fast one") {
           CHECK_EQ(nFast + nShort, 40);
           CHECK_GT(nShort, 0);

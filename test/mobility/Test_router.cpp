@@ -310,13 +310,13 @@ TEST_CASE("Router") {
       }
       THEN("A* stays exact with a distance cost added to the streets") {
         constexpr double distanceFactor{0.05};
-        auto const generalized = [](Street const& street) {
+        auto const datt = [](Street const& street) {
           return freeFlowTime(street) + distanceFactor * street.length();
         };
         for (std::size_t k{0}; k < 50; ++k) {
           auto const fromStreetId{streetIds[(41 * k + 3) % streetIds.size()]};
           auto const goalStreetId{streetIds[(29 * k + 7) % streetIds.size()]};
-          auto const best{bestCost(network, fromStreetId, goalStreetId, generalized)};
+          auto const best{bestCost(network, fromStreetId, goalStreetId, datt)};
           auto const route{router.route(
               fromStreetId, goalStreetId, RouteWeights::FREE_FLOW, distanceFactor)};
           if (best == std::numeric_limits<double>::infinity()) {
@@ -514,27 +514,26 @@ TEST_CASE("Router") {
         CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::FREE_FLOW, 0.1),
                  doctest::Approx(120. + 0.1 * 1200.));
       }
-      THEN("The generalized weight adds the distance cost to the travel time") {
+      THEN("The datt weight adds the distance cost to the travel time") {
         auto const& street{network.edge(2)};
-        CHECK_EQ(Router::edgeWeightFunction("generalized", 0.1)(street),
+        CHECK_EQ(Router::edgeWeightFunction("datt", 0.1)(street),
                  doctest::Approx(Router::edgeWeightFunction("traveltime")(street) + 60.));
       }
       THEN("Selecting it sets the distance cost of the routes, not the current weights") {
         CHECK_EQ(router.distanceCost(), 0.);
-        router.setEdgeWeight("generalized", 0.2, 0.5);
+        router.setEdgeWeight("datt", 0.2, 0.5);
         CHECK_EQ(router.distanceCost(), 0.2);
         CHECK_EQ(router.distanceSigma().value(), 0.5);
         router.updateCurrentWeights();
         CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::CURRENT),
                  doctest::Approx(120.));
-        router.setEdgeWeight("generalized", 0.2);
+        router.setEdgeWeight("datt", 0.2);
         CHECK_FALSE(router.distanceSigma().has_value());
         router.setEdgeWeight("length");
         CHECK_EQ(router.distanceCost(), 0.);
         CHECK_FALSE(router.distanceSigma().has_value());
-        CHECK_THROWS_AS(router.setEdgeWeight("generalized", -0.1), std::invalid_argument);
-        CHECK_THROWS_AS(router.setEdgeWeight("generalized", 0.1, -1.),
-                        std::invalid_argument);
+        CHECK_THROWS_AS(router.setEdgeWeight("datt", -0.1), std::invalid_argument);
+        CHECK_THROWS_AS(router.setEdgeWeight("datt", 0.1, -1.), std::invalid_argument);
       }
     }
     THEN("Each agent's distance cost is log-normal around the mean") {

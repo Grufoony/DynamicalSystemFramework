@@ -257,7 +257,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   },
   "dynamics": {
     "intelligent_fraction": 0.5,
-    "edge_weight": "generalized",
+    "edge_weight": "datt",
     "distance_cost": 0.05,
     "distance_cost_sigma": 0.5,
     "route_algorithm": "DIJKSTRA",

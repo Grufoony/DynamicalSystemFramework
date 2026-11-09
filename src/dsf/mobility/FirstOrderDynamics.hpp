@@ -429,14 +429,15 @@ namespace dsf::mobility {
     }
     /// @brief Set the street costs intelligent agents plan their routes on
     /// @param weight The name of the cost function (see Router::edgeWeightFunction),
-    ///   "traveltime" by default. With "generalized", every agent, free-flow ones included,
+    ///   "traveltime" by default. With "datt" (detour-avoiding travel time), every agent,
+    ///   free-flow ones included,
     ///   adds its own distance cost to the street costs, i.e. plans on (current or free-flow)
     ///   travel time + k · length, with k log-normal of mean distanceCost and spread sigma
     ///   (see Router::distanceFactor): agents trading time for distance differently spread
     ///   over more routes, as in MATSim's generalized cost
-    /// @param distanceCost The mean distance cost of "generalized", in s/m: 0.1 makes a metre
+    /// @param distanceCost The mean distance cost of "datt", in s/m: 0.1 makes a metre
     ///   cost as much as driving it at 36 km/h
-    /// @param sigma Optional, the spread of the agents' distance costs of "generalized".
+    /// @param sigma Optional, the spread of the agents' distance costs of "datt".
     ///   Without it, every agent has distanceCost
     /// @throws std::invalid_argument if distanceCost or sigma is negative
     void setEdgeWeight(std::string_view const weight,
