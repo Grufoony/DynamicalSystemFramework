@@ -83,7 +83,6 @@ int main() {
 
   // Create the dynamics
   FirstOrderDynamics dynamics{std::move(graph), 69};
-  dynamics.updatePaths();
 
   // lauch progress bar
   thread_t t([MAX_TIME]() {

@@ -94,7 +94,10 @@ namespace dsf::mobility {
     m_transportCapacity = m_transportCapacity * nLanes / m_nLanes;
     auto const previousNLanes = m_nLanes;
     m_nLanes = nLanes;
-    m_maxSpeed = m_maxSpeed * speedFactor.value_or(1.0);
+    if (speedFactor.has_value()) {
+      m_maxSpeed *= *speedFactor;
+      m_bumpRoutingRevision();
+    }
     if (nLanes < previousNLanes) {
       // Resizing down would destroy the agents queued in the removed lanes without
       // anyone noticing. Move them to the last surviving lane instead.
@@ -158,8 +161,25 @@ namespace dsf::mobility {
     assert(!lane.queue.empty());
     auto pAgent{lane.queue.extract_front()};
     lane.flowAccumulator.consume();
+    m_recordExit(*pAgent, currentTime);
+    if (m_counter.has_value() && m_counterPosition == CounterPosition::EXIT) {
+      ++(*m_counter);
+    }
+    return pAgent;
+  }
+  std::unique_ptr<Agent> Street::dequeueArrivedAgent(std::time_t const currentTime) {
+    assert(!m_movingAgents.empty());
+    auto pAgent{m_movingAgents.extract_top()};
+    pAgent->incrementDistance(m_length);
+    if (m_counter.has_value() && m_counterPosition == CounterPosition::MIDDLE) {
+      ++(*m_counter);
+    }
+    m_recordExit(*pAgent, currentTime);
+    return pAgent;
+  }
+  void Street::m_recordExit(Agent const& agent, std::time_t const currentTime) {
     // Keep track of average speed
-    auto const itInsertion{m_agentsInsertionTimes.find(pAgent->id())};
+    auto const itInsertion{m_agentsInsertionTimes.find(agent.id())};
     auto const insertionTime{
         itInsertion == m_agentsInsertionTimes.cend() ? currentTime : itInsertion->second};
     // An agent leaving in the same time-step it entered would divide by zero.
@@ -171,13 +191,8 @@ namespace dsf::mobility {
     }
     if (m_agentData.has_value()) {
       m_agentData->operator[](m_id).push_back(AgentStreetRecord{
-          .agentId = pAgent->id(), .timeIn = insertionTime, .timeOut = currentTime});
+          .agentId = agent.id(), .timeIn = insertionTime, .timeOut = currentTime});
     }
-
-    if (m_counter.has_value() && m_counterPosition == CounterPosition::EXIT) {
-      ++(*m_counter);
-    }
-    return pAgent;
   }
 
   std::size_t Street::nAgents() const {

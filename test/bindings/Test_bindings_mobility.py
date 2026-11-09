@@ -50,7 +50,6 @@ def test_dynamics_edge_weight_and_route_algorithm(dynamics):
     dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.DIJKSTRA)
     dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.ASTAR)
     dynamics.setDestinations([1])
-    dynamics.updatePaths()
 
 
 def test_road_network_betweenness_takes_a_weight(dynamics):
@@ -75,7 +74,6 @@ def test_traffic_simulator_smoke_run_with_linear_speed(tmp_path):
 
     dynamics.setSpeedFunction(mobility.SpeedFunction.LINEAR, 0.8)
     dynamics.setODs([(0, 1, 1.0)])
-    dynamics.updatePaths()
 
     simulator.setTimeFrame(0, 6)
     simulator.saveData(1, True, True, False, False)
@@ -176,13 +174,13 @@ def test_dynamics_mode_defaults_to_edges(dynamics):
 
 
 def test_dynamics_mode_nodes(loaded_road_network):
-    # Node 1 has the outgoing streets 3, 4 and 6
+    # Node 1 is entered by streets 2, 5 and 7: agents arrive at the end of one of them
     dynamics = mobility.Dynamics(
         loaded_road_network, seed=69, mode=mobility.DynamicsMode.NODES
     )
     assert dynamics.mode() == mobility.DynamicsMode.NODES
     dynamics.setDestinations([1])
-    assert dynamics.destinationStreets() == {3, 4, 6}
+    assert dynamics.destinationStreets() == {2, 5, 7}
 
     with pytest.raises(RuntimeError):
         dynamics.setMode(mobility.DynamicsMode.EDGES)
@@ -192,4 +190,4 @@ def test_dynamics_set_mode(dynamics):
     dynamics.setMode(mobility.DynamicsMode.NODES)
     assert dynamics.mode() == mobility.DynamicsMode.NODES
     dynamics.setODs([(0, 1, 1.0)])
-    assert dynamics.destinationStreets() == {3, 4, 6}
+    assert dynamics.destinationStreets() == {2, 5, 7}

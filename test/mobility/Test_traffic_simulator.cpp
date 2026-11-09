@@ -107,10 +107,10 @@ TEST_CASE("TrafficSimulator JSON config parameters") {
     out << "  },\n";
     out << "  \"road_network\": {\n";
     out << "    \"edges_file\": \"edges.csv\",\n";
-    out << "    \"node_properties_file\": \"nodes.csv\",\n";
-    out << "    \"set_edge_weight\": { \"weight\": \"length\" }\n";
+    out << "    \"node_properties_file\": \"nodes.csv\"\n";
     out << "  },\n";
     out << "  \"dynamics\": {\n";
+    out << "    \"edge_weight\": \"length\",\n";
     out << "    \"agent_insertion_method\": \"ODS\"\n";
     out << "  }\n";
     out << "}\n";
@@ -127,7 +127,6 @@ TEST_CASE("TrafficSimulator JSON config parameters") {
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
 
   simulator.saveData(1, true, true, false, false);
   simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
@@ -184,10 +183,10 @@ TEST_CASE("TrafficSimulator JSON config - transition matrix") {
     out << "  },\n";
     out << "  \"road_network\": {\n";
     out << "    \"edges_file\": \"edges.csv\",\n";
-    out << "    \"node_properties_file\": \"nodes.csv\",\n";
-    out << "    \"set_edge_weight\": { \"weight\": \"length\" }\n";
+    out << "    \"node_properties_file\": \"nodes.csv\"\n";
     out << "  },\n";
     out << "  \"dynamics\": {\n";
+    out << "    \"edge_weight\": \"length\",\n";
     out << "    \"agent_insertion_method\": \"RANDOM\",\n";
     out << "    \"importTransitionMatrixFromJSON\": { \"file\": "
            "\"transition_matrix.json\" }\n";
@@ -248,8 +247,6 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "database": "all_options.db",
     "init_time": "20240101",
     "end_time": "20240101 000020",
-    "update_paths": { "interval": 5, "throw_on_empty": false,
-                      "intelligent_fraction": 0.5 },
     "save_data": { "interval": 1, "avg": true, "road": true, "travel": true,
                    "agent": true, "turn_counts": true }
   },
@@ -259,6 +256,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "mean_vehicle_length": 2.5
   },
   "dynamics": {
+    "intelligent_fraction": 0.5,
     "edge_weight": "generalized",
     "distance_cost": 0.05,
     "distance_cost_sigma": 0.5,
@@ -332,7 +330,7 @@ TEST_CASE("TrafficSimulator JSON config errors") {
   };
   std::string const roadNetwork{
       R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
-      R"("nodes.csv", "set_edge_weight": { "weight": "length" } })"};
+      R"("nodes.csv" })"};
   auto const importConfig = [&](std::string const& content) {
     writeFile(jsonPath, content);
     TrafficSimulator simulator;
@@ -369,8 +367,7 @@ TEST_CASE("TrafficSimulator JSON config errors") {
         importConfig(makeConfig(
             "",
             R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
-            R"("nodes.csv", "mean_vehicle_length": 0.0, "set_edge_weight": )"
-            R"({ "weight": "length" } })")),
+            R"("nodes.csv", "mean_vehicle_length": 0.0 })")),
         std::invalid_argument);
   }
   SUBCASE("The route algorithm is unknown") {
@@ -395,16 +392,14 @@ TEST_CASE("TrafficSimulator JSON config errors") {
         std::runtime_error);
   }
   SUBCASE("The mode selects how OD ids are read") {
-    // Node 1 has outgoing streets 1 and 2, node 2 has outgoing street 3
+    // Node 1 has outgoing streets 1 and 2, node 2 has ingoing street 2
     writeFile(inputDir / "ods.csv", "id;type;weight\n1;O;1.0\n2;D;1.0\n");
-    auto const importODs = [&](std::string const& modeField,
-                               std::string const& edgesField) {
+    auto const importODs = [&](std::string const& modeField) {
       writeFile(jsonPath,
                 makeConfig("",
                            roadNetwork + R"(, "dynamics": { )" + modeField +
                                R"("agent_insertion_method": "RANDOM_ODS", )"
-                               R"("importODsFromCSV": { "file": "ods.csv")" +
-                               edgesField + " } }"));
+                               R"("importODsFromCSV": { "file": "ods.csv" } })"));
       auto pSimulator{std::make_unique<TrafficSimulator>()};
       pSimulator->importConfig(jsonPath.string());
       return pSimulator;
@@ -418,31 +413,24 @@ TEST_CASE("TrafficSimulator JSON config errors") {
       return ids;
     };
     SUBCASE("Default: street ids") {
-      auto const pSimulator{importODs("", "")};
+      auto const pSimulator{importODs("")};
       CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::EDGES);
       CHECK_EQ(sortedIds(pSimulator->dynamics()->origins()), std::vector<Id>{1});
       CHECK_EQ(sortedIds(pSimulator->dynamics()->destinations()), std::vector<Id>{2});
     }
     SUBCASE("NODES: node ids") {
-      auto const pSimulator{importODs(R"("mode": "NODES", )", "")};
+      auto const pSimulator{importODs(R"("mode": "NODES", )")};
       CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::NODES);
       CHECK_EQ(sortedIds(pSimulator->dynamics()->origins()), (std::vector<Id>{1, 2}));
-      CHECK_EQ(sortedIds(pSimulator->dynamics()->destinations()), std::vector<Id>{3});
-    }
-    SUBCASE("The deprecated 'edges' flag still selects the mode") {
-      auto const pSimulator{importODs("", R"(, "edges": false)")};
-      CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::NODES);
-    }
-    SUBCASE("'mode' takes precedence over the deprecated 'edges' flag") {
-      auto const pSimulator{importODs(R"("mode": "EDGES", )", R"(, "edges": false)")};
-      CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::EDGES);
+      CHECK_EQ(sortedIds(pSimulator->dynamics()->destinations()), std::vector<Id>{2});
     }
   }
   SUBCASE("The intelligent fraction is out of range") {
     CHECK_THROWS_AS(
-        importConfig(makeConfig(
-            R"(, "update_paths": { "interval": 1, "intelligent_fraction": 1.5 })",
-            roadNetwork + R"(, "dynamics": { "agent_insertion_method": "ODS" })")),
+        importConfig(makeConfig("",
+                                roadNetwork + R"(, "dynamics": { )"
+                                              R"("intelligent_fraction": 1.5, )"
+                                              R"("agent_insertion_method": "ODS" })")),
         std::invalid_argument);
   }
   SUBCASE("Every other agent insertion method is accepted") {
@@ -553,7 +541,6 @@ TEST_CASE("TrafficSimulator output prefix") {
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
 
   simulator.saveData(1, true, true, false, false);
   simulator.setTimeFrame(0, 6);
@@ -585,7 +572,6 @@ TEST_CASE("TrafficSimulator SQL persistence") {
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
 
   simulator.saveData(1, true, true, false, false);
   simulator.setTimeFrame(0, 6);
@@ -615,7 +601,6 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
 
   simulator.saveData(1, true, true, false, false);
   simulator.setTimeFrame(0, 6);
@@ -668,7 +653,6 @@ TEST_CASE("TrafficSimulator CSV writer semantics") {
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
   simulator.dynamics()->graph().edge(0).enableCounter("coil;with;separators");
 
   // Saving every step means several appends to the same file.
@@ -740,7 +724,6 @@ TEST_CASE("TrafficSimulator SQL turn counts persistence") {
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   // Route agents from node 0 to node 2: they must cross both edges.
   simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 3, 1.0}});
-  simulator.dynamics()->updatePaths();
 
   // 4th flag = save turn counts
   simulator.saveData(1, false, false, false, false, true);
@@ -803,7 +786,6 @@ TEST_CASE("TrafficSimulator CSV turn counts persistence") {
   // destination edge 1 the agent arrives at that edge's source node and is removed
   // without ever turning, so no turn event would be recorded at all.
   simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 3, 1.0}});
-  simulator.dynamics()->updatePaths();
 
   // 4th flag = save turn counts
   simulator.saveData(1, false, false, false, false, true);

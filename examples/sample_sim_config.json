@@ -4,10 +4,6 @@
     "input_folder": "./examples/",
     "output_folder": "./output/",
     "database": "sample_sim.db",
-    "update_paths": {
-      "interval": 300,
-      "throw_on_empty": false
-    },
     "save_data": {
       "interval": 300,
       "avg": true,

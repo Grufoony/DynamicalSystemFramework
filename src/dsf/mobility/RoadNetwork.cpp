@@ -1278,15 +1278,20 @@ namespace dsf::mobility {
     spdlog::debug("exportTrafficLights: wrote traffic light data to \"{}\".", fileName);
   }
 
+  // Replacing a node changes the turn rules at it (e.g. U-turns at roundabouts): the routes
+  // must be planned again (see Road::routingRevision)
   TrafficLight& RoadNetwork::makeTrafficLight(Id const nodeId) {
+    Road::m_bumpRoutingRevision();
     return m_replaceNode<TrafficLight>(m_nodes.at(nodeId));
   }
 
   Roundabout& RoadNetwork::makeRoundabout(Id nodeId) {
+    Road::m_bumpRoutingRevision();
     return m_replaceNode<Roundabout>(m_nodes.at(nodeId));
   }
 
   Station& RoadNetwork::makeStation(Id nodeId, const unsigned int managementTime) {
+    Road::m_bumpRoutingRevision();
     return m_replaceNode<Station>(m_nodes.at(nodeId), managementTime);
   }
   void RoadNetwork::addCoil(Id streetId, std::string const& name) {

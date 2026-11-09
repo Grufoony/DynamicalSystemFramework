@@ -130,7 +130,6 @@ namespace dsf::mobility {
       return distanceCost;
     }
     std::mt19937_64 engine{seed};
-    // exp(m + sigma · Z) has mean exp(m + sigma² / 2): m = -sigma² / 2 makes it 1
     std::lognormal_distribution<double> distribution{-*sigma * *sigma / 2., *sigma};
     return distanceCost * distribution(engine);
   }
@@ -339,23 +338,23 @@ namespace dsf::mobility {
   }
 
   std::vector<Id> Router::route(Id const fromStreetId,
-                                Id const goalNodeId,
+                                Id const goalStreetId,
                                 RouteWeights const weights,
                                 double const distanceFactor) const {
     auto const start{m_streetIndex(fromStreetId)};
     return m_search(std::span{&start, 1},
                     false,
-                    m_nodeIndex(goalNodeId),
+                    m_streetIndex(goalStreetId),
                     m_weightSet(weights),
                     distanceFactor);
   }
 
   std::vector<Id> Router::routeFromNode(Id const fromNodeId,
-                                        Id const goalNodeId,
+                                        Id const goalStreetId,
                                         RouteWeights const weights,
                                         double const distanceFactor) const {
     auto const node{m_nodeIndex(fromNodeId)};
-    auto const goal{m_nodeIndex(goalNodeId)};
+    auto const goal{m_streetIndex(goalStreetId)};
     return m_search(
         std::span{m_nodeOut}.subspan(m_nodeOutOffsets[node],
                                      m_nodeOutOffsets[node + 1] - m_nodeOutOffsets[node]),
@@ -391,7 +390,7 @@ namespace dsf::mobility {
 
   std::vector<Id> Router::m_search(std::span<std::uint32_t const> starts,
                                    bool const bCountStartCost,
-                                   std::uint32_t const goalNode,
+                                   std::uint32_t const goalStreet,
                                    WeightSet const& weightSet,
                                    double const distanceFactor) const {
     assert(weightSet.weights.size() == m_streetIds.size());
@@ -409,6 +408,7 @@ namespace dsf::mobility {
                           ? weightSet.heuristicFactor +
                                 distanceFactor * m_lengthHeuristicFactor
                           : 0.};
+    auto const goalNode{m_streetTargets[goalStreet]};
     auto const goalX{factor > 0. ? m_nodeX[goalNode] : 0.};
     auto const goalY{factor > 0. ? m_nodeY[goalNode] : 0.};
     auto const heuristic = [&](std::uint32_t const street) {
@@ -445,7 +445,7 @@ namespace dsf::mobility {
       if (g > cost[street]) {
         continue;  // A cheaper way to this street was found after queueing this one
       }
-      if (m_streetTargets[street] == goalNode) {
+      if (street == goalStreet) {
         std::vector<Id> route;
         for (auto current{street}; current != NO_STREET; current = parent[current]) {
           route.push_back(m_streetIds[current]);

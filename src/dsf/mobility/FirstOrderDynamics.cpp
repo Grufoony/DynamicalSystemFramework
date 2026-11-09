@@ -163,11 +163,15 @@ namespace dsf::mobility {
     ++m_nKilledAgents;
   }
   void FirstOrderDynamics::m_ensureRouter() {
-    if (m_router.isBuilt() && m_router.nEdges() == this->graph().nEdges()) {
-      return;
+    // Streets and nodes are only added, so the counts catch the additions; every other
+    // change which affects routing bumps the routing revision
+    if (!m_router.isBuilt() || m_routerRevision != Road::routingRevision() ||
+        m_router.nEdges() != this->graph().nEdges() ||
+        m_routerNodes != this->graph().nNodes()) {
+      m_rebuildRouter();
+    } else if (!m_bDestinationsChecked) {
+      m_checkDestinations();
     }
-    spdlog::debug("Building the routing graph");
-    this->m_taskArena.execute([this] { m_router.build(this->graph()); });
   }
   double FirstOrderDynamics::m_distanceFactor(Agent const& agent) const {
     if (m_router.distanceCost() == 0.) {
@@ -181,22 +185,28 @@ namespace dsf::mobility {
   }
   std::vector<Id> FirstOrderDynamics::m_planRoute(Agent const& agent,
                                                   Id const fromStreetId) const {
-    // Agents arrive at the source node of their destination street
-    auto const goalNodeId{this->graph().edge(*agent.destination()).source()->id()};
+    // Agents drive their destination street, and arrive at its end
     return m_router.route(
         fromStreetId,
-        goalNodeId,
+        *agent.destination(),
         agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
         m_distanceFactor(agent));
   }
   std::vector<Id> FirstOrderDynamics::m_planRouteFromNode(Agent const& agent,
                                                           Id const fromNodeId) const {
-    auto const goalNodeId{this->graph().edge(*agent.destination()).source()->id()};
     return m_router.routeFromNode(
         fromNodeId,
-        goalNodeId,
+        *agent.destination(),
         agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
         m_distanceFactor(agent));
+  }
+  void FirstOrderDynamics::m_setPath(Agent& agent, std::span<Id const> route) {
+    // The agent keeps its destination, the last street of the route, by itself
+    if (route.empty()) {
+      agent.dropPath();
+      return;
+    }
+    agent.setPath(route.first(route.size() - 1));
   }
   void FirstOrderDynamics::m_assignIntelligence(std::unique_ptr<Agent> const& pAgent) {
     if (m_intelligentFraction <= 0. || pAgent->isRandom()) {
@@ -507,15 +517,24 @@ namespace dsf::mobility {
         return nullptr;
       }
       plannedStreetId = route.front();
-      pAgent->setPath(std::span{route}.subspan(1));
+      m_setPath(*pAgent, std::span{route}.subspan(1));
     } else {
       pPreviousNode = pStreetCurrent->source();
       pForbiddenTurns = &pStreetCurrent->forbiddenTurns();
       auto optPlannedStreetId{pAgent->nextPlannedStreetId()};
       if (!optPlannedStreetId.has_value() ||
           !m_router.isTurnAllowed(pStreetCurrent->id(), *optPlannedStreetId)) {
-        // No plan yet (the agent left its route, or was put directly on a street), or a
-        // closed street ahead: plan the rest of the trip from here
+        // No plan (the destination is next, the agent left its route, or it was put
+        // directly on a street), or a closed street ahead. Turning into the destination
+        // is always the cheapest way to it; otherwise plan the rest of the trip from here
+        auto const destinationId{*pAgent->destination()};
+        if (m_router.isTurnAllowed(pStreetCurrent->id(), destinationId)) {
+          pAgent->dropPath();
+          optPlannedStreetId = destinationId;
+        }
+      }
+      if (!optPlannedStreetId.has_value() ||
+          !m_router.isTurnAllowed(pStreetCurrent->id(), *optPlannedStreetId)) {
         auto const route{m_planRoute(*pAgent, pStreetCurrent->id())};
         // A route of the current street only would mean the agent has arrived
         if (route.size() < 2) {
@@ -525,7 +544,7 @@ namespace dsf::mobility {
           pAgent->dropPath();
           return nullptr;
         }
-        pAgent->setPath(std::span{route}.subspan(1));
+        m_setPath(*pAgent, std::span{route}.subspan(1));
         optPlannedStreetId = route[1];
       }
       plannedStreetId = *optPlannedStreetId;
@@ -589,7 +608,8 @@ namespace dsf::mobility {
       if (pNextStreet->id() != plannedStreetId) {
         // A deviation (see setErrorProbability): plan again at the next junction
         pAgent->dropPath();
-      } else if (pStreetCurrent != nullptr) {
+      } else if (pStreetCurrent != nullptr && pAgent->nPlannedStreets() > 0) {
+        // Entering the destination leaves nothing to advance
         pAgent->advancePath();
       }
     }
@@ -610,12 +630,17 @@ namespace dsf::mobility {
         break;
       }
       pAgent->setSpeed(0.);
-      // The agent arrives at the source node of its destination street
-      if (!pAgent->isRandom() &&
-          this->graph().edge(*pAgent->destination()).source() == pNode) {
-        std::uniform_int_distribution<size_t> laneDist{0,
-                                                       static_cast<size_t>(nLanes - 1)};
-        pStreet->enqueue(laneDist(rng));
+      // The agent arrives at the end of its destination street, without queueing
+      if (!pAgent->isRandom() && pAgent->destination() == pStreet->id()) {
+        spdlog::debug("{} has arrived at the end of its destination street {}",
+                      *pAgent,
+                      pStreet->id());
+        auto pArrived{
+            this->m_removeAgent<true>(pStreet->dequeueArrivedAgent(this->time_step()))};
+        if (m_reinsertAgents) {
+          pArrived->reset(this->time_step());
+          m_agentsToReinsert.push_back(std::move(pArrived));
+        }
         continue;
       }
       auto const* pNextStreet{this->m_nextStreet(pAgent, pNode, pStreet, rng)};
@@ -888,16 +913,7 @@ namespace dsf::mobility {
           continue;
         }
       }
-      if (!pAgentTemp->isRandom()) {
-        auto const& dstStreet{this->graph().edge(*pAgentTemp->destination())};
-        if (dstStreet.source() == destinationNode) {
-          bArrived = true;
-          pAgentTemp->setNextStreetId(dstStreet.id());
-          spdlog::debug("Agent {} has arrived at destination node {}",
-                        pAgentTemp->id(),
-                        destinationNode->id());
-        }
-      } else {
+      if (pAgentTemp->isRandom()) {
         if (!pAgentTemp->nextStreetId().has_value()) {
           bArrived = true;
           spdlog::debug("Random agent {} has arrived at destination node {}",
@@ -1160,7 +1176,7 @@ namespace dsf::mobility {
                               auto const route{m_planRoute(agent, *agent.nextStreetId())};
                               bRoutable[index] = route.empty() ? 0 : 1;
                               if (!route.empty()) {
-                                agent.setPath(std::span{route}.subspan(1));
+                                m_setPath(agent, std::span{route}.subspan(1));
                               }
                             }
                           });
@@ -1254,38 +1270,45 @@ namespace dsf::mobility {
     }
     m_timeToleranceFactor = timeToleranceFactor;
   }
-  std::vector<Id> FirstOrderDynamics::m_streetIds(Id const id) const {
+  std::vector<Id> FirstOrderDynamics::m_streetIds(Id const id,
+                                                  bool const bDestination) const {
     if (m_mode == DynamicsMode::EDGES) {
       return {id};
     }
-    auto const outgoingEdges{this->graph().node(id).outgoingEdges()};
+    auto const& node{this->graph().node(id)};
+    // Agents start from an origin node, and arrive at a destination node at the end of the
+    // street they travel last
+    auto const& edges{bDestination ? node.ingoingEdges() : node.outgoingEdges()};
     std::vector<Id> streetIds;
-    streetIds.reserve(outgoingEdges.size());
-    std::ranges::transform(outgoingEdges,
-                           std::back_inserter(streetIds),
-                           [](auto const* pStreet) { return pStreet->id(); });
+    streetIds.reserve(edges.size());
+    std::ranges::transform(edges, std::back_inserter(streetIds), [](auto const* pStreet) {
+      return pStreet->id();
+    });
     if (streetIds.empty()) {
-      spdlog::warn("Node {} has no outgoing streets. Skipping it.", id);
+      spdlog::warn("Node {} has no {} streets. Skipping it.",
+                   id,
+                   bDestination ? "ingoing" : "outgoing");
     }
     return streetIds;
   }
   std::unordered_map<Id, double> FirstOrderDynamics::m_toStreetWeights(
-      std::unordered_map<Id, double> const& weights) const {
+      std::unordered_map<Id, double> const& weights, bool const bDestination) const {
     if (m_mode == DynamicsMode::EDGES) {
       return weights;
     }
     std::unordered_map<Id, double> streetWeights;
     streetWeights.reserve(weights.size());
     for (auto const& [nodeId, weight] : weights) {
-      auto const streetIds{m_streetIds(nodeId)};
+      auto const streetIds{m_streetIds(nodeId, bDestination)};
       for (auto const streetId : streetIds) {
         streetWeights[streetId] += weight / static_cast<double>(streetIds.size());
       }
     }
     if (streetWeights.empty()) {
       throw std::invalid_argument(
-          "None of the given nodes has outgoing streets to use as origin or "
-          "destination.");
+          std::format("None of the given nodes has {} streets to use as {}.",
+                      bDestination ? "ingoing" : "outgoing",
+                      bDestination ? "destination" : "origin"));
     }
     return streetWeights;
   }
@@ -1320,9 +1343,10 @@ namespace dsf::mobility {
     // In EDGES mode the given map is used as is, so that its iteration order (which the
     // seeded random choices depend on) is kept: copying an unordered_map may change it
     std::unordered_map<Id, double> nodeStreetOrigins;
-    auto const& streetOrigins{m_mode == DynamicsMode::NODES
-                                  ? (nodeStreetOrigins = m_toStreetWeights(origins))
-                                  : origins};
+    auto const& streetOrigins{
+        m_mode == DynamicsMode::NODES
+            ? (nodeStreetOrigins = m_toStreetWeights(origins, false))
+            : origins};
     m_origins.reserve(streetOrigins.size());
     auto const sumWeights = std::accumulate(
         streetOrigins.begin(), streetOrigins.end(), 0., [](double sum, auto const& pair) {
@@ -1344,9 +1368,10 @@ namespace dsf::mobility {
     std::unordered_map<Id, double> nodeStreetDestinations;
     auto const& streetDestinations{
         m_mode == DynamicsMode::NODES
-            ? (nodeStreetDestinations = m_toStreetWeights(destinations))
+            ? (nodeStreetDestinations = m_toStreetWeights(destinations, true))
             : destinations};
     m_destinationStreets.clear();
+    m_bDestinationsChecked = false;
     m_destinations.clear();
     m_destinations.reserve(streetDestinations.size());
     double sumWeights{0.};
@@ -1593,8 +1618,8 @@ namespace dsf::mobility {
     std::vector<ODEntry> streetODs;
     streetODs.reserve(ODs.size());
     for (auto const& [originId, destinationId, weight] : ODs) {
-      auto const originStreetIds{m_streetIds(originId)};
-      auto const destinationStreetIds{m_streetIds(destinationId)};
+      auto const originStreetIds{m_streetIds(originId, false)};
+      auto const destinationStreetIds{m_streetIds(destinationId, true)};
       if (originStreetIds.empty() || destinationStreetIds.empty()) {
         continue;
       }
@@ -1608,11 +1633,12 @@ namespace dsf::mobility {
     }
     if (!ODs.empty() && streetODs.empty()) {
       throw std::invalid_argument(
-          "None of the given OD pairs has origin and destination nodes with outgoing "
-          "streets.");
+          "None of the given OD pairs has an origin node with outgoing streets and a "
+          "destination node with ingoing streets.");
     }
     m_ODs.clear();
     m_ODCumulativeWeights.clear();
+    m_bDestinationsChecked = false;
     m_ODs.reserve(streetODs.size());
     auto const sumWeights = std::accumulate(
         streetODs.begin(), streetODs.end(), 0., [this](double sum, ODEntry const& od) {
@@ -1640,6 +1666,7 @@ namespace dsf::mobility {
       std::unordered_map<Id, ConditionalOrigin> const& conditionalODs) {
     m_originToDestinations.clear();
     m_originToDestinations.reserve(conditionalODs.size());
+    m_bDestinationsChecked = false;
     std::unordered_map<Id, double> originWeights;
     for (auto const& [originId, conditionalOrigin] : conditionalODs) {
       auto const& [originWeight, originDestinations] = conditionalOrigin;
@@ -1647,7 +1674,7 @@ namespace dsf::mobility {
       std::vector<WeightedId> streetDestinations;
       streetDestinations.reserve(originDestinations.size());
       for (auto const& [destinationId, weight] : originDestinations) {
-        auto const destinationStreetIds{m_streetIds(destinationId)};
+        auto const destinationStreetIds{m_streetIds(destinationId, true)};
         for (auto const destinationStreetId : destinationStreetIds) {
           streetDestinations.push_back(
               {destinationStreetId,
@@ -1670,7 +1697,7 @@ namespace dsf::mobility {
         weight /= sumDestinationWeights;
       }
       // Each origin street gets the origin's destinations (setOrigins splits its weight)
-      auto const originStreetIds{m_streetIds(originId)};
+      auto const originStreetIds{m_streetIds(originId, false)};
       if (originStreetIds.empty()) {
         continue;
       }
@@ -1686,74 +1713,80 @@ namespace dsf::mobility {
     this->setOrigins(std::move(originWeights));
   }
 
-  void FirstOrderDynamics::updatePaths() {
-    spdlog::debug("Init updating paths...");
+  void FirstOrderDynamics::m_rebuildRouter() {
+    spdlog::debug("Rebuilding the routing graph");
     this->m_taskArena.execute([this] { m_router.build(this->graph()); });
-    // Agents arrive at the source node of their destination street: it must be entered by
-    // an open street
-    std::vector<Id> emptyItineraries;
-    for (auto const destinationId : m_destinationStreets) {
-      if (!this->graph().edges().contains(destinationId)) {
-        throw std::out_of_range(
-            std::format("The destination street {} does not exist", destinationId));
-      }
-      auto const& ingoingEdges{
-          this->graph().edge(destinationId).source()->ingoingEdges()};
-      if (std::ranges::any_of(
-              ingoingEdges, [](Street const* pStreet) { return pStreet->isActive(); })) {
-        continue;
-      }
-      if (m_updatepathsThrowOnEmpty) {
-        throw std::runtime_error(
-            std::format("No path found to destination street {}", destinationId));
-      }
-      spdlog::warn("No path found to destination street {}", destinationId);
-      emptyItineraries.push_back(destinationId);
-    }
+    m_routerRevision = Road::routingRevision();
+    m_routerNodes = this->graph().nNodes();
     // The waiting agents plan their routes on the new routing graph
     for (auto& pAgent : m_agents) {
       pAgent->dropPath();
     }
-    if (!emptyItineraries.empty()) {
-      auto const strIds = std::accumulate(
-          emptyItineraries.begin(),
-          emptyItineraries.end(),
-          std::string{},
-          [](std::string const& a, Id const& b) {
-            return a.empty() ? std::to_string(b) : a + ", " + std::to_string(b);
-          });
-      spdlog::warn("Removing {} destinations with no valid path from the dynamics ({}).",
-                   emptyItineraries.size(),
-                   strIds);
-      for (auto const destination : emptyItineraries) {
-        std::erase_if(m_ODs, [destination](ODEntry const& od) {
-          return od.destination == destination;
-        });
-        std::erase_if(m_destinations, [destination](WeightedId const& dest) {
+    m_checkDestinations();
+  }
+  void FirstOrderDynamics::m_checkDestinations() {
+    m_bDestinationsChecked = true;
+    // Agents drive their destination street: it must exist, be open, and be entered from an
+    // open street by an allowed turn
+    std::vector<Id> unreachable;
+    for (auto const destinationId : m_destinationStreets) {
+      if (!this->graph().edges().contains(destinationId)) {
+        spdlog::error("The destination street {} does not exist", destinationId);
+        unreachable.push_back(destinationId);
+        continue;
+      }
+      auto const& ingoingEdges{
+          this->graph().edge(destinationId).source()->ingoingEdges()};
+      if (std::ranges::any_of(ingoingEdges, [&](Street const* pStreet) {
+            return pStreet->isActive() &&
+                   m_router.isTurnAllowed(pStreet->id(), destinationId);
+          })) {
+        continue;
+      }
+      spdlog::error("No path found to destination street {}", destinationId);
+      unreachable.push_back(destinationId);
+    }
+    if (unreachable.empty()) {
+      return;
+    }
+    auto const strIds = std::accumulate(unreachable.begin(),
+                                        unreachable.end(),
+                                        std::string{},
+                                        [](std::string const& a, Id const& b) {
+                                          return a.empty() ? std::to_string(b)
+                                                           : a + ", " + std::to_string(b);
+                                        });
+    spdlog::error("Removing {} destinations with no valid path from the dynamics ({}).",
+                  unreachable.size(),
+                  strIds);
+    for (auto const destination : unreachable) {
+      std::erase_if(m_ODs, [destination](ODEntry const& od) {
+        return od.destination == destination;
+      });
+      std::erase_if(m_destinations, [destination](WeightedId const& dest) {
+        return dest.id == destination;
+      });
+      std::erase_if(m_origins, [destination](WeightedId const& origin) {
+        return origin.id == destination;
+      });
+      for (auto& [origin, destinations] : m_originToDestinations) {
+        std::erase_if(destinations, [destination](WeightedId const& dest) {
           return dest.id == destination;
         });
-        std::erase_if(m_origins, [destination](WeightedId const& origin) {
-          return origin.id == destination;
-        });
-        for (auto& [origin, destinations] : m_originToDestinations) {
-          std::erase_if(destinations, [destination](WeightedId const& dest) {
-            return dest.id == destination;
+      }
+      // Remove all origins in m_originToDestinations that have no destinations left
+      std::erase_if(m_originToDestinations, [this](auto const& pair) {
+        bool const bErase{pair.second.empty()};
+        if (bErase) {
+          std::erase_if(m_origins, [&pair](WeightedId const& origin) {
+            return origin.id == pair.first;
           });
         }
-        // Remove all origins in m_originToDestinations that have no destinations left
-        std::erase_if(m_originToDestinations, [this](auto const& pair) {
-          bool const bErase{pair.second.empty()};
-          if (bErase) {
-            std::erase_if(m_origins, [&pair](WeightedId const& origin) {
-              return origin.id == pair.first;
-            });
-          }
-          return bErase;
-        });
-        m_destinationStreets.erase(destination);
-      }
+        return bErase;
+      });
+      m_destinationStreets.erase(destination);
     }
-    spdlog::debug("End updating paths.");
+    m_ODCumulativeWeights.clear();
   }
 
   void FirstOrderDynamics::addAgentsUniformly(std::size_t nAgents,
@@ -1855,6 +1888,8 @@ namespace dsf::mobility {
 
   void FirstOrderDynamics::addAgents(std::size_t const nAgents,
                                      AgentInsertionMethod const mode) {
+    // Destinations which cannot be reached are removed before any is picked
+    m_ensureRouter();
     switch (mode) {
       case AgentInsertionMethod::RANDOM:
         this->m_addAgentsRandom<true>(nAgents);
@@ -2342,34 +2377,37 @@ namespace dsf::mobility {
   }
 
   tbb::concurrent_unordered_map<Id, std::size_t> FirstOrderDynamics::m_countsByMode(
-      tbb::concurrent_unordered_map<Id, std::size_t> streetCounts) const {
+      tbb::concurrent_unordered_map<Id, std::size_t> streetCounts,
+      bool const bDestination) const {
     if (m_mode == DynamicsMode::EDGES) {
       return streetCounts;
     }
-    // Both counters are keyed by the street whose source is the origin (or arrival) node
+    // Origins are counted on the street the agent starts with, arrivals on the street at
+    // whose end it stops
     tbb::concurrent_unordered_map<Id, std::size_t> nodeCounts;
     for (auto const& [streetId, count] : streetCounts) {
-      nodeCounts[this->graph().edge(streetId).source()->id()] += count;
+      auto const& street{this->graph().edge(streetId)};
+      nodeCounts[(bDestination ? street.target() : street.source())->id()] += count;
     }
     return nodeCounts;
   }
   tbb::concurrent_unordered_map<Id, std::size_t> FirstOrderDynamics::originCounts(
       bool const bReset) {
     if (!bReset) {
-      return m_countsByMode(m_originCounts);
+      return m_countsByMode(m_originCounts, false);
     }
     auto tempCounts{std::move(m_originCounts)};
     m_originCounts.clear();
-    return m_countsByMode(std::move(tempCounts));
+    return m_countsByMode(std::move(tempCounts), false);
   }
   tbb::concurrent_unordered_map<Id, std::size_t> FirstOrderDynamics::destinationCounts(
       bool const bReset) {
     if (!bReset) {
-      return m_countsByMode(m_destinationCounts);
+      return m_countsByMode(m_destinationCounts, true);
     }
     auto tempCounts{std::move(m_destinationCounts)};
     m_destinationCounts.clear();
-    return m_countsByMode(std::move(tempCounts));
+    return m_countsByMode(std::move(tempCounts), true);
   }
 
   Measurement<double> FirstOrderDynamics::streetMeanFlow() const {

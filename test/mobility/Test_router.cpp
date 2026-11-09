@@ -27,11 +27,11 @@ static const auto DATA_FOLDER =
     std::filesystem::path(__FILE__).parent_path().parent_path() / "data";
 
 namespace {
-  // Reference cost of the best route from a street to a node: Dijkstra on the streets,
-  // with the network's turn rules
+  // Reference cost of the best route from a street to the end of a street: Dijkstra on the
+  // streets, with the network's turn rules
   double bestCost(RoadNetwork const& network,
                   Id const fromStreetId,
-                  Id const goalNodeId,
+                  Id const goalStreetId,
                   std::function<double(Street const&)> const& cost) {
     std::unordered_map<Id, double> distances{{fromStreetId, 0.}};
     using Entry = std::pair<double, Id>;
@@ -43,10 +43,10 @@ namespace {
       if (distance > distances.at(streetId)) {
         continue;
       }
-      auto const& street{network.edge(streetId)};
-      if (street.target()->id() == goalNodeId) {
+      if (streetId == goalStreetId) {
         return distance;
       }
+      auto const& street{network.edge(streetId)};
       for (auto const* pNext : street.target()->outgoingEdges()) {
         if (!pNext->isActive() || !RoadNetwork::isTurnAllowed(street, *pNext)) {
           continue;
@@ -62,10 +62,10 @@ namespace {
     return std::numeric_limits<double>::infinity();
   }
 
-  // Whether an agent can travel a route: open streets, allowed turns, ending at the goal
+  // Whether an agent can travel a route: open streets, allowed turns, ending on the goal
   bool isValidRoute(RoadNetwork const& network,
                     std::vector<Id> const& route,
-                    Id const goalNodeId) {
+                    Id const goalStreetId) {
     if (route.empty()) {
       return false;
     }
@@ -77,7 +77,7 @@ namespace {
         return false;
       }
     }
-    return network.edge(route.back()).target()->id() == goalNodeId;
+    return route.back() == goalStreetId;
   }
 
   double freeFlowTime(Street const& street) {
@@ -121,29 +121,33 @@ TEST_CASE("Router") {
         CHECK_FALSE(router.hasHeuristic());
         CHECK_EQ(router.algorithm(), RouteAlgorithm::ASTAR);
       }
-      THEN("A route ends on the first street reaching the goal node") {
-        auto const route{router.route(5, 2, RouteWeights::FREE_FLOW)};
-        CHECK_EQ(route, std::vector<Id>{5, 0, 1});
+      THEN("A route ends with the goal street, whose cost counts") {
+        auto const route{router.route(5, 4, RouteWeights::FREE_FLOW)};
+        CHECK_EQ(route, std::vector<Id>{5, 0, 1, 4});
         // The cost of the first street, which the agent is on, does not count
         CHECK_EQ(router.routeCost(route, RouteWeights::FREE_FLOW),
-                 doctest::Approx(200. / network.edge(0).maxSpeed()));
-        CHECK_EQ(router.route(1, 2, RouteWeights::FREE_FLOW), std::vector<Id>{1});
+                 doctest::Approx(210. / network.edge(0).maxSpeed()));
+        CHECK_EQ(router.route(5, 3, RouteWeights::FREE_FLOW), std::vector<Id>{5, 2, 3});
+        CHECK_EQ(router.route(1, 1, RouteWeights::FREE_FLOW), std::vector<Id>{1});
       }
       THEN("A route from a node also chooses the first street") {
-        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::FREE_FLOW),
+        CHECK_EQ(router.routeFromNode(0, 1, RouteWeights::FREE_FLOW),
                  std::vector<Id>{0, 1});
-        CHECK_EQ(router.routeFromNode(5, 2, RouteWeights::FREE_FLOW),
-                 std::vector<Id>{5, 0, 1});
+        CHECK_EQ(router.routeFromNode(5, 4, RouteWeights::FREE_FLOW),
+                 std::vector<Id>{5, 0, 1, 4});
+        CHECK_EQ(router.routeFromNode(0, 0, RouteWeights::FREE_FLOW), std::vector<Id>{0});
       }
-      THEN("A node which cannot be reached gives an empty route") {
-        CHECK(router.route(4, 2, RouteWeights::FREE_FLOW).empty());
+      THEN("A street which cannot be reached gives an empty route") {
+        CHECK(router.route(4, 1, RouteWeights::FREE_FLOW).empty());
         CHECK(router.route(0, 5, RouteWeights::FREE_FLOW).empty());
-        CHECK(router.routeFromNode(4, 2, RouteWeights::FREE_FLOW).empty());
+        CHECK(router.routeFromNode(4, 1, RouteWeights::FREE_FLOW).empty());
       }
       THEN("Unknown streets and nodes throw") {
-        CHECK_THROWS_AS(router.route(42, 2, RouteWeights::FREE_FLOW), std::out_of_range);
+        CHECK_THROWS_AS(router.route(42, 1, RouteWeights::FREE_FLOW), std::out_of_range);
         CHECK_THROWS_AS(router.route(5, 42, RouteWeights::FREE_FLOW), std::out_of_range);
-        CHECK_THROWS_AS(router.routeFromNode(42, 2, RouteWeights::FREE_FLOW),
+        CHECK_THROWS_AS(router.routeFromNode(42, 1, RouteWeights::FREE_FLOW),
+                        std::out_of_range);
+        CHECK_THROWS_AS(router.routeFromNode(0, 42, RouteWeights::FREE_FLOW),
                         std::out_of_range);
         CHECK_THROWS_AS(router.routeCost(std::vector<Id>{5, 42}, RouteWeights::FREE_FLOW),
                         std::out_of_range);
@@ -158,10 +162,10 @@ TEST_CASE("Router") {
       WHEN("A street is added") {
         network.addStreet(6, std::make_pair(2, 5), 10.);
         THEN("The router knows it only once rebuilt") {
-          CHECK_THROWS_AS(router.route(6, 0, RouteWeights::FREE_FLOW), std::out_of_range);
+          CHECK_THROWS_AS(router.route(6, 5, RouteWeights::FREE_FLOW), std::out_of_range);
           router.build(network);
           CHECK_EQ(router.nEdges(), 7);
-          CHECK_EQ(router.route(6, 0, RouteWeights::FREE_FLOW), std::vector<Id>{6, 5});
+          CHECK_EQ(router.route(6, 5, RouteWeights::FREE_FLOW), std::vector<Id>{6, 5});
         }
       }
     }
@@ -172,8 +176,9 @@ TEST_CASE("Router") {
       network.addStreet(2, std::make_pair(2, 0), 10.);
       Router router;
       router.build(network);
-      THEN("The route from a street to its own source node goes round the ring") {
-        CHECK_EQ(router.route(0, 0, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1, 2});
+      THEN("The route to the street before goes round the ring") {
+        CHECK_EQ(router.route(0, 2, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1, 2});
+        CHECK_EQ(router.route(0, 0, RouteWeights::FREE_FLOW), std::vector<Id>{0});
       }
     }
   }
@@ -191,16 +196,20 @@ TEST_CASE("Router") {
         router.build(network);
         THEN("The route takes the detour") {
           CHECK_FALSE(router.isTurnAllowed(0, 1));
-          CHECK_EQ(router.route(0, 2, RouteWeights::FREE_FLOW), std::vector<Id>{0, 2, 3});
+          CHECK_EQ(router.route(0, 4, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{0, 2, 3, 4});
+        }
+        THEN("Street 1 cannot be reached") {
+          CHECK(router.route(0, 1, RouteWeights::FREE_FLOW).empty());
         }
       }
-      WHEN("The turn from street 1 into the next street 4 is forbidden") {
+      WHEN("The turn from street 1 into the goal street 4 is forbidden") {
         network.edge(1).addForbiddenTurn(4);
         router.build(network);
-        THEN("The route still arrives at node 2 through street 1") {
-          // Agents arrive at the node: the turns out of it do not matter
+        THEN("The route enters the goal street by an allowed turn") {
           CHECK_FALSE(router.isTurnAllowed(1, 4));
-          CHECK_EQ(router.route(0, 2, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1});
+          CHECK_EQ(router.route(0, 4, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{0, 2, 3, 4});
         }
       }
       WHEN("Street 1 is closed") {
@@ -208,10 +217,14 @@ TEST_CASE("Router") {
         router.build(network);
         THEN("The route takes the detour") {
           CHECK_FALSE(router.isTurnAllowed(0, 1));
-          CHECK_EQ(router.route(0, 2, RouteWeights::FREE_FLOW), std::vector<Id>{0, 2, 3});
+          CHECK_EQ(router.route(0, 4, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{0, 2, 3, 4});
         }
         THEN("An agent on the closed street can leave it") {
           CHECK_EQ(router.route(1, 4, RouteWeights::FREE_FLOW), std::vector<Id>{1, 4});
+        }
+        THEN("The closed street cannot be reached") {
+          CHECK(router.route(0, 1, RouteWeights::FREE_FLOW).empty());
         }
       }
     }
@@ -222,20 +235,21 @@ TEST_CASE("Router") {
       Router router;
       router.build(network);
       THEN("The U-turn is allowed at the dead end") {
-        CHECK_EQ(router.route(0, 0, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1});
+        CHECK_EQ(router.route(0, 1, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1});
       }
       WHEN("A longer way back (1->2->0) is added") {
         network.addStreet(2, std::make_pair(1, 2), 10.);
         network.addStreet(3, std::make_pair(2, 0), 10.);
         router.build(network);
         THEN("The U-turn is forbidden") {
-          CHECK_EQ(router.route(0, 0, RouteWeights::FREE_FLOW), std::vector<Id>{0, 2, 3});
+          CHECK_EQ(router.route(0, 3, RouteWeights::FREE_FLOW), std::vector<Id>{0, 2, 3});
+          CHECK(router.route(0, 1, RouteWeights::FREE_FLOW).empty());
         }
         AND_WHEN("Node 1 becomes a roundabout") {
           network.makeRoundabout(1);
           router.build(network);
           THEN("The U-turn is allowed again") {
-            CHECK_EQ(router.route(0, 0, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1});
+            CHECK_EQ(router.route(0, 1, RouteWeights::FREE_FLOW), std::vector<Id>{0, 1});
           }
         }
       }
@@ -253,44 +267,40 @@ TEST_CASE("Router") {
       dijkstra.setEdgeWeight("length");
       dijkstra.setAlgorithm(RouteAlgorithm::DIJKSTRA);
       dijkstra.build(network);
-      std::vector<Id> streetIds, nodeIds;
+      std::vector<Id> streetIds;
       for (auto const& [streetId, pStreet] : network.edges()) {
         streetIds.push_back(streetId);
       }
-      for (auto const& [nodeId, pNode] : network.nodes()) {
-        nodeIds.push_back(nodeId);
-      }
       std::ranges::sort(streetIds);
-      std::ranges::sort(nodeIds);
       REQUIRE(router.hasHeuristic());
       THEN("A* and Dijkstra find the best routes, for both street costs") {
         auto const length = [](Street const& street) { return street.length(); };
         std::size_t nRoutes{0};
         for (std::size_t k{0}; k < 100; ++k) {
           auto const fromStreetId{streetIds[(37 * k) % streetIds.size()]};
-          auto const goalNodeId{nodeIds[(53 * k + 11) % nodeIds.size()]};
+          auto const goalStreetId{streetIds[(53 * k + 11) % streetIds.size()]};
           auto const freeFlowCost{
-              bestCost(network, fromStreetId, goalNodeId, freeFlowTime)};
+              bestCost(network, fromStreetId, goalStreetId, freeFlowTime)};
           auto const freeFlowRoute{
-              router.route(fromStreetId, goalNodeId, RouteWeights::FREE_FLOW)};
+              router.route(fromStreetId, goalStreetId, RouteWeights::FREE_FLOW)};
           auto const lengthRoute{
-              router.route(fromStreetId, goalNodeId, RouteWeights::CURRENT)};
+              router.route(fromStreetId, goalStreetId, RouteWeights::CURRENT)};
           if (freeFlowCost == std::numeric_limits<double>::infinity()) {
             CHECK(freeFlowRoute.empty());
             CHECK(lengthRoute.empty());
             continue;
           }
           ++nRoutes;
-          CHECK(isValidRoute(network, freeFlowRoute, goalNodeId));
+          CHECK(isValidRoute(network, freeFlowRoute, goalStreetId));
           CHECK_EQ(router.routeCost(freeFlowRoute, RouteWeights::FREE_FLOW),
                    doctest::Approx(freeFlowCost));
-          CHECK(isValidRoute(network, lengthRoute, goalNodeId));
-          auto const lengthCost{bestCost(network, fromStreetId, goalNodeId, length)};
+          CHECK(isValidRoute(network, lengthRoute, goalStreetId));
+          auto const lengthCost{bestCost(network, fromStreetId, goalStreetId, length)};
           CHECK_EQ(router.routeCost(lengthRoute, RouteWeights::CURRENT),
                    doctest::Approx(lengthCost));
           for (auto const weights : {RouteWeights::FREE_FLOW, RouteWeights::CURRENT}) {
-            auto const route{dijkstra.route(fromStreetId, goalNodeId, weights)};
-            CHECK(isValidRoute(network, route, goalNodeId));
+            auto const route{dijkstra.route(fromStreetId, goalStreetId, weights)};
+            CHECK(isValidRoute(network, route, goalStreetId));
             CHECK_EQ(dijkstra.routeCost(route, weights),
                      doctest::Approx(weights == RouteWeights::FREE_FLOW ? freeFlowCost
                                                                         : lengthCost));
@@ -305,23 +315,23 @@ TEST_CASE("Router") {
         };
         for (std::size_t k{0}; k < 50; ++k) {
           auto const fromStreetId{streetIds[(41 * k + 3) % streetIds.size()]};
-          auto const goalNodeId{nodeIds[(29 * k + 7) % nodeIds.size()]};
-          auto const best{bestCost(network, fromStreetId, goalNodeId, generalized)};
+          auto const goalStreetId{streetIds[(29 * k + 7) % streetIds.size()]};
+          auto const best{bestCost(network, fromStreetId, goalStreetId, generalized)};
           auto const route{router.route(
-              fromStreetId, goalNodeId, RouteWeights::FREE_FLOW, distanceFactor)};
+              fromStreetId, goalStreetId, RouteWeights::FREE_FLOW, distanceFactor)};
           if (best == std::numeric_limits<double>::infinity()) {
             CHECK(route.empty());
             continue;
           }
-          CHECK(isValidRoute(network, route, goalNodeId));
+          CHECK(isValidRoute(network, route, goalStreetId));
           CHECK_EQ(router.routeCost(route, RouteWeights::FREE_FLOW, distanceFactor),
                    doctest::Approx(best));
         }
       }
     }
     GIVEN("A cheap route moving away from the goal and a costly straight one") {
-      // From street 5 (5 -> 0) to node 2: 0 -> 1 -> 2 is straight but 5 m long, while
-      // 0 -> 3 -> 4 -> 2 goes round through (0, 1) and (2, 1) but is 4 m long
+      // From street 5 (5 -> 0) to street 6 (2 -> 6): 0 -> 1 -> 2 is straight but 5 m long,
+      // while 0 -> 3 -> 4 -> 2 goes round through (0, 1) and (2, 1) but is 4 m long
       RoadNetwork network;
       network.addNode<Intersection>(5, dsf::geometry::Point(-1., 0.));
       network.addNode<Intersection>(0, dsf::geometry::Point(0., 0.));
@@ -329,45 +339,52 @@ TEST_CASE("Router") {
       network.addNode<Intersection>(2, dsf::geometry::Point(2., 0.));
       network.addNode<Intersection>(3, dsf::geometry::Point(0., 1.));
       network.addNode<Intersection>(4, dsf::geometry::Point(2., 1.));
+      network.addNode<Intersection>(6, dsf::geometry::Point(3., 0.));
       network.addStreet(5, std::make_pair(5, 0), 1.);
       network.addStreet(0, std::make_pair(0, 1), 2.5);
       network.addStreet(1, std::make_pair(1, 2), 2.5);
       network.addStreet(2, std::make_pair(0, 3), 1.);
       network.addStreet(3, std::make_pair(3, 4), 2.);
       network.addStreet(4, std::make_pair(4, 2), 1.);
+      network.addStreet(6, std::make_pair(2, 6), 1.);
       Router router;
       router.build(network);
       THEN("The heuristic does not hide the cheaper detour") {
         REQUIRE(router.hasHeuristic());
-        CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW),
-                 std::vector<Id>{5, 2, 3, 4});
+        CHECK_EQ(router.route(5, 6, RouteWeights::FREE_FLOW),
+                 std::vector<Id>{5, 2, 3, 4, 6});
       }
     }
     GIVEN("Coordinates much farther apart than the street lengths") {
-      // The direct street 1 -> 2 is the only straight line to node 2, but by far the longest
+      // The direct street 1 -> 2 is the only straight line to street 5 (2 -> 4), but by far
+      // the longest
       RoadNetwork network;
       network.addNode<Intersection>(0, dsf::geometry::Point(0., 0.));
       network.addNode<Intersection>(1, dsf::geometry::Point(1., 0.));
       network.addNode<Intersection>(2, dsf::geometry::Point(2., 0.));
       network.addNode<Intersection>(3, dsf::geometry::Point(1., 1.));
+      network.addNode<Intersection>(4, dsf::geometry::Point(3., 0.));
       network.addStreet(0, std::make_pair(0, 1), 10.);
       network.addStreet(1, std::make_pair(1, 2), 1000.);
       network.addStreet(2, std::make_pair(1, 3), 10.);
       network.addStreet(3, std::make_pair(3, 2), 10.);
+      network.addStreet(5, std::make_pair(2, 4), 10.);
       // An isolated node without coordinates does not matter
       network.addNode<Intersection>(99);
       Router router;
       router.build(network);
       THEN("The heuristic does not overestimate and the route is optimal") {
         REQUIRE(router.hasHeuristic());
-        CHECK_EQ(router.route(0, 2, RouteWeights::FREE_FLOW), std::vector<Id>{0, 2, 3});
+        CHECK_EQ(router.route(0, 5, RouteWeights::FREE_FLOW),
+                 std::vector<Id>{0, 2, 3, 5});
       }
       WHEN("A street reaches a node without coordinates") {
         network.addStreet(4, std::make_pair(2, 98), 10.);
         router.build(network);
         THEN("The search runs without heuristic") {
           CHECK_FALSE(router.hasHeuristic());
-          CHECK_EQ(router.route(0, 2, RouteWeights::FREE_FLOW), std::vector<Id>{0, 2, 3});
+          CHECK_EQ(router.route(0, 5, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{0, 2, 3, 5});
         }
       }
     }
@@ -393,16 +410,19 @@ TEST_CASE("Router") {
       router.setEdgeWeight("cost");
       router.build(network);
       THEN("The current weights follow the snapshot taken when the router was built") {
-        CHECK_EQ(router.route(5, 2, RouteWeights::CURRENT), std::vector<Id>{5, 0, 1});
+        CHECK_EQ(router.route(5, 4, RouteWeights::CURRENT), std::vector<Id>{5, 0, 1, 4});
       }
       WHEN("The cost of the first branch rises") {
         network.edge(0).setAttribute("cost", 100.);
         THEN("The routes change only once the snapshot is updated") {
-          CHECK_EQ(router.route(5, 2, RouteWeights::CURRENT), std::vector<Id>{5, 0, 1});
+          CHECK_EQ(router.route(5, 4, RouteWeights::CURRENT),
+                   std::vector<Id>{5, 0, 1, 4});
           router.updateCurrentWeights();
-          CHECK_EQ(router.route(5, 2, RouteWeights::CURRENT), std::vector<Id>{5, 6, 7});
+          CHECK_EQ(router.route(5, 4, RouteWeights::CURRENT),
+                   std::vector<Id>{5, 6, 7, 4});
           // The free-flow routes do not depend on the network's weight
-          CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW), std::vector<Id>{5, 0, 1});
+          CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{5, 0, 1, 4});
         }
       }
     }
@@ -418,18 +438,20 @@ TEST_CASE("Router") {
       network.addStreet(0, std::make_pair(0, 1), 1.0, 1.0);
       network.addStreet(1, std::make_pair(1, 2), 1.0, 1.0);
       network.addStreet(2, std::make_pair(0, 2), 1.5, 1.0);
+      network.addStreet(3, std::make_pair(2, 3), 1.0, 1.0);
       Router router;
       router.build(network);
       THEN("The default travel time weight follows the street estimator") {
-        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT), std::vector<Id>{2});
+        CHECK_EQ(router.routeFromNode(0, 3, RouteWeights::CURRENT),
+                 std::vector<Id>{2, 3});
         Street::setEstimatedTravelTimeFunction([](Street const& street) {
           auto const time{street.length() / street.maxSpeed()};
           return time * time;
         });
         router.updateCurrentWeights();
         // 1 + 1 < 2.25
-        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT),
-                 std::vector<Id>{0, 1});
+        CHECK_EQ(router.routeFromNode(0, 3, RouteWeights::CURRENT),
+                 std::vector<Id>{0, 1, 3});
         Street::setEstimatedTravelTimeFunction(freeFlowEstimate);
       }
       THEN("Named weights give the expected costs") {
@@ -451,6 +473,7 @@ TEST_CASE("Router") {
       network.addStreet(0, std::make_pair(0, 1), 100., 10.);
       network.addStreet(1, std::make_pair(1, 2), 100., 10.);
       network.addStreet(2, std::make_pair(0, 2), 120., 10., 2);
+      network.addStreet(3, std::make_pair(2, 3), 100., 10.);
       auto& queuedStreet{network.edge(2)};
       queuedStreet.addAgent(std::make_unique<Agent>(0, 0), 0);
       queuedStreet.enqueue(0);
@@ -459,12 +482,13 @@ TEST_CASE("Router") {
         // One agent over two lanes: 12 + 0.5 / 0.1 = 17 s < 20 s
         queuedStreet.setTransportCapacity(0.1);
         router.build(network);
-        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT), std::vector<Id>{2});
+        CHECK_EQ(router.routeFromNode(0, 3, RouteWeights::CURRENT),
+                 std::vector<Id>{2, 3});
         // 12 + 0.5 / 0.05 = 22 s > 20 s
         queuedStreet.setTransportCapacity(0.05);
         router.updateCurrentWeights();
-        CHECK_EQ(router.routeFromNode(0, 2, RouteWeights::CURRENT),
-                 std::vector<Id>{0, 1});
+        CHECK_EQ(router.routeFromNode(0, 3, RouteWeights::CURRENT),
+                 std::vector<Id>{0, 1, 3});
       }
     }
   }
@@ -476,15 +500,17 @@ TEST_CASE("Router") {
       network.addStreet(1, std::make_pair(1, 2), 1000., 20.);
       network.addStreet(2, std::make_pair(0, 3), 600., 10.);
       network.addStreet(3, std::make_pair(3, 2), 600., 10.);
+      network.addStreet(4, std::make_pair(2, 4), 10., 10.);
       network.addStreet(5, std::make_pair(5, 0), 10., 10.);
       Router router;
       router.build(network);
       THEN("The distance cost moves the route to the short branch") {
-        CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW), std::vector<Id>{5, 0, 1});
-        CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW, 0.02),
-                 std::vector<Id>{5, 0, 1});
-        CHECK_EQ(router.route(5, 2, RouteWeights::FREE_FLOW, 0.1),
-                 std::vector<Id>{5, 2, 3});
+        CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW),
+                 std::vector<Id>{5, 0, 1, 4});
+        CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW, 0.02),
+                 std::vector<Id>{5, 0, 1, 4});
+        CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW, 0.1),
+                 std::vector<Id>{5, 2, 3, 4});
         CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::FREE_FLOW, 0.1),
                  doctest::Approx(120. + 0.1 * 1200.));
       }

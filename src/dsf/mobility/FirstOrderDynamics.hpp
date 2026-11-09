@@ -58,10 +58,10 @@ namespace dsf::mobility {
   /// @brief How the ids of origins, destinations and OD pairs are interpreted
   enum class DynamicsMode : std::uint8_t {
     /// @brief Ids are street ids: agents start from the origin street's source node and
-    ///   travel it, and arrive at the destination street's source node, without travelling it
+    ///   travel it, and arrive at the end of the destination street, after travelling it
     EDGES = 0,
-    /// @brief Ids are node ids, each spread over the node's outgoing streets: agents start
-    ///   from and arrive at the node
+    /// @brief Ids are node ids, each spread over the node's outgoing streets for an origin and
+    ///   over its ingoing streets for a destination: agents start from and arrive at the node
     NODES = 1,
   };
   /// @brief An id with an associated weight (e.g. an origin or a destination)
@@ -154,7 +154,11 @@ namespace dsf::mobility {
     double m_uturnPenaltyFactor = 0.1;
     double m_intelligentFraction = 0.;
     DynamicsMode m_mode{DynamicsMode::EDGES};
-    bool m_updatepathsThrowOnEmpty = true;
+    // The routing revision and number of nodes the router was built with (see m_ensureRouter)
+    std::uint64_t m_routerRevision{0};
+    std::size_t m_routerNodes{0};
+    // Whether the destinations changed since they were last checked (see m_checkDestinations)
+    bool m_bDestinationsChecked{false};
     bool m_reinsertAgents = false;
     // Whether an intelligent agent has ever been added: the current street weights are then
     // refreshed at each time step
@@ -187,20 +191,40 @@ namespace dsf::mobility {
     /// @param pAgent A std::unique_ptr to the agent, which is reset
     /// @details Unlike m_removeAgent, it records neither a travel nor a destination
     void m_dropPendingAgent(std::unique_ptr<Agent>& pAgent);
-    /// @brief Build the router if it was never built or the network has changed its streets
+    /// @brief Rebuild the router if it was never built or the network has changed since
+    /// @details A change is a new street or node, or any change bumping the routing revision
+    ///   (see Road::routingRevision): a street opened or closed, a maximum speed or forbidden
+    ///   turns changed, a node made a roundabout, a traffic light or a station. Changes to the
+    ///   nodes' coordinates are not detected. If the router is up to date, the destinations are
+    ///   checked if they changed since the last check.
     void m_ensureRouter();
+    /// @brief Rebuild the router, and check the destinations (see m_checkDestinations)
+    /// @details The agents which have not departed yet plan their routes again when they
+    ///   depart; the travelling ones keep theirs, unless their next street is closed
+    void m_rebuildRouter();
+    /// @brief Remove the destination streets which cannot be reached, logging an error
+    /// @details A destination street cannot be reached if it does not exist, is closed, or no
+    ///   open street may turn into it. It is removed with every origin, destination and OD
+    ///   pair using it.
+    void m_checkDestinations();
     /// @brief Get the cost per unit of length an agent adds to the streets (see setEdgeWeight)
     double m_distanceFactor(Agent const& agent) const;
     /// @brief Plan the route of a non-random agent from a street to its destination
     /// @param agent The agent
     /// @param fromStreetId The street the route starts with
-    /// @return std::vector<Id> The route (see Router::route), empty if there is none
+    /// @return std::vector<Id> The route (see Router::routeToStreet), empty if there is none
     std::vector<Id> m_planRoute(Agent const& agent, Id fromStreetId) const;
     /// @brief Plan the route of a non-random agent from a node to its destination
     /// @param agent The agent
     /// @param fromNodeId The node the route starts from
-    /// @return std::vector<Id> The route (see Router::routeFromNode), empty if there is none
+    /// @return std::vector<Id> The route (see Router::routeFromNodeToStreet), empty if there is
+    ///   none
     std::vector<Id> m_planRouteFromNode(Agent const& agent, Id fromNodeId) const;
+    /// @brief Set the planned streets of a non-random agent
+    /// @param agent The agent
+    /// @param route The streets the agent will take after the one it is on or entering,
+    ///   ending with its destination; empty if that street is the destination
+    static void m_setPath(Agent& agent, std::span<Id const> route);
     /// @brief Flag a non-random agent as intelligent (i.e. planning its routes on the current
     ///   traffic instead of the free-flow travel times) with probability m_intelligentFraction
     /// @param pAgent A std::unique_ptr to the agent
@@ -288,23 +312,32 @@ namespace dsf::mobility {
 
     /// @brief Get the street ids an origin or destination id stands for, according to m_mode
     /// @param id A street id (EDGES mode) or a node id (NODES mode)
-    /// @return std::vector<Id> The id itself in EDGES mode, the node's outgoing street ids in
-    ///   NODES mode (empty, with a warning, if the node has none)
+    /// @param bDestination Whether id is a destination
+    /// @return std::vector<Id> The id itself in EDGES mode. In NODES mode, the node's outgoing
+    ///   street ids for an origin (the agents start from the node) or its ingoing street ids
+    ///   for a destination (the agents arrive at the node, at the end of the street); empty,
+    ///   with a warning, if the node has none
     /// @throws std::out_of_range If the node does not exist (NODES mode)
-    std::vector<Id> m_streetIds(Id const id) const;
+    std::vector<Id> m_streetIds(Id const id, bool const bDestination) const;
     /// @brief Translate weighted origin or destination ids into weighted street ids
     /// @param weights The (id, weight) pairs, ids being interpreted according to m_mode
+    /// @param bDestination Whether the ids are destinations (see m_streetIds)
     /// @return std::unordered_map<Id, double> The (street id, weight) pairs, where in NODES mode
-    ///   each node's weight is split evenly over its outgoing streets. In EDGES mode it is a
-    ///   copy of weights, whose iteration order may differ: callers use weights directly there
+    ///   each node's weight is split evenly over its streets (see m_streetIds). In EDGES mode it
+    ///   is a copy of weights, whose iteration order may differ: callers use weights directly
+    ///   there
     /// @throws std::invalid_argument If no id maps to any street
     std::unordered_map<Id, double> m_toStreetWeights(
-        std::unordered_map<Id, double> const& weights) const;
+        std::unordered_map<Id, double> const& weights, bool const bDestination) const;
     /// @brief Key street-based origin or destination counts according to m_mode
     /// @param streetCounts The counts, keyed by street id
-    /// @return The counts as they are in EDGES mode, summed by the streets' source node in NODES mode
+    /// @param bDestination Whether these are destination counts
+    /// @return The counts as they are in EDGES mode. In NODES mode, summed by the streets'
+    ///   source node for origins (where the agents start) and by their target node for
+    ///   destinations (where the agents arrive)
     tbb::concurrent_unordered_map<Id, std::size_t> m_countsByMode(
-        tbb::concurrent_unordered_map<Id, std::size_t> streetCounts) const;
+        tbb::concurrent_unordered_map<Id, std::size_t> streetCounts,
+        bool bDestination) const;
 
   public:
     /// @brief Construct a new FirstOrderDynamics object
@@ -360,12 +393,6 @@ namespace dsf::mobility {
     /// @details If true, if an agent cannot move to the next street, the whole node is skipped
     inline void setForcePriorities(bool const forcePriorities) noexcept {
       m_forcePriorities = forcePriorities;
-    }
-    /// @brief Set the update paths throw on empty flag
-    /// @param throwOnEmpty The flag
-    /// @details If true, updatePaths() throws when a destination cannot be reached. If false, the destination is removed, with every origin, destination and OD pair using it.
-    inline void setUpdatePathsThrowOnEmpty(bool const throwOnEmpty) noexcept {
-      m_updatepathsThrowOnEmpty = throwOnEmpty;
     }
     /// @brief Set the data update period.
     /// @param dataUpdatePeriod Delay, The period
@@ -434,11 +461,12 @@ namespace dsf::mobility {
     /// @brief Set how origin, destination and OD ids are interpreted
     /// @param mode DynamicsMode::EDGES for street ids, DynamicsMode::NODES for node ids
     /// @details In EDGES mode an agent starts from the source node of its origin street and
-    ///   travels it; it arrives, and is removed, when it reaches the source node of its
-    ///   destination street, which it never enters.
-    ///   In NODES mode each node id is spread over the node's outgoing streets, with its
-    ///   weight split evenly among them: agents start from the node and arrive when they reach
-    ///   it. Nodes without outgoing streets are skipped. The dynamics itself always works on
+    ///   travels it; it also travels its destination street, and arrives, and is removed,
+    ///   at its end.
+    ///   In NODES mode each node id is spread over the node's outgoing streets for an origin,
+    ///   and over its ingoing streets for a destination, with its weight split evenly among
+    ///   them: agents start from the node and arrive when they reach it. Nodes without such
+    ///   streets are skipped. The dynamics itself always works on
     ///   streets, so origins(), destinations() and destinationStreets() hold street ids in both modes.
     /// @throws std::runtime_error If origins, destinations or OD pairs are already set
     void setMode(DynamicsMode const mode);
@@ -517,17 +545,6 @@ namespace dsf::mobility {
     /// @brief Reset the turn counts map values to zero
     /// @throws std::runtime_error if the turn counts map is not initialized
     void resetTurnCounts();
-    /// @brief Rebuild the routing graph and check that every destination can be reached
-    /// @details The routing graph (see Router) holds the network's open streets, allowed
-    ///   turns, free-flow travel times and weight threshold: call this method after changing
-    ///   any of them. Agents plan their routes when they depart, so this method does not
-    ///   change the routes of the agents already travelling, unless their next street gets
-    ///   closed. A destination cannot be reached if no open street enters its source node.
-    ///   Such destinations throw, or are removed with every origin, destination and OD pair
-    ///   using them (see setUpdatePathsThrowOnEmpty).
-    /// @throws std::out_of_range if a destination street does not exist
-    /// @throws std::runtime_error if m_updatepathsThrowOnEmpty is true and a destination cannot be reached
-    void updatePaths();
     /// @brief Add agents uniformly on the road network
     /// @param nAgents The number of agents to add
     /// @param destinationId The id of the agents' destination street. If not provided, each
@@ -542,8 +559,8 @@ namespace dsf::mobility {
     void addAgent(std::unique_ptr<Agent> agent);
     /// @brief Add an agent to the simulation
     /// @param optDestinationId The id of the agent's destination street, whatever mode():
-    ///   the agent arrives at its source node, without travelling it. If not provided, the
-    ///   agent is a random agent
+    ///   the agent travels it, and arrives at its end. If not provided, the agent is a random
+    ///   agent
     /// @param optSrcStreetId std::optional<Id> representing the source street id. If not provided, the source node will be selected randomly.
     void addAgent(std::optional<Id> optDestinationId = std::nullopt,
                   std::optional<Id> optSrcStreetId = std::nullopt);
@@ -581,8 +598,12 @@ namespace dsf::mobility {
         double const threshold = 1.3);
 
     /// @brief Get the router which plans the agents' routes
+    /// @details The router is first rebuilt if the network has changed (see evolve)
     /// @return Router const& The router
-    inline auto const& router() const noexcept { return m_router; }
+    inline Router const& router() {
+      m_ensureRouter();
+      return m_router;
+    }
     /// @brief Get the fraction of intelligent agents, i.e. planning on the current traffic
     /// @return double The fraction, in [0, 1]
     inline auto intelligentAgentsFraction() const noexcept {
@@ -707,12 +728,15 @@ namespace dsf::mobility {
     m_travelDTs.push_back({pAgent->distance(),
                            static_cast<double>(this->time_step() - pAgent->spawnTime())});
 
-    auto const optNextStreetId = pAgent->nextStreetId();
-    if (optNextStreetId.has_value()) {
-      spdlog::trace("Incrementing destination count for street {}", *optNextStreetId);
-      auto [it, bInserted] = m_destinationCounts.insert({*optNextStreetId, 1});
-      if (!bInserted) {
-        ++it->second;
+    // Arrivals are counted on the street at whose end the agent stops
+    if constexpr (Arrived) {
+      auto const optStreetId = pAgent->streetId();
+      if (optStreetId.has_value()) {
+        spdlog::trace("Incrementing destination count for street {}", *optStreetId);
+        auto [it, bInserted] = m_destinationCounts.insert({*optStreetId, 1});
+        if (!bInserted) {
+          ++it->second;
+        }
       }
     }
     return pAgent;

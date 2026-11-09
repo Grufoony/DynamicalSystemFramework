@@ -39,7 +39,8 @@ namespace dsf::mobility {
     std::optional<double> m_maxDistance;   // Maximum distance for stochastic agents
     std::optional<std::time_t> m_maxTime;  // Maximum time for stochastic agents
     // The planned streets still to take after the current one, the next one in front,
-    // followed by the destination street; empty for a random agent
+    // followed by the destination street (alone once the agent is entering it or on it);
+    // empty for a random agent
     std::deque<Id> m_route;
     bool m_bIsIntelligent;  // If true, the agent plans its routes on the current traffic,
                             // otherwise on free-flow travel times (default is false)
@@ -49,8 +50,7 @@ namespace dsf::mobility {
     /// @param id The agent's id
     /// @param spawnTime The agent's spawn time
     /// @param destination Optional, the id of the agent's destination street: the agent
-    ///   arrives at its source node, without travelling it. If not provided, the agent is a
-    ///   random agent
+    ///   travels it, and arrives at its end. If not provided, the agent is a random agent
     /// @param srcNodeId Optional, The id of the source node of the agent
     Agent(Id const id,
           std::time_t const& spawnTime,

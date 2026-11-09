@@ -31,7 +31,6 @@ int main() {
   Dynamics dynamics{graph, false, std::nullopt, 0.95};
   dynamics.setDestinations({118, 115, 112, 109});
   dynamics.setErrorProbability(0.3);
-  dynamics.updatePaths();
 
   std::cout << "Done.\n"
             << "Running simulation...\n";

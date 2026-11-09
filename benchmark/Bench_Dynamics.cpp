@@ -36,7 +36,6 @@ static RoadNetwork makeForliNetwork() {
 static std::unique_ptr<FirstOrderDynamics> makeForliDynamics() {
   auto pDynamics = std::make_unique<FirstOrderDynamics>(makeForliNetwork(), SEED);
   pDynamics->prepareNetwork();
-  pDynamics->setUpdatePathsThrowOnEmpty(false);
   return pDynamics;
 }
 
@@ -65,7 +64,6 @@ static std::unique_ptr<FirstOrderDynamics> makeODDynamics() {
   auto const nOrigins{pDynamics->graph().nEdges() / 20};
   pDynamics->setOrigins(evenlySpacedStreets(*pDynamics, nOrigins));
   pDynamics->setDestinations(evenlySpacedStreets(*pDynamics, 100, 1));
-  pDynamics->updatePaths();
   return pDynamics;
 }
 
@@ -128,23 +126,6 @@ static void BM_FirstOrderDynamics_Empty_Evolve(benchmark::State& state) {
   for (auto _ : state) {
     dynamics.evolve();
   }
-}
-
-static void BM_FirstOrderDynamics_UpdatePaths(benchmark::State& state) {
-  static std::map<std::int64_t, std::unique_ptr<FirstOrderDynamics>> cache;
-  auto& pDynamics = cache[state.range(0)];
-  if (!pDynamics) {
-    pDynamics = makeForliDynamics();
-    pDynamics->setDestinations(
-        evenlySpacedStreets(*pDynamics, static_cast<std::size_t>(state.range(0))));
-    // The first call drops the unreachable destinations: keep it out of the timing
-    pDynamics->updatePaths();
-  }
-  for (auto _ : state) {
-    pDynamics->updatePaths();
-  }
-  state.counters["destinations"] =
-      static_cast<double>(pDynamics->destinationStreets().size());
 }
 
 static void BM_FirstOrderDynamics_AddAgents_RandomODs(benchmark::State& state) {
@@ -256,11 +237,6 @@ static void BM_FirstOrderDynamics_Evolve_DataCollection(benchmark::State& state)
 }
 
 BENCHMARK(BM_FirstOrderDynamics_Empty_Evolve);
-BENCHMARK(BM_FirstOrderDynamics_UpdatePaths)
-    ->ArgName("destinations")
-    ->Arg(10)
-    ->Arg(100)
-    ->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_FirstOrderDynamics_AddAgents_RandomODs)
     ->ArgName("agents")
     ->Arg(1000)

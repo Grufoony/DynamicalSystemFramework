@@ -151,7 +151,6 @@ int main(int argc, char** argv) {
     dynamics->setDestinations(destinations);
     std::cout << "Number of exits: " << destinations.size() << '\n';
   }
-  dynamics->updatePaths();
 
   dynamics->setErrorProbability(ERROR_PROBABILITY);
   dynamics->killStagnantAgents(40.);

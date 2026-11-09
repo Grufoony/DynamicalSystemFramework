@@ -991,12 +991,13 @@ NB_MODULE(dsf_cpp, m) {
            R"doc(Set how origin, destination and OD ids are interpreted.
 
     In EDGES mode an agent starts from the source node of its origin street and
-    travels it; it arrives, and is removed, when it reaches the source node of its
-    destination street, which it never enters.
+    travels it; it also travels its destination street, and arrives, and is
+    removed, at its end, without queueing there.
 
-    In NODES mode each node id is spread over the node's outgoing streets, with its
-    weight split evenly among them: agents start from the node and arrive when they
-    reach it. Nodes without outgoing streets are skipped.
+    In NODES mode each node id is spread over the node's outgoing streets for an
+    origin, and over its ingoing streets for a destination, with its weight split
+    evenly among them: agents start from the node and arrive when they reach it.
+    Nodes without such streets are skipped.
 
     Args:
       mode (DynamicsMode): EDGES (street ids) or NODES (node ids).
@@ -1076,17 +1077,6 @@ NB_MODULE(dsf_cpp, m) {
 
       Args:
         forcePriorities (bool): Whether to force priority handling.
-
-      Returns:
-        None)doc")
-      .def("setUpdatePathsThrowOnEmpty",
-           &dsf::mobility::FirstOrderDynamics::setUpdatePathsThrowOnEmpty,
-           nb::arg("throwOnEmpty"),
-           R"doc(Choose what updatePaths does with a destination that cannot be reached.
-
-      Args:
-        throwOnEmpty (bool): If True, updatePaths raises. If False, the destination is
-          removed, with every origin, destination and OD pair using it.
 
       Returns:
         None)doc")
@@ -1347,17 +1337,6 @@ Returns:
       .def("initTurnCounts",
            &dsf::mobility::FirstOrderDynamics::initTurnCounts,
            R"doc(Initialize turn count tracking data structures.
-
-    Returns:
-      None)doc")
-      .def(
-          "updatePaths",
-          &dsf::mobility::FirstOrderDynamics::updatePaths,
-          R"doc(Rebuild the routing graph and check that every destination can be reached.
-
-    Call it after opening or closing streets, or changing their turns or speeds: agents
-    plan their routes when they depart, on the routing graph. A destination cannot be
-    reached if no open street enters its source node: see setUpdatePathsThrowOnEmpty.
 
     Returns:
       None)doc")
@@ -1638,24 +1617,6 @@ Returns:
 
       Returns:
         None)doc")
-      .def(
-          "updatePaths",
-          &dsf::mobility::TrafficSimulator::updatePaths,
-          nb::arg("deltaT") = 0,
-          nb::arg("throwOnEmpty") = true,
-          R"doc(Configure how often the routing graph is rebuilt (see Dynamics.updatePaths).
-
-      The routing graph is always built at the first time step and after each OD update.
-      Agents plan their routes when they depart, so a periodic rebuild only matters when
-      the network changes during the run.
-
-      Args:
-      deltaT (int, optional): Rebuild interval in time steps (0 means never).
-      throwOnEmpty (bool, optional): Raise for a destination that cannot be reached,
-        instead of removing it.
-
-      Returns:
-      None)doc")
       .def("saveData",
            &dsf::mobility::TrafficSimulator::saveData,
            nb::arg("savingInterval"),

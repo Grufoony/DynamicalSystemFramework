@@ -242,17 +242,6 @@ namespace dsf::mobility {
             roadNetworkConfig["mean_vehicle_length"].get_double().value());
       }
       importRoadNetwork(edgesFile.string(), nodePropertiesFile.string());
-      if (auto const setEdgeWeightParams = roadNetworkConfig["set_edge_weight"];
-          !setEdgeWeightParams.error()) {
-        spdlog::warn(
-            "road_network.set_edge_weight is deprecated: use dynamics.edge_weight "
-            "instead "
-            "(any threshold is ignored).");
-        m_dynamics->setEdgeWeight(
-            require_field(setEdgeWeightParams, "road_network.set_edge_weight", "weight")
-                .get_string()
-                .value());
-      }
     }
     // Dynamics config
     {
@@ -295,8 +284,11 @@ namespace dsf::mobility {
                           algorithm));
         }
       }
-      bool const bHasMode{!dynamicsConfig["mode"].error()};
-      if (bHasMode) {
+      if (!dynamicsConfig["intelligent_fraction"].error()) {
+        m_dynamics->setIntelligentAgentsFraction(
+            dynamicsConfig["intelligent_fraction"].get_double().value());
+      }
+      if (!dynamicsConfig["mode"].error()) {
         auto const mode =
             require_field(dynamicsConfig, "dynamics", "mode").get_string().value();
         if (mode == "EDGES") {
@@ -354,18 +346,6 @@ namespace dsf::mobility {
                   require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
                       .get_string()
                       .value());
-          if (!importODsFromCSVConfig["edges"].error()) {
-            // Deprecated: superseded by 'dynamics.mode', which takes precedence
-            spdlog::warn(
-                "'importODsFromCSV.edges' in JSON file '{}' is deprecated: use "
-                "'dynamics.mode' (\"EDGES\" or \"NODES\") instead.",
-                jsonConfigFile);
-            if (!bHasMode) {
-              m_dynamics->setMode(importODsFromCSVConfig["edges"].get_bool().value()
-                                      ? DynamicsMode::EDGES
-                                      : DynamicsMode::NODES);
-            }
-          }
           if (!importODsFromCSVConfig["separator"].error()) {
             auto const sep =
                 require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
@@ -407,22 +387,6 @@ namespace dsf::mobility {
             std::filesystem::path(
                 require_field(generalConfig, "general", "database").get_string().value());
         connectDataBase(databasePath.string());
-      }
-    }
-    // Update paths
-    {
-      auto const updatePathsConfig = generalConfig["update_paths"];
-      if (!updatePathsConfig.error()) {
-        updatePaths(require_field(updatePathsConfig, "general.update_paths", "interval")
-                        .get_uint64()
-                        .value(),
-                    updatePathsConfig["throw_on_empty"].get_bool().has_value()
-                        ? updatePathsConfig["throw_on_empty"].get_bool().value()
-                        : true);
-        if (!updatePathsConfig["intelligent_fraction"].error()) {
-          m_dynamics->setIntelligentAgentsFraction(
-              updatePathsConfig["intelligent_fraction"].get_double().value());
-        }
       }
     }
     // Save Data
@@ -536,10 +500,6 @@ namespace dsf::mobility {
         nextODUpdateTime = m_dynamicODsUpdate.empty()
                                ? std::nullopt
                                : std::make_optional(m_dynamicODsUpdate.front().time);
-        m_dynamics->updatePaths();
-      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-                 (currentStep == 0)) {
-        m_dynamics->updatePaths();
       }
       if (currentStep % agentInsertionDeltaT == 0) {
         auto const insertionIndex =
@@ -635,10 +595,6 @@ namespace dsf::mobility {
         nextODUpdateTime = m_dynamicODsUpdate.empty()
                                ? std::nullopt
                                : std::make_optional(m_dynamicODsUpdate.front().time);
-        m_dynamics->updatePaths();
-      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-                 (currentStep == 0)) {
-        m_dynamics->updatePaths();
       }
       if (currentStep > 0 && currentStep % checkDeltaT == 0) {
         if (m_dynamics->nAgents() < previousAgents) {
@@ -698,12 +654,6 @@ namespace dsf::mobility {
                  m_dynamics->graph().nNodes(),
                  m_dynamics->graph().nEdges());
     m_preparePersistence();
-  }
-
-  void TrafficSimulator::updatePaths(std::time_t const deltaT,
-                                     bool const throw_on_empty) {
-    m_updatePathDeltaT = deltaT;
-    m_dynamics->setUpdatePathsThrowOnEmpty(throw_on_empty);
   }
 
   void TrafficSimulator::saveData(std::time_t const savingInterval,

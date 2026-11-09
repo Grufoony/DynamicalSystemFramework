@@ -140,25 +140,21 @@ static void BM_RoadNetwork_StreetLookup(benchmark::State& state) {
     i = (i + 997) % endpoints.size();
   }
 }
-// Random (origin street, goal node) pairs, the same in every run
+// Random (origin street, goal street) pairs, the same in every run
 static std::vector<std::pair<dsf::Id, dsf::Id>> routeQueries(
     dsf::mobility::RoadNetwork const& network, std::size_t const nQueries) {
-  std::vector<dsf::Id> streetIds, nodeIds;
+  std::vector<dsf::Id> streetIds;
   for (auto const& [streetId, pStreet] : network.edges()) {
     streetIds.push_back(streetId);
   }
-  for (auto const& [nodeId, pNode] : network.nodes()) {
-    nodeIds.push_back(nodeId);
-  }
   std::sort(streetIds.begin(), streetIds.end());
-  std::sort(nodeIds.begin(), nodeIds.end());
   std::mt19937_64 rng{42};
   std::uniform_int_distribution<std::size_t> streetDist{0, streetIds.size() - 1};
-  std::uniform_int_distribution<std::size_t> nodeDist{0, nodeIds.size() - 1};
   std::vector<std::pair<dsf::Id, dsf::Id>> queries;
   queries.reserve(nQueries);
   for (std::size_t i{0}; i < nQueries; ++i) {
-    queries.emplace_back(streetIds[streetDist(rng)], nodeIds[nodeDist(rng)]);
+    auto const fromStreetId{streetIds[streetDist(rng)]};
+    queries.emplace_back(fromStreetId, streetIds[streetDist(rng)]);
   }
   return queries;
 }
@@ -191,8 +187,8 @@ static void BM_Router_Route(benchmark::State& state) {
   auto const queries{routeQueries(network, 1000)};
   std::size_t i{0}, nRoutes{0}, nReachable{0};
   for (auto _ : state) {
-    auto const& [streetId, nodeId] = queries[i];
-    auto route{router.route(streetId, nodeId, weights, distanceFactor)};
+    auto const& [streetId, goalStreetId] = queries[i];
+    auto route{router.route(streetId, goalStreetId, weights, distanceFactor)};
     nReachable += route.empty() ? 0 : 1;
     ++nRoutes;
     benchmark::DoNotOptimize(route);

@@ -32,21 +32,21 @@ namespace dsf::mobility {
   enum class RouteAlgorithm : std::uint8_t {
     /// @brief A*, with the straight-line distance heuristic when coordinates allow it
     ASTAR = 0,
-    /// @brief Dijkstra's algorithm, i.e. A* without heuristic
+    /// @brief Dijkstra's algorithm
     DIJKSTRA = 1,
   };
 
   /// @brief Plans routes on a road network with the A* algorithm
   /// @details The search runs on the streets (the dual graph), so that forbidden turns and the
-  ///   U-turn rule of RoadNetwork::isTurnAllowed are honoured. A route ends on the first
-  ///   street whose target is the goal node.
+  ///   U-turn rule of RoadNetwork::isTurnAllowed are honoured. A route ends with the goal
+  ///   street, entered by an allowed turn: it reaches the end of it.
   ///   The router holds a compact copy of the network's topology and of the street costs: it
   ///   must be rebuilt (see build) whenever streets are added, opened or closed, or their turns
   ///   or speeds change. Route queries are const and thread-safe, as each thread searches with
   ///   its own buffers; building and taking snapshots are not.
   ///
-  ///   The heuristic is the straight-line distance to the goal node, scaled by the lowest cost
-  ///   per unit of distance over all streets, which makes it admissible and consistent for any
+  ///   The heuristic is the straight-line distance to the goal street's target node, scaled by
+  ///   the lowest cost per unit of distance over all streets, which makes it admissible and consistent for any
   ///   non-negative costs and any coordinate system. Without coordinates on every node touching
   ///   a street the heuristic is zero, i.e. the search is Dijkstra's.
   ///
@@ -116,30 +116,30 @@ namespace dsf::mobility {
     /// @details The streets are evaluated in parallel: no street may change meanwhile.
     void updateCurrentWeights();
 
-    /// @brief Plan a route from a street to a node
+    /// @brief Plan a route from a street to the end of a street
     /// @param fromStreetId The street the route starts with: its own cost is not counted
-    /// @param goalNodeId The node to reach
+    /// @param goalStreetId The street to reach and travel: its cost is counted
     /// @param weights The street costs to plan on
     /// @param distanceFactor A cost per unit of length added to every street (see
     ///   distanceFactor), 0 by default
-    /// @return std::vector<Id> The ids of the streets to travel, from fromStreetId to the first
-    ///   street whose target is goalNodeId, or an empty vector if the node cannot be reached
-    /// @throws std::out_of_range if the street or the node is not in the routing graph
+    /// @return std::vector<Id> The ids of the streets to travel, from fromStreetId to
+    ///   goalStreetId, or an empty vector if goalStreetId cannot be reached. It is fromStreetId
+    ///   alone if the two are the same
+    /// @throws std::out_of_range if a street is not in the routing graph
     std::vector<Id> route(Id fromStreetId,
-                          Id goalNodeId,
+                          Id goalStreetId,
                           RouteWeights weights,
                           double distanceFactor = 0.) const;
-    /// @brief Plan a route from a node to a node
+    /// @brief Plan a route from a node to the end of a street
     /// @param fromNodeId The node the route starts from: the cost of the first street counts
-    /// @param goalNodeId The node to reach
+    /// @param goalStreetId The street to reach and travel: its cost is counted
     /// @param weights The street costs to plan on
     /// @param distanceFactor A cost per unit of length added to every street, 0 by default
     /// @return std::vector<Id> The ids of the streets to travel, from an open outgoing street of
-    ///   fromNodeId to the first street whose target is goalNodeId, or an empty vector if the
-    ///   node cannot be reached
-    /// @throws std::out_of_range if a node is not in the routing graph
+    ///   fromNodeId to goalStreetId, or an empty vector if goalStreetId cannot be reached
+    /// @throws std::out_of_range if the node or the street is not in the routing graph
     std::vector<Id> routeFromNode(Id fromNodeId,
-                                  Id goalNodeId,
+                                  Id goalStreetId,
                                   RouteWeights weights,
                                   double distanceFactor = 0.) const;
     /// @brief Get the cost of a route
@@ -216,12 +216,12 @@ namespace dsf::mobility {
     std::uint32_t m_streetIndex(Id streetId) const;
     std::uint32_t m_nodeIndex(Id nodeId) const;
     WeightSet const& m_weightSet(RouteWeights weights) const noexcept;
-    /// @brief Run A* from the given streets to the goal node
+    /// @brief Run A* from the given streets to the goal
     /// @param starts The indices of the start streets
     /// @param bCountStartCost Whether the cost of the start streets counts
     std::vector<Id> m_search(std::span<std::uint32_t const> starts,
                              bool bCountStartCost,
-                             std::uint32_t goalNode,
+                             std::uint32_t goalStreet,
                              WeightSet const& weightSet,
                              double distanceFactor) const;
   };

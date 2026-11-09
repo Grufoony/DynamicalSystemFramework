@@ -31,7 +31,6 @@ namespace dsf::mobility {
     AgentInsertionMethod m_agentInsertionMethod{AgentInsertionMethod::RANDOM};
     std::time_t m_initTime = 0;
     std::time_t m_endTime = 0;
-    std::time_t m_updatePathDeltaT = 0;
     std::optional<std::time_t> m_savingInterval{std::nullopt};
     bool m_saveAverageStats{false};
     bool m_saveStreetData{false};
@@ -251,16 +250,6 @@ namespace dsf::mobility {
     /// @param nodePropertiesFile Optional node-properties CSV file.
     void importRoadNetwork(std::string_view const edgesFile,
                            std::string_view const nodePropertiesFile = std::string_view());
-
-    /// @brief Configure how often the routing graph is rebuilt (see
-    ///   FirstOrderDynamics::updatePaths)
-    /// @details The routing graph is always built at the first time step and after each OD
-    ///   update. Agents plan their routes when they depart, so a periodic rebuild only matters
-    ///   when the network changes during the run.
-    /// @param deltaT The rebuild cadence in time steps (0 means never)
-    /// @param throw_on_empty Whether a destination which cannot be reached throws, or is
-    ///   removed
-    void updatePaths(std::time_t const deltaT = 0, bool const throw_on_empty = true);
 
     /// @brief Configure the data-saving behavior.
     void saveData(std::time_t const savingInterval,
