@@ -14,7 +14,6 @@
 
 #include <cassert>
 #include <concepts>
-#include <deque>
 #include <format>
 #include <limits>
 #include <memory>
@@ -38,10 +37,11 @@ namespace dsf::mobility {
     double m_distance;                     // Travelled distance
     std::optional<double> m_maxDistance;   // Maximum distance for stochastic agents
     std::optional<std::time_t> m_maxTime;  // Maximum time for stochastic agents
-    // The planned streets still to take after the current one, the next one in front,
-    // followed by the destination street (alone once the agent is entering it or on it);
-    // empty for a random agent
-    std::deque<Id> m_route;
+    // The route, reversed: the destination street first, then the planned streets still to
+    // take after the current one, the next one last, so that advancing is a pop_back. The
+    // destination is alone once the agent is entering it or on it; empty for a random agent.
+    // A vector does not allocate while empty, unlike std::deque in libstdc++
+    std::vector<Id> m_route;
     bool m_bIsIntelligent;  // If true, the agent plans its routes on the current traffic,
                             // otherwise on free-flow travel times (default is false)
 
@@ -139,7 +139,7 @@ namespace dsf::mobility {
     /// @return std::optional<Id> The id of the destination street, std::nullopt for a random
     ///   agent
     inline std::optional<Id> destination() const noexcept {
-      return m_route.empty() ? std::nullopt : std::make_optional(m_route.back());
+      return m_route.empty() ? std::nullopt : std::make_optional(m_route.front());
     }
     /// @brief Get the agent's maximum distance
     /// @return The agent's maximum distance, or throw std::logic_error if not set
@@ -183,7 +183,7 @@ namespace dsf::mobility {
     /// @brief Get the next planned street
     /// @return std::optional<Id> The street id, or std::nullopt if no street is planned
     inline std::optional<Id> nextPlannedStreetId() const noexcept {
-      return m_route.size() > 1 ? std::make_optional(m_route.front()) : std::nullopt;
+      return m_route.size() > 1 ? std::make_optional(m_route.back()) : std::nullopt;
     }
     /// @brief Get the number of planned streets
     /// @return std::size_t The number of streets the agent still plans to take

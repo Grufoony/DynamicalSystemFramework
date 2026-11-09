@@ -62,18 +62,19 @@ namespace dsf::mobility {
           std::format("Agent {} is a random agent and cannot plan a route", m_id));
     }
     dropPath();
-    m_route.insert(m_route.begin(), streets.begin(), streets.end());
+    // Reversed: the next street ends up last
+    m_route.insert(m_route.end(), streets.rbegin(), streets.rend());
   }
   void Agent::dropPath() noexcept {
     if (m_route.size() > 1) {
-      m_route.erase(m_route.begin(), m_route.end() - 1);
+      m_route.resize(1);
     }
   }
   void Agent::advancePath() {
     if (m_route.size() < 2) {
       throw std::logic_error(std::format("Agent {} has no planned street to take", m_id));
     }
-    m_route.pop_front();
+    m_route.pop_back();
   }
 
   void Agent::reset(std::time_t const& spawnTime) {

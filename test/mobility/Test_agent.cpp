@@ -114,6 +114,7 @@ TEST_CASE("Agent methods") {
     agent.advancePath();
     CHECK_EQ(agent.nextPlannedStreetId().value(), 5);
     agent.advancePath();
+    CHECK_EQ(agent.nextPlannedStreetId().value(), 8);
     agent.advancePath();
     CHECK_FALSE(agent.nextPlannedStreetId().has_value());
     CHECK_THROWS_AS(agent.advancePath(), std::logic_error);
