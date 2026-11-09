@@ -511,12 +511,6 @@ TEST_CASE("Router") {
                  std::vector<Id>{5, 0, 1, 4});
         CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW, 0.1),
                  std::vector<Id>{5, 2, 3, 4});
-        // The noise scales the distance cost only: 0.02 s/m with a noise of 5 is 0.1 s/m
-        CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW, 0.02, 5.),
-                 std::vector<Id>{5, 2, 3, 4});
-        CHECK_EQ(
-            router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::FREE_FLOW, 0.02, 5.),
-            doctest::Approx(120. + 0.1 * 1200.));
         CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::FREE_FLOW, 0.1),
                  doctest::Approx(120. + 0.1 * 1200.));
       }
@@ -542,22 +536,22 @@ TEST_CASE("Router") {
         CHECK_THROWS_AS(router.setEdgeWeight("datt", 0.1, -1.), std::invalid_argument);
       }
     }
-    THEN("Each agent's noise on the distance cost is log-normal of mean 1") {
+    THEN("Each agent's distance cost is log-normal around the mean") {
       constexpr std::size_t N{10000};
       double sum{0.};
       std::size_t nBelowMean{0};
       for (std::uint64_t seed{0}; seed < N; ++seed) {
-        auto const factor{Router::noiseFactor(seed, 1.)};
+        auto const factor{Router::distanceFactor(seed, 0.1, 1.)};
         CHECK_GT(factor, 0.);
         sum += factor;
-        nBelowMean += factor < 1. ? 1 : 0;
+        nBelowMean += factor < 0.1 ? 1 : 0;
       }
-      CHECK_EQ(sum / N, doctest::Approx(1.).epsilon(0.05));
+      CHECK_EQ(sum / N, doctest::Approx(0.1).epsilon(0.05));
       // P(X < 1) = P(Z < sigma / 2) = 0.69 for sigma = 1
       CHECK_EQ(static_cast<double>(nBelowMean) / N, doctest::Approx(0.69).epsilon(0.03));
-      CHECK_EQ(Router::noiseFactor(42, std::nullopt), 1.);
-      CHECK_EQ(Router::noiseFactor(42, 0.), 1.);
-      CHECK_EQ(Router::noiseFactor(42, 1.), Router::noiseFactor(42, 1.));
+      CHECK_EQ(Router::distanceFactor(42, 0.1, std::nullopt), 0.1);
+      CHECK_EQ(Router::distanceFactor(42, 0.1, 0.), 0.1);
+      CHECK_EQ(Router::distanceFactor(42, 0.1, 1.), Router::distanceFactor(42, 0.1, 1.));
     }
   }
 }

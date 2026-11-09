@@ -207,8 +207,8 @@ namespace dsf::mobility {
     ///   open street may turn into it. It is removed with every origin, destination and OD
     ///   pair using it.
     void m_checkDestinations();
-    /// @brief Get an agent's noise on the distance cost (see Router::noiseFactor)
-    double m_noiseFactor(Agent const& agent) const;
+    /// @brief Get the cost per unit of length an agent adds to the streets (see setEdgeWeight)
+    double m_distanceFactor(Agent const& agent) const;
     /// @brief Plan the route of a non-random agent from a street to its destination
     /// @param agent The agent
     /// @param fromStreetId The street the route starts with
@@ -433,7 +433,7 @@ namespace dsf::mobility {
     ///   free-flow ones included,
     ///   adds its own distance cost to the street costs, i.e. plans on (current or free-flow)
     ///   travel time + k · length, with k log-normal of mean distanceCost and spread sigma
-    ///   (see Router::noiseFactor): agents trading time for distance differently spread
+    ///   (see Router::distanceFactor): agents trading time for distance differently spread
     ///   over more routes, as in MATSim's generalized cost
     /// @param distanceCost The mean distance cost of "datt", in s/m: 0.1 makes a metre
     ///   cost as much as driving it at 36 km/h

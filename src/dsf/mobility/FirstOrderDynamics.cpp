@@ -173,11 +173,15 @@ namespace dsf::mobility {
       m_checkDestinations();
     }
   }
-  double FirstOrderDynamics::m_noiseFactor(Agent const& agent) const {
-    // Each agent has its own noise on the distance cost, drawn from the seed and its id: it
-    // draws nothing from the engines, and stays the same when the agent plans again
-    return Router::noiseFactor(this->seed() + 0x9E3779B97F4A7C15ULL * agent.id(),
-                               m_router.distanceSigma());
+  double FirstOrderDynamics::m_distanceFactor(Agent const& agent) const {
+    if (m_router.distanceCost() == 0.) {
+      return 0.;
+    }
+    // Each agent has its own distance cost, drawn from the seed and its id: it draws nothing
+    // from the engines, and stays the same when the agent plans again
+    return Router::distanceFactor(this->seed() + 0x9E3779B97F4A7C15ULL * agent.id(),
+                                  m_router.distanceCost(),
+                                  m_router.distanceSigma());
   }
   std::vector<Id> FirstOrderDynamics::m_planRoute(Agent const& agent,
                                                   Id const fromStreetId) const {
@@ -186,8 +190,7 @@ namespace dsf::mobility {
         fromStreetId,
         *agent.destination(),
         agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
-        m_router.distanceCost(),
-        m_noiseFactor(agent));
+        m_distanceFactor(agent));
   }
   std::vector<Id> FirstOrderDynamics::m_planRouteFromNode(Agent const& agent,
                                                           Id const fromNodeId) const {
@@ -195,8 +198,7 @@ namespace dsf::mobility {
         fromNodeId,
         *agent.destination(),
         agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
-        m_router.distanceCost(),
-        m_noiseFactor(agent));
+        m_distanceFactor(agent));
   }
   void FirstOrderDynamics::m_setPath(Agent& agent, std::span<Id const> route) {
     // The agent keeps its destination, the last street of the route, by itself
@@ -1741,6 +1743,7 @@ namespace dsf::mobility {
           })) {
         continue;
       }
+      spdlog::error("No path found to destination street {}", destinationId);
       unreachable.push_back(destinationId);
     }
     if (unreachable.empty()) {

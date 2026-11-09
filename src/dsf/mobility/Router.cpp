@@ -103,7 +103,6 @@ namespace dsf::mobility {
           it->second);
     };
   }
-
   void Router::setEdgeWeight(std::string_view const name,
                              double const distanceCost,
                              std::optional<double> const sigma) {
@@ -124,15 +123,15 @@ namespace dsf::mobility {
     m_distanceCost = 0.;
     m_distanceSigma.reset();
   }
-
-  double Router::noiseFactor(std::uint64_t const seed,
-                             std::optional<double> const sigma) {
-    if (!sigma.has_value() || *sigma == 0.) {
-      return 1.0;
+  double Router::distanceFactor(std::uint64_t const seed,
+                                double const distanceCost,
+                                std::optional<double> const sigma) {
+    if (!sigma.has_value()) {
+      return distanceCost;
     }
     std::mt19937_64 engine{seed};
     std::lognormal_distribution<double> distribution{-*sigma * *sigma / 2., *sigma};
-    return distribution(engine);
+    return distanceCost * distribution(engine);
   }
 
   void Router::build(RoadNetwork const& network) {
@@ -341,22 +340,19 @@ namespace dsf::mobility {
   std::vector<Id> Router::route(Id const fromStreetId,
                                 Id const goalStreetId,
                                 RouteWeights const weights,
-                                double const distanceCost,
-                                double const noiseFactor) const {
+                                double const distanceFactor) const {
     auto const start{m_streetIndex(fromStreetId)};
     return m_search(std::span{&start, 1},
                     false,
                     m_streetIndex(goalStreetId),
                     m_weightSet(weights),
-                    distanceCost,
-                    noiseFactor);
+                    distanceFactor);
   }
 
   std::vector<Id> Router::routeFromNode(Id const fromNodeId,
                                         Id const goalStreetId,
                                         RouteWeights const weights,
-                                        double const distanceCost,
-                                        double const noiseFactor) const {
+                                        double const distanceFactor) const {
     auto const node{m_nodeIndex(fromNodeId)};
     auto const goal{m_streetIndex(goalStreetId)};
     return m_search(
@@ -365,20 +361,17 @@ namespace dsf::mobility {
         true,
         goal,
         m_weightSet(weights),
-        distanceCost,
-        noiseFactor);
+        distanceFactor);
   }
 
   double Router::routeCost(std::span<Id const> route,
                            RouteWeights const weights,
-                           double const distanceCost,
-                           double const noiseFactor) const {
+                           double const distanceFactor) const {
     auto const& weightSet{m_weightSet(weights)};
     double cost{0.};
     for (std::size_t i{1}; i < route.size(); ++i) {
       auto const street{m_streetIndex(route[i])};
-      cost += weightSet.weights[street] +
-              noiseFactor * distanceCost * m_streetLengths[street];
+      cost += weightSet.weights[street] + distanceFactor * m_streetLengths[street];
     }
     return cost;
   }
@@ -399,8 +392,7 @@ namespace dsf::mobility {
                                    bool const bCountStartCost,
                                    std::uint32_t const goalStreet,
                                    WeightSet const& weightSet,
-                                   double const distanceCost,
-                                   double const noiseFactor) const {
+                                   double const distanceFactor) const {
     assert(weightSet.weights.size() == m_streetIds.size());
     auto& buffers{m_buffers.local()};
     buffers.prepare(m_streetIds.size());
@@ -410,14 +402,11 @@ namespace dsf::mobility {
     auto& stamp{buffers.stamp};
     auto& heap{buffers.heap};
 
-    // The agent's noise scales its distance cost only: a factor on the whole cost would
-    // leave the cheapest route unchanged. Dijkstra's algorithm is A* without heuristic; with a
-    // distance cost, each term of the cost is bounded by its own factor, so their sum bounds
-    // the cost
-    auto const agentDistanceCost{noiseFactor * distanceCost};
+    // Dijkstra's algorithm is A* without heuristic. With a distance cost, each term of the
+    // cost is bounded by its own factor, so their sum bounds the cost
     auto const factor{m_algorithm == RouteAlgorithm::ASTAR
                           ? weightSet.heuristicFactor +
-                                agentDistanceCost * m_lengthHeuristicFactor
+                                distanceFactor * m_lengthHeuristicFactor
                           : 0.};
     auto const goalNode{m_streetTargets[goalStreet]};
     auto const goalX{factor > 0. ? m_nodeX[goalNode] : 0.};
@@ -430,7 +419,7 @@ namespace dsf::mobility {
       return factor * std::hypot(m_nodeX[node] - goalX, m_nodeY[node] - goalY);
     };
     auto const streetCost = [&](std::uint32_t const street) {
-      return weightSet.weights[street] + agentDistanceCost * m_streetLengths[street];
+      return weightSet.weights[street] + distanceFactor * m_streetLengths[street];
     };
     // Record a cheaper way to reach a street, and queue it
     auto const relax =
