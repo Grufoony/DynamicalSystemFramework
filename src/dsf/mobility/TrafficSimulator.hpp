@@ -290,6 +290,15 @@ namespace dsf::mobility {
       m_runDefault(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
     }
 
+    /// @brief Run a slow charge: agents are added at a growing rate until the end time, or
+    ///   until the network is saturated
+    /// @param nInitialAgents The number of agents added at each insertion, at first
+    /// @param agentInsertionDeltaT The time steps between two insertions
+    /// @param checkDeltaT The time steps between two checks: the number of agents added at
+    ///   each insertion grows by agentIncrement if the agents decreased since the last check
+    /// @param agentIncrement The growth of the agents added at each insertion
+    /// @details When the network has no room left for an insertion, the run stops there,
+    ///   logging an error, and its summary is logged as usual
     inline void run(std::size_t const nInitialAgents,
                     std::time_t const agentInsertionDeltaT,
                     std::time_t const checkDeltaT,

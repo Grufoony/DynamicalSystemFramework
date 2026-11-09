@@ -529,6 +529,29 @@ TEST_CASE("TrafficSimulator - dynamic ODs") {
   }
 }
 
+TEST_CASE("TrafficSimulator slow charge on a saturated network") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_saturated_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.importRoadNetwork(edgesPath.string());
+  REQUIRE(simulator.dynamics() != nullptr);
+  auto const capacity{simulator.dynamics()->graph().capacity()};
+  simulator.setTimeFrame(0, 100);
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::UNIFORM);
+  WHEN("Agents are added much faster than the network can hold them") {
+    THEN("The run stops at saturation instead of throwing") {
+      CHECK_NOTHROW(simulator.run(capacity / 2 + 1, 1, 100));
+      CHECK_LT(simulator.dynamics()->time_step(), 100);
+      auto const stats{simulator.dynamics()->agentStats()};
+      CHECK_LE(stats.nAgents, capacity);
+      // The refused insertion is not counted as added
+      CHECK_EQ(stats.nAdded, stats.nInserted);
+    }
+  }
+  std::filesystem::remove(edgesPath);
+}
+
 TEST_CASE("TrafficSimulator output prefix") {
   auto const outputDir = makeUniqueDirectory("traffic_simulator_output_");
   auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");

@@ -1791,7 +1791,6 @@ namespace dsf::mobility {
 
   void FirstOrderDynamics::addAgentsUniformly(std::size_t nAgents,
                                               std::optional<Id> optDestinationId) {
-    m_nAddedAgents += nAgents;
     if (m_timeToleranceFactor.has_value() && !m_agents.empty()) {
       auto const nStagnantAgents{m_agents.size()};
       spdlog::debug(
@@ -1822,6 +1821,7 @@ namespace dsf::mobility {
           this->nAgents(),
           this->graph().capacity()));
     }
+    m_nAddedAgents += nAgents;
     for (std::size_t i{0}; i < nAgents; ++i) {
       if (bRandomDestination) {
         auto destinationIt{m_destinationStreets.cbegin()};

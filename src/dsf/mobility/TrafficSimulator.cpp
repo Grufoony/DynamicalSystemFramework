@@ -603,7 +603,19 @@ namespace dsf::mobility {
         previousAgents = m_dynamics->nAgents();
       }
       if (currentStep % agentInsertionDeltaT == 0) {
-        m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);
+        try {
+          m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);
+        } catch (std::overflow_error const& e) {
+          // Saturation is what a slow charge looks for: report it and end the run
+          spdlog::error(
+              "The network is saturated at time step {} ({} agents, capacity {}): "
+              "stopping the slow charge. {}",
+              currentStep,
+              m_dynamics->nAgents(),
+              m_dynamics->graph().capacity(),
+              e.what());
+          break;
+        }
       }
 
       bool const shouldSave =
