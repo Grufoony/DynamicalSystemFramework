@@ -27,6 +27,7 @@
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -35,11 +36,9 @@
 
 #include "../base/Dynamics.hpp"
 #include "Agent.hpp"
-#include "Itinerary.hpp"
 #include "RoadNetwork.hpp"
+#include "Router.hpp"
 #include "../utility/Typedef.hpp"
-
-inline constexpr std::string_view CACHE_FOLDER = "./.dsfcache/";
 
 namespace dsf::mobility {
   using TurnCountsDict =
@@ -59,10 +58,10 @@ namespace dsf::mobility {
   /// @brief How the ids of origins, destinations and OD pairs are interpreted
   enum class DynamicsMode : std::uint8_t {
     /// @brief Ids are street ids: agents start from the origin street's source node and
-    ///   travel it, and arrive at the destination street's source node, without travelling it
+    ///   travel it, and arrive at the end of the destination street, after travelling it
     EDGES = 0,
-    /// @brief Ids are node ids, each spread over the node's outgoing streets: agents start
-    ///   from and arrive at the node
+    /// @brief Ids are node ids, each spread over the node's outgoing streets for an origin and
+    ///   over its ingoing streets for a destination: agents start from and arrive at the node
     NODES = 1,
   };
   /// @brief An id with an associated weight (e.g. an origin or a destination)
@@ -135,8 +134,9 @@ namespace dsf::mobility {
   class FirstOrderDynamics : public Dynamics<RoadNetwork> {
     std::vector<Id> m_nodeIndices;
     std::vector<std::unique_ptr<Agent>> m_agents;
-    std::unordered_map<Id, std::shared_ptr<Itinerary>> m_freeflowItineraries;
-    std::unordered_map<Id, std::shared_ptr<Itinerary>> m_itineraries;
+    // The destination streets of the origins, destinations and OD pairs
+    std::unordered_set<Id> m_destinationStreets;
+    Router m_router;
     std::vector<WeightedId> m_origins;
     std::vector<WeightedId> m_destinations;
     std::vector<ODEntry> m_ODs;
@@ -151,11 +151,17 @@ namespace dsf::mobility {
         m_nKilledAgents{0}, m_nArrivedAgents{0};
     std::function<double(Street const&)> m_speedFunction;
     std::string m_speedFunctionDescription;
-    double m_uturnPenaltyFactor = 0.1;
     double m_intelligentFraction = 0.;
     DynamicsMode m_mode{DynamicsMode::EDGES};
-    bool m_updatepathsThrowOnEmpty = true;
+    // The routing revision and number of nodes the router was built with (see m_ensureRouter)
+    std::uint64_t m_routerRevision{0};
+    std::size_t m_routerNodes{0};
+    // Whether the destinations changed since they were last checked (see m_checkDestinations)
+    bool m_bDestinationsChecked{false};
     bool m_reinsertAgents = false;
+    // Whether an intelligent agent has ever been added: the current street weights are then
+    // refreshed at each time step
+    bool m_bIntelligentAgents = false;
 
   protected:
     TurnCountsDict m_turnCounts;
@@ -166,12 +172,10 @@ namespace dsf::mobility {
     std::time_t m_previousOptimizationTime{0};
 
   protected:
-    std::optional<double> m_errorProbability{std::nullopt};
     std::optional<double> m_passageProbability{std::nullopt};
     std::optional<double> m_meanTravelDistance{std::nullopt};
     std::optional<std::time_t> m_meanTravelTime{std::nullopt};
     std::optional<Delay> m_dataUpdatePeriod;
-    bool m_bCacheEnabled;
     std::optional<double> m_timeToleranceFactor{std::nullopt};
     bool m_forcePriorities{false};
 
@@ -181,11 +185,47 @@ namespace dsf::mobility {
     /// @param pAgent A std::unique_ptr to the agent to kill
     template <bool Arrived>
     std::unique_ptr<Agent> m_removeAgent(std::unique_ptr<Agent> pAgent);
-    /// @brief Update the path of a single itinerary using Dijsktra's algorithm
-    /// @param pItinerary An std::shared_ptr to the itinerary
-    void m_updatePath(std::shared_ptr<Itinerary> const& pItinerary);
-    /// @brief Flag a non-random agent as intelligent (i.e. following the updated paths instead
-    ///   of the free-flow ones) with probability m_intelligentFraction
+    /// @brief Remove an agent which has not entered the network yet, counting it as killed
+    /// @param pAgent A std::unique_ptr to the agent, which is reset
+    /// @details Unlike m_removeAgent, it records neither a travel nor a destination
+    void m_dropPendingAgent(std::unique_ptr<Agent>& pAgent);
+    /// @brief Rebuild the router if it was never built or the network has changed since
+    /// @details A change is a new street or node, or any change bumping the routing revision
+    ///   (see Road::routingRevision): a street opened or closed, a maximum speed or forbidden
+    ///   turns changed, a node made a roundabout, a traffic light or a station. Changes to the
+    ///   nodes' coordinates are not detected. If the router is up to date, the destinations are
+    ///   checked if they changed since the last check.
+    void m_ensureRouter();
+    /// @brief Rebuild the router, and check the destinations (see m_checkDestinations)
+    /// @details The agents which have not departed yet plan their routes again when they
+    ///   depart; the travelling ones keep theirs, unless their next street is closed
+    void m_rebuildRouter();
+    /// @brief Remove the destination streets which cannot be reached, logging an error
+    /// @details A destination street cannot be reached if it does not exist, is closed, or no
+    ///   open street may turn into it. It is removed with every origin, destination and OD
+    ///   pair using it.
+    void m_checkDestinations();
+    /// @brief Get the key identifying an agent's noise on the street costs (see
+    ///   setPathRandomness)
+    std::uint64_t m_agentKey(Agent const& agent) const noexcept;
+    /// @brief Plan the route of a non-random agent from a street to its destination
+    /// @param agent The agent
+    /// @param fromStreetId The street the route starts with
+    /// @return std::vector<Id> The route (see Router::routeToStreet), empty if there is none
+    std::vector<Id> m_planRoute(Agent const& agent, Id fromStreetId) const;
+    /// @brief Plan the route of a non-random agent from a node to its destination
+    /// @param agent The agent
+    /// @param fromNodeId The node the route starts from
+    /// @return std::vector<Id> The route (see Router::routeFromNodeToStreet), empty if there is
+    ///   none
+    std::vector<Id> m_planRouteFromNode(Agent const& agent, Id fromNodeId) const;
+    /// @brief Set the planned streets of a non-random agent
+    /// @param agent The agent
+    /// @param route The streets the agent will take after the one it is on or entering,
+    ///   ending with its destination; empty if that street is the destination
+    static void m_setPath(Agent& agent, std::span<Id const> route);
+    /// @brief Flag a non-random agent as intelligent (i.e. planning its routes on the current
+    ///   traffic instead of the free-flow travel times) with probability m_intelligentFraction
     /// @param pAgent A std::unique_ptr to the agent
     void m_assignIntelligence(std::unique_ptr<Agent> const& pAgent);
 
@@ -203,12 +243,6 @@ namespace dsf::mobility {
     static Id m_pickWeighted(std::vector<WeightedId> const& weightedIds,
                              std::span<double const> cumulativeWeights,
                              double randValue);
-    /// @brief Find an itinerary with the given destination
-    /// @param destinationId The destination street id
-    /// @return An iterator to the itinerary, or itineraries().cend() if there is none
-    std::unordered_map<Id, std::shared_ptr<Itinerary>>::const_iterator m_findItinerary(
-        Id destinationId) const;
-
     template <bool Uniformly>
     void m_addAgentsRandom(std::size_t nAgents);
     void m_addAgentsODs(std::size_t nAgents);
@@ -265,9 +299,11 @@ namespace dsf::mobility {
     ///   gate allows (see RoadJunction::flowAccumulator()).
     /// @param pNode A pointer to the node
     void m_evolveNode(RoadJunction* pNode);
-    /// @brief Evolve the agents.
-    /// @details Puts all new agents on a street, if possible, decrements all delays
-    /// and increments all travel times.
+    /// @brief Insert the waiting agents into the network, if possible
+    /// @details The agents which can depart, i.e. whose source node and first street are not
+    ///   full, are first selected in order. The routes of the non-random ones are then planned
+    ///   in parallel, and the agents enter their source node in order. Agents without a
+    ///   route to their destination are dropped (see m_dropPendingAgent).
     void m_evolveAgents();
 
     void m_trafficlightSingleTailOptimizer(double const beta,
@@ -275,32 +311,39 @@ namespace dsf::mobility {
 
     /// @brief Get the street ids an origin or destination id stands for, according to m_mode
     /// @param id A street id (EDGES mode) or a node id (NODES mode)
-    /// @return std::vector<Id> The id itself in EDGES mode, the node's outgoing street ids in
-    ///   NODES mode (empty, with a warning, if the node has none)
+    /// @param bDestination Whether id is a destination
+    /// @return std::vector<Id> The id itself in EDGES mode. In NODES mode, the node's outgoing
+    ///   street ids for an origin (the agents start from the node) or its ingoing street ids
+    ///   for a destination (the agents arrive at the node, at the end of the street); empty,
+    ///   with a warning, if the node has none
     /// @throws std::out_of_range If the node does not exist (NODES mode)
-    std::vector<Id> m_streetIds(Id const id) const;
+    std::vector<Id> m_streetIds(Id const id, bool const bDestination) const;
     /// @brief Translate weighted origin or destination ids into weighted street ids
     /// @param weights The (id, weight) pairs, ids being interpreted according to m_mode
+    /// @param bDestination Whether the ids are destinations (see m_streetIds)
     /// @return std::unordered_map<Id, double> The (street id, weight) pairs, where in NODES mode
-    ///   each node's weight is split evenly over its outgoing streets. In EDGES mode it is a
-    ///   copy of weights, whose iteration order may differ: callers use weights directly there
+    ///   each node's weight is split evenly over its streets (see m_streetIds). In EDGES mode it
+    ///   is a copy of weights, whose iteration order may differ: callers use weights directly
+    ///   there
     /// @throws std::invalid_argument If no id maps to any street
     std::unordered_map<Id, double> m_toStreetWeights(
-        std::unordered_map<Id, double> const& weights) const;
+        std::unordered_map<Id, double> const& weights, bool const bDestination) const;
     /// @brief Key street-based origin or destination counts according to m_mode
     /// @param streetCounts The counts, keyed by street id
-    /// @return The counts as they are in EDGES mode, summed by the streets' source node in NODES mode
+    /// @param bDestination Whether these are destination counts
+    /// @return The counts as they are in EDGES mode. In NODES mode, summed by the streets'
+    ///   source node for origins (where the agents start) and by their target node for
+    ///   destinations (where the agents arrive)
     tbb::concurrent_unordered_map<Id, std::size_t> m_countsByMode(
-        tbb::concurrent_unordered_map<Id, std::size_t> streetCounts) const;
+        tbb::concurrent_unordered_map<Id, std::size_t> streetCounts,
+        bool bDestination) const;
 
   public:
     /// @brief Construct a new FirstOrderDynamics object
     /// @param graph The graph representing the network
-    /// @param useCache If true, the cache is used (default is false)
     /// @param seed The seed for the random number generator (default is std::nullopt)
     /// @param mode How origin, destination and OD ids are interpreted (default is DynamicsMode::EDGES)
     FirstOrderDynamics(RoadNetwork&& graph,
-                       bool useCache = false,
                        std::optional<unsigned int> seed = std::nullopt,
                        DynamicsMode const mode = DynamicsMode::EDGES);
 
@@ -317,10 +360,6 @@ namespace dsf::mobility {
                         bool const bAutoMapStreetLanes = false,
                         bool const bAutoAssignRoadPriorities = true,
                         bool const bAutoInitTrafficLights = true);
-    /// @brief Set the error probability
-    /// @param errorProbability The error probability
-    /// @throw std::invalid_argument If the error probability is not between 0 and 1
-    void setErrorProbability(double errorProbability);
     /// @brief Set the passage probability
     /// @param passageProbability The passage probability
     /// @details The passage probability is the probability of passing through a node
@@ -339,7 +378,7 @@ namespace dsf::mobility {
                   bool const saveAgentData = false);
     /// @brief Set the speed function. Options are:
     /// - (LINEAR, alpha): speed = max_speed * (1 - alpha * moving_density), where alpha is a parameter in [0, 1)
-    ///   and moving_density = n_moving_agents / capacity (queued agents cost queue time instead, see RoadNetwork::setEdgeWeight)
+    ///   and moving_density = n_moving_agents / capacity (queued agents cost queue time instead, see setEdgeWeight)
     /// - (CONSTANT): speed = max_speed, i.e. agents always travel in free flow
     /// - (CUSTOM, func): speed = func(pointer to a street), where func is a callable provided by the user that takes the street's pointer.
     template <typename... TArgs>
@@ -349,12 +388,6 @@ namespace dsf::mobility {
     /// @details If true, if an agent cannot move to the next street, the whole node is skipped
     inline void setForcePriorities(bool const forcePriorities) noexcept {
       m_forcePriorities = forcePriorities;
-    }
-    /// @brief Set the update paths throw on empty flag
-    /// @param throwOnEmpty The flag
-    /// @details If true, if an itinerary has an empty path when updating paths, an exception is thrown. If false, the itinerary is left unchanged.
-    inline void setUpdatePathsThrowOnEmpty(bool const throwOnEmpty) noexcept {
-      m_updatepathsThrowOnEmpty = throwOnEmpty;
     }
     /// @brief Set the data update period.
     /// @param dataUpdatePeriod Delay, The period
@@ -376,36 +409,54 @@ namespace dsf::mobility {
     inline void setMeanTravelTime(std::time_t const meanTravelTime) noexcept {
       m_meanTravelTime = meanTravelTime;
     };
-    /// @brief Set the penalty factor applied to U-turns when choosing the next street.
-    /// @param uturnPenaltyFactor The penalty factor, which must be positive.
-    /// @throw std::invalid_argument If the penalty factor is not positive.
-    inline void setUTurnPenaltyFactor(double uturnPenaltyFactor) {
-      if (uturnPenaltyFactor <= 0.) {
-        throw std::invalid_argument(std::format(
-            "The U-turn penalty factor ({}) must be positive", uturnPenaltyFactor));
-      }
-      m_uturnPenaltyFactor = uturnPenaltyFactor;
-    }
     inline void setReinsertAgents(bool const reinsertAgents) noexcept {
       m_reinsertAgents = reinsertAgents;
+    }
+    /// @brief Set the street costs intelligent agents plan their routes on
+    /// @param weight The name of the cost function (see Router::edgeWeightFunction),
+    ///   "traveltime" by default. With "datt" (detour-avoiding travel time), every agent,
+    ///   free-flow ones included, plans on (current or free-flow) travel time + k · length,
+    ///   with k = distanceCost
+    /// @param distanceCost The distance cost of "datt", in s/m: 0.1 makes a metre cost as
+    ///   much as driving it at 36 km/h
+    /// @throws std::invalid_argument if distanceCost is negative
+    void setEdgeWeight(std::string_view const weight, double const distanceCost = 0.1);
+    /// @brief Set the path randomness
+    /// @param sigma The spread of the noise, 0 (the default) to plan without noise
+    /// @details Each agent perceives each street cost multiplied by its own log-normal noise
+    ///   of mean 1, exp(sigma · Z - sigma² / 2) (see Router::noise), the same at every
+    ///   re-plan: agents with the same trip spread over more routes, whatever the weight.
+    ///   Values between 0.1 and 0.5 are sensible
+    /// @throws std::invalid_argument if sigma is negative
+    inline void setPathRandomness(double const sigma) {
+      m_router.setPathRandomness(sigma);
+    }
+    /// @brief Set the algorithm the routes are planned with
+    /// @param algorithm The algorithm (A* by default, see RouteAlgorithm)
+    inline void setRouteAlgorithm(RouteAlgorithm const algorithm) noexcept {
+      m_router.setAlgorithm(algorithm);
     }
     /// @brief Set the fraction of intelligent agents
     /// @param intelligentFraction The fraction, in [0, 1]
     /// @details When it is added, each non-random agent is flagged as intelligent with this
-    ///   probability (default is 0, i.e. no intelligent agents). Intelligent agents follow the
-    ///   paths recomputed at each updatePaths() call, while the others route on the free-flow
-    ///   best paths (see freeflowItineraries()).
+    ///   probability (default is 0, i.e. no intelligent agents). Every agent plans its route
+    ///   when it departs (see setRouteAlgorithm): intelligent agents on the current traffic,
+    ///   i.e. the street costs of setEdgeWeight, the others on the free-flow
+    ///   travel times (length / maxSpeed). Routes are not planned again, unless the agent
+    ///   meets a closed street: intelligent agents then use the street weights of the
+    ///   previous time step.
     /// @throw std::invalid_argument If the fraction is not in [0, 1]
     void setIntelligentAgentsFraction(double const intelligentFraction);
     /// @brief Set how origin, destination and OD ids are interpreted
     /// @param mode DynamicsMode::EDGES for street ids, DynamicsMode::NODES for node ids
     /// @details In EDGES mode an agent starts from the source node of its origin street and
-    ///   travels it; it arrives, and is removed, when it reaches the source node of its
-    ///   destination street, which it never enters.
-    ///   In NODES mode each node id is spread over the node's outgoing streets, with its
-    ///   weight split evenly among them: agents start from the node and arrive when they reach
-    ///   it. Nodes without outgoing streets are skipped. The dynamics itself always works on
-    ///   streets, so origins(), destinations() and itineraries() hold street ids in both modes.
+    ///   travels it; it also travels its destination street, and arrives, and is removed,
+    ///   at its end.
+    ///   In NODES mode each node id is spread over the node's outgoing streets for an origin,
+    ///   and over its ingoing streets for a destination, with its weight split evenly among
+    ///   them: agents start from the node and arrive when they reach it. Nodes without such
+    ///   streets are skipped. The dynamics itself always works on
+    ///   streets, so origins(), destinations() and destinationStreets() hold street ids in both modes.
     /// @throws std::runtime_error If origins, destinations or OD pairs are already set
     void setMode(DynamicsMode const mode);
     /// @brief Set the origins
@@ -483,32 +534,24 @@ namespace dsf::mobility {
     /// @brief Reset the turn counts map values to zero
     /// @throws std::runtime_error if the turn counts map is not initialized
     void resetTurnCounts();
-    /// @brief Update the paths of the itineraries based on the given weight function
-    /// @details Itineraries without a free-flow counterpart get one, copied from the freshly computed
-    ///   path. This snapshot is never updated afterwards, so the first call should happen on the empty
-    ///   network.
-    /// @throws std::runtime_error if m_updatepathsThrowOnEmpty is true and an itinerary has an empty path
-    void updatePaths();
     /// @brief Add agents uniformly on the road network
     /// @param nAgents The number of agents to add
-    /// @param itineraryId The id of the itinerary to use (default is std::nullopt)
-    /// @throw std::runtime_error If there are no itineraries
+    /// @param destinationId The id of the agents' destination street. If not provided, each
+    ///   agent gets a random one of destinationStreets(), or none (random agents) if it is
+    ///   empty
+    /// @throw std::invalid_argument If the destination street does not exist
     void addAgentsUniformly(std::size_t nAgents,
-                            std::optional<Id> itineraryId = std::nullopt);
+                            std::optional<Id> destinationId = std::nullopt);
 
     /// @brief Add an agent to the simulation
     /// @param agent std::unique_ptr to the agent
     void addAgent(std::unique_ptr<Agent> agent);
     /// @brief Add an agent to the simulation
-    /// @param trip std::vector of std::shared_ptr to the itineraries
-    /// @param optSrcStreetId std::optional<Id> representing the source street id. If not provided, the source street will be selected randomly.
-    void addAgent(std::vector<std::shared_ptr<Itinerary>> const& trip,
-                  std::optional<Id> optSrcStreetId = std::nullopt);
-    /// @brief Add an agent to the simulation
-    /// @param pItinerary std::shared_ptr to the itinerary
-    /// @details If pItinerary is nullptr, the agent will be added without an itinerary
-    /// @param optSrcStreetId std::optional<Id> representing the source street id. If not provided, the source street will be selected randomly.
-    void addAgent(std::shared_ptr<Itinerary> pItinerary = nullptr,
+    /// @param optDestinationId The id of the agent's destination street, whatever mode():
+    ///   the agent travels it, and arrives at its end. If not provided, the agent is a random
+    ///   agent
+    /// @param optSrcStreetId std::optional<Id> representing the source street id. If not provided, the source node will be selected randomly.
+    void addAgent(std::optional<Id> optDestinationId = std::nullopt,
                   std::optional<Id> optSrcStreetId = std::nullopt);
 
     /// @brief Add agents to the simulation
@@ -519,25 +562,11 @@ namespace dsf::mobility {
     /// - RANDOM_ODS: Agents are generated by randomly selecting their origin and destination according to the weights
     void addAgents(std::size_t const nAgents, AgentInsertionMethod const mode);
 
-    /// @brief Add an itinerary
-    /// @param ...args The arguments to construct the itinerary
-    /// @details The arguments must be compatible with any constructor of the Itinerary class
-    template <typename... TArgs>
-      requires(std::is_constructible_v<Itinerary, TArgs...>)
-    void addItinerary(TArgs&&... args);
-    /// @brief Add an itinerary
-    /// @param itinerary std::unique_ptr to the itinerary
-    /// @details The itinerary's destination is always a street id, whatever mode(): agents
-    ///   following it arrive at that street's source node, without travelling it
-    /// @throws std::invalid_argument If the itinerary already exists
-    void addItinerary(std::shared_ptr<Itinerary> itinerary);
-
     /// @brief Evolve the simulation
     /// @details Evolve the simulation by moving the agents and updating the travel times.
     /// In particular:
     /// - Move the first agent of each street queue, if possible, putting it in the next node
     /// - Move the agents from each node, if possible, putting them in the next street and giving them a speed.
-    /// If the error probability is not zero, the agents can move to a random street.
     /// If the agent is in the destination node, it is removed from the simulation (and then reinserted if reinsert_agents is true)
     /// - Cycle over agents and update their times
     /// @param dataRequest The save/collection request for the current step
@@ -556,20 +585,23 @@ namespace dsf::mobility {
         double const percentage = 0.3,
         double const threshold = 1.3);
 
-    /// @brief Get the free-flow itineraries
-    /// @return const std::unordered_map<Id, std::shared_ptr<Itinerary>>&, The free-flow itineraries,
-    ///   i.e. the best paths computed at the first updatePaths() call for each itinerary
-    inline auto const& freeflowItineraries() const noexcept {
-      return m_freeflowItineraries;
+    /// @brief Get the router which plans the agents' routes
+    /// @details The router is first rebuilt if the network has changed (see evolve)
+    /// @return Router const& The router
+    inline Router const& router() {
+      m_ensureRouter();
+      return m_router;
     }
-    /// @brief Get the fraction of intelligent agents, i.e. following the updated paths
+    /// @brief Get the fraction of intelligent agents, i.e. planning on the current traffic
     /// @return double The fraction, in [0, 1]
     inline auto intelligentAgentsFraction() const noexcept {
       return m_intelligentFraction;
     }
-    /// @brief Get the itineraries
-    /// @return const std::unordered_map<Id, Itinerary>&, The itineraries
-    inline auto const& itineraries() const noexcept { return m_itineraries; }
+    /// @brief Get the destination streets of the origins, destinations and OD pairs
+    /// @return std::unordered_set<Id> const& The destination street ids
+    inline auto const& destinationStreets() const noexcept {
+      return m_destinationStreets;
+    }
     /// @brief Get how origin, destination and OD ids are interpreted
     /// @return DynamicsMode The mode
     inline auto mode() const noexcept { return m_mode; }
@@ -684,12 +716,15 @@ namespace dsf::mobility {
     m_travelDTs.push_back({pAgent->distance(),
                            static_cast<double>(this->time_step() - pAgent->spawnTime())});
 
-    auto const optNextStreetId = pAgent->nextStreetId();
-    if (optNextStreetId.has_value()) {
-      spdlog::trace("Incrementing destination count for street {}", *optNextStreetId);
-      auto [it, bInserted] = m_destinationCounts.insert({*optNextStreetId, 1});
-      if (!bInserted) {
-        ++it->second;
+    // Arrivals are counted on the street at whose end the agent stops
+    if constexpr (Arrived) {
+      auto const optStreetId = pAgent->streetId();
+      if (optStreetId.has_value()) {
+        spdlog::trace("Incrementing destination count for street {}", *optStreetId);
+        auto [it, bInserted] = m_destinationCounts.insert({*optStreetId, 1});
+        if (!bInserted) {
+          ++it->second;
+        }
       }
     }
     return pAgent;
@@ -858,7 +893,7 @@ namespace dsf::mobility {
       while (nAgents--) {
         auto const selectedOrigin{
             m_pickWeighted(m_origins, cumulativeWeights, uniformDist(this->m_generator))};
-        this->addAgent(nullptr, selectedOrigin);
+        this->addAgent(std::nullopt, selectedOrigin);
         if (m_meanTravelDistance.has_value()) {
           this->m_agents.back()->setMaxDistance(distDist(this->m_generator));
         }
@@ -881,7 +916,7 @@ namespace dsf::mobility {
       this->setDestinations(weights);
       return;
     }
-    m_itineraries.clear();
+    m_destinationStreets.clear();
     auto const N{destinations.size()};
     m_destinations.clear();
     if (N == 0) {
@@ -891,14 +926,8 @@ namespace dsf::mobility {
     double const UNIFORM_WEIGHT{1. / N};
     for (auto const& id : destinations) {
       m_destinations.push_back({id, UNIFORM_WEIGHT});
-      this->addItinerary(id, id);
+      m_destinationStreets.insert(id);
     }
-  }
-
-  template <typename... TArgs>
-    requires(std::is_constructible_v<Itinerary, TArgs...>)
-  void FirstOrderDynamics::addItinerary(TArgs&&... args) {
-    addItinerary(std::make_shared<Itinerary>(std::forward<TArgs>(args)...));
   }
 
   template <bool Normalized>

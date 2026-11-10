@@ -87,7 +87,6 @@ if __name__ == "__main__":
 
     simulator.setTimeFrame(EPOCH)
     simulator.saveData(300, True, True, True)
-    simulator.updatePaths(300, False)
 
     simulator.dynamics().setSeed(args.seed)
     simulator.dynamics().killStagnantAgents(40.0)

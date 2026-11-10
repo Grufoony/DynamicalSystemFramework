@@ -2,6 +2,7 @@
 
 #include "../base/Edge.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <format>
 #include <memory>
@@ -15,10 +16,16 @@ namespace dsf::mobility {
     CLOSED = 1,
   };
 
+  class RoadNetwork;
+
   /// @brief The Road class represents a road in the network.
   class Road : public Edge {
+    friend class RoadNetwork;
+
   protected:
     static double m_meanVehicleLength;
+    // Bumped by every change which affects routing, see routingRevision
+    static std::atomic<std::uint64_t> m_routingRevision;
     double m_length;
     double m_maxSpeed;
     int m_nLanes;
@@ -29,6 +36,9 @@ namespace dsf::mobility {
     std::set<Id> m_forbiddenTurns;  // Stores the forbidden turns (road ids)
     std::uint8_t m_mobilityClass = 0u;
     RoadStatus m_roadStatus = RoadStatus::OPEN;
+
+    /// @brief Record a change which affects routing (see routingRevision)
+    static void m_bumpRoutingRevision() noexcept;
 
   public:
     /// @brief Construct a new Road object
@@ -57,6 +67,12 @@ namespace dsf::mobility {
     /// @brief Get the mean vehicle length
     /// @return double The mean vehicle length
     static double meanVehicleLength();
+    /// @brief Get the routing revision, shared by all roads
+    /// @details It changes whenever a road is opened or closed, or its maximum speed or
+    ///   forbidden turns change, and when a node becomes a roundabout, a traffic light or a
+    ///   station: the routes planned before may no longer be valid
+    /// @return std::uint64_t The routing revision
+    static std::uint64_t routingRevision() noexcept;
 
     /// @brief Set the maximum speed, in meters per second (default is 50 km/h)
     /// @param speed The maximum speed
@@ -86,7 +102,7 @@ namespace dsf::mobility {
     }
     /// @brief Set the road status
     /// @param status The road status
-    inline void setStatus(RoadStatus const status) { m_roadStatus = status; }
+    void setStatus(RoadStatus const status);
 
     /// @brief Get the length, in meters
     /// @return double The length, in meters

@@ -34,9 +34,8 @@ static RoadNetwork makeForliNetwork() {
 }
 
 static std::unique_ptr<FirstOrderDynamics> makeForliDynamics() {
-  auto pDynamics = std::make_unique<FirstOrderDynamics>(makeForliNetwork(), false, SEED);
+  auto pDynamics = std::make_unique<FirstOrderDynamics>(makeForliNetwork(), SEED);
   pDynamics->prepareNetwork();
-  pDynamics->setUpdatePathsThrowOnEmpty(false);
   return pDynamics;
 }
 
@@ -65,7 +64,6 @@ static std::unique_ptr<FirstOrderDynamics> makeODDynamics() {
   auto const nOrigins{pDynamics->graph().nEdges() / 20};
   pDynamics->setOrigins(evenlySpacedStreets(*pDynamics, nOrigins));
   pDynamics->setDestinations(evenlySpacedStreets(*pDynamics, 100, 1));
-  pDynamics->updatePaths();
   return pDynamics;
 }
 
@@ -90,7 +88,7 @@ static Scenario makeODScenario(std::size_t nAgents) {
   return Scenario{makeODDynamics(), nAgents, AgentInsertionMethod::RANDOM_ODS};
 }
 
-// Random agents (no itinerary), traveling for ~5 km on average
+// Random agents (no destination), traveling for ~5 km on average
 static Scenario makeRandomScenario(std::size_t nAgents) {
   auto pDynamics = makeForliDynamics();
   pDynamics->setMeanTravelDistance(5000.);
@@ -130,22 +128,6 @@ static void BM_FirstOrderDynamics_Empty_Evolve(benchmark::State& state) {
   }
 }
 
-static void BM_FirstOrderDynamics_UpdatePaths(benchmark::State& state) {
-  static std::map<std::int64_t, std::unique_ptr<FirstOrderDynamics>> cache;
-  auto& pDynamics = cache[state.range(0)];
-  if (!pDynamics) {
-    pDynamics = makeForliDynamics();
-    pDynamics->setDestinations(
-        evenlySpacedStreets(*pDynamics, static_cast<std::size_t>(state.range(0))));
-    // The first call drops the unreachable destinations: keep it out of the timing
-    pDynamics->updatePaths();
-  }
-  for (auto _ : state) {
-    pDynamics->updatePaths();
-  }
-  state.counters["itineraries"] = static_cast<double>(pDynamics->itineraries().size());
-}
-
 static void BM_FirstOrderDynamics_AddAgents_RandomODs(benchmark::State& state) {
   static auto pDynamics = [] {
     auto pDynamics = makeODDynamics();
@@ -165,6 +147,20 @@ static void BM_FirstOrderDynamics_Evolve_ODs(benchmark::State& state) {
   static ScenarioCache cache;
   auto& scenario = cachedScenario(cache, state.range(0), [&state] {
     return makeODScenario(static_cast<std::size_t>(state.range(0)));
+  });
+  for (auto _ : state) {
+    scenario.step();
+  }
+  setAgentCounters(state, scenario);
+}
+
+// Same as Evolve_ODs, with the routes planned by Dijkstra's algorithm instead of A*
+static void BM_FirstOrderDynamics_Evolve_ODs_Dijkstra(benchmark::State& state) {
+  static ScenarioCache cache;
+  auto& scenario = cachedScenario(cache, state.range(0), [&state] {
+    auto scenario{makeODScenario(static_cast<std::size_t>(state.range(0)))};
+    scenario.pDynamics->setRouteAlgorithm(dsf::mobility::RouteAlgorithm::DIJKSTRA);
+    return scenario;
   });
   for (auto _ : state) {
     scenario.step();
@@ -241,17 +237,18 @@ static void BM_FirstOrderDynamics_Evolve_DataCollection(benchmark::State& state)
 }
 
 BENCHMARK(BM_FirstOrderDynamics_Empty_Evolve);
-BENCHMARK(BM_FirstOrderDynamics_UpdatePaths)
-    ->ArgName("destinations")
-    ->Arg(10)
-    ->Arg(100)
-    ->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_FirstOrderDynamics_AddAgents_RandomODs)
     ->ArgName("agents")
     ->Arg(1000)
     ->Arg(10000)
     ->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_FirstOrderDynamics_Evolve_ODs)
+    ->ArgName("agents")
+    ->Arg(1000)
+    ->Arg(5000)
+    ->Arg(10000)
+    ->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_FirstOrderDynamics_Evolve_ODs_Dijkstra)
     ->ArgName("agents")
     ->Arg(1000)
     ->Arg(5000)

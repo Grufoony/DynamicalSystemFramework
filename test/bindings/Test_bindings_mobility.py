@@ -29,9 +29,7 @@ def test_traffic_simulator_configuration():
     assert simulator.safeName() == "traffic_simulator_test"
 
 
-def test_traffic_simulator_import_counts_and_shortest_path(
-    manhattan_edges_path, manhattan_nodes_path
-):
+def test_traffic_simulator_import_counts(manhattan_edges_path, manhattan_nodes_path):
     simulator = mobility.TrafficSimulator()
     simulator.importRoadNetwork(str(manhattan_edges_path), str(manhattan_nodes_path))
 
@@ -41,35 +39,27 @@ def test_traffic_simulator_import_counts_and_shortest_path(
     assert dynamics.graph().nNodes() == 120
     assert dynamics.graph().nEdges() == 436
 
-    dynamics.graph().setEdgeWeight("length")
-    path_map = dynamics.graph().shortestPath(0, 119)
 
-    assert isinstance(path_map, mobility.PathCollection)
-    assert len(path_map) > 0
-    assert 0 in path_map
-    assert 119 not in path_map
-    assert isinstance(path_map[0], list)
-    assert len(path_map[0]) > 0
+def test_dynamics_edge_weight_and_route_algorithm(dynamics):
+    dynamics.setEdgeWeight("length")
+    dynamics.setEdgeWeight("uniform")
+    dynamics.setEdgeWeight("datt", 0.1)
+    dynamics.setEdgeWeight("datt", distanceCost=0.05)
+    with pytest.raises(ValueError):
+        dynamics.setEdgeWeight("datt", -0.1)
+    dynamics.setPathRandomness(0.3)
+    dynamics.setPathRandomness(sigma=0.0)
+    with pytest.raises(ValueError):
+        dynamics.setPathRandomness(-0.1)
+    dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.DIJKSTRA)
+    dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.ASTAR)
+    dynamics.setDestinations([1])
 
 
-def test_path_collection_dict_protocol_and_explode():
-    path_collection = mobility.PathCollection()
-
-    assert len(path_collection) == 0
-
-    path_collection[0] = [1]
-    path_collection[1] = [2]
-
-    assert 0 in path_collection
-    assert path_collection[0] == [1]
-    assert set(path_collection.keys()) == {0, 1}
-    assert path_collection.items() == {0: [1], 1: [2]}
-
-    all_paths = path_collection.explode(0, 2)
-    assert all_paths == [[0, 1, 2]]
-
-    with pytest.raises(KeyError):
-        _ = path_collection[99]
+def test_road_network_betweenness_takes_a_weight(dynamics):
+    graph = dynamics.graph()
+    graph.computeEdgeBetweennessCentralities("length")
+    assert len(graph.edgeBetweennessCentralities()) == graph.nEdges()
 
 
 def test_traffic_simulator_smoke_run_with_linear_speed(tmp_path):
@@ -88,7 +78,6 @@ def test_traffic_simulator_smoke_run_with_linear_speed(tmp_path):
 
     dynamics.setSpeedFunction(mobility.SpeedFunction.LINEAR, 0.8)
     dynamics.setODs([(0, 1, 1.0)])
-    dynamics.updatePaths()
 
     simulator.setTimeFrame(0, 6)
     simulator.saveData(1, True, True, False, False)
@@ -174,36 +163,28 @@ def test_dynamics_constant_speed_function_rejects_argument(dynamics):
         dynamics.setSpeedFunction(mobility.SpeedFunction.CONSTANT, 0.8)
 
 
-def test_dynamics_freeflow_itineraries(dynamics):
+def test_dynamics_intelligent_agents_fraction(dynamics):
     assert dynamics.intelligentAgentsFraction() == 0.0
     dynamics.setIntelligentAgentsFraction(0.3)
     assert dynamics.intelligentAgentsFraction() == pytest.approx(0.3)
     with pytest.raises(ValueError):
         dynamics.setIntelligentAgentsFraction(1.5)
 
-    assert dynamics.freeflowItineraries() == {}
-    dynamics.addItinerary(4, 4)
-    dynamics.updatePaths()
-
-    freeflow = dynamics.freeflowItineraries()
-    assert set(freeflow) == set(dynamics.itineraries()) == {4}
-    assert freeflow[4].destination() == 4
-
 
 def test_dynamics_mode_defaults_to_edges(dynamics):
     assert dynamics.mode() == mobility.DynamicsMode.EDGES
     dynamics.setDestinations([1])
-    assert set(dynamics.itineraries()) == {1}
+    assert dynamics.destinationStreets() == {1}
 
 
 def test_dynamics_mode_nodes(loaded_road_network):
-    # Node 1 has the outgoing streets 3, 4 and 6
+    # Node 1 is entered by streets 2, 5 and 7: agents arrive at the end of one of them
     dynamics = mobility.Dynamics(
         loaded_road_network, seed=69, mode=mobility.DynamicsMode.NODES
     )
     assert dynamics.mode() == mobility.DynamicsMode.NODES
     dynamics.setDestinations([1])
-    assert set(dynamics.itineraries()) == {3, 4, 6}
+    assert dynamics.destinationStreets() == {2, 5, 7}
 
     with pytest.raises(RuntimeError):
         dynamics.setMode(mobility.DynamicsMode.EDGES)
@@ -213,4 +194,4 @@ def test_dynamics_set_mode(dynamics):
     dynamics.setMode(mobility.DynamicsMode.NODES)
     assert dynamics.mode() == mobility.DynamicsMode.NODES
     dynamics.setODs([(0, 1, 1.0)])
-    assert set(dynamics.itineraries()) == {3, 4, 6}
+    assert dynamics.destinationStreets() == {2, 5, 7}

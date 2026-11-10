@@ -4,10 +4,6 @@
     "input_folder": "./examples/",
     "output_folder": "./output/",
     "database": "sample_sim.db",
-    "update_paths": {
-      "interval": 300,
-      "throw_on_empty": false
-    },
     "save_data": {
       "interval": 300,
       "avg": true,
@@ -19,15 +15,13 @@
   "road_network": {
     "edges_file": "edges.csv",
     "node_properties_file": "node_props.csv",
-    "mean_vehicle_length": 5.0,
-    "set_edge_weight": {
-      "weight": "traveltime",
-      "threshold": 0.05
-    }
+    "mean_vehicle_length": 5.0
   },
   "dynamics": {
+    "edge_weight": "traveltime",
+    "route_algorithm": "ASTAR",
     "mode": "EDGES",
-    "error_probability": 0.05,
+    "path_randomness": 0.3,
     "kill_stagnant_agents": 40.0,
     "agent_insertion_method": "RANDOM",
     "importTransitionMatrixFromJSON": {

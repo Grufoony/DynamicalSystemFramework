@@ -46,6 +46,9 @@ namespace dsf {
 
   protected:
     inline void m_evolve() { ++m_timeStep; };
+    /// @brief Get the base seed of the random number generators
+    /// @return std::uint64_t The seed given at construction or with setSeed
+    inline std::uint64_t seed() const noexcept { return m_threadSeed; }
 
   public:
     /// @brief Construct a new Dynamics object

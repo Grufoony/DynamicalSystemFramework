@@ -72,6 +72,9 @@ namespace dsf::mobility {
     static std::optional<tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>>>
         m_agentData;
 
+    /// @brief Record an agent leaving the street (mean speed and agent data)
+    void m_recordExit(Agent const& agent, std::time_t const currentTime);
+
   public:
     /// @brief Construct a new Street object
     /// @param id The street's id
@@ -236,6 +239,14 @@ namespace dsf::mobility {
     /// @brief Remove the top agent from the street's moving agents priority queue
     /// @return std::unique_ptr<Agent> The agent removed from the street's moving agents priority queue
     std::unique_ptr<Agent> dequeueMovingAgent();
+    /// @brief Remove the top agent from the street's moving agents, which ends its trip at
+    ///   the end of the street, without queueing
+    /// @details The agent travels the whole street and is recorded as leaving it (see
+    ///   dequeue), but it uses neither a queue nor the exit gate: a MIDDLE counter counts it,
+    ///   an EXIT one does not
+    /// @param currentTime The current simulation time
+    /// @return std::unique_ptr<Agent> The agent
+    std::unique_ptr<Agent> dequeueArrivedAgent(std::time_t const currentTime);
     /// @brief Add an agent to the street's queue
     /// @param queueId The id of the queue
     /// @throw std::runtime_error If the street's queue is full

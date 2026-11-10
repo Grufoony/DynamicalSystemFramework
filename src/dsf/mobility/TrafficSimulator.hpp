@@ -31,7 +31,6 @@ namespace dsf::mobility {
     AgentInsertionMethod m_agentInsertionMethod{AgentInsertionMethod::RANDOM};
     std::time_t m_initTime = 0;
     std::time_t m_endTime = 0;
-    std::time_t m_updatePathDeltaT = 0;
     std::optional<std::time_t> m_savingInterval{std::nullopt};
     bool m_saveAverageStats{false};
     bool m_saveStreetData{false};
@@ -221,8 +220,7 @@ namespace dsf::mobility {
     void m_flushStepData(StepDataResult stepData);
 
     void m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                      std::optional<std::time_t> const deltaT = std::nullopt,
-                      double const percentRandomAgents = 0.0);
+                      std::optional<std::time_t> const deltaT = std::nullopt);
     void m_runSlowCharge(std::size_t const nInitialAgents,
                          std::time_t const agentInsertionDeltaT,
                          std::time_t const checkDeltaT,
@@ -251,11 +249,6 @@ namespace dsf::mobility {
     /// @param nodePropertiesFile Optional node-properties CSV file.
     void importRoadNetwork(std::string_view const edgesFile,
                            std::string_view const nodePropertiesFile = std::string_view());
-
-    /// @brief Configure the path-update cadence forwarded to the dynamics engine.
-    /// @param deltaT The update cadence in time steps.
-    /// @param throw_on_empty Whether an empty itinerary path should throw.
-    void updatePaths(std::time_t const deltaT = 0, bool const throw_on_empty = true);
 
     /// @brief Configure the data-saving behavior.
     void saveData(std::time_t const savingInterval,
@@ -286,16 +279,24 @@ namespace dsf::mobility {
 
     /// @brief Run the simulation until the configured end time.
     inline void run(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                    std::optional<std::time_t> const deltaT = std::nullopt,
-                    double const percentageRandomAgents = 0.0) {
+                    std::optional<std::time_t> const deltaT = std::nullopt) {
       if (m_dynamics == nullptr) {
         throw std::runtime_error(
             "Cannot run the simulation without imported road network dynamics.");
       }
       m_dynamics->prepareNetwork();
-      m_runDefault(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
+      m_runDefault(nAgentsPerTimeStep, deltaT);
     }
 
+    /// @brief Run a slow charge: agents are added at a growing rate until the end time, or
+    ///   until the network is saturated
+    /// @param nInitialAgents The number of agents added at each insertion, at first
+    /// @param agentInsertionDeltaT The time steps between two insertions
+    /// @param checkDeltaT The time steps between two checks: the number of agents added at
+    ///   each insertion grows by agentIncrement if the agents decreased since the last check
+    /// @param agentIncrement The growth of the agents added at each insertion
+    /// @details When the network has no room left for an insertion, the run stops there,
+    ///   logging an error, and its summary is logged as usual
     inline void run(std::size_t const nInitialAgents,
                     std::time_t const agentInsertionDeltaT,
                     std::time_t const checkDeltaT,

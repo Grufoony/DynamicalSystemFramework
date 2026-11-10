@@ -242,15 +242,6 @@ namespace dsf::mobility {
             roadNetworkConfig["mean_vehicle_length"].get_double().value());
       }
       importRoadNetwork(edgesFile.string(), nodePropertiesFile.string());
-      auto const setEdgeWeightParams =
-          require_field(roadNetworkConfig, "road_network", "set_edge_weight");
-      m_dynamics->graph().setEdgeWeight(
-          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "weight")
-              .get_string()
-              .value(),
-          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "threshold")
-              .get_double()
-              .value());
     }
     // Dynamics config
     {
@@ -265,8 +256,37 @@ namespace dsf::mobility {
       if (!dynamicsConfig["max_concurrency"].error()) {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
       }
-      bool const bHasMode{!dynamicsConfig["mode"].error()};
-      if (bHasMode) {
+      if (!dynamicsConfig["edge_weight"].error()) {
+        // The distance cost is used by "datt"
+        auto const distanceCost{
+            dynamicsConfig["distance_cost"].error()
+                ? 0.1
+                : dynamicsConfig["distance_cost"].get_double().value()};
+        m_dynamics->setEdgeWeight(dynamicsConfig["edge_weight"].get_string().value(),
+                                  distanceCost);
+      }
+      if (!dynamicsConfig["path_randomness"].error()) {
+        m_dynamics->setPathRandomness(
+            dynamicsConfig["path_randomness"].get_double().value());
+      }
+      if (!dynamicsConfig["route_algorithm"].error()) {
+        auto const algorithm{dynamicsConfig["route_algorithm"].get_string().value()};
+        if (algorithm == "ASTAR") {
+          m_dynamics->setRouteAlgorithm(RouteAlgorithm::ASTAR);
+        } else if (algorithm == "DIJKSTRA") {
+          m_dynamics->setRouteAlgorithm(RouteAlgorithm::DIJKSTRA);
+        } else {
+          throw std::runtime_error(
+              std::format("Invalid 'route_algorithm' value in JSON file '{}': {}",
+                          jsonConfigFile,
+                          algorithm));
+        }
+      }
+      if (!dynamicsConfig["intelligent_fraction"].error()) {
+        m_dynamics->setIntelligentAgentsFraction(
+            dynamicsConfig["intelligent_fraction"].get_double().value());
+      }
+      if (!dynamicsConfig["mode"].error()) {
         auto const mode =
             require_field(dynamicsConfig, "dynamics", "mode").get_string().value();
         if (mode == "EDGES") {
@@ -300,10 +320,6 @@ namespace dsf::mobility {
                         jsonConfigFile,
                         agentInsertionMethod));
       }
-      if (!dynamicsConfig["error_probability"].error()) {
-        m_dynamics->setErrorProbability(
-            dynamicsConfig["error_probability"].get_double().value());
-      }
       if (!dynamicsConfig["kill_stagnant_agents"].error()) {
         m_dynamics->killStagnantAgents(
             dynamicsConfig["kill_stagnant_agents"].get_double().value());
@@ -324,18 +340,6 @@ namespace dsf::mobility {
                   require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
                       .get_string()
                       .value());
-          if (!importODsFromCSVConfig["edges"].error()) {
-            // Deprecated: superseded by 'dynamics.mode', which takes precedence
-            spdlog::warn(
-                "'importODsFromCSV.edges' in JSON file '{}' is deprecated: use "
-                "'dynamics.mode' (\"EDGES\" or \"NODES\") instead.",
-                jsonConfigFile);
-            if (!bHasMode) {
-              m_dynamics->setMode(importODsFromCSVConfig["edges"].get_bool().value()
-                                      ? DynamicsMode::EDGES
-                                      : DynamicsMode::NODES);
-            }
-          }
           if (!importODsFromCSVConfig["separator"].error()) {
             auto const sep =
                 require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
@@ -379,22 +383,6 @@ namespace dsf::mobility {
         connectDataBase(databasePath.string());
       }
     }
-    // Update paths
-    {
-      auto const updatePathsConfig = generalConfig["update_paths"];
-      if (!updatePathsConfig.error()) {
-        updatePaths(require_field(updatePathsConfig, "general.update_paths", "interval")
-                        .get_uint64()
-                        .value(),
-                    updatePathsConfig["throw_on_empty"].get_bool().has_value()
-                        ? updatePathsConfig["throw_on_empty"].get_bool().value()
-                        : true);
-        if (!updatePathsConfig["intelligent_fraction"].error()) {
-          m_dynamics->setIntelligentAgentsFraction(
-              updatePathsConfig["intelligent_fraction"].get_double().value());
-        }
-      }
-    }
     // Save Data
     {
       auto const save_data = generalConfig["save_data"];
@@ -420,8 +408,7 @@ namespace dsf::mobility {
   }
 
   void TrafficSimulator::m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                                      std::optional<std::time_t> const deltaT,
-                                      double const percentRandomAgents) {
+                                      std::optional<std::time_t> const deltaT) {
     if (deltaT.has_value()) {
       if (deltaT.value() <= 0) {
         throw std::invalid_argument(std::format(
@@ -506,10 +493,6 @@ namespace dsf::mobility {
         nextODUpdateTime = m_dynamicODsUpdate.empty()
                                ? std::nullopt
                                : std::make_optional(m_dynamicODsUpdate.front().time);
-        m_dynamics->updatePaths();
-      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-                 (currentStep == 0)) {
-        m_dynamics->updatePaths();
       }
       if (currentStep % agentInsertionDeltaT == 0) {
         auto const insertionIndex =
@@ -517,11 +500,7 @@ namespace dsf::mobility {
         if (insertionIndex < nInsertions) {
           auto const nAgents = nAgentsPerTimeStep.at(insertionIndex);
           if (nAgents > 0) {
-            auto const nRandomAgents =
-                static_cast<std::size_t>(std::floor(nAgents * percentRandomAgents));
-            auto const nODAgents = nAgents - nRandomAgents;
-            m_dynamics->addAgents(nODAgents, m_agentInsertionMethod);
-            m_dynamics->addAgents(nRandomAgents, AgentInsertionMethod::RANDOM);
+            m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
           }
         } else {
           spdlog::warn(
@@ -605,10 +584,6 @@ namespace dsf::mobility {
         nextODUpdateTime = m_dynamicODsUpdate.empty()
                                ? std::nullopt
                                : std::make_optional(m_dynamicODsUpdate.front().time);
-        m_dynamics->updatePaths();
-      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-                 (currentStep == 0)) {
-        m_dynamics->updatePaths();
       }
       if (currentStep > 0 && currentStep % checkDeltaT == 0) {
         if (m_dynamics->nAgents() < previousAgents) {
@@ -617,7 +592,19 @@ namespace dsf::mobility {
         previousAgents = m_dynamics->nAgents();
       }
       if (currentStep % agentInsertionDeltaT == 0) {
-        m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);
+        try {
+          m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);
+        } catch (std::overflow_error const& e) {
+          // Saturation is what a slow charge looks for: report it and end the run
+          spdlog::error(
+              "The network is saturated at time step {} ({} agents, capacity {}): "
+              "stopping the slow charge. {}",
+              currentStep,
+              m_dynamics->nAgents(),
+              m_dynamics->graph().capacity(),
+              e.what());
+          break;
+        }
       }
 
       bool const shouldSave =
@@ -668,12 +655,6 @@ namespace dsf::mobility {
                  m_dynamics->graph().nNodes(),
                  m_dynamics->graph().nEdges());
     m_preparePersistence();
-  }
-
-  void TrafficSimulator::updatePaths(std::time_t const deltaT,
-                                     bool const throw_on_empty) {
-    m_updatePathDeltaT = deltaT;
-    m_dynamics->setUpdatePathsThrowOnEmpty(throw_on_empty);
   }
 
   void TrafficSimulator::saveData(std::time_t const savingInterval,
