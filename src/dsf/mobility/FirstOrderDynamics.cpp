@@ -173,15 +173,10 @@ namespace dsf::mobility {
       m_checkDestinations();
     }
   }
-  double FirstOrderDynamics::m_distanceFactor(Agent const& agent) const {
-    if (m_router.distanceCost() == 0.) {
-      return 0.;
-    }
-    // Each agent has its own distance cost, drawn from the seed and its id: it draws nothing
-    // from the engines, and stays the same when the agent plans again
-    return Router::distanceFactor(this->seed() + 0x9E3779B97F4A7C15ULL * agent.id(),
-                                  m_router.distanceCost(),
-                                  m_router.distanceSigma());
+  std::uint64_t FirstOrderDynamics::m_agentKey(Agent const& agent) const noexcept {
+    // The agent's noise follows from the seed and its id: it draws nothing from the
+    // engines, and stays the same when the agent plans again
+    return this->seed() + 0x9E3779B97F4A7C15ULL * agent.id();
   }
   std::vector<Id> FirstOrderDynamics::m_planRoute(Agent const& agent,
                                                   Id const fromStreetId) const {
@@ -190,7 +185,7 @@ namespace dsf::mobility {
         fromStreetId,
         *agent.destination(),
         agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
-        m_distanceFactor(agent));
+        m_agentKey(agent));
   }
   std::vector<Id> FirstOrderDynamics::m_planRouteFromNode(Agent const& agent,
                                                           Id const fromNodeId) const {
@@ -198,7 +193,7 @@ namespace dsf::mobility {
         fromNodeId,
         *agent.destination(),
         agent.isIntelligent() ? RouteWeights::CURRENT : RouteWeights::FREE_FLOW,
-        m_distanceFactor(agent));
+        m_agentKey(agent));
   }
   void FirstOrderDynamics::m_setPath(Agent& agent, std::span<Id const> route) {
     // The agent keeps its destination, the last street of the route, by itself
@@ -1248,9 +1243,8 @@ namespace dsf::mobility {
     m_intelligentFraction = intelligentFraction;
   }
   void FirstOrderDynamics::setEdgeWeight(std::string_view const weight,
-                                         double const distanceCost,
-                                         std::optional<double> const sigma) {
-    m_router.setEdgeWeight(weight, distanceCost, sigma);
+                                         double const distanceCost) {
+    m_router.setEdgeWeight(weight, distanceCost);
     if (m_router.isBuilt()) {
       // Validate the new cost function, e.g. a missing custom attribute, right away
       this->m_taskArena.execute([this] { m_router.updateCurrentWeights(); });

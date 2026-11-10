@@ -257,19 +257,17 @@ namespace dsf::mobility {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
       }
       if (!dynamicsConfig["edge_weight"].error()) {
-        // The distance cost and its spread are used by "datt"
+        // The distance cost is used by "datt"
         auto const distanceCost{
             dynamicsConfig["distance_cost"].error()
                 ? 0.1
                 : dynamicsConfig["distance_cost"].get_double().value()};
-        auto const distanceCostSigma{
-            dynamicsConfig["distance_cost_sigma"].error()
-                ? std::nullopt
-                : std::make_optional(
-                      dynamicsConfig["distance_cost_sigma"].get_double().value())};
         m_dynamics->setEdgeWeight(dynamicsConfig["edge_weight"].get_string().value(),
-                                  distanceCost,
-                                  distanceCostSigma);
+                                  distanceCost);
+      }
+      if (!dynamicsConfig["path_randomness"].error()) {
+        m_dynamics->setPathRandomness(
+            dynamicsConfig["path_randomness"].get_double().value());
       }
       if (!dynamicsConfig["route_algorithm"].error()) {
         auto const algorithm{dynamicsConfig["route_algorithm"].get_string().value()};

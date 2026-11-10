@@ -259,7 +259,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "intelligent_fraction": 0.5,
     "edge_weight": "datt",
     "distance_cost": 0.05,
-    "distance_cost_sigma": 0.5,
+    "path_randomness": 0.5,
     "route_algorithm": "DIJKSTRA",
     "seed": 42,
     "max_concurrency": 2,
@@ -285,7 +285,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   CHECK_EQ(simulator.dynamics()->intelligentAgentsFraction(), 0.5);
   CHECK_EQ(simulator.dynamics()->router().algorithm(), RouteAlgorithm::DIJKSTRA);
   CHECK_EQ(simulator.dynamics()->router().distanceCost(), 0.05);
-  CHECK_EQ(simulator.dynamics()->router().distanceSigma().value(), 0.5);
+  CHECK_EQ(simulator.dynamics()->router().pathRandomness(), 0.5);
   // The streets have no capacity column: it follows from the mean vehicle length
   CHECK_EQ(Road::meanVehicleLength(), 2.5);
   CHECK_EQ(simulator.dynamics()->graph().edge(0).capacity(), 6);

@@ -1140,7 +1140,7 @@ TEST_CASE("FirstOrderDynamics") {
       // Free flow: 100 s and 2000 m against 120 s and 1200 m, even at 0.025 s/m
       auto const routeAgents = [](std::string_view const weight,
                                   double const distanceCost,
-                                  std::optional<double> const sigma) {
+                                  double const pathRandomness) {
         RoadNetwork graph;
         graph.addStreet(0, std::make_pair(0, 1), 1000., 20.);
         graph.addStreet(1, std::make_pair(1, 2), 1000., 20.);
@@ -1149,7 +1149,8 @@ TEST_CASE("FirstOrderDynamics") {
         graph.addStreet(4, std::make_pair(2, 4), 10., 10.);
         graph.addStreet(5, std::make_pair(5, 0), 10., 10.);
         FirstOrderDynamics dynamics{std::move(graph), 69};
-        dynamics.setEdgeWeight(weight, distanceCost, sigma);
+        dynamics.setEdgeWeight(weight, distanceCost);
+        dynamics.setPathRandomness(pathRandomness);
         dynamics.initTurnCounts();
         for (int i{0}; i < 40; ++i) {
           dynamics.addAgent(4, 5);
@@ -1162,22 +1163,22 @@ TEST_CASE("FirstOrderDynamics") {
         return std::make_pair(turnCounts.at(0), turnCounts.at(2));
       };
       WHEN("The free-flow agents plan on travel time") {
-        auto const [nFast, nShort] = routeAgents("traveltime", 0.1, 1.);
+        auto const [nFast, nShort] = routeAgents("traveltime", 0.1, 0.);
         THEN("They all take the fast branch") {
           CHECK_EQ(nFast, 40);
           CHECK_EQ(nShort, 0);
         }
       }
       WHEN("They plan on the datt cost, with the same high distance cost") {
-        auto const [nFast, nShort] = routeAgents("datt", 0.1, std::nullopt);
+        auto const [nFast, nShort] = routeAgents("datt", 0.1, 0.);
         THEN("They all take the short branch") {
           CHECK_EQ(nFast, 0);
           CHECK_EQ(nShort, 40);
         }
       }
-      WHEN("Their distance costs spread around the break-even") {
-        // 0.02 s/m alone keeps every agent on the fast branch
-        auto const [nFast, nShort] = routeAgents("datt", 0.02, 1.);
+      WHEN("They plan on travel time with path randomness") {
+        // Without it, every agent takes the fast branch (see above)
+        auto const [nFast, nShort] = routeAgents("traveltime", 0.1, 0.5);
         THEN("They use both branches, most of them the fast one") {
           CHECK_EQ(nFast + nShort, 40);
           CHECK_GT(nShort, 0);

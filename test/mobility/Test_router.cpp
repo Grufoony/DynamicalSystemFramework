@@ -5,6 +5,7 @@
 #include "dsf/geometry/Point.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -309,24 +310,57 @@ TEST_CASE("Router") {
         CHECK_GT(nRoutes, 90);
       }
       THEN("A* stays exact with a distance cost added to the streets") {
-        constexpr double distanceFactor{0.05};
+        constexpr double distanceCost{0.05};
+        Router dattRouter;
+        dattRouter.setEdgeWeight("datt", distanceCost);
+        dattRouter.build(network);
+        REQUIRE(dattRouter.hasHeuristic());
         auto const datt = [](Street const& street) {
-          return freeFlowTime(street) + distanceFactor * street.length();
+          return freeFlowTime(street) + distanceCost * street.length();
         };
         for (std::size_t k{0}; k < 50; ++k) {
           auto const fromStreetId{streetIds[(41 * k + 3) % streetIds.size()]};
           auto const goalStreetId{streetIds[(29 * k + 7) % streetIds.size()]};
           auto const best{bestCost(network, fromStreetId, goalStreetId, datt)};
-          auto const route{router.route(
-              fromStreetId, goalStreetId, RouteWeights::FREE_FLOW, distanceFactor)};
+          auto const route{
+              dattRouter.route(fromStreetId, goalStreetId, RouteWeights::FREE_FLOW)};
           if (best == std::numeric_limits<double>::infinity()) {
             CHECK(route.empty());
             continue;
           }
           CHECK(isValidRoute(network, route, goalStreetId));
-          CHECK_EQ(router.routeCost(route, RouteWeights::FREE_FLOW, distanceFactor),
+          CHECK_EQ(dattRouter.routeCost(route, RouteWeights::FREE_FLOW),
                    doctest::Approx(best));
         }
+      }
+      THEN("A* stays exact with path randomness, for each agent's perceived costs") {
+        constexpr double sigma{0.5};
+        router.setPathRandomness(sigma);
+        dijkstra.setPathRandomness(sigma);
+        std::size_t nRoutes{0};
+        for (std::uint64_t key{0}; key < 50; ++key) {
+          auto const fromStreetId{streetIds[(43 * key + 5) % streetIds.size()]};
+          auto const goalStreetId{streetIds[(31 * key + 9) % streetIds.size()]};
+          auto const perceived = [key](Street const& street) {
+            return Router::noise(key, street.id(), sigma) * freeFlowTime(street);
+          };
+          auto const best{bestCost(network, fromStreetId, goalStreetId, perceived)};
+          auto const route{
+              router.route(fromStreetId, goalStreetId, RouteWeights::FREE_FLOW, key)};
+          if (best == std::numeric_limits<double>::infinity()) {
+            CHECK(route.empty());
+            continue;
+          }
+          ++nRoutes;
+          CHECK(isValidRoute(network, route, goalStreetId));
+          CHECK_EQ(router.routeCost(route, RouteWeights::FREE_FLOW, key),
+                   doctest::Approx(best));
+          auto const dijkstraRoute{
+              dijkstra.route(fromStreetId, goalStreetId, RouteWeights::FREE_FLOW, key)};
+          CHECK_EQ(dijkstra.routeCost(dijkstraRoute, RouteWeights::FREE_FLOW, key),
+                   doctest::Approx(best));
+        }
+        CHECK_GT(nRoutes, 40);
       }
     }
     GIVEN("A cheap route moving away from the goal and a costly straight one") {
@@ -504,14 +538,16 @@ TEST_CASE("Router") {
       network.addStreet(5, std::make_pair(5, 0), 10., 10.);
       Router router;
       router.build(network);
-      THEN("The distance cost moves the route to the short branch") {
+      THEN("The distance cost of datt moves the route to the short branch") {
         CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW),
                  std::vector<Id>{5, 0, 1, 4});
-        CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW, 0.02),
+        router.setEdgeWeight("datt", 0.02);
+        CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW),
                  std::vector<Id>{5, 0, 1, 4});
-        CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW, 0.1),
+        router.setEdgeWeight("datt", 0.1);
+        CHECK_EQ(router.route(5, 4, RouteWeights::FREE_FLOW),
                  std::vector<Id>{5, 2, 3, 4});
-        CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::FREE_FLOW, 0.1),
+        CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::FREE_FLOW),
                  doctest::Approx(120. + 0.1 * 1200.));
       }
       THEN("The datt weight adds the distance cost to the travel time") {
@@ -521,37 +557,64 @@ TEST_CASE("Router") {
       }
       THEN("Selecting it sets the distance cost of the routes, not the current weights") {
         CHECK_EQ(router.distanceCost(), 0.);
-        router.setEdgeWeight("datt", 0.2, 0.5);
-        CHECK_EQ(router.distanceCost(), 0.2);
-        CHECK_EQ(router.distanceSigma().value(), 0.5);
-        router.updateCurrentWeights();
-        CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::CURRENT),
-                 doctest::Approx(120.));
         router.setEdgeWeight("datt", 0.2);
-        CHECK_FALSE(router.distanceSigma().has_value());
+        CHECK_EQ(router.distanceCost(), 0.2);
+        router.updateCurrentWeights();
+        // The current weights are the travel times, the distance cost is added to them
+        CHECK_EQ(router.routeCost(std::vector<Id>{5, 2, 3}, RouteWeights::CURRENT),
+                 doctest::Approx(120. + 0.2 * 1200.));
         router.setEdgeWeight("length");
         CHECK_EQ(router.distanceCost(), 0.);
-        CHECK_FALSE(router.distanceSigma().has_value());
         CHECK_THROWS_AS(router.setEdgeWeight("datt", -0.1), std::invalid_argument);
-        CHECK_THROWS_AS(router.setEdgeWeight("datt", 0.1, -1.), std::invalid_argument);
+      }
+      WHEN("The path randomness is set") {
+        CHECK_EQ(router.pathRandomness(), 0.);
+        CHECK_THROWS_AS(router.setPathRandomness(-0.1), std::invalid_argument);
+        auto const countShort = [&router]() {
+          std::size_t nShort{0};
+          for (std::uint64_t key{0}; key < 200; ++key) {
+            auto const route{router.route(5, 4, RouteWeights::FREE_FLOW, key)};
+            REQUIRE_EQ(route.size(), 4);
+            nShort += route[1] == 2 ? 1 : 0;
+            // Each agent takes the branch it perceives as the cheapest
+            auto const other{route[1] == 2 ? std::vector<Id>{5, 0, 1, 4}
+                                           : std::vector<Id>{5, 2, 3, 4}};
+            CHECK_LE(router.routeCost(route, RouteWeights::FREE_FLOW, key),
+                     router.routeCost(other, RouteWeights::FREE_FLOW, key));
+          }
+          return nShort;
+        };
+        THEN("Without it, every agent takes the fast branch") {
+          CHECK_EQ(countShort(), 0);
+        }
+        THEN("With it, agents spread over both branches, whatever the weight") {
+          router.setPathRandomness(0.5);
+          CHECK_EQ(router.pathRandomness(), 0.5);
+          auto const nShort{countShort()};
+          CHECK_GT(nShort, 0);
+          CHECK_LT(nShort, 100);
+        }
       }
     }
-    THEN("Each agent's distance cost is log-normal around the mean") {
+    THEN("The noise is log-normal of mean 1, bounded and the same at every call") {
       constexpr std::size_t N{10000};
+      constexpr double sigma{1.};
       double sum{0.};
-      std::size_t nBelowMean{0};
-      for (std::uint64_t seed{0}; seed < N; ++seed) {
-        auto const factor{Router::distanceFactor(seed, 0.1, 1.)};
-        CHECK_GT(factor, 0.);
-        sum += factor;
-        nBelowMean += factor < 0.1 ? 1 : 0;
+      std::size_t nBelowOne{0};
+      for (std::uint64_t key{0}; key < N; ++key) {
+        auto const noise{Router::noise(key, 7, sigma)};
+        CHECK_GE(noise, std::exp(-3. * sigma - sigma * sigma / 2.));
+        CHECK_LE(noise, std::exp(3. * sigma - sigma * sigma / 2.));
+        sum += noise;
+        nBelowOne += noise < 1. ? 1 : 0;
       }
-      CHECK_EQ(sum / N, doctest::Approx(0.1).epsilon(0.05));
+      CHECK_EQ(sum / N, doctest::Approx(1.).epsilon(0.05));
       // P(X < 1) = P(Z < sigma / 2) = 0.69 for sigma = 1
-      CHECK_EQ(static_cast<double>(nBelowMean) / N, doctest::Approx(0.69).epsilon(0.03));
-      CHECK_EQ(Router::distanceFactor(42, 0.1, std::nullopt), 0.1);
-      CHECK_EQ(Router::distanceFactor(42, 0.1, 0.), 0.1);
-      CHECK_EQ(Router::distanceFactor(42, 0.1, 1.), Router::distanceFactor(42, 0.1, 1.));
+      CHECK_EQ(static_cast<double>(nBelowOne) / N, doctest::Approx(0.69).epsilon(0.03));
+      CHECK_EQ(Router::noise(42, 7, 0.), 1.);
+      CHECK_EQ(Router::noise(42, 7, sigma), Router::noise(42, 7, sigma));
+      CHECK_NE(Router::noise(42, 7, sigma), Router::noise(42, 8, sigma));
+      CHECK_NE(Router::noise(42, 7, sigma), Router::noise(43, 7, sigma));
     }
   }
 }

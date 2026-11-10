@@ -50,10 +50,10 @@ namespace dsf::mobility {
   ///   non-negative costs and any coordinate system. Without coordinates on every node touching
   ///   a street the heuristic is zero, i.e. the search is Dijkstra's.
   ///
-  ///   Routes may add a per-agent distance cost, distanceFactor · length, to the street costs
-  ///   (see setEdgeWeight with "datt", the detour-avoiding travel time, and distanceFactor),
-  ///   as in MATSim's generalized cost: agents trading travel time for distance differently
-  ///   spread over more routes.
+  ///   With "datt" (the detour-avoiding travel time, see setEdgeWeight) every street also
+  ///   costs distanceCost · length. With path randomness (see setPathRandomness) each agent
+  ///   perceives each street cost multiplied by its own log-normal noise (see noise), so that
+  ///   agents with the same trip spread over more routes, whatever the weight.
   class Router {
   public:
     /// @brief A street cost function
@@ -75,32 +75,29 @@ namespace dsf::mobility {
                                          double distanceCost = 0.1);
     /// @brief Set the street costs of the routes
     /// @param name The name of the cost function (see edgeWeightFunction), "traveltime" by
-    ///   default. It sets the current weights; "datt" also adds a distance cost to
-    ///   every route, free-flow ones included (see distanceFactor)
-    /// @param distanceCost The mean cost of a unit of length of "datt", in s/m
-    /// @param sigma Optional, the spread of the per-agent factor of the distance cost of
-    ///   "datt" (see distanceFactor). Without it, every agent has the same cost
+    ///   default. It sets the current weights; "datt" also adds distanceCost · length to
+    ///   every street of every route, free-flow ones included
+    /// @param distanceCost The cost of a unit of length of "datt", in s/m
     /// @details The current weights change at the next snapshot (see updateCurrentWeights)
-    /// @throws std::invalid_argument if distanceCost or sigma is negative
-    void setEdgeWeight(std::string_view name,
-                       double distanceCost = 0.1,
-                       std::optional<double> sigma = std::nullopt);
-    /// @brief Get the mean distance cost of the routes, in s/m (0 unless "datt")
+    /// @throws std::invalid_argument if distanceCost is negative
+    void setEdgeWeight(std::string_view name, double distanceCost = 0.1);
+    /// @brief Get the distance cost of the routes, in s/m (0 unless "datt")
     inline double distanceCost() const noexcept { return m_distanceCost; }
-    /// @brief Get the spread of the per-agent factor of the distance cost, if any
-    inline std::optional<double> distanceSigma() const noexcept {
-      return m_distanceSigma;
-    }
-    /// @brief Draw the distance cost of an agent
-    /// @param seed A seed identifying the agent
-    /// @param distanceCost The mean distance cost
-    /// @param sigma Optional, the spread
-    /// @return double distanceCost · X, where X is drawn from a log-normal distribution of
-    ///   mean 1 and shape sigma, i.e. exp(sigma · Z - sigma² / 2) with Z standard normal;
-    ///   distanceCost itself without sigma, or if sigma is 0
-    static double distanceFactor(std::uint64_t seed,
-                                 double distanceCost,
-                                 std::optional<double> sigma);
+    /// @brief Set the path randomness
+    /// @param sigma The spread of the log-normal noise each agent perceives on each street
+    ///   cost (see noise), 0 (the default) to plan without noise
+    /// @throws std::invalid_argument if sigma is negative
+    void setPathRandomness(double sigma);
+    /// @brief Get the path randomness (see setPathRandomness)
+    inline double pathRandomness() const noexcept { return m_sigma; }
+    /// @brief Get the noise an agent perceives on a street cost
+    /// @param agentKey A key identifying the agent
+    /// @param streetId The street id
+    /// @param sigma The spread of the noise
+    /// @return double exp(sigma · Z - sigma² / 2), i.e. log-normal of mean 1 as in MATSim,
+    ///   with Z standard normal, drawn from a hash of the agent key and the street id (so the
+    ///   same at every call) and clamped to [-3, 3]; 1 if sigma is 0
+    static double noise(std::uint64_t agentKey, Id streetId, double sigma);
     /// @brief Set the search algorithm
     /// @param algorithm The algorithm (A* by default)
     inline void setAlgorithm(RouteAlgorithm const algorithm) noexcept {
@@ -121,8 +118,7 @@ namespace dsf::mobility {
     /// @param fromStreetId The street the route starts with: its own cost is not counted
     /// @param goalStreetId The street to reach and travel: its cost is counted
     /// @param weights The street costs to plan on
-    /// @param distanceFactor A cost per unit of length added to every street (see
-    ///   distanceFactor), 0 by default
+    /// @param agentKey A key identifying the agent, for its noise (see setPathRandomness)
     /// @return std::vector<Id> The ids of the streets to travel, from fromStreetId to
     ///   goalStreetId, or an empty vector if goalStreetId cannot be reached. It is fromStreetId
     ///   alone if the two are the same
@@ -130,28 +126,29 @@ namespace dsf::mobility {
     std::vector<Id> route(Id fromStreetId,
                           Id goalStreetId,
                           RouteWeights weights,
-                          double distanceFactor = 0.) const;
+                          std::uint64_t agentKey = 0) const;
     /// @brief Plan a route from a node to the end of a street
     /// @param fromNodeId The node the route starts from: the cost of the first street counts
     /// @param goalStreetId The street to reach and travel: its cost is counted
     /// @param weights The street costs to plan on
-    /// @param distanceFactor A cost per unit of length added to every street, 0 by default
+    /// @param agentKey A key identifying the agent, for its noise (see setPathRandomness)
     /// @return std::vector<Id> The ids of the streets to travel, from an open outgoing street of
     ///   fromNodeId to goalStreetId, or an empty vector if goalStreetId cannot be reached
     /// @throws std::out_of_range if the node or the street is not in the routing graph
     std::vector<Id> routeFromNode(Id fromNodeId,
                                   Id goalStreetId,
                                   RouteWeights weights,
-                                  double distanceFactor = 0.) const;
+                                  std::uint64_t agentKey = 0) const;
     /// @brief Get the cost of a route
     /// @param route The ids of the streets of the route
     /// @param weights The street costs to use
-    /// @param distanceFactor A cost per unit of length added to every street, 0 by default
-    /// @return double The sum of the costs of the streets of the route, but the first
+    /// @param agentKey A key identifying the agent, for its noise (see setPathRandomness)
+    /// @return double The sum of the costs of the streets of the route, but the first, as the
+    ///   agent perceives them
     /// @throws std::out_of_range if a street is not in the routing graph
     double routeCost(std::span<Id const> route,
                      RouteWeights weights,
-                     double distanceFactor = 0.) const;
+                     std::uint64_t agentKey = 0) const;
     /// @brief Check whether the routing graph allows a turn
     /// @param fromStreetId The street the agent is on
     /// @param toStreetId The street the agent would take next
@@ -208,7 +205,7 @@ namespace dsf::mobility {
     EdgeWeight m_edgeWeight{edgeWeightFunction("traveltime")};
     RouteAlgorithm m_algorithm{RouteAlgorithm::ASTAR};
     double m_distanceCost{0.};
-    std::optional<double> m_distanceSigma;
+    double m_sigma{0.};
     bool m_bHeuristic{false};
     mutable tbb::enumerable_thread_specific<SearchBuffers> m_buffers;
 
@@ -224,6 +221,6 @@ namespace dsf::mobility {
                              bool bCountStartCost,
                              std::uint32_t goalStreet,
                              WeightSet const& weightSet,
-                             double distanceFactor) const;
+                             std::uint64_t agentKey) const;
   };
 }  // namespace dsf::mobility

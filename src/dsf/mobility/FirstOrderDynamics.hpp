@@ -207,8 +207,9 @@ namespace dsf::mobility {
     ///   open street may turn into it. It is removed with every origin, destination and OD
     ///   pair using it.
     void m_checkDestinations();
-    /// @brief Get the cost per unit of length an agent adds to the streets (see setEdgeWeight)
-    double m_distanceFactor(Agent const& agent) const;
+    /// @brief Get the key identifying an agent's noise on the street costs (see
+    ///   setPathRandomness)
+    std::uint64_t m_agentKey(Agent const& agent) const noexcept;
     /// @brief Plan the route of a non-random agent from a street to its destination
     /// @param agent The agent
     /// @param fromStreetId The street the route starts with
@@ -430,19 +431,22 @@ namespace dsf::mobility {
     /// @brief Set the street costs intelligent agents plan their routes on
     /// @param weight The name of the cost function (see Router::edgeWeightFunction),
     ///   "traveltime" by default. With "datt" (detour-avoiding travel time), every agent,
-    ///   free-flow ones included,
-    ///   adds its own distance cost to the street costs, i.e. plans on (current or free-flow)
-    ///   travel time + k · length, with k log-normal of mean distanceCost and spread sigma
-    ///   (see Router::distanceFactor): agents trading time for distance differently spread
-    ///   over more routes, as in MATSim's generalized cost
-    /// @param distanceCost The mean distance cost of "datt", in s/m: 0.1 makes a metre
-    ///   cost as much as driving it at 36 km/h
-    /// @param sigma Optional, the spread of the agents' distance costs of "datt".
-    ///   Without it, every agent has distanceCost
-    /// @throws std::invalid_argument if distanceCost or sigma is negative
-    void setEdgeWeight(std::string_view const weight,
-                       double const distanceCost = 0.1,
-                       std::optional<double> const sigma = std::nullopt);
+    ///   free-flow ones included, plans on (current or free-flow) travel time + k · length,
+    ///   with k = distanceCost
+    /// @param distanceCost The distance cost of "datt", in s/m: 0.1 makes a metre cost as
+    ///   much as driving it at 36 km/h
+    /// @throws std::invalid_argument if distanceCost is negative
+    void setEdgeWeight(std::string_view const weight, double const distanceCost = 0.1);
+    /// @brief Set the path randomness
+    /// @param sigma The spread of the noise, 0 (the default) to plan without noise
+    /// @details Each agent perceives each street cost multiplied by its own log-normal noise
+    ///   of mean 1, exp(sigma · Z - sigma² / 2) (see Router::noise), the same at every
+    ///   re-plan: agents with the same trip spread over more routes, whatever the weight.
+    ///   Values between 0.1 and 0.5 are sensible
+    /// @throws std::invalid_argument if sigma is negative
+    inline void setPathRandomness(double const sigma) {
+      m_router.setPathRandomness(sigma);
+    }
     /// @brief Set the algorithm the routes are planned with
     /// @param algorithm The algorithm (A* by default, see RouteAlgorithm)
     inline void setRouteAlgorithm(RouteAlgorithm const algorithm) noexcept {
