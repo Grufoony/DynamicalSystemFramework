@@ -23,7 +23,7 @@ namespace dsf::mobility {
   enum class RouteWeights : std::uint8_t {
     /// @brief The free-flow travel time of each street, i.e. length / maxSpeed
     FREE_FLOW = 0,
-    /// @brief The network's weight function (see RoadNetwork::setEdgeWeight), as of the last
+    /// @brief The network's weight function (see Router::setEdgeWeight), as of the last
     ///   snapshot (see Router::updateCurrentWeights)
     CURRENT = 1,
   };

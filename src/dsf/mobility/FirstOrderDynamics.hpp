@@ -211,13 +211,12 @@ namespace dsf::mobility {
     /// @brief Plan the route of a non-random agent from a street to its destination
     /// @param agent The agent
     /// @param fromStreetId The street the route starts with
-    /// @return std::vector<Id> The route (see Router::routeToStreet), empty if there is none
+    /// @return std::vector<Id> The route (see Router::route), empty if there is none
     std::vector<Id> m_planRoute(Agent const& agent, Id fromStreetId) const;
     /// @brief Plan the route of a non-random agent from a node to its destination
     /// @param agent The agent
     /// @param fromNodeId The node the route starts from
-    /// @return std::vector<Id> The route (see Router::routeFromNodeToStreet), empty if there is
-    ///   none
+    /// @return std::vector<Id> The route (see Router::routeFromNode), empty if there is none
     std::vector<Id> m_planRouteFromNode(Agent const& agent, Id fromNodeId) const;
     /// @brief Set the planned streets of a non-random agent
     /// @param agent The agent

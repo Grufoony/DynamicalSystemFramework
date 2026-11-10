@@ -60,6 +60,11 @@ NB_MODULE(dsf_cpp, m) {
       .value("DIJKSTRA", dsf::mobility::RouteAlgorithm::DIJKSTRA)
       .export_values();
 
+  nb::enum_<dsf::mobility::RouteWeights>(mobility, "RouteWeights")
+      .value("FREE_FLOW", dsf::mobility::RouteWeights::FREE_FLOW)
+      .value("CURRENT", dsf::mobility::RouteWeights::CURRENT)
+      .export_values();
+
   // Bind TrafficLightOptimization enum
   nb::enum_<dsf::TrafficLightOptimization>(mobility, "TrafficLightOptimization")
       .value("SINGLE_TAIL", dsf::TrafficLightOptimization::SINGLE_TAIL)
@@ -971,6 +976,149 @@ NB_MODULE(dsf_cpp, m) {
       Args:
         outputDir (str): Destination directory path.)doc");
 
+  nb::class_<dsf::mobility::Router>(
+      mobility,
+      "Router",
+      R"doc(Plans the agents' routes, with A* or Dijkstra on the streets (the dual graph).
+
+    It cannot be created from Python: get the router of a dynamics with Dynamics.router().
+    It is a read-only view, valid as long as the dynamics: configure it through the
+    dynamics (setEdgeWeight, setPathRandomness, setRouteAlgorithm), which rebuilds it
+    whenever the network changes.
+
+    Agent keys identify the noise of an agent on the street costs (see
+    Dynamics.setPathRandomness): any integer is a valid key, and different keys behave as
+    different agents.)doc")
+      .def("route",
+           &dsf::mobility::Router::route,
+           nb::arg("fromStreetId"),
+           nb::arg("goalStreetId"),
+           nb::arg("weights") = dsf::mobility::RouteWeights::FREE_FLOW,
+           nb::arg("agentKey") = 0,
+           R"doc(Plan a route from a street to the end of a street.
+
+    Args:
+      fromStreetId (int): The street the route starts with: its own cost is not counted.
+      goalStreetId (int): The street to reach and travel: its cost is counted.
+      weights (RouteWeights): FREE_FLOW (default) plans on the free-flow travel times, as
+        non-intelligent agents do; CURRENT on the weight of setEdgeWeight, as of the last
+        snapshot, as intelligent agents do.
+      agentKey (int): The key of the agent, for its noise (default 0).
+
+    Returns:
+      list[int]: The street ids, from fromStreetId to goalStreetId, empty if goalStreetId
+        cannot be reached, [fromStreetId] if the two are the same.
+
+    Raises:
+      IndexError: If a street is not in the routing graph.)doc")
+      .def("routeFromNode",
+           &dsf::mobility::Router::routeFromNode,
+           nb::arg("fromNodeId"),
+           nb::arg("goalStreetId"),
+           nb::arg("weights") = dsf::mobility::RouteWeights::FREE_FLOW,
+           nb::arg("agentKey") = 0,
+           R"doc(Plan a route from a node to the end of a street.
+
+    Args:
+      fromNodeId (int): The node the route starts from: the cost of the first street counts.
+      goalStreetId (int): The street to reach and travel: its cost is counted.
+      weights (RouteWeights): The street costs to plan on (see route).
+      agentKey (int): The key of the agent, for its noise (default 0).
+
+    Returns:
+      list[int]: The street ids, from an outgoing street of fromNodeId to goalStreetId,
+        empty if goalStreetId cannot be reached.
+
+    Raises:
+      IndexError: If the node or the street is not in the routing graph.)doc")
+      .def(
+          "routeCost",
+          [](dsf::mobility::Router const& self,
+             std::vector<dsf::Id> const& route,
+             dsf::mobility::RouteWeights weights,
+             std::uint64_t agentKey) { return self.routeCost(route, weights, agentKey); },
+          nb::arg("route"),
+          nb::arg("weights") = dsf::mobility::RouteWeights::FREE_FLOW,
+          nb::arg("agentKey") = 0,
+          R"doc(Get the cost of a route, as the agent perceives it.
+
+    Args:
+      route (list[int]): The street ids of the route.
+      weights (RouteWeights): The street costs to use (see route).
+      agentKey (int): The key of the agent, for its noise (default 0). Set the path
+        randomness to 0 to get the true cost.
+
+    Returns:
+      float: The sum of the costs of the streets of the route, but the first.
+
+    Raises:
+      IndexError: If a street is not in the routing graph.)doc")
+      .def("isTurnAllowed",
+           &dsf::mobility::Router::isTurnAllowed,
+           nb::arg("fromStreetId"),
+           nb::arg("toStreetId"),
+           R"doc(Check whether the routing graph allows a turn.
+
+    Args:
+      fromStreetId (int): The street the agent is on.
+      toStreetId (int): The street the agent would take next.
+
+    Returns:
+      bool: True if toStreetId is open and the turn is allowed, False otherwise or if a
+        street is unknown.)doc")
+      .def_static("noise",
+                  &dsf::mobility::Router::noise,
+                  nb::arg("agentKey"),
+                  nb::arg("streetId"),
+                  nb::arg("sigma"),
+                  R"doc(Get the noise an agent perceives on a street cost.
+
+    Args:
+      agentKey (int): The key of the agent.
+      streetId (int): The street id.
+      sigma (float): The spread of the noise.
+
+    Returns:
+      float: exp(sigma * Z - sigma^2 / 2), with Z standard normal hashed from the key and
+        the street (so the same at every call) and clamped to [-3, 3]; 1 if sigma is 0.)doc")
+      .def("pathRandomness",
+           &dsf::mobility::Router::pathRandomness,
+           R"doc(Get the path randomness, i.e. the sigma of the noise.
+
+    Returns:
+      float: The sigma (see Dynamics.setPathRandomness).)doc")
+      .def("distanceCost",
+           &dsf::mobility::Router::distanceCost,
+           R"doc(Get the cost of a metre of the 'datt' weight.
+
+    Returns:
+      float: The distance cost, in s/m (see Dynamics.setEdgeWeight).)doc")
+      .def(
+          "algorithm",
+          [](dsf::mobility::Router const& self) { return self.algorithm(); },
+          R"doc(Get the search algorithm.
+
+    Returns:
+      RouteAlgorithm: ASTAR or DIJKSTRA.)doc")
+      .def("hasHeuristic",
+           &dsf::mobility::Router::hasHeuristic,
+           R"doc(Check whether A* has a heuristic, i.e. every node has coordinates.
+
+    Returns:
+      bool: True if A* uses the straight-line distance, False if it is Dijkstra's.)doc")
+      .def("isBuilt",
+           &dsf::mobility::Router::isBuilt,
+           R"doc(Check whether the router has been built.
+
+    Returns:
+      bool: True if it has.)doc")
+      .def("nEdges",
+           &dsf::mobility::Router::nEdges,
+           R"doc(Get the number of streets of the routing graph.
+
+    Returns:
+      int: The number of streets.)doc");
+
   nb::class_<dsf::mobility::FirstOrderDynamics>(mobility, "Dynamics")
       .def(nb::init<dsf::mobility::RoadNetwork&&,
                     std::optional<unsigned int>,
@@ -1447,6 +1595,19 @@ Returns:
 
       Returns:
         RoadNetwork: Reference to the simulation graph.)doc")
+      .def(
+          "router",
+          [](dsf::mobility::FirstOrderDynamics& self) -> dsf::mobility::Router const& {
+            return self.router();
+          },
+          nb::rv_policy::reference_internal,
+          R"doc(Get the router which plans the agents' routes.
+
+      It is first rebuilt if the network has changed. The returned router stays valid as
+      long as the dynamics and follows its later settings.
+
+      Returns:
+        Router: Reference to the router of the dynamics.)doc")
       .def("nAgents",
            &dsf::mobility::FirstOrderDynamics::nAgents,
            R"doc(Get the current number of agents in the simulation.
