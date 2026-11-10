@@ -1,3 +1,4 @@
+import itertools
 import sqlite3
 from pathlib import Path
 
@@ -54,6 +55,64 @@ def test_dynamics_edge_weight_and_route_algorithm(dynamics):
     dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.DIJKSTRA)
     dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.ASTAR)
     dynamics.setDestinations([1])
+
+
+def test_dynamics_router_plans_routes(dynamics):
+    router = dynamics.router()
+    assert router.isBuilt()
+    assert router.nEdges() == 436
+    assert router.hasHeuristic()
+    assert router.algorithm() == mobility.RouteAlgorithm.ASTAR
+    dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.DIJKSTRA)
+    assert router.algorithm() == mobility.RouteAlgorithm.DIJKSTRA
+    dynamics.setEdgeWeight("datt", 0.05)
+    assert router.distanceCost() == pytest.approx(0.05)
+
+    # From node 0 to a street on the opposite corner of the grid
+    goal = 434
+    route = router.routeFromNode(0, goal)
+    assert len(route) > 1
+    assert route[-1] == goal
+    assert router.route(route[0], route[0]) == [route[0]]
+    # The grid has many tied routes: compare costs, not streets
+    from_street = router.route(route[0], goal)
+    assert from_street[0] == route[0] and from_street[-1] == goal
+    assert router.routeCost(from_street) == pytest.approx(router.routeCost(route))
+    assert all(router.isTurnAllowed(a, b) for a, b in itertools.pairwise(route))
+    with pytest.raises(IndexError):
+        router.route(route[0], 123456)
+
+    dijkstra_cost = router.routeCost(route)
+    dynamics.setRouteAlgorithm(mobility.RouteAlgorithm.ASTAR)
+    astar = router.routeFromNode(0, goal, mobility.RouteWeights.FREE_FLOW)
+    assert router.routeCost(astar) == pytest.approx(dijkstra_cost)
+    assert router.routeFromNode(0, goal, mobility.RouteWeights.CURRENT)[-1] == goal
+
+
+def test_router_path_randomness(dynamics):
+    router = dynamics.router()
+    goal = 434
+    assert mobility.Router.noise(7, goal, 0.0) == 1.0
+    assert mobility.Router.noise(7, goal, 0.3) == mobility.Router.noise(7, goal, 0.3)
+
+    optimum = router.routeFromNode(0, goal)
+    best_cost = router.routeCost(optimum)
+    assert all(
+        router.routeFromNode(0, goal, agentKey=key) == optimum for key in range(20)
+    )
+
+    dynamics.setPathRandomness(0.5)
+    assert router.pathRandomness() == pytest.approx(0.5)
+    routes = {tuple(router.routeFromNode(0, goal, agentKey=key)) for key in range(50)}
+    assert len(routes) > 1
+    assert router.routeFromNode(0, goal, agentKey=3) == router.routeFromNode(
+        0, goal, agentKey=3
+    )
+
+    dynamics.setPathRandomness(0.0)
+    for route in routes:
+        assert route[-1] == goal
+        assert router.routeCost(list(route)) >= best_cost - 1e-9
 
 
 def test_road_network_betweenness_takes_a_weight(dynamics):
