@@ -151,7 +151,6 @@ namespace dsf::mobility {
         m_nKilledAgents{0}, m_nArrivedAgents{0};
     std::function<double(Street const&)> m_speedFunction;
     std::string m_speedFunctionDescription;
-    double m_uturnPenaltyFactor = 0.1;
     double m_intelligentFraction = 0.;
     DynamicsMode m_mode{DynamicsMode::EDGES};
     // The routing revision and number of nodes the router was built with (see m_ensureRouter)
@@ -173,7 +172,6 @@ namespace dsf::mobility {
     std::time_t m_previousOptimizationTime{0};
 
   protected:
-    std::optional<double> m_errorProbability{std::nullopt};
     std::optional<double> m_passageProbability{std::nullopt};
     std::optional<double> m_meanTravelDistance{std::nullopt};
     std::optional<std::time_t> m_meanTravelTime{std::nullopt};
@@ -362,10 +360,6 @@ namespace dsf::mobility {
                         bool const bAutoMapStreetLanes = false,
                         bool const bAutoAssignRoadPriorities = true,
                         bool const bAutoInitTrafficLights = true);
-    /// @brief Set the error probability
-    /// @param errorProbability The error probability
-    /// @throw std::invalid_argument If the error probability is not between 0 and 1
-    void setErrorProbability(double errorProbability);
     /// @brief Set the passage probability
     /// @param passageProbability The passage probability
     /// @details The passage probability is the probability of passing through a node
@@ -415,16 +409,6 @@ namespace dsf::mobility {
     inline void setMeanTravelTime(std::time_t const meanTravelTime) noexcept {
       m_meanTravelTime = meanTravelTime;
     };
-    /// @brief Set the penalty factor applied to U-turns when choosing the next street.
-    /// @param uturnPenaltyFactor The penalty factor, which must be positive.
-    /// @throw std::invalid_argument If the penalty factor is not positive.
-    inline void setUTurnPenaltyFactor(double uturnPenaltyFactor) {
-      if (uturnPenaltyFactor <= 0.) {
-        throw std::invalid_argument(std::format(
-            "The U-turn penalty factor ({}) must be positive", uturnPenaltyFactor));
-      }
-      m_uturnPenaltyFactor = uturnPenaltyFactor;
-    }
     inline void setReinsertAgents(bool const reinsertAgents) noexcept {
       m_reinsertAgents = reinsertAgents;
     }
@@ -459,8 +443,8 @@ namespace dsf::mobility {
     ///   when it departs (see setRouteAlgorithm): intelligent agents on the current traffic,
     ///   i.e. the street costs of setEdgeWeight, the others on the free-flow
     ///   travel times (length / maxSpeed). Routes are not planned again, unless the agent
-    ///   leaves its route or meets a closed street: intelligent agents then use the street
-    ///   weights of the previous time step.
+    ///   meets a closed street: intelligent agents then use the street weights of the
+    ///   previous time step.
     /// @throw std::invalid_argument If the fraction is not in [0, 1]
     void setIntelligentAgentsFraction(double const intelligentFraction);
     /// @brief Set how origin, destination and OD ids are interpreted
@@ -583,7 +567,6 @@ namespace dsf::mobility {
     /// In particular:
     /// - Move the first agent of each street queue, if possible, putting it in the next node
     /// - Move the agents from each node, if possible, putting them in the next street and giving them a speed.
-    /// If the error probability is not zero, the agents can move to a random street.
     /// If the agent is in the destination node, it is removed from the simulation (and then reinserted if reinsert_agents is true)
     /// - Cycle over agents and update their times
     /// @param dataRequest The save/collection request for the current step

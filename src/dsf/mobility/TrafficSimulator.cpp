@@ -320,10 +320,6 @@ namespace dsf::mobility {
                         jsonConfigFile,
                         agentInsertionMethod));
       }
-      if (!dynamicsConfig["error_probability"].error()) {
-        m_dynamics->setErrorProbability(
-            dynamicsConfig["error_probability"].get_double().value());
-      }
       if (!dynamicsConfig["kill_stagnant_agents"].error()) {
         m_dynamics->killStagnantAgents(
             dynamicsConfig["kill_stagnant_agents"].get_double().value());
@@ -412,8 +408,7 @@ namespace dsf::mobility {
   }
 
   void TrafficSimulator::m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                                      std::optional<std::time_t> const deltaT,
-                                      double const percentRandomAgents) {
+                                      std::optional<std::time_t> const deltaT) {
     if (deltaT.has_value()) {
       if (deltaT.value() <= 0) {
         throw std::invalid_argument(std::format(
@@ -505,11 +500,7 @@ namespace dsf::mobility {
         if (insertionIndex < nInsertions) {
           auto const nAgents = nAgentsPerTimeStep.at(insertionIndex);
           if (nAgents > 0) {
-            auto const nRandomAgents =
-                static_cast<std::size_t>(std::floor(nAgents * percentRandomAgents));
-            auto const nODAgents = nAgents - nRandomAgents;
-            m_dynamics->addAgents(nODAgents, m_agentInsertionMethod);
-            m_dynamics->addAgents(nRandomAgents, AgentInsertionMethod::RANDOM);
+            m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
           }
         } else {
           spdlog::warn(

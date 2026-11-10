@@ -38,9 +38,7 @@ namespace dsf::mobility {
     std::optional<double> m_maxDistance;   // Maximum distance for stochastic agents
     std::optional<std::time_t> m_maxTime;  // Maximum time for stochastic agents
     // The route, reversed: the destination street first, then the planned streets still to
-    // take after the current one, the next one last, so that advancing is a pop_back. The
-    // destination is alone once the agent is entering it or on it; empty for a random agent.
-    // A vector does not allocate while empty, unlike std::deque in libstdc++
+    // take after the current one, the next one last, so that advancing is a pop_back.
     std::vector<Id> m_route;
     bool m_bIsIntelligent;  // If true, the agent plans its routes on the current traffic,
                             // otherwise on free-flow travel times (default is false)

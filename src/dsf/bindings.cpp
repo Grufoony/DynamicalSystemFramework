@@ -1116,16 +1116,6 @@ NB_MODULE(dsf_cpp, m) {
 
       Returns:
           None)doc")
-      .def("setErrorProbability",
-           &dsf::mobility::FirstOrderDynamics::setErrorProbability,
-           nb::arg("errorProbability"),
-           R"doc(Set the probability of injecting simulation errors.
-
-      Args:
-        errorProbability (float): Probability in the range [0, 1].
-
-      Returns:
-        None)doc")
       .def("setIntelligentAgentsFraction",
            &dsf::mobility::FirstOrderDynamics::setIntelligentAgentsFraction,
            nb::arg("intelligentFraction"),
@@ -1134,7 +1124,7 @@ NB_MODULE(dsf_cpp, m) {
       Every agent plans its route when it departs (see setRouteAlgorithm): intelligent
       agents on the current traffic, i.e. the street costs of setEdgeWeight, the
       others on the free-flow travel times. Routes are planned again only when an agent
-      leaves its route or meets a closed street.
+      meets a closed street.
 
       Args:
         intelligentFraction (float): Fraction in the range [0, 1].
@@ -1694,13 +1684,9 @@ Returns:
           "run",
           [](dsf::mobility::TrafficSimulator& self,
              std::vector<std::size_t> nAgentsPerTimeStep,
-             std::optional<std::time_t> deltaT,
-             double const percentageRandomAgents) {
-            self.run(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
-          },
+             std::optional<std::time_t> deltaT) { self.run(nAgentsPerTimeStep, deltaT); },
           nb::arg("nAgentsPerTimeStep"),
           nb::arg("deltaT") = std::nullopt,
-          nb::arg("percentageRandomAgents") = 0.0,
           R"doc(Run the simulation in default mode.
 
       Args:
@@ -1708,7 +1694,6 @@ Returns:
           deltaT: Optional interval in seconds between agent insertions. If omitted,
                   the interval is inferred from the configured start/end times and the
                   length of nAgentsPerTimeStep.
-          percentageRandomAgents: Optional percentage of random agents to insert at each step.
       )doc")
       .def(
           "run",

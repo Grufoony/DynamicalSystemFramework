@@ -32,12 +32,12 @@ int main(int argc, char** argv) {
   if (argc != 6) {
     std::cerr
         << "Usage: " << argv[0]
-        << " <SEED> <ERROR_PROBABILITY> <OUT_FOLDER_BASE> <OPTIMIZE> <INIT_NAGENTS>\n";
+        << " <SEED> <PATH_RANDOMNESS> <OUT_FOLDER_BASE> <OPTIMIZE> <INIT_NAGENTS>\n";
     return 1;
   }
 
   const int SEED = std::stoi(argv[1]);  // seed for random number generator
-  const double ERROR_PROBABILITY{std::stod(argv[2])};
+  const double PATH_RANDOMNESS{std::stod(argv[2])};
   std::string BASE_OUT_FOLDER{argv[3]};
   const bool OPTIMIZE{std::string(argv[4]) != std::string("0")};
   BASE_OUT_FOLDER += OPTIMIZE ? "_op/" : "/";
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
   std::cout << "-------------------------------------------------\n";
   std::cout << "Input parameters:\n";
   std::cout << "Seed: " << SEED << '\n';
-  std::cout << "Error probability: " << ERROR_PROBABILITY << '\n';
+  std::cout << "Path randomness: " << PATH_RANDOMNESS << '\n';
   std::cout << "Base output folder: " << BASE_OUT_FOLDER << '\n';
   std::cout << "Initial number of agents: " << nAgents << '\n';
   if (OPTIMIZE) {
@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
   std::cout << "-------------------------------------------------\n";
   const std::string OUT_FOLDER{std::format("{}output_sctl_{}_{}/",
                                            BASE_OUT_FOLDER,
-                                           ERROR_PROBABILITY,
+                                           PATH_RANDOMNESS,
                                            std::to_string(SEED))};  // output folder
   constexpr auto MAX_TIME{static_cast<unsigned int>(5e4)};  // maximum time of simulation
   // Create output folder if it doesn't exist (preserve existing database)
@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
     std::cout << "Number of exits: " << destinations.size() << '\n';
   }
 
-  dynamics->setErrorProbability(ERROR_PROBABILITY);
+  dynamics->setPathRandomness(PATH_RANDOMNESS);
   dynamics->killStagnantAgents(40.);
   // dynamics->setMaxFlowPercentage(0.69);
   // dynamics->setForcePriorities(false);

@@ -21,7 +21,7 @@
     "edge_weight": "traveltime",
     "route_algorithm": "ASTAR",
     "mode": "EDGES",
-    "error_probability": 0.05,
+    "path_randomness": 0.3,
     "kill_stagnant_agents": 40.0,
     "agent_insertion_method": "RANDOM",
     "importTransitionMatrixFromJSON": {

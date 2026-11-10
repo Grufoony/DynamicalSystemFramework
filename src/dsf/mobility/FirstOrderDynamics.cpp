@@ -493,12 +493,6 @@ namespace dsf::mobility {
       return m_nextRandomStreet(pAgent, pNode, pCurrentStreet, rng);
     }
     spdlog::trace("Computing m_nextStreet for {}", *pAgent);
-    auto const& outgoingEdges = pNode->outgoingEdges();
-
-    // Get current street information
-    Node const* pPreviousNode{nullptr};
-    static std::set<Id> const noForbiddenTurns;
-    auto const* pForbiddenTurns{&noForbiddenTurns};
     // The street the agent's route takes next (set below, or no transition is returned)
     Id plannedStreetId{0};
 
@@ -514,13 +508,11 @@ namespace dsf::mobility {
       plannedStreetId = route.front();
       m_setPath(*pAgent, std::span{route}.subspan(1));
     } else {
-      pPreviousNode = pStreetCurrent->source();
-      pForbiddenTurns = &pStreetCurrent->forbiddenTurns();
       auto optPlannedStreetId{pAgent->nextPlannedStreetId()};
       if (!optPlannedStreetId.has_value() ||
           !m_router.isTurnAllowed(pStreetCurrent->id(), *optPlannedStreetId)) {
-        // No plan (the destination is next, the agent left its route, or it was put
-        // directly on a street), or a closed street ahead. Turning into the destination
+        // No plan (the destination is next, or the agent was put directly on a street), or
+        // a closed street ahead. Turning into the destination
         // is always the cheapest way to it; otherwise plan the rest of the trip from here
         auto const destinationId{*pAgent->destination()};
         if (m_router.isTurnAllowed(pStreetCurrent->id(), destinationId)) {
@@ -544,71 +536,13 @@ namespace dsf::mobility {
       }
       plannedStreetId = *optPlannedStreetId;
     }
-    std::span<Id const> const pathTargets{&plannedStreetId, 1};
-
-    // Calculate transition probabilities for all valid outgoing edges. The buffer is reused
-    // across calls (one per thread, as nodes evolve in parallel) to avoid an allocation per
-    // routing decision
-    thread_local std::vector<std::pair<Street const*, double>> transitionProbabilities;
-    transitionProbabilities.clear();
-    double cumulativeProbability = 0.0;
-
-    for (auto const* pStreetOut : outgoingEdges) {
-      auto const outEdgeId{pStreetOut->id()};
-      if (pForbiddenTurns->contains(outEdgeId)) {
-        spdlog::trace("Forbidden turn from street {} to street {}. Skipping.",
-                      pAgent->streetId().value_or(0),
-                      outEdgeId);
-        continue;
-      }
-
-      auto const& streetOut{*pStreetOut};
-
-      // Check if this is a valid path target for non-random agents
-      bool bIsPathTarget = false;
-      bIsPathTarget = std::ranges::find(pathTargets, streetOut.id()) != pathTargets.end();
-
-      if (!this->m_errorProbability.has_value() && !bIsPathTarget) {
-        continue;
-      }
-
-      double probability = 1.0;
-      //std::exp(-0.5 * pStreetOut->maxSpeed() / (this->m_speedFunction(*pStreetOut)));
-
-      // Apply error probability for non-random agents
-      if (this->m_errorProbability.has_value()) {
-        probability *=
-            (bIsPathTarget
-                 ? (1. - *m_errorProbability)
-                 : *m_errorProbability /
-                       static_cast<double>(outgoingEdges.size() - pathTargets.size()));
-      }
-
-      // Handle U-turns
-      if (pPreviousNode != nullptr && streetOut.target() == pPreviousNode) {
-        if (pNode->isRoundabout()) {
-          probability *= m_uturnPenaltyFactor;  // Penalize U-turns in roundabouts
-        } else if (!bIsPathTarget) {
-          continue;  // No U-turns allowed in non-roundabout nodes
-        }
-      }
-
-      transitionProbabilities.emplace_back(pStreetOut, probability);
-      cumulativeProbability += probability;
+    // The router only plans allowed turns into open streets: the agent takes its planned
+    // street
+    if (pStreetCurrent != nullptr && pAgent->nPlannedStreets() > 0) {
+      // Entering the destination leaves nothing to advance
+      pAgent->advancePath();
     }
-
-    auto const* pNextStreet{
-        m_extractStreet<false>(transitionProbabilities, cumulativeProbability, rng)};
-    if (pNextStreet != nullptr) {
-      if (pNextStreet->id() != plannedStreetId) {
-        // A deviation (see setErrorProbability): plan again at the next junction
-        pAgent->dropPath();
-      } else if (pStreetCurrent != nullptr && pAgent->nPlannedStreets() > 0) {
-        // Entering the destination leaves nothing to advance
-        pAgent->advancePath();
-      }
-    }
-    return pNextStreet;
+    return &this->graph().edge(plannedStreetId);
   }
 
   void FirstOrderDynamics::m_evolveStreet(Street* pStreet,
@@ -1228,13 +1162,6 @@ namespace dsf::mobility {
     }
   }
 
-  void FirstOrderDynamics::setErrorProbability(double errorProbability) {
-    if (errorProbability < 0. || errorProbability > 1.) {
-      throw std::invalid_argument(
-          std::format("The error probability ({}) must be in [0, 1]", errorProbability));
-    }
-    m_errorProbability = errorProbability;
-  }
   void FirstOrderDynamics::setIntelligentAgentsFraction(double const intelligentFraction) {
     if (intelligentFraction < 0. || intelligentFraction > 1.) {
       throw std::invalid_argument(std::format(

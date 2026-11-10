@@ -954,20 +954,6 @@ TEST_CASE("FirstOrderDynamics") {
       }
     }
   }
-  SUBCASE("setUTurnPenaltyFactor") {
-    GIVEN("A dynamics object") {
-      FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
-      WHEN("We set a valid U-turn penalty factor") {
-        dynamics.setUTurnPenaltyFactor(0.5);
-        THEN("The call succeeds") { CHECK_NOTHROW(dynamics.setUTurnPenaltyFactor(0.5)); }
-      }
-      WHEN("We set an invalid U-turn penalty factor") {
-        THEN("The call throws") {
-          CHECK_THROWS_AS(dynamics.setUTurnPenaltyFactor(0.), std::invalid_argument);
-        }
-      }
-    }
-  }
   SUBCASE("addAgents") {
     GIVEN("A dynamics object and one destination") {
       FirstOrderDynamics dynamics{std::move(defaultNetwork), 69};
@@ -1216,36 +1202,6 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK(dynamics.agents().empty());
           CHECK(dynamics.destinationCounts().empty());
           CHECK_FALSE(dynamics.meanTravelSpeed().is_valid);
-        }
-      }
-    }
-    GIVEN("An intelligent agent which always deviates from its route") {
-      // The route 0 -> 1 leads to node 2: at node 1 the agent turns into street 2 instead,
-      // and comes back through street 3
-      RoadNetwork graph;
-      graph.addStreet(0, std::make_pair(0, 1), 10.);
-      graph.addStreet(1, std::make_pair(1, 2), 10.);
-      graph.addStreet(2, std::make_pair(1, 3), 10.);
-      graph.addStreet(3, std::make_pair(3, 2), 10.);
-      graph.addStreet(4, std::make_pair(2, 4), 10.);
-      FirstOrderDynamics dynamics{std::move(graph), 69};
-      dynamics.setErrorProbability(1.);
-      dynamics.setIntelligentAgentsFraction(1.);
-      dynamics.initTurnCounts();
-      dynamics.addAgent(4, 0);
-      // The agent plans again in the street kernel, on the weights taken here
-      WHEN("We evolve the dynamics") {
-        for (int i{0}; i < 20 && dynamics.nAgents() > 0; ++i) {
-          dynamics.evolve();
-        }
-        THEN("It plans its route again after the deviation, and arrives") {
-          auto const [nAdded, nInserted, nArrived, nKilled, nCurrent] =
-              dynamics.agentStats();
-          CHECK_EQ(nArrived, 1);
-          CHECK_EQ(nKilled, 0);
-          CHECK_EQ(dynamics.turnCounts().at(0).at(1), 0);
-          CHECK_EQ(dynamics.turnCounts().at(0).at(2), 1);
-          CHECK_EQ(dynamics.turnCounts().at(2).at(3), 1);
         }
       }
     }
@@ -2628,7 +2584,7 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.setSeed(*newSeed);
       }
       dynamics.setPassageProbability(0.7);
-      dynamics.setErrorProbability(0.1);
+      dynamics.setPathRandomness(0.3);
       auto const& graph = dynamics.graph();
       dynamics.setConditionalODs(
           {{graph.node(1).outgoingEdges().front()->id(),
@@ -2879,12 +2835,11 @@ TEST_CASE("RoadDynamics Configuration") {
     }
   }
 
-  SUBCASE("setErrorProbability and setPassageProbability") {
+  SUBCASE("setPassageProbability") {
     for (auto const p : {-0.1, 1.1}) {
-      CHECK_THROWS_AS(dynamics.setErrorProbability(p), std::invalid_argument);
       CHECK_THROWS_AS(dynamics.setPassageProbability(p), std::invalid_argument);
     }
-    CHECK_NOTHROW(dynamics.setErrorProbability(0.5));
+    CHECK_NOTHROW(dynamics.setPassageProbability(0.5));
   }
 
   SUBCASE("setMeanTravelTime") {

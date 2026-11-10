@@ -265,7 +265,6 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "max_concurrency": 2,
     "mode": "EDGES",
     "agent_insertion_method": "RANDOM_ODS",
-    "error_probability": 0.05,
     "kill_stagnant_agents": 10.0,
     "mean_travel_distance": 1000.0,
     "mean_travel_time": 600,
