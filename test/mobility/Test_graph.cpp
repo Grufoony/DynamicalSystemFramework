@@ -1561,6 +1561,18 @@ TEST_CASE("RoadStatus") {
 
     CHECK_THROWS_AS(graph.setStreetStatusById(999, RoadStatus::CLOSED),
                     std::out_of_range);
+
+    // Several streets at once
+    std::vector<Id> const streetIds{0, 1};
+    graph.setStreetStatusById(streetIds, RoadStatus::CLOSED);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::CLOSED);
+    CHECK_EQ(graph.edge(1).roadStatus(), RoadStatus::CLOSED);
+
+    // An unknown id changes nothing
+    std::vector<Id> const withUnknown{0, 999};
+    CHECK_THROWS_AS(graph.setStreetStatusById(withUnknown, RoadStatus::OPEN),
+                    std::out_of_range);
+    CHECK_EQ(graph.edge(0).roadStatus(), RoadStatus::CLOSED);
   }
 
   SUBCASE("setStreetStatusByName") {

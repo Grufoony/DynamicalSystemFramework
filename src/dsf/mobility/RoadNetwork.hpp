@@ -28,6 +28,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <queue>
+#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -214,6 +215,14 @@ namespace dsf::mobility {
     /// @param streetId The id of the street
     /// @param status The status to set
     void setStreetStatusById(Id const streetId, RoadStatus const status);
+    /// @brief Set the status of several streets by their ids
+    /// @param streetIds The ids of the streets
+    /// @param status The status to set
+    /// @throws std::out_of_range if an id is not found, in which case no status is changed
+    /// @details During a run, agents plan again (from the street they are on) when they find
+    ///   their next street closed, including those already queued at its end. Agents already
+    ///   inside a node, or on the closed street, still enter or finish it
+    void setStreetStatusById(std::span<Id const> streetIds, RoadStatus const status);
     /// @brief Set the street's status of all streets with the given name
     /// @param name The name to match
     /// @param status The status to set

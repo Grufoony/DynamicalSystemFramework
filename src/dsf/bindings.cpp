@@ -834,14 +834,38 @@ NB_MODULE(dsf_cpp, m) {
       Args:
         id (int): Node id.)doc")
       .def("setStreetStatusById",
-           &dsf::mobility::RoadNetwork::setStreetStatusById,
+           nb::overload_cast<dsf::Id const, dsf::mobility::RoadStatus const>(
+               &dsf::mobility::RoadNetwork::setStreetStatusById),
            nb::arg("streetId"),
            nb::arg("status"),
            R"doc(Set the status of a street by id.
 
+      It can be called during a run: agents plan again, from the street they are on, when
+      they find their next street closed (also when already queued at its end).
+
       Args:
         streetId (int): Street identifier.
         status (RoadStatus): New status to set.)doc")
+      .def(
+          "setStreetStatusById",
+          [](dsf::mobility::RoadNetwork& self,
+             std::vector<dsf::Id> const& streetIds,
+             dsf::mobility::RoadStatus const status) {
+            self.setStreetStatusById(std::span<dsf::Id const>{streetIds}, status);
+          },
+          nb::arg("streetIds"),
+          nb::arg("status"),
+          R"doc(Set the status of several streets by id.
+
+      It can be called during a run: agents plan again, from the street they are on, when
+      they find their next street closed (also when already queued at its end).
+
+      Args:
+        streetIds (list[int]): Street identifiers. If one is unknown, no status is changed.
+        status (RoadStatus): New status to set.
+
+      Raises:
+        IndexError: If a street identifier is not found.)doc")
       .def("setStreetStatusByName",
            &dsf::mobility::RoadNetwork::setStreetStatusByName,
            nb::arg("name"),
@@ -1828,6 +1852,53 @@ Returns:
       Args:
         initTime (int): Start time in epoch seconds.
         endTime (int | None): Optional end time in epoch seconds.
+
+      Returns:
+        None)doc")
+      .def(
+          "scheduleStreetStatusById",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::uint64_t time,
+             std::vector<dsf::Id> streetIds,
+             dsf::mobility::RoadStatus status) {
+            self.scheduleStreetStatusById(
+                static_cast<std::time_t>(time), std::move(streetIds), status);
+          },
+          nb::arg("time"),
+          nb::arg("streetIds"),
+          nb::arg("status"),
+          R"doc(Schedule a change of the status of some streets during the runs.
+
+      Args:
+        time (int): Time step of the run, counted from its start, at which the change is made.
+          Changes not made when a run ends are kept for the next run, whose time steps
+          count from its own start.
+        streetIds (list[int]): Street identifiers, checked when a run starts (IndexError).
+        status (RoadStatus): New status to set.
+
+      Returns:
+        None)doc")
+      .def(
+          "scheduleStreetStatusByName",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::uint64_t time,
+             std::string streetName,
+             dsf::mobility::RoadStatus status) {
+            self.scheduleStreetStatusByName(
+                static_cast<std::time_t>(time), std::move(streetName), status);
+          },
+          nb::arg("time"),
+          nb::arg("streetName"),
+          nb::arg("status"),
+          R"doc(Schedule a change of the status of the streets whose name contains the given one.
+
+      Args:
+        time (int): Time step of the run, counted from its start, at which the change is made.
+          Changes not made when a run ends are kept for the next run, whose time steps
+          count from its own start.
+        streetName (str): Name to match (a warning is logged when a run starts if no
+          street matches).
+        status (RoadStatus): New status to set.
 
       Returns:
         None)doc")
