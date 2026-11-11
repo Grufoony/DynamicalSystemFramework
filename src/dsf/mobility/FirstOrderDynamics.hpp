@@ -198,7 +198,9 @@ namespace dsf::mobility {
     void m_ensureRouter();
     /// @brief Rebuild the router, and check the destinations (see m_checkDestinations)
     /// @details The agents which have not departed yet plan their routes again when they
-    ///   depart; the travelling ones keep theirs, unless their next street is closed
+    ///   depart; the travelling ones keep theirs, and plan again from their street when the
+    ///   next one has been closed (also when they are already queued at its end). Agents
+    ///   already inside a node, or on the closed street, still enter or finish it
     void m_rebuildRouter();
     /// @brief Remove the destination streets which cannot be reached, logging an error
     /// @details A destination street cannot be reached if it does not exist, is closed, or no

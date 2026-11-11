@@ -1307,6 +1307,19 @@ namespace dsf::mobility {
       throw std::out_of_range(std::format("Street with id {} not found", streetId));
     }
   }
+  void RoadNetwork::setStreetStatusById(std::span<Id const> streetIds,
+                                        RoadStatus const status) {
+    // Check every id first, so that an unknown one changes nothing
+    for (auto const streetId : streetIds) {
+      if (!m_edges.contains(streetId)) {
+        throw std::out_of_range(std::format("Street with id {} not found", streetId));
+      }
+    }
+    for (auto const streetId : streetIds) {
+      edge(streetId).setStatus(status);
+    }
+    spdlog::info("Set status {} to {} streets", status, streetIds.size());
+  }
   void RoadNetwork::setStreetStatusByName(std::string const& streetName,
                                           RoadStatus const status) {
     std::size_t nAffectedRoads{0};

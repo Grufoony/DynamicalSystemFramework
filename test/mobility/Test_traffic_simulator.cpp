@@ -361,6 +361,31 @@ TEST_CASE("TrafficSimulator JSON config errors") {
     CHECK_THROWS_AS(importConfig(makeConfig(R"(, "dynamic_ods": [1])", "")),
                     std::runtime_error);
   }
+  SUBCASE("road_events") {
+    auto const withEvents = [&](std::string const& events) {
+      return makeConfig(
+          R"(, "road_events": )" + events,
+          roadNetwork + R"(, "dynamics": { "agent_insertion_method": "UNIFORM" })");
+    };
+    CHECK_NOTHROW(importConfig(
+        withEvents(R"([{ "time": 10, "street_ids": [0, 2], "status": "closed" }, )"
+                   R"({ "time": 20, "street_name": "edge_0", "status": "Open" }])")));
+    for (auto const* events :
+         {R"({})",
+          R"([1])",
+          R"([{ "street_ids": [0], "status": "closed" }])",
+          R"([{ "time": -1, "street_ids": [0], "status": "closed" }])",
+          R"([{ "time": 1, "street_ids": [0] }])",
+          R"([{ "time": 1, "street_ids": [0], "status": "foo" }])",
+          R"([{ "time": 1, "status": "closed" }])",
+          R"([{ "time": 1, "street_ids": [0], "street_name": "a", "status": "closed" }])",
+          R"([{ "time": 1, "street_ids": 0, "status": "closed" }])",
+          R"([{ "time": 1, "street_ids": [-1], "status": "closed" }])",
+          R"([{ "time": 1, "street_name": 0, "status": "closed" }])"}) {
+      CAPTURE(events);
+      CHECK_THROWS_AS(importConfig(withEvents(events)), std::runtime_error);
+    }
+  }
   SUBCASE("The mean vehicle length is not positive") {
     CHECK_THROWS_AS(
         importConfig(makeConfig(
@@ -910,6 +935,19 @@ TEST_CASE("TrafficSimulator run schedule") {
     CHECK_EQ(nLines, 2);  // header + one snapshot
     avgFile.close();
     std::filesystem::remove(avgCsv);
+  }
+
+  SUBCASE("Scheduled street status changes are made during the run, in time order") {
+    simulator.setTimeFrame(0, 5);
+    simulator.scheduleStreetStatusByName(3, "edge_3", RoadStatus::OPEN);
+    simulator.scheduleStreetStatusById(1, {2, 3}, RoadStatus::CLOSED);
+    // After the end of the run
+    simulator.scheduleStreetStatusById(10, {0}, RoadStatus::CLOSED);
+    simulator.run(std::vector<std::size_t>{1});
+    auto const& network{simulator.dynamics()->graph()};
+    CHECK_EQ(network.edge(2).roadStatus(), RoadStatus::CLOSED);
+    CHECK_EQ(network.edge(3).roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(network.edge(0).roadStatus(), RoadStatus::OPEN);
   }
 
   std::filesystem::remove(edgesPath);

@@ -121,6 +121,42 @@ def test_road_network_betweenness_takes_a_weight(dynamics):
     assert len(graph.edgeBetweennessCentralities()) == graph.nEdges()
 
 
+def test_road_network_sets_the_status_of_several_streets(dynamics):
+    graph = dynamics.graph()
+    street_ids = [0, 1]
+    graph.setStreetStatusById(street_ids, mobility.RoadStatus.CLOSED)
+    assert all(
+        graph.edge(street_id).roadStatus() == mobility.RoadStatus.CLOSED
+        for street_id in street_ids
+    )
+    # An unknown id changes nothing
+    with pytest.raises(IndexError):
+        graph.setStreetStatusById([street_ids[0], 10**9], mobility.RoadStatus.OPEN)
+    assert graph.edge(street_ids[0]).roadStatus() == mobility.RoadStatus.CLOSED
+    graph.setStreetStatusById(street_ids[0], mobility.RoadStatus.OPEN)
+    assert graph.edge(street_ids[0]).roadStatus() == mobility.RoadStatus.OPEN
+
+
+def test_traffic_simulator_scheduled_street_status(tmp_path):
+    edges_path = tmp_path / "tiny_edges.csv"
+    _write_tiny_edges_csv(edges_path)
+
+    simulator = mobility.TrafficSimulator()
+    simulator.importRoadNetwork(str(edges_path))
+    dynamics = simulator.dynamics()
+    dynamics.setODs([(0, 1, 1.0)])
+    simulator.setTimeFrame(0, 4)
+    simulator.setAgentInsertionMethod(mobility.AgentInsertionMethod.ODS)
+    simulator.scheduleStreetStatusById(1, [0], mobility.RoadStatus.CLOSED)
+    simulator.scheduleStreetStatusByName(2, "edge_0", mobility.RoadStatus.OPEN)
+    simulator.scheduleStreetStatusByName(3, "edge_1", mobility.RoadStatus.CLOSED)
+    simulator.run([1])
+
+    graph = dynamics.graph()
+    assert graph.edge(0).roadStatus() == mobility.RoadStatus.OPEN
+    assert graph.edge(1).roadStatus() == mobility.RoadStatus.CLOSED
+
+
 def test_traffic_simulator_smoke_run_with_linear_speed(tmp_path):
     edges_path = tmp_path / "tiny_edges.csv"
     db_path = tmp_path / "traffic_simulator.db"

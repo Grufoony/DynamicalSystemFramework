@@ -43,6 +43,20 @@ namespace dsf::mobility {
       std::string file;
     };
     std::queue<ODsUpdate> m_dynamicODsUpdate;
+    /// @brief A scheduled change of the status of some streets
+    struct StreetStatusUpdate {
+      std::time_t time;
+      std::vector<Id> streetIds;              // Used if streetName is not set
+      std::optional<std::string> streetName;  // See RoadNetwork::setStreetStatusByName
+      RoadStatus status;
+    };
+    /// @brief The scheduled street status changes, sorted by time (and by insertion order
+    ///   for the same time)
+    std::deque<StreetStatusUpdate> m_streetStatusUpdates;
+
+    void m_scheduleStreetStatus(StreetStatusUpdate update);
+    /// @brief Apply the scheduled street status changes due at the given step of the run
+    void m_applyStreetStatusUpdates(std::time_t const currentStep);
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
     /// @param time The time_t to convert
@@ -276,6 +290,26 @@ namespace dsf::mobility {
     void setAgentInsertionMethod(AgentInsertionMethod const insertionMethod) noexcept {
       m_agentInsertionMethod = insertionMethod;
     }
+    /// @brief Schedule a change of the status of some streets during the runs
+    /// @param time The time step of the run, counted from its start, at which the change is
+    ///   made (before the agents of that step are added)
+    /// @param streetIds The ids of the streets, checked when the change is made
+    /// @param status The status to set
+    /// @details Agents react to a closure as described in RoadNetwork::setStreetStatusById.
+    ///   Changes not made yet when a run ends are kept for the next run, whose steps are
+    ///   counted from its own start
+    void scheduleStreetStatusById(std::time_t const time,
+                                  std::vector<Id> streetIds,
+                                  RoadStatus const status);
+    /// @brief Schedule a change of the status of the streets whose name contains the given
+    ///   one (see RoadNetwork::setStreetStatusByName)
+    /// @param time The time step of the run, counted from its start, at which the change is
+    ///   made (before the agents of that step are added)
+    /// @param streetName The name to match
+    /// @param status The status to set
+    void scheduleStreetStatusByName(std::time_t const time,
+                                    std::string streetName,
+                                    RoadStatus const status);
 
     /// @brief Run the simulation until the configured end time.
     inline void run(std::vector<std::size_t> const& nAgentsPerTimeStep,

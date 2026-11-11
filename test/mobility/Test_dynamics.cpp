@@ -1261,6 +1261,60 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.agentStats().nArrived, 1);
         }
       }
+      WHEN("An agent is queued before node 0 when the short branch is closed") {
+        // No agent passes a node: the agent stays queued at the end of street 5
+        dynamics.setPassageProbability(0.);
+        auto pAgent = std::make_unique<Agent>(0, 0, 4, 5);
+        pAgent->setSrcStreetId(5);
+        pAgent->setNextStreetId(5);
+        dynamics.addAgent(std::move(pAgent));
+        auto const& street5{dynamics.graph().edge(5)};
+        for (int i{0}; i < 10 && street5.nExitingAgents() == 0; ++i) {
+          dynamics.evolve();
+        }
+        REQUIRE_EQ(street5.queue(0).size(), 1);
+        REQUIRE_EQ(street5.queue(0).front()->nextStreetId(), std::optional<Id>{0});
+        AND_WHEN("The long branch is open") {
+          dynamics.graph().setStreetStatusById(0, RoadStatus::CLOSED);
+          dynamics.evolve();
+          THEN("It chooses the long branch while still queued") {
+            REQUIRE_EQ(street5.queue(0).size(), 1);
+            CHECK_EQ(street5.queue(0).front()->nextStreetId(), std::optional<Id>{2});
+            CHECK_EQ(street5.queue(0).front()->nextPlannedStreetId(),
+                     std::optional<Id>{3});
+          }
+          THEN("Once nodes let it pass, it takes the long branch and arrives") {
+            dynamics.setPassageProbability(1.);
+            bool bEnteredShort{false};
+            for (int i{0}; i < 60 && dynamics.nAgents() > 0; ++i) {
+              dynamics.evolve();
+              bEnteredShort = bEnteredShort || dynamics.graph().edge(0).nAgents() > 0;
+            }
+            CHECK_FALSE(bEnteredShort);
+            CHECK_EQ(dynamics.agentStats().nArrived, 1);
+          }
+        }
+        AND_WHEN("The long branch is closed too") {
+          std::vector<Id> const branches{0, 2};
+          dynamics.graph().setStreetStatusById(branches, RoadStatus::CLOSED);
+          dynamics.evolve();
+          THEN("It is killed, as no route is left") {
+            CHECK(street5.queue(0).empty());
+            CHECK_EQ(dynamics.agentStats().nKilled, 1);
+            CHECK_EQ(dynamics.nAgents(), 0);
+          }
+        }
+      }
+      WHEN("The short branch is closed, then reopened") {
+        dynamics.graph().setStreetStatusById(0, RoadStatus::CLOSED);
+        CHECK_EQ(dynamics.router().route(5, 4, RouteWeights::FREE_FLOW),
+                 std::vector<Id>{5, 2, 3, 4});
+        dynamics.graph().setStreetStatusById(0, RoadStatus::OPEN);
+        THEN("The routes take it again") {
+          CHECK_EQ(dynamics.router().route(5, 4, RouteWeights::FREE_FLOW),
+                   std::vector<Id>{5, 0, 1, 4});
+        }
+      }
       WHEN("The only street into a destination is closed during the run") {
         dynamics.setDestinations({1, 4});
         dynamics.evolve();
