@@ -57,6 +57,10 @@ namespace dsf::mobility {
     void m_scheduleStreetStatus(StreetStatusUpdate update);
     /// @brief Apply the scheduled street status changes due at the given step of the run
     void m_applyStreetStatusUpdates(std::time_t const currentStep);
+    /// @brief Check the scheduled street status changes before a run
+    /// @throws std::out_of_range if a street id is not found (warning if a street name
+    ///   matches no street)
+    void m_checkStreetStatusUpdates() const;
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
     /// @param time The time_t to convert
@@ -293,11 +297,11 @@ namespace dsf::mobility {
     /// @brief Schedule a change of the status of some streets during the runs
     /// @param time The time step of the run, counted from its start, at which the change is
     ///   made (before the agents of that step are added)
-    /// @param streetIds The ids of the streets, checked when the change is made
+    /// @param streetIds The ids of the streets, checked when a run starts
     /// @param status The status to set
     /// @details Agents react to a closure as described in RoadNetwork::setStreetStatusById.
-    ///   Changes not made yet when a run ends are kept for the next run, whose steps are
-    ///   counted from its own start
+    ///   Changes not made yet when a run ends are kept for the next run (with a warning),
+    ///   whose steps are counted from its own start
     void scheduleStreetStatusById(std::time_t const time,
                                   std::vector<Id> streetIds,
                                   RoadStatus const status);

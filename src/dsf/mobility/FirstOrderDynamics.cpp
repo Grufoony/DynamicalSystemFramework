@@ -719,15 +719,19 @@ namespace dsf::mobility {
           continue;
         }
       }
-      // The agent chose its next street when it queued: if that street has been closed (or
-      // the turn forbidden) since, it chooses again from here, before right of way is
-      // checked on the new turn. It keeps the lane it queued in
+      // The agent chose its next street when it queued: if that street has been closed
+      // since, it chooses again from here, before right of way is checked on the new turn.
+      // It keeps the lane it queued in, even if the lane's direction does not serve the
+      // new turn (so it passes on that lane's green light)
       if (!pAgentTemp->isRandom() && pAgentTemp->nextStreetId().has_value() &&
-          !m_router.isTurnAllowed(pStreet->id(), *pAgentTemp->nextStreetId())) {
+          !this->graph().edge(*pAgentTemp->nextStreetId()).isActive()) {
         // Without a plan, m_nextStreet plans the rest of the trip from this street
         pAgentTemp->dropPath();
         auto const* pNewNextStreet{this->m_nextStreet(pAgentTemp, pNode, pStreet, rng)};
         if (pNewNextStreet == nullptr) {
+          spdlog::debug("Killing queued {} on {}: no route left after a closure",
+                        *pAgentTemp,
+                        *pStreet);
           this->m_removeAgent<false>(pStreet->dequeue(queueIndex, this->time_step()));
           continue;
         }

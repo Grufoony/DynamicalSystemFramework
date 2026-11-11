@@ -949,6 +949,14 @@ TEST_CASE("TrafficSimulator run schedule") {
     CHECK_EQ(network.edge(3).roadStatus(), RoadStatus::OPEN);
     CHECK_EQ(network.edge(0).roadStatus(), RoadStatus::OPEN);
   }
+  SUBCASE("An unknown scheduled street id stops the run before it starts") {
+    simulator.setTimeFrame(0, 5);
+    simulator.scheduleStreetStatusById(3, {2, 999}, RoadStatus::CLOSED);
+    CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}), std::out_of_range);
+    CHECK_THROWS_AS(simulator.run(1, 1, 1), std::out_of_range);
+    CHECK_EQ(simulator.dynamics()->time_step(), 0);
+    CHECK_EQ(simulator.dynamics()->graph().edge(2).roadStatus(), RoadStatus::OPEN);
+  }
 
   std::filesystem::remove(edgesPath);
 }

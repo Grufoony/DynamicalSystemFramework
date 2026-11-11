@@ -10,6 +10,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 
@@ -240,7 +241,9 @@ namespace dsf::mobility {
             throw invalidEvent("be an object");
           }
           auto const timeField = item["time"];
-          if (timeField.error() || !timeField.is_uint64()) {
+          if (timeField.error() || !timeField.is_uint64() ||
+              timeField.get_uint64().value() >
+                  static_cast<std::uint64_t>(std::numeric_limits<std::time_t>::max())) {
             throw invalidEvent("have a non-negative integer 'time' field");
           }
           auto const statusField = item["status"];
@@ -251,7 +254,7 @@ namespace dsf::mobility {
           std::ranges::transform(statusStr, statusStr.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
           });
-          RoadStatus status;
+          RoadStatus status{RoadStatus::OPEN};
           if (statusStr == "closed") {
             status = RoadStatus::CLOSED;
           } else if (statusStr == "open") {
@@ -541,6 +544,7 @@ namespace dsf::mobility {
       totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
     }
 
+    m_checkStreetStatusUpdates();
     m_preparePersistence();
 
     spdlog::info(
@@ -612,6 +616,12 @@ namespace dsf::mobility {
     auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
         m_dynamics->agentStats();
     m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
+    if (!m_streetStatusUpdates.empty()) {
+      spdlog::warn(
+          "{} scheduled street status changes were not made before the end of the run: "
+          "they are kept for the next run, whose time steps count from its own start.",
+          m_streetStatusUpdates.size());
+    }
   }
   void TrafficSimulator::m_runSlowCharge(std::size_t const nInitialAgents,
                                          std::time_t const agentInsertionDeltaT,
@@ -631,6 +641,7 @@ namespace dsf::mobility {
     }
     auto const totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
 
+    m_checkStreetStatusUpdates();
     m_preparePersistence();
 
     spdlog::info(
@@ -709,6 +720,12 @@ namespace dsf::mobility {
     auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
         m_dynamics->agentStats();
     m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
+    if (!m_streetStatusUpdates.empty()) {
+      spdlog::warn(
+          "{} scheduled street status changes were not made before the end of the run: "
+          "they are kept for the next run, whose time steps count from its own start.",
+          m_streetStatusUpdates.size());
+    }
   }
 
   void TrafficSimulator::connectDataBase(std::string_view const dbPath,
@@ -782,14 +799,41 @@ namespace dsf::mobility {
   void TrafficSimulator::m_applyStreetStatusUpdates(std::time_t const currentStep) {
     while (!m_streetStatusUpdates.empty() &&
            m_streetStatusUpdates.front().time <= currentStep) {
-      auto const& update{m_streetStatusUpdates.front()};
+      auto const update{std::move(m_streetStatusUpdates.front())};
+      m_streetStatusUpdates.pop_front();
       auto& network{m_dynamics->graph()};
       if (update.streetName.has_value()) {
         network.setStreetStatusByName(*update.streetName, update.status);
       } else {
         network.setStreetStatusById(update.streetIds, update.status);
       }
-      m_streetStatusUpdates.pop_front();
+    }
+  }
+  void TrafficSimulator::m_checkStreetStatusUpdates() const {
+    auto const& network{m_dynamics->graph()};
+    for (auto const& update : m_streetStatusUpdates) {
+      if (update.streetName.has_value()) {
+        if (std::ranges::none_of(network.edges(), [&](auto const& idStreet) {
+              return idStreet.second->name().find(*update.streetName) !=
+                     std::string::npos;
+            })) {
+          spdlog::warn(
+              "No street name contains \"{}\": the status change scheduled at time {} "
+              "will change nothing.",
+              *update.streetName,
+              update.time);
+        }
+        continue;
+      }
+      for (auto const streetId : update.streetIds) {
+        if (!network.edges().contains(streetId)) {
+          throw std::out_of_range(
+              std::format("Street with id {} of the status change scheduled at time {} "
+                          "not found",
+                          streetId,
+                          update.time));
+        }
+      }
     }
   }
   void TrafficSimulator::setName(std::string_view const name) {

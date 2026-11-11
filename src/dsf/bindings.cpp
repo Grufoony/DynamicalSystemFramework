@@ -857,6 +857,9 @@ NB_MODULE(dsf_cpp, m) {
           nb::arg("status"),
           R"doc(Set the status of several streets by id.
 
+      It can be called during a run: agents plan again, from the street they are on, when
+      they find their next street closed (also when already queued at its end).
+
       Args:
         streetIds (list[int]): Street identifiers. If one is unknown, no status is changed.
         status (RoadStatus): New status to set.
@@ -1868,7 +1871,9 @@ Returns:
 
       Args:
         time (int): Time step of the run, counted from its start, at which the change is made.
-        streetIds (list[int]): Street identifiers, checked when the change is made.
+          Changes not made when a run ends are kept for the next run, whose time steps
+          count from its own start.
+        streetIds (list[int]): Street identifiers, checked when a run starts (IndexError).
         status (RoadStatus): New status to set.
 
       Returns:
@@ -1889,7 +1894,10 @@ Returns:
 
       Args:
         time (int): Time step of the run, counted from its start, at which the change is made.
-        streetName (str): Name to match.
+          Changes not made when a run ends are kept for the next run, whose time steps
+          count from its own start.
+        streetName (str): Name to match (a warning is logged when a run starts if no
+          street matches).
         status (RoadStatus): New status to set.
 
       Returns:
