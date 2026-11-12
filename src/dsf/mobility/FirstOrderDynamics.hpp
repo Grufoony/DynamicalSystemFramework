@@ -17,6 +17,7 @@
 #include <format>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <random>
@@ -178,7 +179,9 @@ namespace dsf::mobility {
     std::optional<Delay> m_dataUpdatePeriod;
     std::optional<double> m_timeToleranceFactor{std::nullopt};
     bool m_forcePriorities{false};
-    bool m_bAllowRandomUTurns{true};
+    // node2vec return parameter p of random agents and the U-turn weight 1/p it gives
+    double m_returnParameter{std::numeric_limits<double>::infinity()};
+    double m_returnWeight{0.};
 
   private:
     /// @brief Kill an agent from the dynamics
@@ -391,19 +394,20 @@ namespace dsf::mobility {
     inline void setForcePriorities(bool const forcePriorities) noexcept {
       m_forcePriorities = forcePriorities;
     }
-    /// @brief Let random agents take the U-turns of their transition-matrix row
-    /// @param allow The flag (default true: a U-turn entry of the transition matrix is kept as
-    ///   a normal entry and a random agent takes the U-turn with its probability)
-    /// @details With the flag unset, random agents never take a U-turn outside a roundabout:
-    ///   the U-turn entries of the transition matrix are redistributed over the row, like
-    ///   forbidden turns. It must be set before the transition matrix (setTransitionMatrix,
-    ///   importTransitionMatrixFromJSON), which validates the rows. Streets without a matrix
-    ///   row keep the uniform behaviour, which never takes a U-turn.
-    inline void setAllowRandomUTurns(bool const allow) noexcept {
-      m_bAllowRandomUTurns = allow;
-    }
-    /// @brief Whether random agents take the U-turns of their transition-matrix row
-    inline bool allowRandomUTurns() const noexcept { return m_bAllowRandomUTurns; }
+    /// @brief Set the return parameter p of random agents, as in the node2vec biased walk
+    /// @param p The return parameter, in (0, +inf] (default +inf: non-backtracking walk)
+    /// @details A random agent weighs the U-turn (the street back to the node it comes from)
+    ///   by 1/p and every other allowed turn by 1, then normalises. p = 1 is the plain random
+    ///   walk, p > 1 discourages U-turns, p < 1 favours them, p = +inf never takes them (an
+    ///   agent at a dead end then ends its trip).
+    ///   On transition-matrix rows the U-turn entry is scaled by 1/p and the row is rescaled
+    ///   so that its total, i.e. the end probability, is unchanged; with p = +inf the U-turn
+    ///   entry is redistributed like a forbidden turn. The rows are biased when the matrix is
+    ///   set, so p must be set before it (setTransitionMatrix, importTransitionMatrixFromJSON).
+    /// @throws std::invalid_argument If p is not positive or is NaN
+    void setReturnParameter(double const p);
+    /// @brief Get the return parameter p of random agents (see setReturnParameter)
+    inline double returnParameter() const noexcept { return m_returnParameter; }
     /// @brief Set the data update period.
     /// @param dataUpdatePeriod Delay, The period
     /// @details Some data, i.e. the street queue lengths, are stored only after a fixed amount of time which is represented by this variable.
@@ -519,8 +523,9 @@ namespace dsf::mobility {
     ///   Forbidden turns are handled differently: since random agents can never take them,
     ///   their probability is instead redistributed proportionally among the other entries of
     ///   the same row, so that the end probability is unaffected by their weights.
-    ///   U-turn entries are kept as normal entries by default; with setAllowRandomUTurns(false),
-    ///   set before the matrix, they are redistributed like forbidden turns.
+    ///   U-turn entries are biased by the return parameter p (see setReturnParameter, to be
+    ///   set before the matrix): they are scaled by 1/p and the row rescaled to its original
+    ///   total. With the default p = +inf they are redistributed like forbidden turns.
     ///   If a row only contains forbidden-turn and/or U-turn entries, there is nothing to
     ///   redistribute onto and the probability is dropped (reported as a warning) like any
     ///   other unusable entry.

@@ -1,4 +1,5 @@
 import itertools
+import math
 import sqlite3
 from pathlib import Path
 
@@ -213,6 +214,26 @@ def test_dynamics_transition_matrix_set_and_get(dynamics):
     matrix = dynamics.transitionMatrix()
     assert set(matrix) == {2}
     assert matrix[2] == pytest.approx({4: 0.6, 6: 0.2})
+
+
+def test_dynamics_return_parameter(dynamics):
+    assert math.isinf(dynamics.returnParameter())
+
+    dynamics.setReturnParameter(2.0)
+    assert dynamics.returnParameter() == 2.0
+
+    with pytest.raises(ValueError):
+        dynamics.setReturnParameter(0.0)
+
+
+def test_dynamics_return_parameter_biases_matrix_uturns(dynamics):
+    # Street 3 is the U-turn of street 2: weighed by 1/p, then the row keeps its total
+    dynamics.setReturnParameter(2.0)
+    dynamics.setTransitionMatrix({2: {3: 0.2, 4: 0.4, 6: 0.4}})
+
+    assert dynamics.transitionMatrix()[2] == pytest.approx(
+        {3: 1 / 9, 4: 4 / 9, 6: 4 / 9}
+    )
 
 
 def test_dynamics_transition_matrix_rejects_rows_summing_above_one(dynamics):

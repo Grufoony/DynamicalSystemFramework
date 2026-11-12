@@ -443,13 +443,16 @@ namespace dsf::mobility {
         }
         auto const& streetOut{*pStreetOut};
 
-        // Handle U-turns: taken only from a transition-matrix row, if allowed
-        if (pPreviousNode != nullptr && streetOut.target() == pPreviousNode &&
-            !(bUseMatrix && m_bAllowRandomUTurns)) {
-          continue;
-        }
-
         double probability = 1.0;
+        // U-turns weigh 1/p in the uniform choice (node2vec return parameter); matrix rows
+        // were already biased by 1/p when the matrix was set
+        if (!bUseMatrix && pPreviousNode != nullptr &&
+            streetOut.target() == pPreviousNode) {
+          if (m_returnWeight <= 0.) {
+            continue;
+          }
+          probability = m_returnWeight;
+        }
         if (bUseMatrix) {
           auto const itWeight{itRow->second.find(streetOut.id())};
           if (itWeight == itRow->second.cend()) {
@@ -1331,6 +1334,15 @@ namespace dsf::mobility {
                                                .weight = pair.second / sumWeights};
                            });
   }
+  void FirstOrderDynamics::setReturnParameter(double const p) {
+    if (std::isnan(p) || p <= 0.) {
+      throw std::invalid_argument(std::format(
+          "The return parameter p ({}) must be positive (or infinite to forbid U-turns)",
+          p));
+    }
+    m_returnParameter = p;
+    m_returnWeight = 1. / p;  // 0 for p = +inf
+  }
   void FirstOrderDynamics::setTransitionMatrix(
       std::unordered_map<Id, std::unordered_map<Id, double>> const& transitionMatrix) {
     constexpr double TOLERANCE{1e-9};
@@ -1388,22 +1400,31 @@ namespace dsf::mobility {
           redistributableWeight += weight;
           continue;
         }
-        if (!m_bAllowRandomUTurns &&
-            this->graph().edge(dstStreetId).target() == srcStreet.source()) {
-          spdlog::debug(
-              "Transition matrix: the transition from street {} to street {} is a "
-              "U-turn, which random agents cannot take. Its probability will be "
-              "redistributed among the other transitions of street {}.",
-              srcStreetId,
-              dstStreetId,
-              srcStreetId);
-          redistributableWeight += weight;
+        if (this->graph().edge(dstStreetId).target() == srcStreet.source()) {
+          if (m_returnWeight <= 0.) {
+            spdlog::debug(
+                "Transition matrix: the transition from street {} to street {} is a "
+                "U-turn, which random agents do not take (return parameter p = inf). Its "
+                "probability will be redistributed among the other transitions of street "
+                "{}.",
+                srcStreetId,
+                dstStreetId,
+                srcStreetId);
+            redistributableWeight += weight;
+            continue;
+          }
+          // node2vec bias: scale the U-turn by 1/p; the difference (negative for p < 1) is
+          // redistributed below, so that the row keeps its total
+          auto const biasedWeight{weight * m_returnWeight};
+          redistributableWeight += weight - biasedWeight;
+          sumWeights += biasedWeight;
+          validatedRow.emplace(dstStreetId, biasedWeight);
           continue;
         }
         sumWeights += weight;
         validatedRow.emplace(dstStreetId, weight);
       }
-      if (redistributableWeight > 0.) {
+      if (redistributableWeight != 0.) {
         if (validatedRow.empty()) {
           spdlog::warn(
               "Transition matrix: street {} has no other usable transition to "

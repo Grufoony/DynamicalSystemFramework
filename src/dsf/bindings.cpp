@@ -1252,27 +1252,32 @@ NB_MODULE(dsf_cpp, m) {
 
       Returns:
         None)doc")
-      .def("setAllowRandomUTurns",
-           &dsf::mobility::FirstOrderDynamics::setAllowRandomUTurns,
-           nb::arg("allow"),
-           R"doc(Let random agents take the U-turns of their transition-matrix row.
+      .def(
+          "setReturnParameter",
+          &dsf::mobility::FirstOrderDynamics::setReturnParameter,
+          nb::arg("p"),
+          R"doc(Set the return parameter p of random agents, as in the node2vec biased walk.
 
-      Set it before the transition matrix: by default, U-turn entries are kept as normal entries;
-      with False, they are redistributed over the row like forbidden turns. Streets without a
-      matrix row keep the uniform behaviour, which never takes a U-turn. In a JSON config:
-      dynamics.allow_uturns.
+      A random agent weighs the U-turn (back to the node it comes from) by 1/p and every other
+      allowed turn by 1. p = 1 is the plain random walk, p = inf (the default) the
+      non-backtracking walk. On transition-matrix rows the U-turn entry is scaled by 1/p and
+      the row rescaled to keep its total, so set p before the matrix. In a JSON config:
+      dynamics.return_parameter.
 
       Args:
-        allow (bool): Whether random agents follow the matrix's U-turn entries (default True).
+        p (float): The return parameter, positive or float("inf")
+
+      Raises:
+        ValueError: If p is not positive or is NaN
 
       Returns:
         None)doc")
-      .def("allowRandomUTurns",
-           &dsf::mobility::FirstOrderDynamics::allowRandomUTurns,
-           R"doc(Whether random agents take the U-turns of their transition-matrix row.
+      .def("returnParameter",
+           &dsf::mobility::FirstOrderDynamics::returnParameter,
+           R"doc(Get the return parameter p of random agents (inf by default).
 
       Returns:
-        bool)doc")
+        float)doc")
       .def(
           "setDataUpdatePeriod",
           [](dsf::mobility::FirstOrderDynamics& self, int dataUpdatePeriod) {

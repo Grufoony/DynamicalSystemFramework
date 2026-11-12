@@ -333,10 +333,10 @@ namespace dsf::mobility {
       if (!dynamicsConfig["max_concurrency"].error()) {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
       }
-      if (!dynamicsConfig["allow_uturns"].error()) {
-        // before any transition matrix: it decides how the matrix's U-turn entries are read
-        m_dynamics->setAllowRandomUTurns(
-            dynamicsConfig["allow_uturns"].get_bool().value());
+      if (!dynamicsConfig["return_parameter"].error()) {
+        // before any transition matrix: it biases the matrix's U-turn entries
+        m_dynamics->setReturnParameter(
+            dynamicsConfig["return_parameter"].get_double().value());
       }
       if (!dynamicsConfig["edge_weight"].error()) {
         // The distance cost is used by "datt"
