@@ -545,9 +545,9 @@ namespace dsf::mobility {
     return &this->graph().edge(plannedStreetId);
   }
 
-  void FirstOrderDynamics::m_evolveStreet(Street* pStreet,
-                                          RoadJunction* pNode,
-                                          std::mt19937_64& rng) {
+  void FirstOrderDynamics::m_enqueueArrivals(Street* pStreet,
+                                             RoadJunction* pNode,
+                                             std::mt19937_64& rng) {
     assert(pStreet->target() == pNode);
     auto const nLanes = pStreet->nLanes();
     // Enqueue moving agents if their free time is up
@@ -677,6 +677,13 @@ namespace dsf::mobility {
       std::discrete_distribution<size_t> laneDist{weights.begin(), weights.end()};
       pStreet->enqueue(laneDist(rng));
     }
+  }
+
+  void FirstOrderDynamics::m_releaseQueueHeads(Street* pStreet,
+                                               RoadJunction* pNode,
+                                               std::mt19937_64& rng) {
+    assert(pStreet->target() == pNode);
+    auto const nLanes = pStreet->nLanes();
     std::uniform_real_distribution<double> uniformDist{0., 1.};
     for (auto queueIndex = 0; queueIndex < nLanes; ++queueIndex) {
       if (pStreet->queue(queueIndex).empty()) {
@@ -762,7 +769,7 @@ namespace dsf::mobility {
           return intersection.hasRightOfWay(*pIngoing);
         };
         bool bCanPass{true};
-        if (std::ranges::any_of(destinationNode->ingoingEdges(), hasPriority)) {
+        if (intersection.hasPriorityStreets()) {
           spdlog::debug("Checking priorities for {}", *pStreet);
           auto const& thisDirection{this->graph()
                                         .edge(*(pAgentTemp->nextStreetId()))
@@ -938,13 +945,9 @@ namespace dsf::mobility {
     }
     // At a non-signalised intersection with priority streets, the agents coming from them
     // leave the node first (signals already decide who passes at traffic lights)
-    bool bPriorityFirst{false};
-    if (pNode->isIntersection() && !pNode->isTrafficLight()) {
-      auto const& intersection = static_cast<Intersection const&>(*pNode);
-      bPriorityFirst = std::ranges::any_of(
-          intersection.ingoingEdges(),
-          [&](Street const* pStreet) { return intersection.hasRightOfWay(*pStreet); });
-    }
+    bool const bPriorityFirst{
+        pNode->isIntersection() && !pNode->isTrafficLight() &&
+        static_cast<Intersection const&>(*pNode).hasPriorityStreets()};
     auto& flowAccumulator{pNode->flowAccumulator()};
     flowAccumulator.refill(pNode->transportCapacity(), this->time_step());
     while (flowAccumulator.canPass()) {
@@ -1916,8 +1919,58 @@ namespace dsf::mobility {
             auto& stats = localStats.local();
             // Looked up once per task: draws then cost as much as with a plain engine
             auto& rng = this->m_threadGenerators.local();
+            // Street measures, taken once the street has released its queue heads
+            auto const collectStreetStats = [&](Street* pStreet) {
+              if (!bComputeStats) {
+                return;
+              }
+              auto const& density{pStreet->density<false>() * 1e3};
+              auto const& queueLength{pStreet->nExitingAgents()};
+
+              auto const speedMeasure = pStreet->meanSpeed<true>();
+              if (speedMeasure.is_valid) {
+                auto const speed = speedMeasure.mean * MS_TO_KMH;  // to kph
+                auto const speed_std = speedMeasure.std * MS_TO_KMH;
+                if (dataRequest.saveAverageStats) {
+                  stats.speed += speed;
+                  stats.speed2 += speed * speed + speed_std * speed_std;
+                  stats.travelTime += pStreet->length() / speedMeasure.mean;
+                  ++stats.nValidEdges;
+                }
+              }
+              if (dataRequest.saveAverageStats) {
+                stats.density += density;
+                stats.density2 += density * density;
+                stats.queue += queueLength;
+              }
+
+              if (dataRequest.saveStreetData) {
+                // Collect data for batch insert after parallel section
+                StreetDataRecord record;
+                record.density = density;
+                if (pStreet->hasCoil()) {
+                  record.coilName = pStreet->counterName();
+                  record.counts = pStreet->counts();
+                  pStreet->resetCounter();
+                }
+                if (speedMeasure.is_valid) {
+                  record.avgSpeed = speedMeasure.mean * MS_TO_KMH;  // to kph
+                  record.stdSpeed = speedMeasure.std * MS_TO_KMH;
+                  record.nObservations = speedMeasure.n;
+                }
+                record.queueLength = queueLength;
+                streetDataRecords[pStreet->id()] = std::move(record);
+              }
+            };
             for (std::size_t i = range.begin(); i != range.end(); ++i) {
               auto* pNode = &this->graph().node(m_nodeIndices[i]);
+              // At a non-signalised intersection with priority streets, every street
+              // queues its arrivals before any releases, and side roads release before
+              // priority streets: they then see the main-road queues, this step's
+              // arrivals included, before those drain
+              bool const bYieldNode{
+                  pNode->isIntersection() && !pNode->isTrafficLight() &&
+                  static_cast<Intersection const&>(*pNode).hasPriorityStreets()};
               for (auto* pStreet : pNode->ingoingEdges()) {
                 auto const inEdgeId{pStreet->id()};
                 if (bUpdateData && pNode->isTrafficLight()) {
@@ -1945,44 +1998,21 @@ namespace dsf::mobility {
                     }
                   }
                 }
-                m_evolveStreet(pStreet, pNode, rng);
-                if (bComputeStats) {
-                  auto const& density{pStreet->density<false>() * 1e3};
-                  auto const& queueLength{pStreet->nExitingAgents()};
-
-                  auto const speedMeasure = pStreet->meanSpeed<true>();
-                  if (speedMeasure.is_valid) {
-                    auto const speed = speedMeasure.mean * MS_TO_KMH;  // to kph
-                    auto const speed_std = speedMeasure.std * MS_TO_KMH;
-                    if (dataRequest.saveAverageStats) {
-                      stats.speed += speed;
-                      stats.speed2 += speed * speed + speed_std * speed_std;
-                      stats.travelTime += pStreet->length() / speedMeasure.mean;
-                      ++stats.nValidEdges;
+                m_enqueueArrivals(pStreet, pNode, rng);
+                if (!bYieldNode) {
+                  m_releaseQueueHeads(pStreet, pNode, rng);
+                  collectStreetStats(pStreet);
+                }
+              }
+              if (bYieldNode) {
+                auto const& intersection = static_cast<Intersection const&>(*pNode);
+                for (bool const bPriorityStreets : {false, true}) {
+                  for (auto* pStreet : pNode->ingoingEdges()) {
+                    if (intersection.hasRightOfWay(*pStreet) != bPriorityStreets) {
+                      continue;
                     }
-                  }
-                  if (dataRequest.saveAverageStats) {
-                    stats.density += density;
-                    stats.density2 += density * density;
-                    stats.queue += queueLength;
-                  }
-
-                  if (dataRequest.saveStreetData) {
-                    // Collect data for batch insert after parallel section
-                    StreetDataRecord record;
-                    record.density = density;
-                    if (pStreet->hasCoil()) {
-                      record.coilName = pStreet->counterName();
-                      record.counts = pStreet->counts();
-                      pStreet->resetCounter();
-                    }
-                    if (speedMeasure.is_valid) {
-                      record.avgSpeed = speedMeasure.mean * MS_TO_KMH;  // to kph
-                      record.stdSpeed = speedMeasure.std * MS_TO_KMH;
-                      record.nObservations = speedMeasure.n;
-                    }
-                    record.queueLength = queueLength;
-                    streetDataRecords[pStreet->id()] = std::move(record);
+                    m_releaseQueueHeads(pStreet, pNode, rng);
+                    collectStreetStats(pStreet);
                   }
                 }
               }

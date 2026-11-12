@@ -11,6 +11,7 @@
 #include "Agent.hpp"
 #include "RoadJunction.hpp"
 
+#include <algorithm>
 #include <format>
 #include <map>
 #include <memory>
@@ -103,6 +104,12 @@ namespace dsf::mobility {
     ///         or listed in the node's street priorities
     bool hasRightOfWay(Street const& street) const {
       return street.hasPriority() || m_streetPriorities.contains(street.id());
+    }
+    /// @brief Whether any ingoing street has right of way at this node
+    bool hasPriorityStreets() const {
+      return std::ranges::any_of(ingoingEdges(), [this](Street const* pStreet) {
+        return hasRightOfWay(*pStreet);
+      });
     }
     /// @brief Get the node's agent ids
     /// @return std::set<Id> A std::set containing the node's agent ids

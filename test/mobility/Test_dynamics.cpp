@@ -2513,8 +2513,14 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve();
         THEN("The agent in A passes first because it's on the main road") {
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
-          CHECK_EQ(nodeO.agents().size(), 1);
-          CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
+          // The agent in D gives way: it waits on its street, not in the node
+          CHECK(nodeO.agents().empty());
+          CHECK_EQ(dynamics.graph().edge(20).nAgents(), 1);
+        }
+        dynamics.evolve();
+        THEN("The agent in D passes next") {
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(20).nAgents(), 0);
         }
       }
       WHEN("We add agents in A and D without priorities") {
@@ -2539,8 +2545,14 @@ TEST_CASE("FirstOrderDynamics") {
         dynamics.evolve();
         THEN("The agent in D passes first because it's on the main road") {
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
-          CHECK_EQ(nodeO.agents().size(), 1);
-          CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 5);
+          // The agent in A gives way: it waits on its street, not in the node
+          CHECK(nodeO.agents().empty());
+          CHECK_EQ(dynamics.graph().edge(5).nAgents(), 1);
+        }
+        dynamics.evolve();
+        THEN("The agent in A passes next") {
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(5).nAgents(), 0);
         }
       }
       WHEN("We flag the D-B road as priority and add agents in A and D") {
@@ -2557,8 +2569,14 @@ TEST_CASE("FirstOrderDynamics") {
         }
         THEN("The agent in D passes first because it's on the main road") {
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
-          CHECK_EQ(nodeO.agents().size(), 1);
-          CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 5);
+          // The agent in A gives way: it waits on its street, not in the node
+          CHECK(nodeO.agents().empty());
+          CHECK_EQ(dynamics.graph().edge(5).nAgents(), 1);
+        }
+        dynamics.evolve();
+        THEN("The agent in A passes next") {
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
+          CHECK_EQ(dynamics.graph().edge(5).nAgents(), 0);
         }
       }
     }
