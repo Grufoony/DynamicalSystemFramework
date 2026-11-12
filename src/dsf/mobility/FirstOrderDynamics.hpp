@@ -178,6 +178,7 @@ namespace dsf::mobility {
     std::optional<Delay> m_dataUpdatePeriod;
     std::optional<double> m_timeToleranceFactor{std::nullopt};
     bool m_forcePriorities{false};
+    bool m_bAllowRandomUTurns{true};
 
   private:
     /// @brief Kill an agent from the dynamics
@@ -390,6 +391,19 @@ namespace dsf::mobility {
     inline void setForcePriorities(bool const forcePriorities) noexcept {
       m_forcePriorities = forcePriorities;
     }
+    /// @brief Let random agents take the U-turns of their transition-matrix row
+    /// @param allow The flag (default true: a U-turn entry of the transition matrix is kept as
+    ///   a normal entry and a random agent takes the U-turn with its probability)
+    /// @details With the flag unset, random agents never take a U-turn outside a roundabout:
+    ///   the U-turn entries of the transition matrix are redistributed over the row, like
+    ///   forbidden turns. It must be set before the transition matrix (setTransitionMatrix,
+    ///   importTransitionMatrixFromJSON), which validates the rows. Streets without a matrix
+    ///   row keep the uniform behaviour, which never takes a U-turn.
+    inline void setAllowRandomUTurns(bool const allow) noexcept {
+      m_bAllowRandomUTurns = allow;
+    }
+    /// @brief Whether random agents take the U-turns of their transition-matrix row
+    inline bool allowRandomUTurns() const noexcept { return m_bAllowRandomUTurns; }
     /// @brief Set the data update period.
     /// @param dataUpdatePeriod Delay, The period
     /// @details Some data, i.e. the street queue lengths, are stored only after a fixed amount of time which is represented by this variable.
@@ -502,9 +516,11 @@ namespace dsf::mobility {
     ///   outgoing edge of the source street's target node are dropped and reported as warnings,
     ///   which reduces the row's total probability and thus increases the end probability
     ///   accordingly.
-    ///   Forbidden turns and U-turns are handled differently: since random agents can never
-    ///   take them, their probability is instead redistributed proportionally among the other
-    ///   entries of the same row, so that the end probability is unaffected by their weights.
+    ///   Forbidden turns are handled differently: since random agents can never take them,
+    ///   their probability is instead redistributed proportionally among the other entries of
+    ///   the same row, so that the end probability is unaffected by their weights.
+    ///   U-turn entries are kept as normal entries by default; with setAllowRandomUTurns(false),
+    ///   set before the matrix, they are redistributed like forbidden turns.
     ///   If a row only contains forbidden-turn and/or U-turn entries, there is nothing to
     ///   redistribute onto and the probability is dropped (reported as a warning) like any
     ///   other unusable entry.

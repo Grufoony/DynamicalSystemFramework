@@ -443,8 +443,9 @@ namespace dsf::mobility {
         }
         auto const& streetOut{*pStreetOut};
 
-        // Handle U-turns
-        if (pPreviousNode != nullptr && streetOut.target() == pPreviousNode) {
+        // Handle U-turns: taken only from a transition-matrix row, if allowed
+        if (pPreviousNode != nullptr && streetOut.target() == pPreviousNode &&
+            !(bUseMatrix && m_bAllowRandomUTurns)) {
           continue;
         }
 
@@ -1387,7 +1388,8 @@ namespace dsf::mobility {
           redistributableWeight += weight;
           continue;
         }
-        if (this->graph().edge(dstStreetId).target() == srcStreet.source()) {
+        if (!m_bAllowRandomUTurns &&
+            this->graph().edge(dstStreetId).target() == srcStreet.source()) {
           spdlog::debug(
               "Transition matrix: the transition from street {} to street {} is a "
               "U-turn, which random agents cannot take. Its probability will be "
