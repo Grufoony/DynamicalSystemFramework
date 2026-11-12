@@ -290,12 +290,18 @@ namespace dsf::mobility {
     /// @return Street const* The agent's current street, nullptr if it has none
     Street const* m_currentStreet(const std::unique_ptr<Agent>& pAgent,
                                   Street const* pHint) const;
-    /// @brief Evolve a street
+    /// @brief Queue the agents that reached the end of a street, choosing their next street
+    ///   and lane (agents arriving at their destination street leave the simulation)
     /// @param pStreet A pointer to the street
     /// @param pNode A pointer to the street's target node
     /// @param rng The random engine to draw from (one per thread, as nodes evolve in parallel)
-    /// @details If possible, removes the first agent of the street's queue, putting it in the destination node.
-    void m_evolveStreet(Street* pStreet, RoadJunction* pNode, std::mt19937_64& rng);
+    void m_enqueueArrivals(Street* pStreet, RoadJunction* pNode, std::mt19937_64& rng);
+    /// @brief Move the first agent of each of the street's queues into its target node, if
+    ///   transport capacity, traffic lights, right of way and the next street allow it
+    /// @param pStreet A pointer to the street
+    /// @param pNode A pointer to the street's target node
+    /// @param rng The random engine to draw from (one per thread, as nodes evolve in parallel)
+    void m_releaseQueueHeads(Street* pStreet, RoadJunction* pNode, std::mt19937_64& rng);
     /// @brief Moves agents from the node to their next street, as many as the node's exit
     ///   gate allows (see RoadJunction::flowAccumulator()).
     /// @param pNode A pointer to the node
@@ -349,18 +355,21 @@ namespace dsf::mobility {
                        DynamicsMode const mode = DynamicsMode::EDGES);
 
     /// @brief Automatically prepare the network for the simulation. This method calls the following methods in order:
-    /// - RoadNetwork::adjustNodeCapacities()
     /// - RoadNetwork::autoMapStreetLanes()
     /// - RoadNetwork::autoAssignRoadPriorities()
     /// - RoadNetwork::autoInitTrafficLights()
+    /// - RoadNetwork::applyIntersectionPriorities()
+    /// - RoadNetwork::adjustNodeCapacities()
     /// @param bAdjustNodeCapacities If true, the nodes' capacities are adjusted using the streets' transport capacities (default is true)
     /// @param bAutoMapStreetLanes If true, the streets' lanes are automatically mapped using the network's topology (default is false)
     /// @param bAutoAssignRoadPriorities If true, the streets' priorities are automatically assigned using the network's topology (default is true)
     /// @param bAutoInitTrafficLights If true, the traffic lights' phases are automatically initialized using the streets' geometry (default is true)
+    /// @param bApplyIntersectionPriorities If true, the plain intersections give way to their ingoing priority streets (default is false)
     void prepareNetwork(bool const bAdjustNodeCapacities = true,
                         bool const bAutoMapStreetLanes = false,
                         bool const bAutoAssignRoadPriorities = true,
-                        bool const bAutoInitTrafficLights = true);
+                        bool const bAutoInitTrafficLights = true,
+                        bool const bApplyIntersectionPriorities = false);
     /// @brief Set the passage probability
     /// @param passageProbability The passage probability
     /// @details The passage probability is the probability of passing through a node

@@ -15,7 +15,14 @@
   "road_network": {
     "edges_file": "edges.csv",
     "node_properties_file": "node_props.csv",
-    "mean_vehicle_length": 5.0
+    "mean_vehicle_length": 5.0,
+    "prepare_network": {
+      "adjust_node_capacities": true,
+      "auto_map_street_lanes": false,
+      "auto_assign_road_priorities": true,
+      "auto_init_traffic_lights": true,
+      "intersection_priorities": false
+    }
   },
   "dynamics": {
     "edge_weight": "traveltime",

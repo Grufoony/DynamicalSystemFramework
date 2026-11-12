@@ -6,6 +6,7 @@
 #include <nanobind/stl/function.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/set.h>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/string_view.h>
@@ -201,6 +202,12 @@ NB_MODULE(dsf_cpp, m) {
 
     Returns:
         str: The street's name (empty if unnamed).)doc")
+          .def("hasPriority",
+               &dsf::mobility::Street::hasPriority,
+               R"doc(Check whether the street is a priority (main) road.
+
+    Returns:
+        bool: True if the street has priority.)doc")
           .def("length",
                &dsf::mobility::Street::length,
                R"doc(Get the length of the street.
@@ -418,6 +425,55 @@ NB_MODULE(dsf_cpp, m) {
                                                                        "Intersection")
       .def(nb::init<dsf::Id>(), nb::arg("id"))
       .def(nb::init<dsf::Id, dsf::geometry::Point>(), nb::arg("id"), nb::arg("point"))
+      .def("streetPriorities",
+           &dsf::mobility::Intersection::streetPriorities,
+           R"doc(Get the ids of the ingoing streets with priority (the main roads) set on
+        this intersection.
+
+        Returns:
+          set[int]: The street ids.)doc")
+      .def("priorityFromStreets",
+           &dsf::mobility::Intersection::priorityFromStreets,
+           R"doc(Check whether the ingoing streets flagged as priority have right of way.
+
+        Returns:
+          bool: True if the intersection gives way to its flagged ingoing streets.)doc")
+      .def(
+          "setPriorityFromStreets",
+          &dsf::mobility::Intersection::setPriorityFromStreets,
+          nb::arg("priorityFromStreets"),
+          R"doc(Set whether the ingoing streets flagged as priority have right of way, when
+        the intersection has no street priorities of its own.
+
+        Args:
+          priorityFromStreets (bool): True to give way to the flagged streets.)doc")
+      .def("hasRightOfWay",
+           &dsf::mobility::Intersection::hasRightOfWay,
+           nb::arg("street"),
+           R"doc(Check whether an ingoing street has right of way at this intersection.
+
+        Args:
+          street (Street): An ingoing street of the intersection.
+
+        Returns:
+          bool: True if the street is in the intersection's street priorities or, when
+          it has none, if it is flagged as priority and the intersection takes its
+          priorities from the streets.)doc")
+      .def(
+          "isLaneOccupied",
+          &dsf::mobility::Intersection::isLaneOccupied,
+          nb::arg("streetId"),
+          nb::arg("lane"),
+          R"doc(Check whether a lane of an ingoing street has an agent in the intersection.
+
+        Each lane can have at most one agent in the intersection.
+
+        Args:
+          streetId (int): The street's id.
+          lane (int): The lane's index.
+
+        Returns:
+          bool: True if an agent coming from that lane is in the intersection.)doc")
       .def(
           "__repr__",
           [](const dsf::mobility::Intersection& i) { return std::format("{}", i); },
@@ -753,6 +809,17 @@ NB_MODULE(dsf_cpp, m) {
       .def("autoAssignRoadPriorities",
            &dsf::mobility::RoadNetwork::autoAssignRoadPriorities,
            R"doc(Auto-assign priorities to roads based on topology and attributes.)doc")
+      .def("applyIntersectionPriorities",
+           &dsf::mobility::RoadNetwork::applyIntersectionPriorities,
+           R"doc(Make the plain intersections give way to their ingoing priority streets.
+
+      Each intersection (not a traffic light) gives right of way to its ingoing streets
+      flagged as priority (by the import or by autoAssignRoadPriorities), read when
+      needed, so later changes of the flags apply too. An intersection with street
+      priorities of its own keeps them.
+
+      Returns:
+        None)doc")
       .def(
           "importEdges",
           [](dsf::mobility::RoadNetwork& self, const std::string& fileName) {

@@ -4,26 +4,37 @@
 /// @details This file contains the definition of the Intersection class. The Intersection class
 ///          represents a node in the road network. It is derived from the Node class and has a
 ///          multimap of agents waiting to pass through the intersection. Agents are ordered by
-///          their angle difference, emulating real-world precedence.
+///          their angle difference, emulating real-world precedence. Each lane of the ingoing
+///          streets can have at most one agent in the intersection.
 
 #pragma once
 
 #include "Agent.hpp"
 #include "RoadJunction.hpp"
 
+#include <algorithm>
 #include <format>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
+#include <utility>
 
 namespace dsf::mobility {
   /// @brief The Intersection class represents a node in the network.
   /// @tparam Id The type of the node's id. It must be an unsigned integral type.
   class Intersection : public RoadJunction {
+  public:
+    using AgentMap = std::multimap<int16_t, std::unique_ptr<Agent>>;
+
   protected:
-    std::multimap<int16_t, std::unique_ptr<Agent>> m_agents;
+    AgentMap m_agents;
     std::set<Id>
         m_streetPriorities;  // A set containing the street ids that have priority - like main roads
+    std::map<std::pair<Id, std::size_t>, Id>
+        m_laneOccupants;  // (street id, lane) -> id of the agent coming from that lane
+    bool m_priorityFromStreets{
+        false};  // Whether flagged ingoing streets have right of way
 
   public:
     /// @brief Construct a new Intersection object
@@ -46,12 +57,18 @@ namespace dsf::mobility {
     void setCapacity(std::size_t const capacity) override;
 
     /// @brief Put an agent in the node
-    /// @param agent A std::pair containing the agent's angle difference and id
+    /// @param angle The agent's angle difference
+    /// @param pAgent The agent
+    /// @param lane The lane of the agent's current street the agent comes from, if any
     /// @details The agent's angle difference is used to order the agents in the node.
     ///          The agent with the smallest angle difference is the first one to be
-    ///          removed from the node.
-    /// @throws std::runtime_error if the node is full
-    void addAgent(double angle, std::unique_ptr<Agent> pAgent);
+    ///          removed from the node. If the lane is given, it stays occupied until the
+    ///          agent is removed.
+    /// @throws std::runtime_error if the node is full or the lane is already occupied
+    /// @throws std::invalid_argument if the lane is given but the agent is on no street
+    void addAgent(double angle,
+                  std::unique_ptr<Agent> pAgent,
+                  std::optional<std::size_t> lane = std::nullopt);
     /// @brief Put an agent in the node
     /// @param agentId The agent's id
     /// @details The agent's angle difference is used to order the agents in the node.
@@ -59,9 +76,17 @@ namespace dsf::mobility {
     ///          removed from the node.
     /// @throws std::runtime_error if the node is full
     void addAgent(std::unique_ptr<Agent> pAgent);
-    // /// @brief Removes an agent from the node
-    // /// @param agentId The agent's id
-    // void removeAgent(Id agentId);
+    /// @brief Remove an agent from the node, freeing the lane it came from
+    /// @param it An iterator to the agent in agents()
+    /// @return std::unique_ptr<Agent> The removed agent
+    std::unique_ptr<Agent> removeAgent(AgentMap::const_iterator it);
+    /// @brief Check whether a lane of an ingoing street has an agent in the node
+    /// @param streetId The street's id
+    /// @param lane The lane's index
+    /// @return bool True if an agent coming from that lane is in the node
+    inline bool isLaneOccupied(Id streetId, std::size_t lane) const {
+      return m_laneOccupants.contains({streetId, lane});
+    }
     /// @brief Set the node streets with priority
     /// @param streetPriorities A std::set containing the node's street priorities
     void setStreetPriorities(std::set<Id> streetPriorities) {
@@ -97,9 +122,34 @@ namespace dsf::mobility {
     ///        have priority over the agents that are on the other streets.
     /// @return std::set<Id> A std::set containing the node's street priorities
     virtual const std::set<Id>& streetPriorities() const { return m_streetPriorities; };
-    /// @brief Get the node's agent ids
-    /// @return std::set<Id> A std::set containing the node's agent ids
-    std::multimap<int16_t, std::unique_ptr<Agent>>& agents() { return m_agents; };
+    /// @brief Set whether the ingoing streets flagged as priority (see Street::hasPriority)
+    ///   have right of way at this node, when it has no street priorities of its own
+    /// @param bPriorityFromStreets True to give way to the flagged streets
+    void setPriorityFromStreets(bool const bPriorityFromStreets) noexcept {
+      m_priorityFromStreets = bPriorityFromStreets;
+    }
+    /// @brief Whether the ingoing streets flagged as priority have right of way at this node
+    bool priorityFromStreets() const noexcept { return m_priorityFromStreets; }
+    /// @brief Whether an ingoing street has right of way at this node
+    /// @param street An ingoing street of the node
+    /// @return True if the street is in the node's street priorities or, when the node has
+    ///         none, if it is flagged as priority (e.g. from the "priority" column) and the
+    ///         node takes its priorities from the streets (see setPriorityFromStreets)
+    bool hasRightOfWay(Street const& street) const {
+      if (!m_streetPriorities.empty()) {
+        return m_streetPriorities.contains(street.id());
+      }
+      return m_priorityFromStreets && street.hasPriority();
+    }
+    /// @brief Whether any ingoing street has right of way at this node
+    bool hasPriorityStreets() const {
+      return std::ranges::any_of(ingoingEdges(), [this](Street const* pStreet) {
+        return hasRightOfWay(*pStreet);
+      });
+    }
+    /// @brief Get the node's agents
+    /// @return AgentMap const& The node's agents, in the order they leave the node
+    AgentMap const& agents() const noexcept { return m_agents; };
 
     constexpr bool isIntersection() const noexcept final { return true; }
   };
