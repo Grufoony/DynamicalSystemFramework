@@ -5,10 +5,10 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18745492.svg)](https://doi.org/10.5281/zenodo.18745492)
 
 [![Standard](https://img.shields.io/badge/C%2B%2B-20/23-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B#Standardization)
-[![TBB](https://img.shields.io/badge/TBB-2022.3.0-blue.svg)](https://github.com/oneapi-src/oneTBB)
+[![TBB](https://img.shields.io/badge/TBB-2023.2.0-blue.svg)](https://github.com/uxlfoundation/oneTBB)
 [![SPDLOG](https://img.shields.io/badge/spdlog-1.17.0-blue.svg)](https://github.com/gabime/spdlog)
-[![CSV](https://img.shields.io/badge/csv_parser-5.4.0-blue.svg)](https://github.com/vincentlaucsb/csv-parser)
-[![JSON](https://img.shields.io/badge/simdjson-5.0.0-blue.svg)](https://github.com/simdjson/simdjson)
+[![CSV](https://img.shields.io/badge/csv_parser-5.8.0-blue.svg)](https://github.com/vincentlaucsb/csv-parser)
+[![JSON](https://img.shields.io/badge/simdjson-5.1.1-blue.svg)](https://github.com/simdjson/simdjson)
 [![SQLite](https://img.shields.io/badge/SQLiteCpp-3.4.0-blue.svg)](https://github.com/SRombauts/SQLiteCpp)
 
 The aim of this project is to rework the original [Traffic Flow Dynamics Model](https://github.com/Grufoony/TrafficFlowDynamicsModel).
