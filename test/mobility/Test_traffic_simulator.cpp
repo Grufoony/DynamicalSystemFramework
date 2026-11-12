@@ -10,7 +10,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
+#include <vector>
 
 using namespace dsf;
 using namespace dsf::mobility;
@@ -313,6 +315,75 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   Road::setMeanVehicleLength(previousMeanVehicleLength);
 }
 
+TEST_CASE("TrafficSimulator JSON config - prepare_network") {
+  auto const inputDir = makeUniqueDirectory("traffic_simulator_prep_input_");
+  auto const outputDir = makeUniqueDirectory("traffic_simulator_prep_output_");
+  auto const jsonPath = makeUniquePath("traffic_simulator_prep_config_", ".json");
+  // Node 1 is an intersection crossed by a PRIMARY road (streets 0 and 1)
+  writeFile(inputDir / "edges.csv",
+            "id;source;target;length;maxspeed;name;type;nlanes;mobility_class\n"
+            "0;0;1;13.8888888889;50;edge_0;primary;1;64\n"
+            "1;2;1;13.8888888889;50;edge_1;primary;1;64\n"
+            "2;3;1;13.8888888889;50;edge_2;residential;1;8\n"
+            "3;1;0;13.8888888889;50;edge_3;primary;1;64\n"
+            "4;1;2;13.8888888889;50;edge_4;primary;1;64\n"
+            "5;1;3;13.8888888889;50;edge_5;residential;1;8\n");
+  writeFile(inputDir / "nodes.csv", "id;type;geometry\n1;normal;\n");
+
+  auto const runWith = [&](std::string const& prepareNetwork) {
+    writeFile(jsonPath,
+              R"({ "general": { "input_folder": ")" + inputDir.string() +
+                  R"(", "output_folder": ")" + outputDir.string() +
+                  R"(", "name": "prepare", "init_time": 10, "end_time": 16 },)"
+                  R"( "road_network": { "edges_file": "edges.csv", )"
+                  R"("node_properties_file": "nodes.csv")" +
+                  prepareNetwork +
+                  R"( }, "dynamics": { "edge_weight": "length", )"
+                  R"("agent_insertion_method": "ODS" } })");
+    auto pSimulator{std::make_unique<TrafficSimulator>(jsonPath.string())};
+    pSimulator->dynamics()->setODs(std::vector<ODEntry>{{0, 4, 1.0}});
+    pSimulator->run(std::vector<std::size_t>{1, 0, 0, 0, 0, 0});
+    return pSimulator;
+  };
+  auto const intersection = [](TrafficSimulator& simulator) -> Intersection const& {
+    return dynamic_cast<Intersection const&>(simulator.dynamics()->graph().node(1));
+  };
+
+  SUBCASE("Without prepare_network, the intersections ignore the road priorities") {
+    auto const pSimulator{runWith("")};
+    auto const& graph{pSimulator->dynamics()->graph()};
+    CHECK(graph.edge(0).hasPriority());
+    CHECK(graph.edge(1).hasPriority());
+    CHECK_FALSE(intersection(*pSimulator).priorityFromStreets());
+    CHECK_FALSE(intersection(*pSimulator).hasPriorityStreets());
+  }
+  SUBCASE("With intersection_priorities, the intersections give way to the main road") {
+    auto const pSimulator{runWith(
+        R"(, "prepare_network": { "adjust_node_capacities": true, )"
+        R"("auto_map_street_lanes": false, "auto_assign_road_priorities": true, )"
+        R"("auto_init_traffic_lights": true, "intersection_priorities": true })")};
+    auto const& graph{pSimulator->dynamics()->graph()};
+    CHECK(intersection(*pSimulator).hasRightOfWay(graph.edge(0)));
+    CHECK(intersection(*pSimulator).hasRightOfWay(graph.edge(1)));
+    CHECK_FALSE(intersection(*pSimulator).hasRightOfWay(graph.edge(2)));
+    // Its transport capacity is the main road's: two single-lane streets
+    CHECK_EQ(graph.node(1).transportCapacity(),
+             doctest::Approx(2 * graph.edge(0).transportCapacity()));
+  }
+  SUBCASE("Without road priorities, there is nothing to give way to") {
+    auto const pSimulator{
+        runWith(R"(, "prepare_network": { "auto_assign_road_priorities": false, )"
+                R"("intersection_priorities": true })")};
+    CHECK_FALSE(pSimulator->dynamics()->graph().edge(0).hasPriority());
+    CHECK(intersection(*pSimulator).priorityFromStreets());
+    CHECK_FALSE(intersection(*pSimulator).hasPriorityStreets());
+  }
+
+  std::filesystem::remove_all(inputDir);
+  std::filesystem::remove_all(outputDir);
+  std::filesystem::remove(jsonPath);
+}
+
 TEST_CASE("TrafficSimulator JSON config errors") {
   auto const inputDir = makeUniqueDirectory("traffic_simulator_err_input_");
   auto const outputDir = makeUniqueDirectory("traffic_simulator_err_output_");
@@ -338,6 +409,18 @@ TEST_CASE("TrafficSimulator JSON config errors") {
 
   SUBCASE("The file does not exist") {
     CHECK_THROWS_AS(TrafficSimulator{(inputDir / "missing.json").string()},
+                    std::runtime_error);
+  }
+  SUBCASE("prepare_network is malformed") {
+    auto const roadNetworkWith = [](std::string const& prepareNetwork) {
+      return R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
+             R"("nodes.csv", "prepare_network": )" +
+             prepareNetwork + " }";
+    };
+    CHECK_THROWS_AS(importConfig(makeConfig("", roadNetworkWith("true"))),
+                    std::runtime_error);
+    CHECK_THROWS_AS(importConfig(makeConfig(
+                        "", roadNetworkWith(R"({ "intersection_priorities": 1 })"))),
                     std::runtime_error);
   }
   SUBCASE("The root is not an object") {

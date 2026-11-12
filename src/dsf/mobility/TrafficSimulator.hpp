@@ -37,6 +37,23 @@ namespace dsf::mobility {
     bool m_saveTravelData{false};
     bool m_saveAgentData{false};
     bool m_saveTurnCounts{false};
+    // The FirstOrderDynamics::prepareNetwork flags used by run
+    struct {
+      bool adjustNodeCapacities{true};
+      bool autoMapStreetLanes{false};
+      bool autoAssignRoadPriorities{true};
+      bool autoInitTrafficLights{true};
+      bool applyIntersectionPriorities{false};
+    } m_prepareNetwork;
+
+    /// @brief Prepare the network for the run, as configured by m_prepareNetwork
+    void m_runPrepareNetwork() {
+      m_dynamics->prepareNetwork(m_prepareNetwork.adjustNodeCapacities,
+                                 m_prepareNetwork.autoMapStreetLanes,
+                                 m_prepareNetwork.autoAssignRoadPriorities,
+                                 m_prepareNetwork.autoInitTrafficLights,
+                                 m_prepareNetwork.applyIntersectionPriorities);
+    }
     /// @brief A scheduled reload of the ODs from a CSV file
     struct ODsUpdate {
       std::time_t time;
@@ -322,7 +339,7 @@ namespace dsf::mobility {
         throw std::runtime_error(
             "Cannot run the simulation without imported road network dynamics.");
       }
-      m_dynamics->prepareNetwork();
+      m_runPrepareNetwork();
       m_runDefault(nAgentsPerTimeStep, deltaT);
     }
 
@@ -343,7 +360,7 @@ namespace dsf::mobility {
         throw std::runtime_error(
             "Cannot run the simulation without imported road network dynamics.");
       }
-      m_dynamics->prepareNetwork();
+      m_runPrepareNetwork();
       m_runSlowCharge(nInitialAgents, agentInsertionDeltaT, checkDeltaT, agentIncrement);
     }
 

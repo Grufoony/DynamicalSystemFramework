@@ -290,3 +290,33 @@ def test_dynamics_set_mode(dynamics):
     assert dynamics.mode() == mobility.DynamicsMode.NODES
     dynamics.setODs([(0, 1, 1.0)])
     assert dynamics.destinationStreets() == {2, 5, 7}
+
+
+def test_road_network_apply_intersection_priorities(tmp_path):
+    # Node 1 is an intersection crossed by a PRIMARY road (streets 0 and 1)
+    edges_path = tmp_path / "edges.csv"
+    edges_path.write_text(
+        "id;source;target;length;maxspeed;name;type;nlanes;mobility_class\n"
+        "0;0;1;13.8888888889;50;edge_0;primary;1;64\n"
+        "1;2;1;13.8888888889;50;edge_1;primary;1;64\n"
+        "2;3;1;13.8888888889;50;edge_2;residential;1;8\n"
+    )
+    network = mobility.RoadNetwork()
+    network.importEdges(str(edges_path), ";")
+
+    network.autoAssignRoadPriorities()
+    assert network.edge(0).hasPriority()
+    assert network.edge(1).hasPriority()
+    assert not network.edge(2).hasPriority()
+    intersection = network.node(1)
+    assert not intersection.priorityFromStreets()
+    assert not intersection.hasRightOfWay(network.edge(0))
+
+    network.applyIntersectionPriorities()
+    # The flags are read when needed: nothing is copied into the street priorities
+    assert intersection.priorityFromStreets()
+    assert intersection.streetPriorities() == set()
+    assert intersection.hasRightOfWay(network.edge(0))
+    assert intersection.hasRightOfWay(network.edge(1))
+    assert not intersection.hasRightOfWay(network.edge(2))
+    assert not intersection.isLaneOccupied(2, 0)

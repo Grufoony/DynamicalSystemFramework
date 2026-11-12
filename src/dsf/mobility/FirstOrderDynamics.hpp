@@ -355,18 +355,21 @@ namespace dsf::mobility {
                        DynamicsMode const mode = DynamicsMode::EDGES);
 
     /// @brief Automatically prepare the network for the simulation. This method calls the following methods in order:
-    /// - RoadNetwork::adjustNodeCapacities()
     /// - RoadNetwork::autoMapStreetLanes()
     /// - RoadNetwork::autoAssignRoadPriorities()
     /// - RoadNetwork::autoInitTrafficLights()
+    /// - RoadNetwork::applyIntersectionPriorities()
+    /// - RoadNetwork::adjustNodeCapacities()
     /// @param bAdjustNodeCapacities If true, the nodes' capacities are adjusted using the streets' transport capacities (default is true)
     /// @param bAutoMapStreetLanes If true, the streets' lanes are automatically mapped using the network's topology (default is false)
     /// @param bAutoAssignRoadPriorities If true, the streets' priorities are automatically assigned using the network's topology (default is true)
     /// @param bAutoInitTrafficLights If true, the traffic lights' phases are automatically initialized using the streets' geometry (default is true)
+    /// @param bApplyIntersectionPriorities If true, the plain intersections give way to their ingoing priority streets (default is false)
     void prepareNetwork(bool const bAdjustNodeCapacities = true,
                         bool const bAutoMapStreetLanes = false,
                         bool const bAutoAssignRoadPriorities = true,
-                        bool const bAutoInitTrafficLights = true);
+                        bool const bAutoInitTrafficLights = true,
+                        bool const bApplyIntersectionPriorities = false);
     /// @brief Set the passage probability
     /// @param passageProbability The passage probability
     /// @details The passage probability is the probability of passing through a node

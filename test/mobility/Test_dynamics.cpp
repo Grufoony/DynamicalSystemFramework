@@ -2555,10 +2555,25 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(dynamics.graph().edge(5).nAgents(), 0);
         }
       }
+      WHEN("We flag the D-B road as priority without applying it to the intersections") {
+        dynamics.graph().edge(10).setPriority();
+        dynamics.graph().edge(20).setPriority();
+        dynamics.addAgent(22, 5);
+        dynamics.addAgent(22, 20);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        THEN("The flags are ignored: the agent in A passes first") {
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
+          CHECK_EQ(nodeO.agents().size(), 1);
+          CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
+        }
+      }
       WHEN("We flag the D-B road as priority and add agents in A and D") {
         // Same as above, through the street flag (e.g. the "priority" column)
         dynamics.graph().edge(10).setPriority();
         dynamics.graph().edge(20).setPriority();
+        dynamics.graph().applyIntersectionPriorities();
         dynamics.addAgent(22, 5);
         dynamics.addAgent(22, 20);
         dynamics.evolve();
@@ -2577,6 +2592,61 @@ TEST_CASE("FirstOrderDynamics") {
         THEN("The agent in A passes next") {
           CHECK_EQ(dynamics.graph().edge(2).nAgents(), 2);
           CHECK_EQ(dynamics.graph().edge(5).nAgents(), 0);
+        }
+      }
+      WHEN("The road from A to C is the main one and the network is prepared") {
+        for (Id const streetId : {5, 15}) {
+          dynamics.graph().edge(streetId).setMobilityClass(64u);  // PRIMARY
+        }
+        for (Id const streetId : {10, 20}) {
+          dynamics.graph().edge(streetId).setMobilityClass(8u);  // RESIDENTIAL
+        }
+        AND_WHEN("The intersection priorities are applied") {
+          dynamics.prepareNetwork(false, false, true, false, true);
+          dynamics.addAgent(11, 15);
+          dynamics.addAgent(11, 20);
+          dynamics.evolve();
+          dynamics.evolve();
+          dynamics.evolve();
+          THEN("The agent in C passes first because it's on the main road") {
+            CHECK(nodeO.hasRightOfWay(dynamics.graph().edge(15)));
+            CHECK_FALSE(nodeO.hasRightOfWay(dynamics.graph().edge(20)));
+            CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
+            // The agent in D gives way: it waits on its street, not in the node
+            CHECK(nodeO.agents().empty());
+            CHECK_EQ(dynamics.graph().edge(20).nAgents(), 1);
+          }
+        }
+        AND_WHEN("The intersection priorities are not applied (the default)") {
+          dynamics.prepareNetwork(false, false, true, false);
+          dynamics.addAgent(11, 15);
+          dynamics.addAgent(11, 20);
+          dynamics.evolve();
+          dynamics.evolve();
+          dynamics.evolve();
+          THEN("The agent in D passes first, as without road types") {
+            CHECK_FALSE(nodeO.hasPriorityStreets());
+            CHECK_EQ(dynamics.graph().edge(1).nAgents(), 1);
+            CHECK_EQ(nodeO.agents().size(), 1);
+            CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 15);
+          }
+        }
+      }
+      WHEN("Two agents queue on the same lane and the intersection keeps the first") {
+        // A negligible transport capacity keeps the agents in the intersection
+        nodeO.setTransportCapacity(1e-9);
+        dynamics.addAgent(22, 20);
+        dynamics.addAgent(22, 20);
+        for (auto i{0}; i < 5; ++i) {
+          dynamics.evolve();
+        }
+        THEN(
+            "The second agent waits on the street, although the intersection is not "
+            "full") {
+          CHECK_FALSE(nodeO.isFull());
+          CHECK_EQ(nodeO.agents().size(), 1);
+          CHECK(nodeO.isLaneOccupied(20, 0));
+          CHECK_EQ(dynamics.graph().edge(20).nExitingAgents(), 1);
         }
       }
     }

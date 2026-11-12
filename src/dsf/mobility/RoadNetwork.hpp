@@ -58,6 +58,13 @@ namespace dsf::mobility {
 
     void m_jsonEdgesImporter(std::ifstream& file);
 
+    /// @brief Among the ingoing streets of a node, find the two that are the same road
+    /// @param streets The ingoing streets to choose from
+    /// @return std::vector<Street*> The only two streets sharing a name, otherwise the only
+    ///         two entering the node from opposite directions (more than 135 degrees
+    ///         apart), otherwise an empty vector
+    static std::vector<Street*> m_sameRoadPair(std::vector<Street*> const& streets);
+
   public:
     RoadNetwork();
     // Disable copy constructor and copy assignment operator
@@ -87,6 +94,7 @@ namespace dsf::mobility {
     /// @details Each street contributes its number of lanes times its transport capacity, i.e. the agents per time step it can deliver.
     /// - The node capacity is the sum over the incoming streets, rounded up. Nodes without incoming streets use the sum over the outgoing streets. The capacity is never less than 1, so scaled-down transport capacities never block a node.
     /// - The node transport capacity is the sum over the outgoing streets, or 1 if the node has none.
+    /// - An intersection (not a traffic light) with streets that have right of way (see Intersection::hasRightOfWay) gets instead the sum over those main-road streets as transport capacity, so set the priorities before calling this method.
     void adjustNodeCapacities();
     /// @brief Auto-initialise traffic light phases from street geometry.
     /// @param mainRoadPercentage Fraction of the cycle time allocated to
@@ -96,7 +104,8 @@ namespace dsf::mobility {
     /// @details For each TrafficLight node that has no phases yet:
     ///   - Nodes with fewer than 3 ingoing edges are downgraded to plain
     ///     Intersection nodes.
-    ///   - Priority streets are detected by name, speed limit, lane count
+    ///   - Priority streets are the ones flagged as priority (one or two of them),
+    ///     otherwise they are detected by name, speed limit, lane count
     ///     or angle (in that order of precedence).
     ///   - Two phases are created:
     ///       Phase 0 (priority streets)    — duration = mainRoadPercentage * DEFAULT_CYCLE
@@ -110,7 +119,18 @@ namespace dsf::mobility {
     /// @details For example, if one street has the right turn forbidden, then the right lane becomes a straight one
     void autoMapStreetLanes();
     /// @brief Automatically assigns road priorities at intersections, basing on road types
+    /// @details At each node, the main road is the most important type among the ingoing
+    ///          streets (see Street::mobilityClass). If it has one or two streets, they get
+    ///          the priority; with more, only the pair that is the same road does (see
+    ///          m_sameRoadPair). Nodes with fewer than two classified ingoing streets are
+    ///          skipped. Only the streets are flagged: see applyIntersectionPriorities.
     void autoAssignRoadPriorities();
+    /// @brief Make the plain intersections give way to their ingoing priority streets
+    /// @details Each intersection (not a traffic light) gives right of way to its ingoing
+    ///          streets flagged as priority (see Street::hasPriority), read when needed, so
+    ///          later changes of the flags apply too. An intersection with street priorities
+    ///          of its own keeps them. See Intersection::setPriorityFromStreets.
+    void applyIntersectionPriorities();
     /// @brief Describe the RoadNetwork
     /// @param os The output stream to write the description to (default is std::cout)
     void describe(std::ostream& os = std::cout) const;

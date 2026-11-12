@@ -139,6 +139,51 @@ TEST_CASE("Intersection") {
     CHECK_THROWS_AS(intersection.addStreetPriority(999), std::invalid_argument);
   }
 
+  SUBCASE("Right of way and lane occupancy") {
+    Intersection intersection{7};
+    intersection.setCapacity(3);
+    Intersection other{0};
+    Street mainStreet{1, {&other, &intersection}};
+    Street minorStreet{2, {&other, &intersection}};
+    intersection.addIngoingEdge(&mainStreet);
+    intersection.addIngoingEdge(&minorStreet);
+    // Street flags count only once the intersection takes its priorities from them
+    mainStreet.setPriority();
+    CHECK_FALSE(intersection.hasPriorityStreets());
+    intersection.setPriorityFromStreets(true);
+    CHECK(intersection.hasRightOfWay(mainStreet));
+    CHECK_FALSE(intersection.hasRightOfWay(minorStreet));
+    // Street priorities of its own win over the flags
+    intersection.addStreetPriority(2);
+    CHECK_FALSE(intersection.hasRightOfWay(mainStreet));
+    CHECK(intersection.hasRightOfWay(minorStreet));
+
+    auto minorAgent = std::make_unique<dsf::mobility::Agent>(0, 0);
+    minorAgent->setStreetId(2);
+    auto mainAgent = std::make_unique<dsf::mobility::Agent>(1, 0);
+    mainAgent->setStreetId(1);
+    intersection.addAgent(-1., std::move(minorAgent), 0);
+    intersection.addAgent(1., std::move(mainAgent), 0);
+    CHECK(intersection.isLaneOccupied(1, 0));
+    CHECK(intersection.isLaneOccupied(2, 0));
+    CHECK_FALSE(intersection.isLaneOccupied(2, 1));
+    // One agent per lane, and only agents on a street come from a lane
+    auto sameLaneAgent = std::make_unique<dsf::mobility::Agent>(2, 0);
+    sameLaneAgent->setStreetId(2);
+    CHECK_THROWS_AS(intersection.addAgent(0., std::move(sameLaneAgent), 0),
+                    std::runtime_error);
+    CHECK_THROWS_AS(
+        intersection.addAgent(0., std::make_unique<dsf::mobility::Agent>(3, 0), 0),
+        std::invalid_argument);
+    CHECK_EQ(intersection.nAgents(), 2);
+    // Removing an agent (the first one, by angle difference) frees its lane
+    auto pAgent{intersection.removeAgent(intersection.agents().begin())};
+    CHECK_EQ(pAgent->id(), 0);
+    CHECK_EQ(intersection.nAgents(), 1);
+    CHECK_FALSE(intersection.isLaneOccupied(2, 0));
+    CHECK(intersection.isLaneOccupied(1, 0));
+  }
+
   SUBCASE("Capacity and error handling") {
     Intersection intersection{99};
     intersection.setCapacity(2);

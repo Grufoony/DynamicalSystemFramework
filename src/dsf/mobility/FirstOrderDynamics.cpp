@@ -904,6 +904,17 @@ namespace dsf::mobility {
             *nextStreet);
         continue;
       }
+      // Each lane can have at most one agent in an intersection
+      if (destinationNode->isIntersection() &&
+          static_cast<Intersection const&>(*destinationNode)
+              .isLaneOccupied(pStreet->id(), static_cast<std::size_t>(queueIndex))) {
+        spdlog::trace(
+            "Skipping agent emission from {} due to an agent from lane {} still in {}",
+            *pStreet,
+            queueIndex,
+            *destinationNode);
+        continue;
+      }
       auto pAgent{pStreet->dequeue(queueIndex, this->time_step())};
       spdlog::debug(
           "{} at time {} has been dequeued from street {} and enqueued on street {} "
@@ -917,7 +928,8 @@ namespace dsf::mobility {
       if (destinationNode->isIntersection()) {
         auto& intersection = dynamic_cast<Intersection&>(*destinationNode);
         auto const delta{nextStreet->deltaAngle(pStreet->angle())};
-        intersection.addAgent(delta, std::move(pAgent));
+        intersection.addAgent(
+            delta, std::move(pAgent), static_cast<std::size_t>(queueIndex));
       } else if (destinationNode->isRoundabout()) {
         auto& roundabout = dynamic_cast<Roundabout&>(*destinationNode);
         roundabout.enqueue(std::move(pAgent));
@@ -972,7 +984,7 @@ namespace dsf::mobility {
           }
           for (auto it{intersection.agents().begin()};
                it != intersection.agents().end();) {
-            auto& pAgent{it->second};
+            auto const& pAgent{it->second};
             if (bPriorityPass && !comesFromPriority(pAgent)) {
               ++it;
               continue;
@@ -1010,8 +1022,7 @@ namespace dsf::mobility {
                 pNode->id(),
                 nextStreet->id(),
                 pAgent->freeTime());
-            nextStreet->addAgent(std::move(pAgent), this->time_step());
-            it = intersection.agents().erase(it);
+            nextStreet->addAgent(intersection.removeAgent(it), this->time_step());
             bReleased = true;
             break;
           }
@@ -1198,10 +1209,8 @@ namespace dsf::mobility {
   void FirstOrderDynamics::prepareNetwork(bool const bAdjustNodeCapacities,
                                           bool const bAutoMapStreetLanes,
                                           bool const bAutoAssignRoadPriorities,
-                                          bool const bAutoInitTrafficLights) {
-    if (bAdjustNodeCapacities) {
-      m_graph->adjustNodeCapacities();
-    }
+                                          bool const bAutoInitTrafficLights,
+                                          bool const bApplyIntersectionPriorities) {
     if (bAutoMapStreetLanes) {
       m_graph->autoMapStreetLanes();
     }
@@ -1210,6 +1219,14 @@ namespace dsf::mobility {
     }
     if (bAutoInitTrafficLights) {
       m_graph->autoInitTrafficLights();
+    }
+    // After autoInitTrafficLights, so that the traffic lights it downgrades are included
+    if (bApplyIntersectionPriorities) {
+      m_graph->applyIntersectionPriorities();
+    }
+    // Last, as the intersections' transport capacity depends on their priorities
+    if (bAdjustNodeCapacities) {
+      m_graph->adjustNodeCapacities();
     }
   }
 
