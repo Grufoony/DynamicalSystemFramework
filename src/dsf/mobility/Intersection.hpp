@@ -97,6 +97,13 @@ namespace dsf::mobility {
     ///        have priority over the agents that are on the other streets.
     /// @return std::set<Id> A std::set containing the node's street priorities
     virtual const std::set<Id>& streetPriorities() const { return m_streetPriorities; };
+    /// @brief Whether an ingoing street has right of way at this node
+    /// @param street An ingoing street of the node
+    /// @return True if the street is flagged as priority (e.g. from the "priority" column)
+    ///         or listed in the node's street priorities
+    bool hasRightOfWay(Street const& street) const {
+      return street.hasPriority() || m_streetPriorities.contains(street.id());
+    }
     /// @brief Get the node's agent ids
     /// @return std::set<Id> A std::set containing the node's agent ids
     std::multimap<int16_t, std::unique_ptr<Agent>>& agents() { return m_agents; };

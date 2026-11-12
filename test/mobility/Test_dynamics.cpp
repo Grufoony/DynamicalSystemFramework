@@ -2517,6 +2517,50 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
         }
       }
+      WHEN("We add agents in A and D without priorities") {
+        dynamics.addAgent(22, 5);
+        dynamics.addAgent(22, 20);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        THEN("The agent in A passes first") {
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
+          CHECK_EQ(nodeO.agents().size(), 1);
+          CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 20);
+        }
+      }
+      WHEN("We set street priorities on the D-B road and add agents in A and D") {
+        nodeO.addStreetPriority(10);
+        nodeO.addStreetPriority(20);
+        dynamics.addAgent(22, 5);
+        dynamics.addAgent(22, 20);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        THEN("The agent in D passes first because it's on the main road") {
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
+          CHECK_EQ(nodeO.agents().size(), 1);
+          CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 5);
+        }
+      }
+      WHEN("We flag the D-B road as priority and add agents in A and D") {
+        // Same as above, through the street flag (e.g. the "priority" column)
+        dynamics.graph().edge(10).setPriority();
+        dynamics.graph().edge(20).setPriority();
+        dynamics.addAgent(22, 5);
+        dynamics.addAgent(22, 20);
+        dynamics.evolve();
+        dynamics.evolve();
+        dynamics.evolve();
+        THEN("The intersection's priority set is left empty") {
+          CHECK(nodeO.streetPriorities().empty());
+        }
+        THEN("The agent in D passes first because it's on the main road") {
+          CHECK_EQ(dynamics.graph().edge(2).nAgents(), 1);
+          CHECK_EQ(nodeO.agents().size(), 1);
+          CHECK_EQ(nodeO.agents().begin()->second->streetId().value(), 5);
+        }
+      }
     }
   }
   SUBCASE("Transition probabilities") {

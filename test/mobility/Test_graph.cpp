@@ -534,9 +534,15 @@ TEST_CASE("RoadNetwork") {
           // no override needed here, just a plain explicit value
           tmpCsv << "301;2;3;False;120.0;LINESTRING (8.1 45.1, 8.2 45.2);14.4;30.0;1;"
                     "residential;mobility_class_plain;32\n";
-          // invalid value should fall back to default (0)
+          // invalid value should fall back to the road type (residential -> 0)
           tmpCsv << "302;3;4;False;140.0;LINESTRING (8.2 45.2, 8.3 45.3);16.8;30.0;1;"
                     "residential;mobility_class_invalid;not_a_number\n";
+          // 0 keeps the class derived from the road type (primary -> 64)
+          tmpCsv << "303;4;5;False;140.0;LINESTRING (8.3 45.3, 8.4 45.4);16.8;30.0;1;"
+                    "primary;mobility_class_zero;0\n";
+          // invalid value falls back to the road type (secondary -> 32)
+          tmpCsv << "304;5;6;False;140.0;LINESTRING (8.4 45.4, 8.5 45.5);16.8;30.0;1;"
+                    "secondary;mobility_class_invalid_typed;not_a_number\n";
         }
 
         RoadNetwork graphWithMobilityClass;
@@ -551,6 +557,10 @@ TEST_CASE("RoadNetwork") {
           CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(301)).mobilityClass(),
                    32u);
           CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(302)).mobilityClass(), 0u);
+          CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(303)).mobilityClass(),
+                   64u);
+          CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(304)).mobilityClass(),
+                   32u);
           std::filesystem::remove(tmpCsvPath);
         }
       }
@@ -598,6 +608,24 @@ TEST_CASE("RoadNetwork") {
         "type": "LineString",
         "coordinates": [[8.1, 45.1], [8.2, 45.2]]
       }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 402,
+        "source": 22,
+        "target": 23,
+        "length": 60.0,
+        "maxspeed": 30.0,
+        "nlanes": 1,
+        "type": "tertiary",
+        "name": "geo_mobility_class_zero",
+        "mobility_class": 0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[8.2, 45.2], [8.3, 45.3]]
+      }
     }
   ]
 })";
@@ -615,6 +643,9 @@ TEST_CASE("RoadNetwork") {
           // no mobility_class given -> falls back to type-based inference ("motorway" -> 128)
           CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(401)).mobilityClass(),
                    128u);
+          // mobility_class 0 keeps the type-based class ("tertiary" -> 16)
+          CHECK_EQ(graphWithMobilityClass.edge(static_cast<Id>(402)).mobilityClass(),
+                   16u);
           std::filesystem::remove(tmpGeoJsonPath);
         }
       }
@@ -741,7 +772,8 @@ TEST_CASE("RoadNetwork") {
           auto const& e501 = graphWithOptionals.edge(static_cast<Id>(501));
           CHECK_EQ(e501.maxSpeed(), doctest::Approx(30. / 3.6));
           CHECK_EQ(e501.nLanes(), 1);
-          CHECK_EQ(e501.mobilityClass(), 0u);
+          // invalid mobility_class falls back to the road type ("secondary")
+          CHECK_EQ(e501.mobilityClass(), 32u);
           CHECK_EQ(e501.counterName(), "42");
           CHECK(e501.forbiddenTurns().empty());
           CHECK_EQ(e501.transportCapacity(), doctest::Approx(1.));
@@ -1436,9 +1468,9 @@ TEST_CASE("RoadNetwork") {
     REQUIRE(edgesFile.is_open());
     std::string edgesCsv((std::istreambuf_iterator<char>(edgesFile)),
                          std::istreambuf_iterator<char>());
-    CHECK(edgesCsv.find("id,source,target,length,maxspeed,nlanes,type,capacity,"
-                        "transport_capacity,status,name,priority,coilcode,geometry") !=
-          std::string::npos);
+    CHECK(edgesCsv.find("id,source,target,length,maxspeed,nlanes,type,mobility_class,"
+                        "capacity,transport_capacity,status,name,priority,coilcode,"
+                        "geometry") != std::string::npos);
     CHECK(edgesCsv.find("Exported Street") != std::string::npos);
     CHECK(edgesCsv.find("64") != std::string::npos);  // PRIMARY
     CHECK(edgesCsv.find("OPEN") != std::string::npos);
@@ -1467,6 +1499,9 @@ TEST_CASE("RoadNetwork") {
     edgesRoundTrip.importEdges(edgesPath.string(), ',');
     CHECK_EQ(edgesRoundTrip.edge(static_cast<Id>(42)).transportCapacity(),
              doctest::Approx(0.5));
+    // ... and so are the mobility class and the priority flag
+    CHECK_EQ(edgesRoundTrip.edge(static_cast<Id>(42)).mobilityClass(), 64u);
+    CHECK(edgesRoundTrip.edge(static_cast<Id>(42)).hasPriority());
 
     std::filesystem::remove(edgesPath);
     std::filesystem::remove(nodesPath);
