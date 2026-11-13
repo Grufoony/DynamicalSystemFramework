@@ -271,11 +271,22 @@ namespace dsf::mobility {
     /// @param useCache If true, the cache is used (default is false)
     /// @param seed The seed for the random number generator (default is std::nullopt)
     /// @param mode How origin, destination and OD ids are interpreted (default is DynamicsMode::EDGES)
+    /// @param pedestrianMode If true, evaluate density on paired edges for pedestrian flows (default is false)
     FirstOrderDynamics(RoadNetwork&& graph,
                        bool useCache = false,
                        std::optional<unsigned int> seed = std::nullopt,
-                       bool pedestrianMode = false,
-                       DynamicsMode const mode = DynamicsMode::EDGES);
+               DynamicsMode const mode = DynamicsMode::EDGES,
+               bool pedestrianMode = false);
+
+    /// @brief Backward-compatible constructor keeping pedestrianMode as fourth argument.
+    /// @param graph The graph representing the network
+    /// @param useCache If true, the cache is used (default is false)
+    /// @param seed The seed for the random number generator (default is std::nullopt)
+    /// @param pedestrianMode If true, evaluate density on paired edges for pedestrian flows (default is false)
+    FirstOrderDynamics(RoadNetwork&& graph,
+               bool useCache,
+               std::optional<unsigned int> seed,
+               bool pedestrianMode);
 
     /// @brief Automatically prepare the network for the simulation. This method calls the following methods in order:
     /// - RoadNetwork::adjustNodeCapacities()

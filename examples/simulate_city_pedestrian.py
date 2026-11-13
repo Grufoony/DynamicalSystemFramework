@@ -15,7 +15,7 @@ import numpy as np
 import dsf
 from dsf import logging
 from dsf.cartography import get_cartography, to_folium_map
-from dsf.mobility import TrafficSimulator
+from dsf.mobility import DynamicsMode, TrafficSimulator
 
 
 if __name__ == "__main__":
@@ -72,16 +72,27 @@ if __name__ == "__main__":
 
     to_folium_map(G).save(f"{args.city}_{args.country}_pedestrian_map.html")
 
-    edge_ids = [e[2].get("id") for e in G.edges(data=True)]
+    # Edge-based OD sampling (old behavior):
+    # edge_ids = [e[2].get("id") for e in G.edges(data=True)]
+    # origin_ids = np.random.choice(
+    #     list(edge_ids), size=max(1, int(0.05 * len(edge_ids))), replace=False
+    # )
+    # destination_ids = np.random.choice(
+    #     list(edge_ids), size=max(1, int(0.05 * len(edge_ids))), replace=False
+    # )
+    # origins = {edge_id: 1 for edge_id in origin_ids}
+    # destinations = {edge_id: 1 for edge_id in destination_ids}
+
+    node_ids = list(G.nodes())
     origin_ids = np.random.choice(
-        list(edge_ids), size=max(1, int(0.05 * len(edge_ids))), replace=False
+        node_ids, size=max(1, int(0.05 * len(node_ids))), replace=False
     )
     destination_ids = np.random.choice(
-        list(edge_ids), size=max(1, int(0.05 * len(edge_ids))), replace=False
+        node_ids, size=max(1, int(0.05 * len(node_ids))), replace=False
     )
 
-    origins = {edge_id: 1 for edge_id in origin_ids}
-    destinations = {edge_id: 1 for edge_id in destination_ids}
+    origins = {int(node_id): 1 for node_id in origin_ids}
+    destinations = {int(node_id): 1 for node_id in destination_ids}
 
     logging.info("Creating pedestrian road network and dynamics model...")
 
@@ -98,6 +109,7 @@ if __name__ == "__main__":
     simulator.updatePaths(300, False)
 
     simulator.dynamics().setSeed(args.seed)
+    simulator.dynamics().setMode(DynamicsMode.NODES)
     simulator.dynamics().setOrigins(origins)
     simulator.dynamics().setDestinations(destinations)
     simulator.dynamics().killStagnantAgents(40.0)

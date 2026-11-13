@@ -57,6 +57,16 @@ namespace dsf::mobility {
     }
   }
 
+  FirstOrderDynamics::FirstOrderDynamics(RoadNetwork&& graph,
+                                       bool useCache,
+                                       std::optional<unsigned int> seed,
+                                       bool pedestrianMode)
+      : FirstOrderDynamics(std::move(graph),
+                           useCache,
+                           seed,
+                           DynamicsMode::EDGES,
+                           pedestrianMode) {}
+
   void FirstOrderDynamics::importODsFromCSV(std::string_view const fileName,
                                             char const separator) {
     if (!std::filesystem::exists(fileName)) {

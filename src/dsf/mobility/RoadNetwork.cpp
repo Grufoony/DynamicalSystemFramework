@@ -46,6 +46,18 @@ namespace dsf::mobility {
     }
   }
 
+  void RoadNetwork::m_pairOppositeEdges() {
+    for (auto const& [edgeId, pStreet] : this->edges()) {
+      auto const* pOpposite = this->street(pStreet->target()->id(), pStreet->source()->id());
+      if (pOpposite != nullptr && pOpposite->id() != edgeId) {
+        this->edge(edgeId).setAttribute("paired_edge_id",
+                                        static_cast<std::int64_t>(pOpposite->id()));
+      } else {
+        this->edge(edgeId).setAttribute("paired_edge_id", std::monostate{});
+      }
+    }
+  }
+
   void RoadNetwork::m_csvEdgesImporter(const std::string& fileName,
                                        const char separator) {
     csv::CSVFormat format;
