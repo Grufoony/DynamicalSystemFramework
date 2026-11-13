@@ -31,7 +31,6 @@ namespace dsf::mobility {
     AgentInsertionMethod m_agentInsertionMethod{AgentInsertionMethod::RANDOM};
     std::time_t m_initTime = 0;
     std::time_t m_endTime = 0;
-    std::time_t m_updatePathDeltaT = 0;
     std::optional<std::time_t> m_savingInterval{std::nullopt};
     bool m_saveAverageStats{false};
     bool m_saveStreetData{false};
@@ -39,7 +38,30 @@ namespace dsf::mobility {
     bool m_saveAgentData{false};
     bool m_saveTurnCounts{false};
     bool m_pedestrianMode{false};
-    std::queue<std::tuple<std::time_t, std::string>> m_dynamicODsUpdate;
+    /// @brief A scheduled reload of the ODs from a CSV file
+    struct ODsUpdate {
+      std::time_t time;
+      std::string file;
+    };
+    std::queue<ODsUpdate> m_dynamicODsUpdate;
+    /// @brief A scheduled change of the status of some streets
+    struct StreetStatusUpdate {
+      std::time_t time;
+      std::vector<Id> streetIds;              // Used if streetName is not set
+      std::optional<std::string> streetName;  // See RoadNetwork::setStreetStatusByName
+      RoadStatus status;
+    };
+    /// @brief The scheduled street status changes, sorted by time (and by insertion order
+    ///   for the same time)
+    std::deque<StreetStatusUpdate> m_streetStatusUpdates;
+
+    void m_scheduleStreetStatus(StreetStatusUpdate update);
+    /// @brief Apply the scheduled street status changes due at the given step of the run
+    void m_applyStreetStatusUpdates(std::time_t const currentStep);
+    /// @brief Check the scheduled street status changes before a run
+    /// @throws std::out_of_range if a street id is not found (warning if a street name
+    ///   matches no street)
+    void m_checkStreetStatusUpdates() const;
 
     /// @brief Convert a time_t to a string in the datetime format "YYYY-MM-DD HH:MM:SS"
     /// @param time The time_t to convert
@@ -147,19 +169,17 @@ namespace dsf::mobility {
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
     /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
-    void m_saveTravelDataSQL(
-        const std::string& datetime,
-        const std::int64_t time_step,
-        const std::int64_t simulation_id,
-        tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
+    void m_saveTravelDataSQL(const std::string& datetime,
+                             const std::int64_t time_step,
+                             const std::int64_t simulation_id,
+                             tbb::concurrent_vector<TravelRecord> travelDTs) const;
     /// @brief Save travel data to a CSV file.
     /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
     /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
-    void m_saveTravelDataCSV(
-        const std::string& datetime,
-        const std::int64_t time_step,
-        tbb::concurrent_vector<std::pair<double, double>> travelDTs) const;
+    void m_saveTravelDataCSV(const std::string& datetime,
+                             const std::int64_t time_step,
+                             tbb::concurrent_vector<TravelRecord> travelDTs) const;
     /// @brief Initialize the agent data table.
     /// This table contains the agent data of the agents. Columns are:
     /// - id: The entry id (auto-incremented)
@@ -176,17 +196,13 @@ namespace dsf::mobility {
     void m_saveAgentDataSQL(
         const std::int64_t time_step,
         const std::int64_t simulation_id,
-        tbb::concurrent_unordered_map<
-            Id,
-            std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
+        tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentData) const;
     /// @brief Save agent data to a CSV file.
     /// @param time_step The time step of the data entry
     /// @param agentData A concurrent unordered map containing the agent data to be saved, where the key is the edge id and the value is a vector of tuples containing the edge id, the time step in and the time step out
     void m_saveAgentDataCSV(
         const std::int64_t time_step,
-        tbb::concurrent_unordered_map<
-            Id,
-            std::vector<std::tuple<Id, std::time_t, std::time_t>>> agentData) const;
+        tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentData) const;
     /// @brief Initialize the turn counts table.
     /// This table contains the turn counts of the agents. Columns are:
     /// - id: The entry id (auto-incremented)
@@ -223,8 +239,7 @@ namespace dsf::mobility {
     void m_flushStepData(StepDataResult stepData);
 
     void m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                      std::optional<std::time_t> const deltaT = std::nullopt,
-                      double const percentRandomAgents = 0.0);
+                      std::optional<std::time_t> const deltaT = std::nullopt);
     void m_runSlowCharge(std::size_t const nInitialAgents,
                          std::time_t const agentInsertionDeltaT,
                          std::time_t const checkDeltaT,
@@ -236,7 +251,7 @@ namespace dsf::mobility {
     /// @brief Construct a new TrafficSimulator and import its configuration from JSON.
     /// @param jsonConfigFile The path to the JSON configuration file.
     explicit TrafficSimulator(std::string_view const jsonConfigFile,
-                 bool pedestrianMode = false);
+                              bool pedestrianMode = false);
 
     /// @brief Import a JSON configuration file and apply it to the simulator.
     /// @param jsonConfigFile The path to the JSON configuration file.
@@ -254,11 +269,6 @@ namespace dsf::mobility {
     /// @param nodePropertiesFile Optional node-properties CSV file.
     void importRoadNetwork(std::string_view const edgesFile,
                            std::string_view const nodePropertiesFile = std::string_view());
-
-    /// @brief Configure the path-update cadence forwarded to the dynamics engine.
-    /// @param deltaT The update cadence in time steps.
-    /// @param throw_on_empty Whether an empty itinerary path should throw.
-    void updatePaths(std::time_t const deltaT = 0, bool const throw_on_empty = true);
 
     /// @brief Configure the data-saving behavior.
     void saveData(std::time_t const savingInterval,
@@ -278,7 +288,9 @@ namespace dsf::mobility {
 
     /// @brief Enable or disable pedestrian mode.
     /// @param pedestrianMode Whether pedestrian mode should be enabled.
-    void setPedestrianMode(bool pedestrianMode) noexcept { m_pedestrianMode = pedestrianMode; }
+    void setPedestrianMode(bool pedestrianMode) noexcept {
+      m_pedestrianMode = pedestrianMode;
+    }
 
     /// @brief Set the simulation time frame.
     /// @param initTime The simulation start time.
@@ -290,19 +302,47 @@ namespace dsf::mobility {
     void setAgentInsertionMethod(AgentInsertionMethod const insertionMethod) noexcept {
       m_agentInsertionMethod = insertionMethod;
     }
+    /// @brief Schedule a change of the status of some streets during the runs
+    /// @param time The time step of the run, counted from its start, at which the change is
+    ///   made (before the agents of that step are added)
+    /// @param streetIds The ids of the streets, checked when a run starts
+    /// @param status The status to set
+    /// @details Agents react to a closure as described in RoadNetwork::setStreetStatusById.
+    ///   Changes not made yet when a run ends are kept for the next run (with a warning),
+    ///   whose steps are counted from its own start
+    void scheduleStreetStatusById(std::time_t const time,
+                                  std::vector<Id> streetIds,
+                                  RoadStatus const status);
+    /// @brief Schedule a change of the status of the streets whose name contains the given
+    ///   one (see RoadNetwork::setStreetStatusByName)
+    /// @param time The time step of the run, counted from its start, at which the change is
+    ///   made (before the agents of that step are added)
+    /// @param streetName The name to match
+    /// @param status The status to set
+    void scheduleStreetStatusByName(std::time_t const time,
+                                    std::string streetName,
+                                    RoadStatus const status);
 
     /// @brief Run the simulation until the configured end time.
     inline void run(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                    std::optional<std::time_t> const deltaT = std::nullopt,
-                    double const percentageRandomAgents = 0.0) {
+                    std::optional<std::time_t> const deltaT = std::nullopt) {
       if (m_dynamics == nullptr) {
         throw std::runtime_error(
             "Cannot run the simulation without imported road network dynamics.");
       }
       m_dynamics->prepareNetwork();
-      m_runDefault(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
+      m_runDefault(nAgentsPerTimeStep, deltaT);
     }
 
+    /// @brief Run a slow charge: agents are added at a growing rate until the end time, or
+    ///   until the network is saturated
+    /// @param nInitialAgents The number of agents added at each insertion, at first
+    /// @param agentInsertionDeltaT The time steps between two insertions
+    /// @param checkDeltaT The time steps between two checks: the number of agents added at
+    ///   each insertion grows by agentIncrement if the agents decreased since the last check
+    /// @param agentIncrement The growth of the agents added at each insertion
+    /// @details When the network has no room left for an insertion, the run stops there,
+    ///   logging an error, and its summary is logged as usual
     inline void run(std::size_t const nInitialAgents,
                     std::time_t const agentInsertionDeltaT,
                     std::time_t const checkDeltaT,

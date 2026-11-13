@@ -48,7 +48,8 @@ namespace dsf::mobility {
 
   void RoadNetwork::m_pairOppositeEdges() {
     for (auto const& [edgeId, pStreet] : this->edges()) {
-      auto const* pOpposite = this->street(pStreet->target()->id(), pStreet->source()->id());
+      auto const* pOpposite =
+          this->street(pStreet->target()->id(), pStreet->source()->id());
       if (pOpposite != nullptr && pOpposite->id() != edgeId) {
         this->edge(edgeId).setAttribute("paired_edge_id",
                                         static_cast<std::int64_t>(pOpposite->id()));
@@ -652,7 +653,7 @@ namespace dsf::mobility {
     this->m_edges.rehash(0);
   }
 
-  RoadNetwork::RoadNetwork() { this->setEdgeWeight("traveltime"); }
+  RoadNetwork::RoadNetwork() = default;
 
   std::size_t RoadNetwork::nCoils() const {
     return std::ranges::count_if(m_edges | std::views::values, &Street::hasCoil);
@@ -1111,45 +1112,6 @@ namespace dsf::mobility {
         nNotAssigned.load());
   }
 
-  void RoadNetwork::setEdgeWeight(std::string_view const strv_weight,
-                                  std::optional<double> const threshold) {
-    if (strv_weight == "traveltime") {
-      m_weightFunction = [](Street const& street) {
-        // Each lane releases at most one agent per time step, with probability equal to the
-        // transport capacity: the mean lane queue takes queue / min(1, tc) steps to clear.
-        auto const queueTime{street.nExitingAgents(Direction::ANY, true) /
-                             std::min(1., street.transportCapacity())};
-        return street.estimatedTravelTime() + queueTime;
-      };
-    } else if (strv_weight == "length") {
-      m_weightFunction = [](Street const& street) { return street.length(); };
-    } else if (strv_weight == "uniform") {
-      m_weightFunction = []([[maybe_unused]] Street const& street) { return 1.0; };
-    } else {  // Custom attribute
-      // Own the name: the caller's buffer (e.g. the JSON config parser) may not outlive the lambda
-      m_weightFunction = [attribute = std::string{strv_weight}](Street const& street) {
-        auto it = street.attributes().find(attribute);
-        if (it == street.attributes().end()) {
-          throw std::runtime_error(
-              std::format("Attribute {} not found in street {}", attribute, street.id()));
-        }
-        auto const& attrValue = it->second;
-        return std::visit(
-            [](auto&& value) -> double {
-              using T = std::decay_t<decltype(value)>;
-              if constexpr (std::is_arithmetic_v<T>) {
-                return static_cast<double>(value);
-              } else {
-                throw std::runtime_error(
-                    "Custom weight attribute is not a numeric type.");
-              }
-            },
-            attrValue);
-      };
-    }
-    m_weightThreshold = threshold;
-  }
-
   void RoadNetwork::describe(std::ostream& os) const {
     os << "RoadNetwork with " << nNodes() << " nodes and " << nEdges()
        << " edges. Total capacity: " << m_capacity << " vehicles.\n"
@@ -1331,21 +1293,26 @@ namespace dsf::mobility {
     spdlog::debug("exportTrafficLights: wrote traffic light data to \"{}\".", fileName);
   }
 
+  // Replacing a node changes the turn rules at it (e.g. U-turns at roundabouts): the routes
+  // must be planned again (see Road::routingRevision)
   TrafficLight& RoadNetwork::makeTrafficLight(Id const nodeId) {
+    Road::m_bumpRoutingRevision();
     return m_replaceNode<TrafficLight>(m_nodes.at(nodeId));
   }
 
   Roundabout& RoadNetwork::makeRoundabout(Id nodeId) {
+    Road::m_bumpRoutingRevision();
     return m_replaceNode<Roundabout>(m_nodes.at(nodeId));
   }
 
   Station& RoadNetwork::makeStation(Id nodeId, const unsigned int managementTime) {
+    Road::m_bumpRoutingRevision();
     return m_replaceNode<Station>(m_nodes.at(nodeId), managementTime);
   }
   void RoadNetwork::addCoil(Id streetId, std::string const& name) {
     edge(streetId).enableCounter(name);
   }
-  
+
   void RoadNetwork::setStreetStatusById(Id const streetId, RoadStatus const status) {
     try {
       auto* pStreet{&edge(streetId)};
@@ -1354,6 +1321,19 @@ namespace dsf::mobility {
     } catch (const std::out_of_range&) {
       throw std::out_of_range(std::format("Street with id {} not found", streetId));
     }
+  }
+  void RoadNetwork::setStreetStatusById(std::span<Id const> streetIds,
+                                        RoadStatus const status) {
+    // Check every id first, so that an unknown one changes nothing
+    for (auto const streetId : streetIds) {
+      if (!m_edges.contains(streetId)) {
+        throw std::out_of_range(std::format("Street with id {} not found", streetId));
+      }
+    }
+    for (auto const streetId : streetIds) {
+      edge(streetId).setStatus(status);
+    }
+    spdlog::info("Set status {} to {} streets", status, streetIds.size());
   }
   void RoadNetwork::setStreetStatusByName(std::string const& streetName,
                                           RoadStatus const status) {

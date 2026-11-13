@@ -5,9 +5,12 @@
 #include <simdjson.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 
@@ -214,8 +217,82 @@ namespace dsf::mobility {
                             jsonConfigFile));
           }
           m_dynamicODsUpdate.push(
-              std::make_tuple(static_cast<std::time_t>(timeField.get_uint64().value()),
-                              std::string(fileField.get_string().value())));
+              ODsUpdate{.time = static_cast<std::time_t>(timeField.get_uint64().value()),
+                        .file = std::string(fileField.get_string().value())});
+        }
+      }
+    }
+    {
+      auto const roadEventsConfig = generalConfig["road_events"];
+      if (!roadEventsConfig.error()) {
+        // Expect a list of {"time": <step>, "status": "open"|"closed", "street_ids": [...]}
+        // objects, or with "street_name": <name> instead of "street_ids"
+        auto const roadEventsArray = roadEventsConfig.get_array();
+        if (roadEventsArray.error()) {
+          throw std::runtime_error(std::format(
+              "'road_events' field must be an array in JSON file '{}'", jsonConfigFile));
+        }
+        auto const invalidEvent = [&](std::string_view const reason) {
+          return std::runtime_error(
+              std::format("Each item in 'road_events' array must {} in JSON file '{}'",
+                          reason,
+                          jsonConfigFile));
+        };
+        for (auto const& item : roadEventsArray) {
+          if (!item.is_object()) {
+            throw invalidEvent("be an object");
+          }
+          auto const timeField = item["time"];
+          if (timeField.error() || !timeField.is_uint64() ||
+              timeField.get_uint64().value() >
+                  static_cast<std::uint64_t>(std::numeric_limits<std::time_t>::max())) {
+            throw invalidEvent("have a non-negative integer 'time' field");
+          }
+          auto const statusField = item["status"];
+          if (statusField.error() || !statusField.is_string()) {
+            throw invalidEvent("have a 'status' field ('open' or 'closed')");
+          }
+          std::string statusStr{statusField.get_string().value()};
+          std::ranges::transform(statusStr, statusStr.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+          });
+          RoadStatus status{RoadStatus::OPEN};
+          if (statusStr == "closed") {
+            status = RoadStatus::CLOSED;
+          } else if (statusStr == "open") {
+            status = RoadStatus::OPEN;
+          } else {
+            throw invalidEvent("have a 'status' field ('open' or 'closed')");
+          }
+          auto const time{static_cast<std::time_t>(timeField.get_uint64().value())};
+          auto const idsField = item["street_ids"];
+          auto const nameField = item["street_name"];
+          bool const bHasIds{!idsField.error()};
+          bool const bHasName{!nameField.error()};
+          if (bHasIds == bHasName) {
+            throw invalidEvent(
+                "have exactly one of the 'street_ids' and 'street_name' fields");
+          }
+          if (bHasName) {
+            if (!nameField.is_string()) {
+              throw invalidEvent("have a string 'street_name' field");
+            }
+            scheduleStreetStatusByName(
+                time, std::string(nameField.get_string().value()), status);
+            continue;
+          }
+          auto const idsArray = idsField.get_array();
+          if (idsArray.error()) {
+            throw invalidEvent("have an array 'street_ids' field");
+          }
+          std::vector<Id> streetIds;
+          for (auto const& idElement : idsArray) {
+            if (!idElement.is_uint64()) {
+              throw invalidEvent("have non-negative integer street ids");
+            }
+            streetIds.push_back(static_cast<Id>(idElement.get_uint64().value()));
+          }
+          scheduleStreetStatusById(time, std::move(streetIds), status);
         }
       }
     }
@@ -244,15 +321,6 @@ namespace dsf::mobility {
             roadNetworkConfig["mean_vehicle_length"].get_double().value());
       }
       importRoadNetwork(edgesFile.string(), nodePropertiesFile.string());
-      auto const setEdgeWeightParams =
-          require_field(roadNetworkConfig, "road_network", "set_edge_weight");
-      m_dynamics->graph().setEdgeWeight(
-          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "weight")
-              .get_string()
-              .value(),
-          require_field(setEdgeWeightParams, "road_network.set_edge_weight", "threshold")
-              .get_double()
-              .value());
     }
     // Dynamics config
     {
@@ -267,8 +335,42 @@ namespace dsf::mobility {
       if (!dynamicsConfig["max_concurrency"].error()) {
         m_dynamics->setConcurrency(dynamicsConfig["max_concurrency"].get_int64().value());
       }
-      bool const bHasMode{!dynamicsConfig["mode"].error()};
-      if (bHasMode) {
+      if (!dynamicsConfig["allow_uturns"].error()) {
+        // before any transition matrix: it decides how the matrix's U-turn entries are read
+        m_dynamics->setAllowRandomUTurns(
+            dynamicsConfig["allow_uturns"].get_bool().value());
+      }
+      if (!dynamicsConfig["edge_weight"].error()) {
+        // The distance cost is used by "datt"
+        auto const distanceCost{
+            dynamicsConfig["distance_cost"].error()
+                ? 0.1
+                : dynamicsConfig["distance_cost"].get_double().value()};
+        m_dynamics->setEdgeWeight(dynamicsConfig["edge_weight"].get_string().value(),
+                                  distanceCost);
+      }
+      if (!dynamicsConfig["path_randomness"].error()) {
+        m_dynamics->setPathRandomness(
+            dynamicsConfig["path_randomness"].get_double().value());
+      }
+      if (!dynamicsConfig["route_algorithm"].error()) {
+        auto const algorithm{dynamicsConfig["route_algorithm"].get_string().value()};
+        if (algorithm == "ASTAR") {
+          m_dynamics->setRouteAlgorithm(RouteAlgorithm::ASTAR);
+        } else if (algorithm == "DIJKSTRA") {
+          m_dynamics->setRouteAlgorithm(RouteAlgorithm::DIJKSTRA);
+        } else {
+          throw std::runtime_error(
+              std::format("Invalid 'route_algorithm' value in JSON file '{}': {}",
+                          jsonConfigFile,
+                          algorithm));
+        }
+      }
+      if (!dynamicsConfig["intelligent_fraction"].error()) {
+        m_dynamics->setIntelligentAgentsFraction(
+            dynamicsConfig["intelligent_fraction"].get_double().value());
+      }
+      if (!dynamicsConfig["mode"].error()) {
         auto const mode =
             require_field(dynamicsConfig, "dynamics", "mode").get_string().value();
         if (mode == "EDGES") {
@@ -302,10 +404,6 @@ namespace dsf::mobility {
                         jsonConfigFile,
                         agentInsertionMethod));
       }
-      if (!dynamicsConfig["error_probability"].error()) {
-        m_dynamics->setErrorProbability(
-            dynamicsConfig["error_probability"].get_double().value());
-      }
       if (!dynamicsConfig["kill_stagnant_agents"].error()) {
         m_dynamics->killStagnantAgents(
             dynamicsConfig["kill_stagnant_agents"].get_double().value());
@@ -326,18 +424,6 @@ namespace dsf::mobility {
                   require_field(importODsFromCSVConfig, "importODsFromCSV", "file")
                       .get_string()
                       .value());
-          if (!importODsFromCSVConfig["edges"].error()) {
-            // Deprecated: superseded by 'dynamics.mode', which takes precedence
-            spdlog::warn(
-                "'importODsFromCSV.edges' in JSON file '{}' is deprecated: use "
-                "'dynamics.mode' (\"EDGES\" or \"NODES\") instead.",
-                jsonConfigFile);
-            if (!bHasMode) {
-              m_dynamics->setMode(importODsFromCSVConfig["edges"].get_bool().value()
-                                      ? DynamicsMode::EDGES
-                                      : DynamicsMode::NODES);
-            }
-          }
           if (!importODsFromCSVConfig["separator"].error()) {
             auto const sep =
                 require_field(importODsFromCSVConfig, "importODsFromCSV", "separator")
@@ -381,22 +467,6 @@ namespace dsf::mobility {
         connectDataBase(databasePath.string());
       }
     }
-    // Update paths
-    {
-      auto const updatePathsConfig = generalConfig["update_paths"];
-      if (!updatePathsConfig.error()) {
-        updatePaths(require_field(updatePathsConfig, "general.update_paths", "interval")
-                        .get_uint64()
-                        .value(),
-                    updatePathsConfig["throw_on_empty"].get_bool().has_value()
-                        ? updatePathsConfig["throw_on_empty"].get_bool().value()
-                        : true);
-        if (!updatePathsConfig["intelligent_fraction"].error()) {
-          m_dynamics->setIntelligentAgentsFraction(
-              updatePathsConfig["intelligent_fraction"].get_double().value());
-        }
-      }
-    }
     // Save Data
     {
       auto const save_data = generalConfig["save_data"];
@@ -422,8 +492,7 @@ namespace dsf::mobility {
   }
 
   void TrafficSimulator::m_runDefault(std::vector<std::size_t> const& nAgentsPerTimeStep,
-                                      std::optional<std::time_t> const deltaT,
-                                      double const percentRandomAgents) {
+                                      std::optional<std::time_t> const deltaT) {
     if (deltaT.has_value()) {
       if (deltaT.value() <= 0) {
         throw std::invalid_argument(std::format(
@@ -482,6 +551,7 @@ namespace dsf::mobility {
       totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
     }
 
+    m_checkStreetStatusUpdates();
     m_preparePersistence();
 
     spdlog::info(
@@ -494,9 +564,8 @@ namespace dsf::mobility {
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
 
     std::optional<std::time_t> nextODUpdateTime =
-        m_dynamicODsUpdate.empty()
-            ? std::nullopt
-            : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        m_dynamicODsUpdate.empty() ? std::nullopt
+                                   : std::make_optional(m_dynamicODsUpdate.front().time);
     if (nextODUpdateTime.has_value() && *nextODUpdateTime != 0) {
       throw std::runtime_error(std::format(
           "First dynamic OD update time must be 0 (initial time). Current value: {}",
@@ -504,28 +573,20 @@ namespace dsf::mobility {
     }
     for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
-        m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
+        m_dynamics->importODsFromCSV(m_dynamicODsUpdate.front().file);
         m_dynamicODsUpdate.pop();
-        nextODUpdateTime =
-            m_dynamicODsUpdate.empty()
-                ? std::nullopt
-                : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
-        m_dynamics->updatePaths();
-      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-                 (currentStep == 0)) {
-        m_dynamics->updatePaths();
+        nextODUpdateTime = m_dynamicODsUpdate.empty()
+                               ? std::nullopt
+                               : std::make_optional(m_dynamicODsUpdate.front().time);
       }
+      m_applyStreetStatusUpdates(currentStep);
       if (currentStep % agentInsertionDeltaT == 0) {
         auto const insertionIndex =
             static_cast<std::size_t>(currentStep / agentInsertionDeltaT);
         if (insertionIndex < nInsertions) {
           auto const nAgents = nAgentsPerTimeStep.at(insertionIndex);
           if (nAgents > 0) {
-            auto const nRandomAgents =
-                static_cast<std::size_t>(std::floor(nAgents * percentRandomAgents));
-            auto const nODAgents = nAgents - nRandomAgents;
-            m_dynamics->addAgents(nODAgents, m_agentInsertionMethod);
-            m_dynamics->addAgents(nRandomAgents, AgentInsertionMethod::RANDOM);
+            m_dynamics->addAgents(nAgents, m_agentInsertionMethod);
           }
         } else {
           spdlog::warn(
@@ -562,6 +623,12 @@ namespace dsf::mobility {
     auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
         m_dynamics->agentStats();
     m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
+    if (!m_streetStatusUpdates.empty()) {
+      spdlog::warn(
+          "{} scheduled street status changes were not made before the end of the run: "
+          "they are kept for the next run, whose time steps count from its own start.",
+          m_streetStatusUpdates.size());
+    }
   }
   void TrafficSimulator::m_runSlowCharge(std::size_t const nInitialAgents,
                                          std::time_t const agentInsertionDeltaT,
@@ -581,6 +648,7 @@ namespace dsf::mobility {
     }
     auto const totalTimeSteps = static_cast<std::time_t>(m_endTime - m_initTime);
 
+    m_checkStreetStatusUpdates();
     m_preparePersistence();
 
     spdlog::info(
@@ -593,9 +661,8 @@ namespace dsf::mobility {
     auto pbar = dsf::utility::default_progress_bar("Running simulation", totalTimeSteps);
 
     std::optional<std::time_t> nextODUpdateTime =
-        m_dynamicODsUpdate.empty()
-            ? std::nullopt
-            : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
+        m_dynamicODsUpdate.empty() ? std::nullopt
+                                   : std::make_optional(m_dynamicODsUpdate.front().time);
     if (nextODUpdateTime.has_value() && *nextODUpdateTime != 0) {
       throw std::runtime_error(std::format(
           "First dynamic OD update time must be 0 (initial time). Current value: {}",
@@ -605,17 +672,13 @@ namespace dsf::mobility {
     std::size_t previousAgents{0};
     for (std::time_t currentStep{0}; currentStep < totalTimeSteps; ++currentStep) {
       if (nextODUpdateTime.has_value() && currentStep == *nextODUpdateTime) {
-        m_dynamics->importODsFromCSV(std::get<1>(m_dynamicODsUpdate.front()));
+        m_dynamics->importODsFromCSV(m_dynamicODsUpdate.front().file);
         m_dynamicODsUpdate.pop();
-        nextODUpdateTime =
-            m_dynamicODsUpdate.empty()
-                ? std::nullopt
-                : std::make_optional(std::get<0>(m_dynamicODsUpdate.front()));
-        m_dynamics->updatePaths();
-      } else if ((m_updatePathDeltaT > 0 && currentStep % m_updatePathDeltaT == 0) ||
-                 (currentStep == 0)) {
-        m_dynamics->updatePaths();
+        nextODUpdateTime = m_dynamicODsUpdate.empty()
+                               ? std::nullopt
+                               : std::make_optional(m_dynamicODsUpdate.front().time);
       }
+      m_applyStreetStatusUpdates(currentStep);
       if (currentStep > 0 && currentStep % checkDeltaT == 0) {
         if (m_dynamics->nAgents() < previousAgents) {
           currentAgents += agentIncrement;
@@ -623,7 +686,19 @@ namespace dsf::mobility {
         previousAgents = m_dynamics->nAgents();
       }
       if (currentStep % agentInsertionDeltaT == 0) {
-        m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);
+        try {
+          m_dynamics->addAgents(currentAgents, m_agentInsertionMethod);
+        } catch (std::overflow_error const& e) {
+          // Saturation is what a slow charge looks for: report it and end the run
+          spdlog::error(
+              "The network is saturated at time step {} ({} agents, capacity {}): "
+              "stopping the slow charge. {}",
+              currentStep,
+              m_dynamics->nAgents(),
+              m_dynamics->graph().capacity(),
+              e.what());
+          break;
+        }
       }
 
       bool const shouldSave =
@@ -652,6 +727,12 @@ namespace dsf::mobility {
     auto const [nAdded, nInserted, nArrived, nKilled, nRemaining] =
         m_dynamics->agentStats();
     m_logRunSummary(nAdded, nInserted, nArrived, nKilled, nRemaining);
+    if (!m_streetStatusUpdates.empty()) {
+      spdlog::warn(
+          "{} scheduled street status changes were not made before the end of the run: "
+          "they are kept for the next run, whose time steps count from its own start.",
+          m_streetStatusUpdates.size());
+    }
   }
 
   void TrafficSimulator::connectDataBase(std::string_view const dbPath,
@@ -670,17 +751,11 @@ namespace dsf::mobility {
       network.importNodeProperties(std::string(nodePropertiesFile));
     }
     m_dynamics = std::make_unique<FirstOrderDynamics>(
-        std::move(network), false, std::nullopt, m_pedestrianMode);
+        std::move(network), std::nullopt, DynamicsMode::EDGES, m_pedestrianMode);
     spdlog::info("Road network imported successfully with {} nodes and {} edges.",
                  m_dynamics->graph().nNodes(),
                  m_dynamics->graph().nEdges());
     m_preparePersistence();
-  }
-
-  void TrafficSimulator::updatePaths(std::time_t const deltaT,
-                                     bool const throw_on_empty) {
-    m_updatePathDeltaT = deltaT;
-    m_dynamics->setUpdatePathsThrowOnEmpty(throw_on_empty);
   }
 
   void TrafficSimulator::saveData(std::time_t const savingInterval,
@@ -707,6 +782,68 @@ namespace dsf::mobility {
         saveTurnCounts);
   }
 
+  void TrafficSimulator::m_scheduleStreetStatus(StreetStatusUpdate update) {
+    // After the updates already scheduled for the same time, which are made first
+    auto const it{std::ranges::upper_bound(
+        m_streetStatusUpdates, update.time, {}, &StreetStatusUpdate::time)};
+    m_streetStatusUpdates.insert(it, std::move(update));
+  }
+  void TrafficSimulator::scheduleStreetStatusById(std::time_t const time,
+                                                  std::vector<Id> streetIds,
+                                                  RoadStatus const status) {
+    m_scheduleStreetStatus(StreetStatusUpdate{.time = time,
+                                              .streetIds = std::move(streetIds),
+                                              .streetName = std::nullopt,
+                                              .status = status});
+  }
+  void TrafficSimulator::scheduleStreetStatusByName(std::time_t const time,
+                                                    std::string streetName,
+                                                    RoadStatus const status) {
+    m_scheduleStreetStatus(StreetStatusUpdate{.time = time,
+                                              .streetIds = {},
+                                              .streetName = std::move(streetName),
+                                              .status = status});
+  }
+  void TrafficSimulator::m_applyStreetStatusUpdates(std::time_t const currentStep) {
+    while (!m_streetStatusUpdates.empty() &&
+           m_streetStatusUpdates.front().time <= currentStep) {
+      auto const update{std::move(m_streetStatusUpdates.front())};
+      m_streetStatusUpdates.pop_front();
+      auto& network{m_dynamics->graph()};
+      if (update.streetName.has_value()) {
+        network.setStreetStatusByName(*update.streetName, update.status);
+      } else {
+        network.setStreetStatusById(update.streetIds, update.status);
+      }
+    }
+  }
+  void TrafficSimulator::m_checkStreetStatusUpdates() const {
+    auto const& network{m_dynamics->graph()};
+    for (auto const& update : m_streetStatusUpdates) {
+      if (update.streetName.has_value()) {
+        if (std::ranges::none_of(network.edges(), [&](auto const& idStreet) {
+              return idStreet.second->name().find(*update.streetName) !=
+                     std::string::npos;
+            })) {
+          spdlog::warn(
+              "No street name contains \"{}\": the status change scheduled at time {} "
+              "will change nothing.",
+              *update.streetName,
+              update.time);
+        }
+        continue;
+      }
+      for (auto const streetId : update.streetIds) {
+        if (!network.edges().contains(streetId)) {
+          throw std::out_of_range(
+              std::format("Street with id {} of the status change scheduled at time {} "
+                          "not found",
+                          streetId,
+                          update.time));
+        }
+      }
+    }
+  }
   void TrafficSimulator::setName(std::string_view const name) {
     m_name = std::string(name);
     m_safeName = std::string(name);
@@ -1045,7 +1182,7 @@ namespace dsf::mobility {
       const std::string& datetime,
       const std::int64_t time_step,
       const std::int64_t simulation_id,
-      tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
+      tbb::concurrent_vector<TravelRecord> travelDTs) const {
     if (travelDTs.empty()) {
       spdlog::debug("No travel data records to save for time step {}.", time_step);
       return;
@@ -1069,7 +1206,7 @@ namespace dsf::mobility {
   void TrafficSimulator::m_saveTravelDataCSV(
       const std::string& datetime,
       const std::int64_t time_step,
-      tbb::concurrent_vector<std::pair<double, double>> travelDTs) const {
+      tbb::concurrent_vector<TravelRecord> travelDTs) const {
     if (travelDTs.empty()) {
       spdlog::debug("No travel data records to save for time step {}.", time_step);
       return;
@@ -1118,9 +1255,8 @@ namespace dsf::mobility {
   void TrafficSimulator::m_saveAgentDataSQL(
       const std::int64_t time_step,
       const std::int64_t simulation_id,
-      tbb::concurrent_unordered_map<Id,
-                                    std::vector<std::tuple<Id, std::time_t, std::time_t>>>
-          agentDataRecords) const {
+      tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentDataRecords)
+      const {
     if (agentDataRecords.empty()) {
       spdlog::debug("No agent data records to save for time step {}.", time_step);
       return;
@@ -1143,9 +1279,8 @@ namespace dsf::mobility {
   }
   void TrafficSimulator::m_saveAgentDataCSV(
       const std::int64_t time_step,
-      tbb::concurrent_unordered_map<Id,
-                                    std::vector<std::tuple<Id, std::time_t, std::time_t>>>
-          agentDataRecords) const {
+      tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentDataRecords)
+      const {
     if (agentDataRecords.empty()) {
       spdlog::debug("No agent data records to save for time step {}.", time_step);
       return;

@@ -55,6 +55,16 @@ NB_MODULE(dsf_cpp, m) {
       .value("NODES", dsf::mobility::DynamicsMode::NODES)
       .export_values();
 
+  nb::enum_<dsf::mobility::RouteAlgorithm>(mobility, "RouteAlgorithm")
+      .value("ASTAR", dsf::mobility::RouteAlgorithm::ASTAR)
+      .value("DIJKSTRA", dsf::mobility::RouteAlgorithm::DIJKSTRA)
+      .export_values();
+
+  nb::enum_<dsf::mobility::RouteWeights>(mobility, "RouteWeights")
+      .value("FREE_FLOW", dsf::mobility::RouteWeights::FREE_FLOW)
+      .value("CURRENT", dsf::mobility::RouteWeights::CURRENT)
+      .export_values();
+
   // Bind TrafficLightOptimization enum
   nb::enum_<dsf::TrafficLightOptimization>(mobility, "TrafficLightOptimization")
       .value("SINGLE_TAIL", dsf::TrafficLightOptimization::SINGLE_TAIL)
@@ -219,8 +229,11 @@ NB_MODULE(dsf_cpp, m) {
                &dsf::mobility::Street::transportCapacity,
                R"doc(Get the transport capacity of this street.
 
+    Each lane releases at most this many agents per time step: a lone agent
+    leaves at once, a queue at this rate.
+
     Returns:
-        float: Transport capacity (units: vehicles or payload).)doc")
+        float: Transport capacity, in agents per lane and time step.)doc")
           .def("roadStatus",
                &dsf::mobility::Street::roadStatus,
                R"doc(Get the current status of the road.
@@ -318,8 +331,11 @@ NB_MODULE(dsf_cpp, m) {
            &dsf::mobility::RoadJunction::transportCapacity,
            R"doc(Get the transport capacity of the junction.
 
+    The junction releases at most this many agents per time step: a lone agent
+    leaves at once, a queue at this rate.
+
     Returns:
-        float: Transport capacity.)doc")
+        float: Transport capacity, in agents per time step.)doc")
       .def("attributes",
            &dsf::mobility::RoadJunction::attributes,
            R"doc(Get the attribute dictionary for this junction.
@@ -725,19 +741,6 @@ NB_MODULE(dsf_cpp, m) {
           "autoMapStreetLanes",
           &dsf::mobility::RoadNetwork::autoMapStreetLanes,
           R"doc(Auto-map lanes for streets using heuristics based on geometry and attributes.)doc")
-      .def("setEdgeWeight",
-           &dsf::mobility::RoadNetwork::setEdgeWeight,
-           nb::arg("weight"),
-           nb::arg("threshold") = std::nullopt,
-           R"doc(Set edge weights for routing and analysis.
-
-      Args:
-        weight (string): Weight type. 'traveltime' is the estimated travel time plus the time
-          needed to clear the exit queues (mean lane queue / min(1, transport capacity)),
-          'length' the street length, 'uniform' 1 for every street; any other value is the
-          name of a numeric custom attribute.
-        threshold (float | None): Optional relative tolerance: paths whose cost is within
-          distance * (1 + threshold) of the shortest one are kept.)doc")
       .def(
           "describe",
           [](dsf::mobility::RoadNetwork& self) {
@@ -831,14 +834,38 @@ NB_MODULE(dsf_cpp, m) {
       Args:
         id (int): Node id.)doc")
       .def("setStreetStatusById",
-           &dsf::mobility::RoadNetwork::setStreetStatusById,
+           nb::overload_cast<dsf::Id const, dsf::mobility::RoadStatus const>(
+               &dsf::mobility::RoadNetwork::setStreetStatusById),
            nb::arg("streetId"),
            nb::arg("status"),
            R"doc(Set the status of a street by id.
 
+      It can be called during a run: agents plan again, from the street they are on, when
+      they find their next street closed (also when already queued at its end).
+
       Args:
         streetId (int): Street identifier.
         status (RoadStatus): New status to set.)doc")
+      .def(
+          "setStreetStatusById",
+          [](dsf::mobility::RoadNetwork& self,
+             std::vector<dsf::Id> const& streetIds,
+             dsf::mobility::RoadStatus const status) {
+            self.setStreetStatusById(std::span<dsf::Id const>{streetIds}, status);
+          },
+          nb::arg("streetIds"),
+          nb::arg("status"),
+          R"doc(Set the status of several streets by id.
+
+      It can be called during a run: agents plan again, from the street they are on, when
+      they find their next street closed (also when already queued at its end).
+
+      Args:
+        streetIds (list[int]): Street identifiers. If one is unknown, no status is changed.
+        status (RoadStatus): New status to set.
+
+      Raises:
+        IndexError: If a street identifier is not found.)doc")
       .def("setStreetStatusByName",
            &dsf::mobility::RoadNetwork::setStreetStatusByName,
            nb::arg("name"),
@@ -897,31 +924,43 @@ NB_MODULE(dsf_cpp, m) {
       Args:
         streetId (int): Street identifier.
         name (str): Optional name for the coil.)doc")
-      .def("shortestPath",
-           &dsf::mobility::RoadNetwork::shortestPath,
-           nb::arg("sourceId"),
-           nb::arg("targetId"),
-           R"doc(Compute the shortest path between two node ids.
+      .def(
+          "computeBetweennessCentralities",
+          [](dsf::mobility::RoadNetwork& self, std::string_view weight) {
+            self.computeBetweennessCentralities(
+                dsf::mobility::Router::edgeWeightFunction(weight));
+          },
+          nb::arg("weight") = "traveltime",
+          R"doc(Compute betweenness centralities for nodes in the network.
 
       Args:
-        sourceId (int): Source node id.
-        targetId (int): Target node id.
-
-      Returns:
-        list[int]: Sequence of node ids representing the shortest path.)doc")
-      .def("computeBetweennessCentralities",
-           &dsf::mobility::RoadNetwork::computeBetweennessCentralities,
-           R"doc(Compute betweenness centralities for nodes in the network.)doc")
-      .def("computeEdgeBetweennessCentralities",
-           &dsf::mobility::RoadNetwork::computeEdgeBetweennessCentralities,
-           R"doc(Compute betweenness centralities for edges in the network.)doc")
-      .def("computeEdgeKBetweennessCentralities",
-           &dsf::mobility::RoadNetwork::computeEdgeKBetweennessCentralities,
-           nb::arg("k"),
-           R"doc(Compute k-edge betweenness centralities.
+        weight (str): The edge cost: 'traveltime' (default), 'length', 'uniform',
+          'datt' (detour-avoiding travel time: traveltime + 0.1 s/m * length) or the name of a numeric custom
+          attribute.)doc")
+      .def(
+          "computeEdgeBetweennessCentralities",
+          [](dsf::mobility::RoadNetwork& self, std::string_view weight) {
+            self.computeEdgeBetweennessCentralities(
+                dsf::mobility::Router::edgeWeightFunction(weight));
+          },
+          nb::arg("weight") = "traveltime",
+          R"doc(Compute betweenness centralities for edges in the network.
 
       Args:
-        k (int): Parameter controlling the computation.)doc")
+        weight (str): The edge cost (see computeBetweennessCentralities).)doc")
+      .def(
+          "computeEdgeKBetweennessCentralities",
+          [](dsf::mobility::RoadNetwork& self, std::size_t k, std::string_view weight) {
+            self.computeEdgeKBetweennessCentralities(
+                dsf::mobility::Router::edgeWeightFunction(weight), k);
+          },
+          nb::arg("k"),
+          nb::arg("weight") = "traveltime",
+          R"doc(Compute k-edge betweenness centralities.
+
+      Args:
+        k (int): Parameter controlling the computation.
+        weight (str): The edge cost (see computeBetweennessCentralities).)doc")
       .def(
           "nodeBetweennessCentralities",
           [](const dsf::mobility::RoadNetwork& self) {
@@ -951,28 +990,6 @@ NB_MODULE(dsf_cpp, m) {
           "    dict[int, float | None]: A dictionary mapping edge id to its "
           "betweenness centrality value (None if not computed).")
       .def(
-          "allPathsTo",
-          [](const dsf::mobility::RoadNetwork& self, dsf::Id targetId) {
-            return self.allPathsTo(targetId);
-          },
-          nb::arg("targetId"),
-          R"doc(Compute all paths leading to a target node.
-      Args:
-        targetId (int): Target node id.
-      Returns:
-        PathCollection: A collection of paths leading to the target node.)doc")
-      .def(
-          "allEdgePathsTo",
-          [](const dsf::mobility::RoadNetwork& self, dsf::Id targetId) {
-            return self.allEdgePathsTo(targetId);
-          },
-          nb::arg("targetId"),
-          R"doc(Compute all edge paths leading to a target edge.
-      Args:
-        targetId (int): Target edge id.
-      Returns:
-        PathCollection: A collection of edge paths leading to the target edge.)doc")
-      .def(
           "exportCSV",
           [](const dsf::mobility::RoadNetwork& self, const std::string& outputDir) {
             self.exportCSV(outputDir);
@@ -983,126 +1000,160 @@ NB_MODULE(dsf_cpp, m) {
       Args:
         outputDir (str): Destination directory path.)doc");
 
-  nb::class_<dsf::PathCollection>(mobility, "PathCollection")
-      .def(nb::init<>(), "Create an empty PathCollection")
+  nb::class_<dsf::mobility::Router>(
+      mobility,
+      "Router",
+      R"doc(Plans the agents' routes, with A* or Dijkstra on the streets (the dual graph).
+
+    It cannot be created from Python: get the router of a dynamics with Dynamics.router().
+    It is a read-only view, valid as long as the dynamics: configure it through the
+    dynamics (setEdgeWeight, setPathRandomness, setRouteAlgorithm), which rebuilds it
+    whenever the network changes.
+
+    Agent keys identify the noise of an agent on the street costs (see
+    Dynamics.setPathRandomness): any integer is a valid key, and different keys behave as
+    different agents.)doc")
+      .def("route",
+           &dsf::mobility::Router::route,
+           nb::arg("fromStreetId"),
+           nb::arg("goalStreetId"),
+           nb::arg("weights") = dsf::mobility::RouteWeights::FREE_FLOW,
+           nb::arg("agentKey") = 0,
+           R"doc(Plan a route from a street to the end of a street.
+
+    Args:
+      fromStreetId (int): The street the route starts with: its own cost is not counted.
+      goalStreetId (int): The street to reach and travel: its cost is counted.
+      weights (RouteWeights): FREE_FLOW (default) plans on the free-flow travel times, as
+        non-intelligent agents do; CURRENT on the weight of setEdgeWeight, as of the last
+        snapshot, as intelligent agents do.
+      agentKey (int): The key of the agent, for its noise (default 0).
+
+    Returns:
+      list[int]: The street ids, from fromStreetId to goalStreetId, empty if goalStreetId
+        cannot be reached, [fromStreetId] if the two are the same.
+
+    Raises:
+      IndexError: If a street is not in the routing graph.)doc")
+      .def("routeFromNode",
+           &dsf::mobility::Router::routeFromNode,
+           nb::arg("fromNodeId"),
+           nb::arg("goalStreetId"),
+           nb::arg("weights") = dsf::mobility::RouteWeights::FREE_FLOW,
+           nb::arg("agentKey") = 0,
+           R"doc(Plan a route from a node to the end of a street.
+
+    Args:
+      fromNodeId (int): The node the route starts from: the cost of the first street counts.
+      goalStreetId (int): The street to reach and travel: its cost is counted.
+      weights (RouteWeights): The street costs to plan on (see route).
+      agentKey (int): The key of the agent, for its noise (default 0).
+
+    Returns:
+      list[int]: The street ids, from an outgoing street of fromNodeId to goalStreetId,
+        empty if goalStreetId cannot be reached.
+
+    Raises:
+      IndexError: If the node or the street is not in the routing graph.)doc")
       .def(
-          "__getitem__",
-          [](const dsf::PathCollection& self, dsf::Id key) {
-            auto it = self.find(key);
-            if (it == self.end()) {
-              throw nb::key_error("Key not found");
-            }
-            return it->second;
-          },
-          nb::arg("key"),
-          "Get the next hops for a given node id")
+          "routeCost",
+          [](dsf::mobility::Router const& self,
+             std::vector<dsf::Id> const& route,
+             dsf::mobility::RouteWeights weights,
+             std::uint64_t agentKey) { return self.routeCost(route, weights, agentKey); },
+          nb::arg("route"),
+          nb::arg("weights") = dsf::mobility::RouteWeights::FREE_FLOW,
+          nb::arg("agentKey") = 0,
+          R"doc(Get the cost of a route, as the agent perceives it.
+
+    Args:
+      route (list[int]): The street ids of the route.
+      weights (RouteWeights): The street costs to use (see route).
+      agentKey (int): The key of the agent, for its noise (default 0). Set the path
+        randomness to 0 to get the true cost.
+
+    Returns:
+      float: The sum of the costs of the streets of the route, but the first.
+
+    Raises:
+      IndexError: If a street is not in the routing graph.)doc")
+      .def("isTurnAllowed",
+           &dsf::mobility::Router::isTurnAllowed,
+           nb::arg("fromStreetId"),
+           nb::arg("toStreetId"),
+           R"doc(Check whether the routing graph allows a turn.
+
+    Args:
+      fromStreetId (int): The street the agent is on.
+      toStreetId (int): The street the agent would take next.
+
+    Returns:
+      bool: True if toStreetId is open and the turn is allowed, False otherwise or if a
+        street is unknown.)doc")
+      .def_static("noise",
+                  &dsf::mobility::Router::noise,
+                  nb::arg("agentKey"),
+                  nb::arg("streetId"),
+                  nb::arg("sigma"),
+                  R"doc(Get the noise an agent perceives on a street cost.
+
+    Args:
+      agentKey (int): The key of the agent.
+      streetId (int): The street id.
+      sigma (float): The spread of the noise.
+
+    Returns:
+      float: exp(sigma * Z - sigma^2 / 2), with Z standard normal hashed from the key and
+        the street (so the same at every call) and clamped to [-3, 3]; 1 if sigma is 0.)doc")
+      .def("pathRandomness",
+           &dsf::mobility::Router::pathRandomness,
+           R"doc(Get the path randomness, i.e. the sigma of the noise.
+
+    Returns:
+      float: The sigma (see Dynamics.setPathRandomness).)doc")
+      .def("distanceCost",
+           &dsf::mobility::Router::distanceCost,
+           R"doc(Get the cost of a metre of the 'datt' weight.
+
+    Returns:
+      float: The distance cost, in s/m (see Dynamics.setEdgeWeight).)doc")
       .def(
-          "__setitem__",
-          [](dsf::PathCollection& self, dsf::Id key, std::vector<dsf::Id> value) {
-            self[key] = value;
-          },
-          nb::arg("key"),
-          nb::arg("value"),
-          "Set the next hops for a given node id")
-      .def(
-          "__contains__",
-          [](const dsf::PathCollection& self, dsf::Id key) {
-            return self.find(key) != self.end();
-          },
-          nb::arg("key"),
-          "Check if a node id exists in the collection")
-      .def(
-          "__len__",
-          [](const dsf::PathCollection& self) { return self.size(); },
-          "Get the number of nodes in the collection")
-      .def(
-          "keys",
-          [](const dsf::PathCollection& self) {
-            std::vector<dsf::Id> keys;
-            keys.reserve(self.size());
-            for (const auto& [key, _] : self) {
-              keys.push_back(key);
-            }
-            return keys;
-          },
-          "Get all node ids in the collection")
-      .def(
-          "items",
-          [](const dsf::PathCollection& self) {
-            nb::dict items;
-            for (const auto& [key, value] : self) {
-              items[nb::cast(key)] = nb::cast(value);
-            }
-            return items;
-          },
-          "Get all items (node id, next hops) in the collection")
-      .def(
-          "explode",
-          [](const dsf::PathCollection& pc, dsf::Id source, dsf::Id target) {
-            auto result = pc.explode(source, target);
+          "algorithm",
+          [](dsf::mobility::Router const& self) { return self.algorithm(); },
+          R"doc(Get the search algorithm.
 
-            return std::vector<std::vector<dsf::Id>>(result.begin(), result.end());
-          },
-          nb::arg("sourceId"),
-          nb::arg("targetId"),
-          R"doc(Build a path from a source node to a target node.
+    Returns:
+      RouteAlgorithm: ASTAR or DIJKSTRA.)doc")
+      .def("hasHeuristic",
+           &dsf::mobility::Router::hasHeuristic,
+           R"doc(Check whether A* has a heuristic, i.e. every node has coordinates.
 
-Args:
-    sourceId (int): Starting node id.
-    targetId (int): Ending node id.
+    Returns:
+      bool: True if A* uses the straight-line distance, False if it is Dijkstra's.)doc")
+      .def("isBuilt",
+           &dsf::mobility::Router::isBuilt,
+           R"doc(Check whether the router has been built.
 
-Returns:
-    PathCollection: A path collection containing the computed route.)doc");
+    Returns:
+      bool: True if it has.)doc")
+      .def("nEdges",
+           &dsf::mobility::Router::nEdges,
+           R"doc(Get the number of streets of the routing graph.
 
-  nb::class_<dsf::mobility::Itinerary>(mobility, "Itinerary")
-      .def(nb::init<dsf::Id, dsf::Id>(),
-           nb::arg("id"),
-           nb::arg("destination"),
-           R"doc(Create an itinerary with an id and destination node.
-
-Args:
-    id (int): Itinerary identifier.
-    destination (int): Destination node id.
-
-Returns:
-    Itinerary: A new itinerary instance.)doc")
-      .def("setPath",
-           &dsf::mobility::Itinerary::setPath,
-           nb::arg("path"),
-           R"doc(Set the path used by this itinerary.
-
-Args:
-    path (Sequence[int]): Sequence of node ids representing the route.
-
-Returns:
-    None)doc")
-      .def("id",
-           &dsf::mobility::Itinerary::id,
-           R"doc(Get the itinerary identifier.
-
-Returns:
-    int: The itinerary id.)doc")
-      .def("destination",
-           &dsf::mobility::Itinerary::destination,
-           R"doc(Get the destination node id.
-
-Returns:
-    int: The destination node id.)doc");
+    Returns:
+      int: The number of streets.)doc");
 
   nb::class_<dsf::mobility::FirstOrderDynamics>(mobility, "Dynamics")
       .def(nb::init<dsf::mobility::RoadNetwork&&,
-                    bool,
                     std::optional<unsigned int>,
                     dsf::mobility::DynamicsMode>(),
            nb::arg("graph"),
-           nb::arg("useCache") = false,
            nb::arg("seed") = std::nullopt,
            nb::arg("mode") = dsf::mobility::DynamicsMode::EDGES,
            R"doc(Create a FirstOrderDynamics instance.
 
     Args:
       graph (RoadNetwork): The road network.
-      useCache (bool, optional): Cache the computed paths on disk.
       seed (int, optional): Seed of the random number generator.
       mode (DynamicsMode, optional): How origin, destination and OD ids are
         interpreted: EDGES (street ids, default) or NODES (node ids).)doc")
@@ -1112,12 +1163,13 @@ Returns:
            R"doc(Set how origin, destination and OD ids are interpreted.
 
     In EDGES mode an agent starts from the source node of its origin street and
-    travels it; it arrives, and is removed, when it reaches the source node of its
-    destination street, which it never enters.
+    travels it; it also travels its destination street, and arrives, and is
+    removed, at its end, without queueing there.
 
-    In NODES mode each node id is spread over the node's outgoing streets, with its
-    weight split evenly among them: agents start from the node and arrive when they
-    reach it. Nodes without outgoing streets are skipped.
+    In NODES mode each node id is spread over the node's outgoing streets for an
+    origin, and over its ingoing streets for a destination, with its weight split
+    evenly among them: agents start from the node and arrive when they reach it.
+    Nodes without such streets are skipped.
 
     Args:
       mode (DynamicsMode): EDGES (street ids) or NODES (node ids).
@@ -1200,16 +1252,27 @@ Returns:
 
       Returns:
         None)doc")
-      .def("setUpdatePathsThrowOnEmpty",
-           &dsf::mobility::FirstOrderDynamics::setUpdatePathsThrowOnEmpty,
-           nb::arg("throwOnEmpty"),
-           R"doc(Enable or disable throwing an exception when paths are empty.
+      .def("setAllowRandomUTurns",
+           &dsf::mobility::FirstOrderDynamics::setAllowRandomUTurns,
+           nb::arg("allow"),
+           R"doc(Let random agents take the U-turns of their transition-matrix row.
+
+      Set it before the transition matrix: by default, U-turn entries are kept as normal entries;
+      with False, they are redistributed over the row like forbidden turns. Streets without a
+      matrix row keep the uniform behaviour, which never takes a U-turn. In a JSON config:
+      dynamics.allow_uturns.
 
       Args:
-        throwOnEmpty (bool): Whether to throw an exception when paths are empty.
+        allow (bool): Whether random agents follow the matrix's U-turn entries (default True).
 
       Returns:
         None)doc")
+      .def("allowRandomUTurns",
+           &dsf::mobility::FirstOrderDynamics::allowRandomUTurns,
+           R"doc(Whether random agents take the U-turns of their transition-matrix row.
+
+      Returns:
+        bool)doc")
       .def(
           "setDataUpdatePeriod",
           [](dsf::mobility::FirstOrderDynamics& self, int dataUpdatePeriod) {
@@ -1246,31 +1309,25 @@ Returns:
 
       Returns:
           None)doc")
-      .def("setErrorProbability",
-           &dsf::mobility::FirstOrderDynamics::setErrorProbability,
-           nb::arg("errorProbability"),
-           R"doc(Set the probability of injecting simulation errors.
-
-      Args:
-        errorProbability (float): Probability in the range [0, 1].
-
-      Returns:
-        None)doc")
       .def("setIntelligentAgentsFraction",
            &dsf::mobility::FirstOrderDynamics::setIntelligentAgentsFraction,
            nb::arg("intelligentFraction"),
-           R"doc(Set the fraction of intelligent agents, i.e. following the updated paths.
+           R"doc(Set the fraction of intelligent agents. Default is 0.
 
-      Non-intelligent agents follow the free-flow paths. Default is 0.
+      Every agent plans its route when it departs (see setRouteAlgorithm): intelligent
+      agents on the current traffic, i.e. the street costs of setEdgeWeight, the
+      others on the free-flow travel times. Routes are planned again only when an agent
+      meets a closed street.
 
       Args:
         intelligentFraction (float): Fraction in the range [0, 1].
 
       Returns:
         None)doc")
-      .def("intelligentAgentsFraction",
-           &dsf::mobility::FirstOrderDynamics::intelligentAgentsFraction,
-           R"doc(Get the fraction of intelligent agents, i.e. following the updated paths.
+      .def(
+          "intelligentAgentsFraction",
+          &dsf::mobility::FirstOrderDynamics::intelligentAgentsFraction,
+          R"doc(Get the fraction of intelligent agents, i.e. planning on the current traffic.
 
       Returns:
         float: The fraction in the range [0, 1].)doc")
@@ -1362,10 +1419,19 @@ Returns:
 
       Returns:
         None)doc")
-      .def("setODs",
-           &dsf::mobility::FirstOrderDynamics::setODs,
-           nb::arg("ods"),
-           R"doc(Set origin-destination pairs for the simulation.
+      .def(
+          "setODs",
+          [](dsf::mobility::FirstOrderDynamics& self,
+             std::vector<std::tuple<dsf::Id, dsf::Id, double>> const& ods) {
+            std::vector<dsf::mobility::ODEntry> entries;
+            entries.reserve(ods.size());
+            for (auto const& [origin, destination, weight] : ods) {
+              entries.push_back({origin, destination, weight});
+            }
+            self.setODs(entries);
+          },
+          nb::arg("ods"),
+          R"doc(Set origin-destination pairs for the simulation.
 
     Args:
       ods (Sequence[tuple[int, int, float]]): (origin id, destination id, weight)
@@ -1457,60 +1523,70 @@ Returns:
 
     Returns:
       None)doc")
-      .def("updatePaths",
-           &dsf::mobility::FirstOrderDynamics::updatePaths,
-           R"doc(Recompute routing paths for the current network state.
+      .def(
+          "destinationStreets",
+          [](const dsf::mobility::FirstOrderDynamics& self) {
+            return self.destinationStreets();
+          },
+          R"doc(Get the destination streets of the origins, destinations and OD pairs.
+
+    Returns:
+      set[int]: The destination street ids (whatever mode()).)doc")
+      .def("setEdgeWeight",
+           &dsf::mobility::FirstOrderDynamics::setEdgeWeight,
+           nb::arg("weight"),
+           nb::arg("distanceCost") = 0.1,
+           R"doc(Set the street costs intelligent agents plan their routes on.
 
     Args:
-      throw_on_empty (bool, optional): Raise if no path can be found.
+      weight (str): 'traveltime' (default) is the estimated travel time plus the time
+        needed to clear the exit queues (mean lane queue / min(1, transport capacity)),
+        'length' the street length, 'uniform' 1 for every street; 'datt' (detour-avoiding
+        travel time) is 'traveltime' plus k * length, with k = distanceCost, for every
+        agent, free-flow ones included; any other value is the name of a numeric custom
+        attribute.
+      distanceCost (float): The k of 'datt', in s/m. 0.1 makes a metre cost as much as
+        driving it at 36 km/h; values between 0.05 and 0.2 are sensible in a city.
 
     Returns:
       None)doc")
-      .def(
-          "addItinerary",
-          [](dsf::mobility::FirstOrderDynamics& self, dsf::Id id, dsf::Id destination) {
-            self.addItinerary(id, destination);
-          },
-          nb::arg("id"),
-          nb::arg("destination"),
-          R"doc(Add an itinerary by id and destination.
+      .def("setPathRandomness",
+           &dsf::mobility::FirstOrderDynamics::setPathRandomness,
+           nb::arg("sigma"),
+           R"doc(Set the path randomness.
+
+    Each agent perceives each street cost multiplied by its own log-normal noise of mean 1,
+    exp(sigma * Z - sigma^2 / 2) with Z standard normal (clamped to [-3, 3]), as in
+    MATSim's routing randomness. The noise depends only on the agent and the street, so it
+    is the same at every re-plan: agents with the same trip spread over more routes,
+    whatever the weight (see setEdgeWeight).
 
     Args:
-      id (int): Itinerary id.
-      destination (int): Destination street id (whatever mode()). Agents
-        following the itinerary arrive at its source node, without travelling it.
+      sigma (float): The spread of the noise, 0 (default) to plan without noise. Values
+        between 0.1 and 0.5 are sensible.
 
     Returns:
       None)doc")
-      .def(
-          "itineraries",
-          [](const dsf::mobility::FirstOrderDynamics& self) {
-            nb::dict py_result;
-            for (const auto& [id, pItin] : self.itineraries()) {
-              py_result[nb::cast(id)] = nb::cast(pItin);
-            }
-            return py_result;
-          },
-          R"doc(Get the itineraries mapping as a dict[id, Itinerary].)doc")
-      .def(
-          "freeflowItineraries",
-          [](const dsf::mobility::FirstOrderDynamics& self) {
-            nb::dict py_result;
-            for (const auto& [id, pItin] : self.freeflowItineraries()) {
-              py_result[nb::cast(id)] = nb::cast(pItin);
-            }
-            return py_result;
-          },
-          R"doc(Get the free-flow itineraries mapping as a dict[id, Itinerary].)doc")
+      .def("setRouteAlgorithm",
+           &dsf::mobility::FirstOrderDynamics::setRouteAlgorithm,
+           nb::arg("algorithm"),
+           R"doc(Set the algorithm the routes are planned with.
+
+    Args:
+      algorithm (RouteAlgorithm): ASTAR (default) or DIJKSTRA.
+
+    Returns:
+      None)doc")
       .def("addAgentsUniformly",
            &dsf::mobility::FirstOrderDynamics::addAgentsUniformly,
            nb::arg("nAgents"),
-           nb::arg("itineraryId") = std::nullopt,
-           R"doc(Add agents uniformly across the configured origins.
+           nb::arg("destinationId") = std::nullopt,
+           R"doc(Add agents uniformly on the streets of the network.
 
     Args:
       nAgents (int): Number of agents to add.
-      itineraryId (int | None, optional): Itinerary to assign.
+      destinationId (int | None, optional): The agents' destination street. If None,
+        each agent gets a random one of destinationStreets().
 
     Returns:
       None)doc")
@@ -1564,6 +1640,19 @@ Returns:
 
       Returns:
         RoadNetwork: Reference to the simulation graph.)doc")
+      .def(
+          "router",
+          [](dsf::mobility::FirstOrderDynamics& self) -> dsf::mobility::Router const& {
+            return self.router();
+          },
+          nb::rv_policy::reference_internal,
+          R"doc(Get the router which plans the agents' routes.
+
+      It is first rebuilt if the network has changed. The returned router stays valid as
+      long as the dynamics and follows its later settings.
+
+      Returns:
+        Router: Reference to the router of the dynamics.)doc")
       .def("nAgents",
            &dsf::mobility::FirstOrderDynamics::nAgents,
            R"doc(Get the current number of agents in the simulation.
@@ -1683,7 +1772,7 @@ Returns:
   // Bind TrafficSimulator class to mobility submodule
   nb::class_<dsf::mobility::TrafficSimulator>(mobility, "TrafficSimulator")
       .def(nb::init<>())
-        .def(nb::init<std::string const&, bool>(),
+      .def(nb::init<std::string const&, bool>(),
            nb::arg("jsonConfigFile"),
            nb::arg("pedestrian") = false,
            R"doc(Create a TrafficSimulator instance from a JSON configuration file.
@@ -1746,17 +1835,6 @@ Returns:
 
       Returns:
         None)doc")
-      .def("updatePaths",
-           &dsf::mobility::TrafficSimulator::updatePaths,
-           nb::arg("deltaT") = 0,
-           nb::arg("throwOnEmpty") = true,
-           R"doc(Recompute routing paths for the current network state.
-      Args:
-      deltaT (int, optional): Time interval between path updates.
-      throwOnEmpty (bool, optional): Raise exception for empty paths.
-
-      Returns:
-      None)doc")
       .def("saveData",
            &dsf::mobility::TrafficSimulator::saveData,
            nb::arg("savingInterval"),
@@ -1810,6 +1888,53 @@ Returns:
 
       Returns:
         None)doc")
+      .def(
+          "scheduleStreetStatusById",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::uint64_t time,
+             std::vector<dsf::Id> streetIds,
+             dsf::mobility::RoadStatus status) {
+            self.scheduleStreetStatusById(
+                static_cast<std::time_t>(time), std::move(streetIds), status);
+          },
+          nb::arg("time"),
+          nb::arg("streetIds"),
+          nb::arg("status"),
+          R"doc(Schedule a change of the status of some streets during the runs.
+
+      Args:
+        time (int): Time step of the run, counted from its start, at which the change is made.
+          Changes not made when a run ends are kept for the next run, whose time steps
+          count from its own start.
+        streetIds (list[int]): Street identifiers, checked when a run starts (IndexError).
+        status (RoadStatus): New status to set.
+
+      Returns:
+        None)doc")
+      .def(
+          "scheduleStreetStatusByName",
+          [](dsf::mobility::TrafficSimulator& self,
+             std::uint64_t time,
+             std::string streetName,
+             dsf::mobility::RoadStatus status) {
+            self.scheduleStreetStatusByName(
+                static_cast<std::time_t>(time), std::move(streetName), status);
+          },
+          nb::arg("time"),
+          nb::arg("streetName"),
+          nb::arg("status"),
+          R"doc(Schedule a change of the status of the streets whose name contains the given one.
+
+      Args:
+        time (int): Time step of the run, counted from its start, at which the change is made.
+          Changes not made when a run ends are kept for the next run, whose time steps
+          count from its own start.
+        streetName (str): Name to match (a warning is logged when a run starts if no
+          street matches).
+        status (RoadStatus): New status to set.
+
+      Returns:
+        None)doc")
       .def("setAgentInsertionMethod",
            &dsf::mobility::TrafficSimulator::setAgentInsertionMethod,
            nb::arg("insertionMethod"),
@@ -1824,13 +1949,9 @@ Returns:
           "run",
           [](dsf::mobility::TrafficSimulator& self,
              std::vector<std::size_t> nAgentsPerTimeStep,
-             std::optional<std::time_t> deltaT,
-             double const percentageRandomAgents) {
-            self.run(nAgentsPerTimeStep, deltaT, percentageRandomAgents);
-          },
+             std::optional<std::time_t> deltaT) { self.run(nAgentsPerTimeStep, deltaT); },
           nb::arg("nAgentsPerTimeStep"),
           nb::arg("deltaT") = std::nullopt,
-          nb::arg("percentageRandomAgents") = 0.0,
           R"doc(Run the simulation in default mode.
 
       Args:
@@ -1838,7 +1959,6 @@ Returns:
           deltaT: Optional interval in seconds between agent insertions. If omitted,
                   the interval is inferred from the configured start/end times and the
                   length of nAgentsPerTimeStep.
-          percentageRandomAgents: Optional percentage of random agents to insert at each step.
       )doc")
       .def(
           "run",

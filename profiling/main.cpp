@@ -9,7 +9,6 @@
 using unit = uint32_t;
 
 using RoadNetwork = dsf::mobility::RoadNetwork;
-using Itinerary = dsf::mobility::Itinerary;
 using Dynamics = dsf::mobility::FirstOrderDynamics;
 
 int main() {
@@ -30,12 +29,8 @@ int main() {
   std::cout << "Creating dynamics...\n";
 
   Dynamics dynamics{graph, false, std::nullopt, 0.95};
-  dynamics.addItinerary(0, 118);
-  dynamics.addItinerary(1, 115);
-  dynamics.addItinerary(2, 112);
-  dynamics.addItinerary(3, 109);
-  dynamics.setErrorProbability(0.3);
-  dynamics.updatePaths();
+  dynamics.setDestinations({118, 115, 112, 109});
+  dynamics.setPathRandomness(0.3);
 
   std::cout << "Done.\n"
             << "Running simulation...\n";

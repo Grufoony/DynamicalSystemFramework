@@ -8,6 +8,14 @@
 
 namespace dsf::mobility {
   double Road::m_meanVehicleLength = 5.;
+  std::atomic<std::uint64_t> Road::m_routingRevision{0};
+
+  void Road::m_bumpRoutingRevision() noexcept {
+    m_routingRevision.fetch_add(1, std::memory_order_relaxed);
+  }
+  std::uint64_t Road::routingRevision() noexcept {
+    return m_routingRevision.load(std::memory_order_relaxed);
+  }
 
   Road::Road(Id id,
              std::pair<Node*, Node*> nodePair,
@@ -56,9 +64,17 @@ namespace dsf::mobility {
   }
   double Road::meanVehicleLength() { return m_meanVehicleLength; }
 
-  void Road::addForbiddenTurn(Id roadId) { m_forbiddenTurns.insert(roadId); }
+  void Road::addForbiddenTurn(Id roadId) {
+    m_forbiddenTurns.insert(roadId);
+    m_bumpRoutingRevision();
+  }
   void Road::setForbiddenTurns(std::set<Id> const& forbiddenTurns) {
     m_forbiddenTurns = forbiddenTurns;
+    m_bumpRoutingRevision();
+  }
+  void Road::setStatus(RoadStatus const status) {
+    m_roadStatus = status;
+    m_bumpRoutingRevision();
   }
 
   void Road::setMaxSpeed(double speed) {
@@ -67,6 +83,7 @@ namespace dsf::mobility {
           std::format("The maximum speed of a road ({}) must be greater than 0.", speed));
     }
     m_maxSpeed = speed;
+    m_bumpRoutingRevision();
   }
   void Road::setCapacity(int capacity) {
     if (capacity < 1) {

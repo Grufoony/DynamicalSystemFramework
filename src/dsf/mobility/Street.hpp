@@ -9,6 +9,7 @@
 #pragma once
 
 #include "Agent.hpp"
+#include "Lane.hpp"
 #include "Road.hpp"
 #include "Sensors.hpp"
 #include "../utility/TypeTraits/is_numeric.hpp"
@@ -48,29 +49,31 @@ namespace dsf::mobility {
   /// @brief The position of the counter on the street
   enum class CounterPosition : uint8_t { ENTRY = 0, MIDDLE = 1, EXIT = 2 };
 
+  /// @brief The passage of an agent through a street
+  struct AgentStreetRecord {
+    Id agentId;
+    std::time_t timeIn;
+    std::time_t timeOut;
+  };
+
   /// @brief The Street class represents a street in the network.
   class Street : public Road {
   private:
-    std::vector<dsf::queue<std::unique_ptr<Agent>>> m_exitQueues;
+    std::vector<Lane> m_lanes;
     dsf::priority_queue<std::unique_ptr<Agent>,
                         std::vector<std::unique_ptr<Agent>>,
                         AgentComparator>
         m_movingAgents;
     std::unordered_map<Id, std::time_t> m_agentsInsertionTimes;
     std::vector<double> m_avgSpeeds;
-    std::vector<Direction> m_laneMapping;
     std::optional<Counter> m_counter;
     CounterPosition m_counterPosition{CounterPosition::EXIT};
     static std::function<double(Street const&)> m_estimatedTravelTimeFunction;
-    static std::optional<tbb::concurrent_unordered_map<
-        Id,
-        std::vector<std::tuple<Id, std::time_t, std::time_t>>>>
+    static std::optional<tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>>>
         m_agentData;
 
-  private:
-    /// @brief Update the street's lane mapping
-    /// @param nLanes The street's number of lanes
-    void m_updateLaneMapping(int const nLanes);
+    /// @brief Record an agent leaving the street (mean speed and agent data)
+    void m_recordExit(Agent const& agent, std::time_t const currentTime);
 
   public:
     /// @brief Construct a new Street object
@@ -107,9 +110,7 @@ namespace dsf::mobility {
     inline RoadJunction const* target() const noexcept;
 
     static inline void acquireAgentData() {
-      m_agentData = tbb::concurrent_unordered_map<
-          Id,
-          std::vector<std::tuple<Id, std::time_t, std::time_t>>>();
+      m_agentData = tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>>();
     };
     /// @brief Set the street's lane mapping
     /// @param laneMapping The street's lane mapping
@@ -150,15 +151,27 @@ namespace dsf::mobility {
     /// @throw std::runtime_error If the street does not have a coil
     void resetCounter();
 
+    /// @brief Get the street's lanes
+    /// @return std::vector<Lane> const& The lanes, one per nLanes()
+    inline auto const& lanes() const noexcept { return m_lanes; }
+    /// @brief Get a lane of the street
+    /// @param index The index of the lane
+    /// @return Lane const& The lane. Its exit gate is refilled by the transport capacity at
+    ///   each refillFlowAccumulator() and consumed by each dequeue()
+    inline auto const& lane(std::size_t const index) const { return m_lanes[index]; }
     /// @brief Get the street's queue
     /// @return const dsf::queue<std::unique_ptr<Agent>>&, The street's queue
     const dsf::queue<std::unique_ptr<Agent>>& queue(size_t const& index) const {
-      return m_exitQueues[index];
+      return m_lanes[index].queue;
     }
-    /// @brief Get the street's queues
-    /// @return std::vector<dsf::queue<std::unique_ptr<Agent>>> The street's queues
-    std::vector<dsf::queue<std::unique_ptr<Agent>>> const& exitQueues() const {
-      return m_exitQueues;
+    /// @brief Bring the exit gate of a lane up to date with a time step
+    /// @details The gate catches up on the time steps since its previous refill (see
+    ///   FlowAccumulator::refill()), so idle lanes need no refill
+    /// @param index The index of the lane
+    /// @param timeStep The current time step
+    void refillFlowAccumulator(std::size_t const index,
+                               std::time_t const timeStep) noexcept {
+      m_lanes[index].flowAccumulator.refill(m_transportCapacity, timeStep);
     }
     /// @brief  Get the number of agents on the street
     /// @return std::size_t, The number of agents on the street
@@ -216,8 +229,9 @@ namespace dsf::mobility {
     Measurement<double> meanSpeed();
 
     /// @brief Get the street's lane mapping
-    /// @return std::vector<Direction> The street's lane mapping
-    inline auto const& laneMapping() const { return m_laneMapping; }
+    /// @return std::vector<Direction> The direction of each lane (a copy: in hot paths
+    ///   prefer lane(index).direction)
+    std::vector<Direction> laneMapping() const;
     /// @brief Add an agent to the street
     /// @param pAgent The agent to add to the street
     /// @param currentTime The current simulation time
@@ -225,11 +239,20 @@ namespace dsf::mobility {
     /// @brief Remove the top agent from the street's moving agents priority queue
     /// @return std::unique_ptr<Agent> The agent removed from the street's moving agents priority queue
     std::unique_ptr<Agent> dequeueMovingAgent();
+    /// @brief Remove the top agent from the street's moving agents, which ends its trip at
+    ///   the end of the street, without queueing
+    /// @details The agent travels the whole street and is recorded as leaving it (see
+    ///   dequeue), but it uses neither a queue nor the exit gate: a MIDDLE counter counts it,
+    ///   an EXIT one does not
+    /// @param currentTime The current simulation time
+    /// @return std::unique_ptr<Agent> The agent
+    std::unique_ptr<Agent> dequeueArrivedAgent(std::time_t const currentTime);
     /// @brief Add an agent to the street's queue
     /// @param queueId The id of the queue
     /// @throw std::runtime_error If the street's queue is full
     void enqueue(std::size_t const& queueId);
     /// @brief Remove an agent from the street's queue
+    /// @details Consumes one unit of the lane's exit gate (see Lane::flowAccumulator)
     /// @param index The index of the queue
     /// @param currentTime The current simulation time
     /// @return Id The id of the agent removed from the street's queue
@@ -270,8 +293,8 @@ struct std::formatter<dsf::mobility::Street> {
   template <typename FormatContext>
   auto format(const dsf::mobility::Street& street, FormatContext&& ctx) const {
     std::string laneMappingStr;
-    for (const auto& direction : street.laneMapping()) {
-      switch (direction) {
+    for (auto const& lane : street.lanes()) {
+      switch (lane.direction) {
         case dsf::Direction::RIGHT:
           laneMappingStr += "R ";
           break;

@@ -107,10 +107,10 @@ TEST_CASE("TrafficSimulator JSON config parameters") {
     out << "  },\n";
     out << "  \"road_network\": {\n";
     out << "    \"edges_file\": \"edges.csv\",\n";
-    out << "    \"node_properties_file\": \"nodes.csv\",\n";
-    out << "    \"set_edge_weight\": { \"weight\": \"length\", \"threshold\": 1.0 }\n";
+    out << "    \"node_properties_file\": \"nodes.csv\"\n";
     out << "  },\n";
     out << "  \"dynamics\": {\n";
+    out << "    \"edge_weight\": \"length\",\n";
     out << "    \"agent_insertion_method\": \"ODS\"\n";
     out << "  }\n";
     out << "}\n";
@@ -126,8 +126,7 @@ TEST_CASE("TrafficSimulator JSON config parameters") {
   // Configure saving and run to flush CSVs using the output_basename
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
 
   simulator.saveData(1, true, true, false, false);
   simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
@@ -184,10 +183,10 @@ TEST_CASE("TrafficSimulator JSON config - transition matrix") {
     out << "  },\n";
     out << "  \"road_network\": {\n";
     out << "    \"edges_file\": \"edges.csv\",\n";
-    out << "    \"node_properties_file\": \"nodes.csv\",\n";
-    out << "    \"set_edge_weight\": { \"weight\": \"length\", \"threshold\": 1.0 }\n";
+    out << "    \"node_properties_file\": \"nodes.csv\"\n";
     out << "  },\n";
     out << "  \"dynamics\": {\n";
+    out << "    \"edge_weight\": \"length\",\n";
     out << "    \"agent_insertion_method\": \"RANDOM\",\n";
     out << "    \"importTransitionMatrixFromJSON\": { \"file\": "
            "\"transition_matrix.json\" }\n";
@@ -248,23 +247,25 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "database": "all_options.db",
     "init_time": "20240101",
     "end_time": "20240101 000020",
-    "update_paths": { "interval": 5, "throw_on_empty": false,
-                      "intelligent_fraction": 0.5 },
     "save_data": { "interval": 1, "avg": true, "road": true, "travel": true,
                    "agent": true, "turn_counts": true }
   },
   "road_network": {
     "edges_file": "edges.csv",
     "node_properties_file": "nodes.csv",
-    "mean_vehicle_length": 2.5,
-    "set_edge_weight": { "weight": "length", "threshold": 1.0 }
+    "mean_vehicle_length": 2.5
   },
   "dynamics": {
+    "intelligent_fraction": 0.5,
+    "edge_weight": "datt",
+    "distance_cost": 0.05,
+    "path_randomness": 0.5,
+    "route_algorithm": "DIJKSTRA",
     "seed": 42,
     "max_concurrency": 2,
+    "allow_uturns": false,
     "mode": "EDGES",
     "agent_insertion_method": "RANDOM_ODS",
-    "error_probability": 0.05,
     "kill_stagnant_agents": 10.0,
     "mean_travel_distance": 1000.0,
     "mean_travel_time": 600,
@@ -282,13 +283,16 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   CHECK_EQ(simulator.dynamics()->origins().size(), 1);
   CHECK_EQ(simulator.dynamics()->destinations().size(), 1);
   CHECK_EQ(simulator.dynamics()->intelligentAgentsFraction(), 0.5);
+  CHECK_FALSE(simulator.dynamics()->allowRandomUTurns());
+  CHECK_EQ(simulator.dynamics()->router().algorithm(), RouteAlgorithm::DIJKSTRA);
+  CHECK_EQ(simulator.dynamics()->router().distanceCost(), 0.05);
+  CHECK_EQ(simulator.dynamics()->router().pathRandomness(), 0.5);
   // The streets have no capacity column: it follows from the mean vehicle length
   CHECK_EQ(Road::meanVehicleLength(), 2.5);
   CHECK_EQ(simulator.dynamics()->graph().edge(0).capacity(), 6);
 
   simulator.run(std::vector<std::size_t>{2, 2, 2, 2});
-  CHECK_EQ(simulator.dynamics()->freeflowItineraries().size(),
-           simulator.dynamics()->itineraries().size());
+  CHECK(simulator.dynamics()->router().isBuilt());
 
   auto const dbPath = outputDir / "all_options.db";
   {
@@ -327,7 +331,7 @@ TEST_CASE("TrafficSimulator JSON config errors") {
   };
   std::string const roadNetwork{
       R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
-      R"("nodes.csv", "set_edge_weight": { "weight": "length", "threshold": 1.0 } })"};
+      R"("nodes.csv" })"};
   auto const importConfig = [&](std::string const& content) {
     writeFile(jsonPath, content);
     TrafficSimulator simulator;
@@ -359,14 +363,46 @@ TEST_CASE("TrafficSimulator JSON config errors") {
     CHECK_THROWS_AS(importConfig(makeConfig(R"(, "dynamic_ods": [1])", "")),
                     std::runtime_error);
   }
+  SUBCASE("road_events") {
+    auto const withEvents = [&](std::string const& events) {
+      return makeConfig(
+          R"(, "road_events": )" + events,
+          roadNetwork + R"(, "dynamics": { "agent_insertion_method": "UNIFORM" })");
+    };
+    CHECK_NOTHROW(importConfig(
+        withEvents(R"([{ "time": 10, "street_ids": [0, 2], "status": "closed" }, )"
+                   R"({ "time": 20, "street_name": "edge_0", "status": "Open" }])")));
+    for (auto const* events :
+         {R"({})",
+          R"([1])",
+          R"([{ "street_ids": [0], "status": "closed" }])",
+          R"([{ "time": -1, "street_ids": [0], "status": "closed" }])",
+          R"([{ "time": 1, "street_ids": [0] }])",
+          R"([{ "time": 1, "street_ids": [0], "status": "foo" }])",
+          R"([{ "time": 1, "status": "closed" }])",
+          R"([{ "time": 1, "street_ids": [0], "street_name": "a", "status": "closed" }])",
+          R"([{ "time": 1, "street_ids": 0, "status": "closed" }])",
+          R"([{ "time": 1, "street_ids": [-1], "status": "closed" }])",
+          R"([{ "time": 1, "street_name": 0, "status": "closed" }])"}) {
+      CAPTURE(events);
+      CHECK_THROWS_AS(importConfig(withEvents(events)), std::runtime_error);
+    }
+  }
   SUBCASE("The mean vehicle length is not positive") {
     CHECK_THROWS_AS(
         importConfig(makeConfig(
             "",
             R"(, "road_network": { "edges_file": "edges.csv", "node_properties_file": )"
-            R"("nodes.csv", "mean_vehicle_length": 0.0, "set_edge_weight": )"
-            R"({ "weight": "length", "threshold": 1.0 } })")),
+            R"("nodes.csv", "mean_vehicle_length": 0.0 })")),
         std::invalid_argument);
+  }
+  SUBCASE("The route algorithm is unknown") {
+    CHECK_THROWS_AS(
+        importConfig(makeConfig("",
+                                roadNetwork + R"(, "dynamics": { )"
+                                              R"("route_algorithm": "FOO", )"
+                                              R"("agent_insertion_method": "ODS" })")),
+        std::runtime_error);
   }
   SUBCASE("The agent insertion method is unknown") {
     CHECK_THROWS_AS(
@@ -382,16 +418,14 @@ TEST_CASE("TrafficSimulator JSON config errors") {
         std::runtime_error);
   }
   SUBCASE("The mode selects how OD ids are read") {
-    // Node 1 has outgoing streets 1 and 2, node 2 has outgoing street 3
+    // Node 1 has outgoing streets 1 and 2, node 2 has ingoing street 2
     writeFile(inputDir / "ods.csv", "id;type;weight\n1;O;1.0\n2;D;1.0\n");
-    auto const importODs = [&](std::string const& modeField,
-                               std::string const& edgesField) {
+    auto const importODs = [&](std::string const& modeField) {
       writeFile(jsonPath,
                 makeConfig("",
                            roadNetwork + R"(, "dynamics": { )" + modeField +
                                R"("agent_insertion_method": "RANDOM_ODS", )"
-                               R"("importODsFromCSV": { "file": "ods.csv")" +
-                               edgesField + " } }"));
+                               R"("importODsFromCSV": { "file": "ods.csv" } })"));
       auto pSimulator{std::make_unique<TrafficSimulator>()};
       pSimulator->importConfig(jsonPath.string());
       return pSimulator;
@@ -405,31 +439,24 @@ TEST_CASE("TrafficSimulator JSON config errors") {
       return ids;
     };
     SUBCASE("Default: street ids") {
-      auto const pSimulator{importODs("", "")};
+      auto const pSimulator{importODs("")};
       CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::EDGES);
       CHECK_EQ(sortedIds(pSimulator->dynamics()->origins()), std::vector<Id>{1});
       CHECK_EQ(sortedIds(pSimulator->dynamics()->destinations()), std::vector<Id>{2});
     }
     SUBCASE("NODES: node ids") {
-      auto const pSimulator{importODs(R"("mode": "NODES", )", "")};
+      auto const pSimulator{importODs(R"("mode": "NODES", )")};
       CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::NODES);
       CHECK_EQ(sortedIds(pSimulator->dynamics()->origins()), (std::vector<Id>{1, 2}));
-      CHECK_EQ(sortedIds(pSimulator->dynamics()->destinations()), std::vector<Id>{3});
-    }
-    SUBCASE("The deprecated 'edges' flag still selects the mode") {
-      auto const pSimulator{importODs("", R"(, "edges": false)")};
-      CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::NODES);
-    }
-    SUBCASE("'mode' takes precedence over the deprecated 'edges' flag") {
-      auto const pSimulator{importODs(R"("mode": "EDGES", )", R"(, "edges": false)")};
-      CHECK_EQ(pSimulator->dynamics()->mode(), DynamicsMode::EDGES);
+      CHECK_EQ(sortedIds(pSimulator->dynamics()->destinations()), std::vector<Id>{2});
     }
   }
   SUBCASE("The intelligent fraction is out of range") {
     CHECK_THROWS_AS(
-        importConfig(makeConfig(
-            R"(, "update_paths": { "interval": 1, "intelligent_fraction": 1.5 })",
-            roadNetwork + R"(, "dynamics": { "agent_insertion_method": "ODS" })")),
+        importConfig(makeConfig("",
+                                roadNetwork + R"(, "dynamics": { )"
+                                              R"("intelligent_fraction": 1.5, )"
+                                              R"("agent_insertion_method": "ODS" })")),
         std::invalid_argument);
   }
   SUBCASE("Every other agent insertion method is accepted") {
@@ -528,6 +555,29 @@ TEST_CASE("TrafficSimulator - dynamic ODs") {
   }
 }
 
+TEST_CASE("TrafficSimulator slow charge on a saturated network") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_saturated_", ".csv");
+  writeTinyEdgesCsv(edgesPath);
+
+  TrafficSimulator simulator;
+  simulator.importRoadNetwork(edgesPath.string());
+  REQUIRE(simulator.dynamics() != nullptr);
+  auto const capacity{simulator.dynamics()->graph().capacity()};
+  simulator.setTimeFrame(0, 100);
+  simulator.setAgentInsertionMethod(AgentInsertionMethod::UNIFORM);
+  WHEN("Agents are added much faster than the network can hold them") {
+    THEN("The run stops at saturation instead of throwing") {
+      CHECK_NOTHROW(simulator.run(capacity / 2 + 1, 1, 100));
+      CHECK_LT(simulator.dynamics()->time_step(), 100);
+      auto const stats{simulator.dynamics()->agentStats()};
+      CHECK_LE(stats.nAgents, capacity);
+      // The refused insertion is not counted as added
+      CHECK_EQ(stats.nAdded, stats.nInserted);
+    }
+  }
+  std::filesystem::remove(edgesPath);
+}
+
 TEST_CASE("TrafficSimulator output prefix") {
   auto const outputDir = makeUniqueDirectory("traffic_simulator_output_");
   auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
@@ -539,8 +589,7 @@ TEST_CASE("TrafficSimulator output prefix") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
 
   simulator.saveData(1, true, true, false, false);
   simulator.setTimeFrame(0, 6);
@@ -571,8 +620,7 @@ TEST_CASE("TrafficSimulator SQL persistence") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
 
   simulator.saveData(1, true, true, false, false);
   simulator.setTimeFrame(0, 6);
@@ -601,8 +649,7 @@ TEST_CASE("TrafficSimulator CSV persistence") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
 
   simulator.saveData(1, true, true, false, false);
   simulator.setTimeFrame(0, 6);
@@ -654,8 +701,7 @@ TEST_CASE("TrafficSimulator CSV writer semantics") {
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
-  simulator.dynamics()->updatePaths();
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
   simulator.dynamics()->graph().edge(0).enableCounter("coil;with;separators");
 
   // Saving every step means several appends to the same file.
@@ -726,8 +772,7 @@ TEST_CASE("TrafficSimulator SQL turn counts persistence") {
   REQUIRE(simulator.dynamics() != nullptr);
   simulator.dynamics()->setSpeedFunction(SpeedFunction::LINEAR, 0.8);
   // Route agents from node 0 to node 2: they must cross both edges.
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
-  simulator.dynamics()->updatePaths();
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 3, 1.0}});
 
   // 4th flag = save turn counts
   simulator.saveData(1, false, false, false, false, true);
@@ -789,8 +834,7 @@ TEST_CASE("TrafficSimulator CSV turn counts persistence") {
   // Route agents from edge 0 to edge 3 so that they actually turn (0 -> 2). With
   // destination edge 1 the agent arrives at that edge's source node and is removed
   // without ever turning, so no turn event would be recorded at all.
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
-  simulator.dynamics()->updatePaths();
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 3, 1.0}});
 
   // 4th flag = save turn counts
   simulator.saveData(1, false, false, false, false, true);
@@ -840,7 +884,7 @@ TEST_CASE("TrafficSimulator run validation") {
   SUBCASE("Invalid schedules throw") {
     TrafficSimulator simulator;
     simulator.importRoadNetwork(edgesPath.string());
-    simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+    simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
     CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{}), std::runtime_error);
     CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}, 0), std::invalid_argument);
     CHECK_THROWS_AS(simulator.run(1, 0, 1), std::invalid_argument);
@@ -865,7 +909,7 @@ TEST_CASE("TrafficSimulator run schedule") {
   simulator.setName("traffic_simulator_schedule_test");
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 1, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
   simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
 
   SUBCASE("An explicit insertion delta time overrides the end time") {
@@ -895,6 +939,27 @@ TEST_CASE("TrafficSimulator run schedule") {
     std::filesystem::remove(avgCsv);
   }
 
+  SUBCASE("Scheduled street status changes are made during the run, in time order") {
+    simulator.setTimeFrame(0, 5);
+    simulator.scheduleStreetStatusByName(3, "edge_3", RoadStatus::OPEN);
+    simulator.scheduleStreetStatusById(1, {2, 3}, RoadStatus::CLOSED);
+    // After the end of the run
+    simulator.scheduleStreetStatusById(10, {0}, RoadStatus::CLOSED);
+    simulator.run(std::vector<std::size_t>{1});
+    auto const& network{simulator.dynamics()->graph()};
+    CHECK_EQ(network.edge(2).roadStatus(), RoadStatus::CLOSED);
+    CHECK_EQ(network.edge(3).roadStatus(), RoadStatus::OPEN);
+    CHECK_EQ(network.edge(0).roadStatus(), RoadStatus::OPEN);
+  }
+  SUBCASE("An unknown scheduled street id stops the run before it starts") {
+    simulator.setTimeFrame(0, 5);
+    simulator.scheduleStreetStatusById(3, {2, 999}, RoadStatus::CLOSED);
+    CHECK_THROWS_AS(simulator.run(std::vector<std::size_t>{1}), std::out_of_range);
+    CHECK_THROWS_AS(simulator.run(1, 1, 1), std::out_of_range);
+    CHECK_EQ(simulator.dynamics()->time_step(), 0);
+    CHECK_EQ(simulator.dynamics()->graph().edge(2).roadStatus(), RoadStatus::OPEN);
+  }
+
   std::filesystem::remove(edgesPath);
 }
 
@@ -906,7 +971,7 @@ TEST_CASE("TrafficSimulator slow charge with travel and agent data") {
   simulator.setName("traffic_simulator_slow_charge_test");
   simulator.importRoadNetwork(edgesPath.string());
   REQUIRE(simulator.dynamics() != nullptr);
-  simulator.dynamics()->setODs(std::vector<std::tuple<Id, Id, double>>{{0, 3, 1.0}});
+  simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 3, 1.0}});
 
   simulator.saveData(5, false, false, true, true);
   simulator.setTimeFrame(0, 20);

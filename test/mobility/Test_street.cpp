@@ -173,14 +173,18 @@ TEST_CASE("Street") {
       double const initialMaxSpeed = street.maxSpeed();
 
       WHEN("Number of lanes is increased to 4") {
+        street.setLaneMapping({dsf::Direction::RIGHT, dsf::Direction::LEFT});
         street.changeNLanes(4);
         THEN("All properties scale correctly") {
           CHECK_EQ(street.nLanes(), 4);
           CHECK_EQ(street.capacity(), initialCapacity * 2);
           CHECK_EQ(street.transportCapacity(), initialTransportCapacity * 2);
           CHECK_EQ(street.maxSpeed(), initialMaxSpeed);
-          CHECK_EQ(street.exitQueues().size(), 4);
-          CHECK_EQ(street.laneMapping().size(), 4);
+          CHECK_EQ(street.lanes().size(), 4);
+        }
+        THEN("The lane mapping is reset, as the old one does not fit the new lanes") {
+          CHECK_EQ(street.laneMapping(),
+                   std::vector<dsf::Direction>(4, dsf::Direction::ANY));
         }
       }
 
@@ -191,7 +195,7 @@ TEST_CASE("Street") {
           CHECK_EQ(street.capacity(), initialCapacity / 2);
           CHECK_EQ(street.transportCapacity(), initialTransportCapacity / 2);
           CHECK_EQ(street.maxSpeed(), initialMaxSpeed);
-          CHECK_EQ(street.exitQueues().size(), 1);
+          CHECK_EQ(street.lanes().size(), 1);
           CHECK_EQ(street.laneMapping().size(), 1);
         }
       }
@@ -203,7 +207,7 @@ TEST_CASE("Street") {
         }
         street.changeNLanes(1);
         THEN("The agents of the removed lane are moved to the surviving one") {
-          CHECK_EQ(street.exitQueues().size(), 1);
+          CHECK_EQ(street.lanes().size(), 1);
           CHECK_EQ(street.queue(0).size(), 2);
         }
       }
@@ -245,17 +249,17 @@ TEST_CASE("Street") {
           CHECK_EQ(street.capacity(),
                    static_cast<int>(std::ceil((150.0 * 6) / Road::meanVehicleLength())));
           CHECK_EQ(street.maxSpeed(), doctest::Approx(initialMaxSpeed * 1.2));
-          CHECK_EQ(street.exitQueues().size(), 6);
+          CHECK_EQ(street.lanes().size(), 6);
         }
       }
     }
   }
   SUBCASE("addAgent") {
-    Agent a1{0, 0, nullptr, 0};
+    Agent a1{0, 0, std::nullopt, 0};
     a1.setFreeTime(5);
-    Agent a2{1, 0, nullptr, 0};
+    Agent a2{1, 0, std::nullopt, 0};
     a2.setFreeTime(3);
-    Agent a3{2, 0, nullptr, 0};
+    Agent a3{2, 0, std::nullopt, 0};
     a3.setFreeTime(7);
 
     Street street{1, nodes(0, 1), 3.5};
@@ -270,10 +274,10 @@ TEST_CASE("Street") {
     /*This tests the insertion of an agent in a street's queue*/
 
     // define some agents
-    Agent a1{0, 0, nullptr, 0};  // they are all in street 1
-    Agent a2{1, 0, nullptr, 0};
-    Agent a3{2, 0, nullptr, 0};
-    Agent a4{3, 0, nullptr, 0};
+    Agent a1{0, 0, std::nullopt, 0};  // they are all in street 1
+    Agent a2{1, 0, std::nullopt, 0};
+    Agent a3{2, 0, std::nullopt, 0};
+    Agent a4{3, 0, std::nullopt, 0};
 
     Street street{1, nodes(0, 1), 3.5};
     // fill the queue
@@ -301,10 +305,10 @@ TEST_CASE("Street") {
     /*This tests the exit of an agent from a street's queue*/
 
     // define some agents
-    Agent a1{0, 0, nullptr, 0};  // they are all in street 1
-    Agent a2{1, 0, nullptr, 0};
-    Agent a3{2, 0, nullptr, 0};
-    Agent a4{3, 0, nullptr, 0};
+    Agent a1{0, 0, std::nullopt, 0};  // they are all in street 1
+    Agent a2{1, 0, std::nullopt, 0};
+    Agent a3{2, 0, std::nullopt, 0};
+    Agent a4{3, 0, std::nullopt, 0};
 
     Street street{1, nodes(0, 1), 3.5};
     // fill the queue
@@ -328,6 +332,37 @@ TEST_CASE("Street") {
     street.dequeue(0, 3);
     street.dequeue(0, 4);  // the queue is now empty
   }
+  SUBCASE("Flow accumulators") {
+    GIVEN("A two-lane street with transport capacity 0.5") {
+      Street street{1, nodes(0, 1), 30., 13.8888888889, 2};
+      street.setTransportCapacity(0.5);
+      Agent agent{0, 0, std::nullopt, 0};
+      street.addAgent(std::make_unique<Agent>(agent), 0);
+      street.enqueue(0);
+      street.refillFlowAccumulator(0, 0);
+      street.refillFlowAccumulator(1, 0);
+      WHEN("An agent is dequeued from the first lane") {
+        street.dequeue(0, 1);
+        THEN("Only that lane's gate is consumed") {
+          CHECK_FALSE(street.lane(0).flowAccumulator.canPass());
+          CHECK(street.lane(1).flowAccumulator.canPass());
+        }
+        THEN("The gate reopens after 1 / transport capacity time steps") {
+          street.refillFlowAccumulator(0, 1);
+          CHECK_FALSE(street.lane(0).flowAccumulator.canPass());
+          street.refillFlowAccumulator(0, 2);
+          CHECK(street.lane(0).flowAccumulator.canPass());
+        }
+      }
+      WHEN("The number of lanes changes") {
+        street.changeNLanes(3);
+        street.refillFlowAccumulator(2, 0);
+        THEN("Each lane has a gate, rescaled with the transport capacity") {
+          CHECK_EQ(street.lane(2).flowAccumulator.value(), doctest::Approx(0.75));
+        }
+      }
+    }
+  }
   SUBCASE("Angle") {
     /// This tests the angle method
     /// GIVEN: A street
@@ -350,7 +385,7 @@ TEST_CASE("Street with a coil") {
       CHECK_EQ(street.counterName(), "EntryCoil");
       CHECK_THROWS_AS(street.enableCounter("OtherCoil"), std::runtime_error);
       WHEN("An agent is added") {
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
         THEN("The input flow is one immediately") { CHECK_EQ(street.counts(), 1); }
         street.enqueue(0);
         THEN("The input flow is still one") { CHECK_EQ(street.counts(), 1); }
@@ -364,7 +399,7 @@ TEST_CASE("Street with a coil") {
       street.enableCounter("", dsf::mobility::CounterPosition::MIDDLE);
       CHECK_EQ(street.counterName(), "Coil_1");
       WHEN("An agent is added") {
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
         THEN("The input flow is zero") { CHECK_EQ(street.counts(), 0); }
         street.enqueue(0);
         THEN("The input flow is one once enqueued") { CHECK_EQ(street.counts(), 1); }
@@ -380,7 +415,7 @@ TEST_CASE("Street with a coil") {
       street.enableCounter("ExitCoil", dsf::mobility::CounterPosition::EXIT);
       CHECK_EQ(street.counterName(), "ExitCoil");
       WHEN("An agent is added and enqueued") {
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
         street.enqueue(0);
         THEN("The input flow is zero") { CHECK_EQ(street.counts(), 0); }
         street.dequeue(0, 1);
@@ -403,9 +438,9 @@ TEST_CASE("Street with a coil") {
 
       WHEN("Agents are added and dequeued at different times") {
         // Add agents at time 0
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
-        street.addAgent(std::make_unique<Agent>(1, 0, nullptr, 0), 0);
-        street.addAgent(std::make_unique<Agent>(2, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
+        street.addAgent(std::make_unique<Agent>(1, 0, std::nullopt, 0), 0);
+        street.addAgent(std::make_unique<Agent>(2, 0, std::nullopt, 0), 0);
 
         // Enqueue them
         street.enqueue(0);
@@ -439,12 +474,12 @@ TEST_CASE("Street with a coil") {
 
       WHEN("Agents exit at different times") {
         // Agent 0 added at time 0, exits at time 10 (speed = 100/10 = 10 m/s)
-        street.addAgent(std::make_unique<Agent>(0, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(0, 0, std::nullopt, 0), 0);
         street.enqueue(0);
         street.dequeue(0, 10);
 
         // Agent 1 added at time 0, exits at time 5 (speed = 100/5 = 20 m/s)
-        street.addAgent(std::make_unique<Agent>(1, 0, nullptr, 0), 0);
+        street.addAgent(std::make_unique<Agent>(1, 0, std::nullopt, 0), 0);
         street.enqueue(0);
         street.dequeue(0, 5);
 
@@ -745,8 +780,8 @@ TEST_CASE("Street formatting") {
     Street street{30, nodes(10, 20), 50.0, 15.0, 1};
 
     // Add some agents
-    auto agent1 = std::make_unique<Agent>(0, 0, nullptr);
-    auto agent2 = std::make_unique<Agent>(1, 0, nullptr);
+    auto agent1 = std::make_unique<Agent>(0, 0, std::nullopt);
+    auto agent2 = std::make_unique<Agent>(1, 0, std::nullopt);
     street.addAgent(std::move(agent1), 0);
     street.addAgent(std::move(agent2), 0);
 

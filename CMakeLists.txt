@@ -109,7 +109,7 @@ set(CSV_BUILD_PROGRAMS
 FetchContent_Declare(
   csv-parser
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser
-  GIT_TAG v5.4.0)
+  GIT_TAG v5.8.0)
 FetchContent_GetProperties(csv-parser)
 if(NOT csv-parser_POPULATED)
   FetchContent_MakeAvailable(csv-parser)
@@ -143,7 +143,7 @@ endif()
 FetchContent_Declare(
   simdjson
   GIT_REPOSITORY https://github.com/simdjson/simdjson
-  GIT_TAG v5.0.0)
+  GIT_TAG v5.1.1)
 FetchContent_GetProperties(simdjson)
 if(NOT simdjson_POPULATED)
   FetchContent_MakeAvailable(simdjson)
