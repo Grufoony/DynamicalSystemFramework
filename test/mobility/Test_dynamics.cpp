@@ -818,7 +818,8 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_EQ(matrix.at(2).at(4), doctest::Approx(0.4));
         }
       }
-      WHEN("We set a U-turn next to zero-weight transitions") {
+      WHEN("We forbid random U-turns and set a U-turn next to zero-weight transitions") {
+        dynamics.setAllowRandomUTurns(false);
         dynamics.setTransitionMatrix({{2, {{3, 0.6}, {4, 0.}, {6, 0.}}}});
         THEN("The U-turn weight is shared equally") {
           auto const& matrix = dynamics.transitionMatrix();
@@ -853,17 +854,22 @@ TEST_CASE("FirstOrderDynamics") {
         CHECK_THROWS_AS(dynamics.initTurnCounts(), std::runtime_error);
         CHECK_NOTHROW(dynamics.resetTurnCounts());
       }
-      WHEN("We set a row containing only unusable transitions") {
+      WHEN(
+          "We forbid random U-turns and set a row containing only unusable transitions") {
         // Street 3 (1 -> 0) is the U-turn of street 2 (0 -> 1)
+        dynamics.setAllowRandomUTurns(false);
         dynamics.setTransitionMatrix({{2, {{3, 1.}}}});
         THEN("The row is dropped, falling back to the uniform behaviour") {
           CHECK(dynamics.transitionMatrix().empty());
         }
       }
-      WHEN("We set a row whose U-turn weight can be redistributed") {
+      WHEN(
+          "We forbid random U-turns and set a row whose U-turn weight can be "
+          "redistributed") {
         // Street 3 (1 -> 0) is the U-turn of street 2 (0 -> 1); its weight must be
         // redistributed proportionally onto streets 4 and 6 rather than turning into
         // extra END probability.
+        dynamics.setAllowRandomUTurns(false);
         dynamics.setTransitionMatrix({{2, {{3, 0.2}, {4, 0.4}, {6, 0.4}}}});
         THEN(
             "The U-turn weight is spread over the other transitions and END is "
@@ -873,6 +879,28 @@ TEST_CASE("FirstOrderDynamics") {
           CHECK_FALSE(matrix.at(2).contains(3));
           CHECK_EQ(matrix.at(2).at(4), doctest::Approx(0.5));
           CHECK_EQ(matrix.at(2).at(6), doctest::Approx(0.5));
+        }
+      }
+      WHEN("We set a row containing only a U-turn") {
+        // Random U-turns are allowed by default
+        dynamics.setTransitionMatrix({{2, {{3, 1.}}}});
+        THEN("The row is kept") {
+          auto const& matrix = dynamics.transitionMatrix();
+          REQUIRE(matrix.contains(2));
+          CHECK_EQ(matrix.at(2).size(), 1);
+          CHECK_EQ(matrix.at(2).at(3), doctest::Approx(1.));
+        }
+      }
+      WHEN("We set a row with a U-turn, random U-turns being allowed by default") {
+        // Street 3 (1 -> 0) is the U-turn of street 2 (0 -> 1)
+        CHECK(dynamics.allowRandomUTurns());
+        dynamics.setTransitionMatrix({{2, {{3, 0.2}, {4, 0.4}, {6, 0.4}}}});
+        THEN("The U-turn entry is kept as it is") {
+          auto const& matrix = dynamics.transitionMatrix();
+          REQUIRE(matrix.contains(2));
+          CHECK_EQ(matrix.at(2).at(3), doctest::Approx(0.2));
+          CHECK_EQ(matrix.at(2).at(4), doctest::Approx(0.4));
+          CHECK_EQ(matrix.at(2).at(6), doctest::Approx(0.4));
         }
       }
       WHEN("We set a row whose forbidden-turn weight can be redistributed") {
@@ -933,6 +961,44 @@ TEST_CASE("FirstOrderDynamics") {
             }
           }
           CHECK(otherTurns > 0);
+        }
+      }
+      WHEN(
+          "The matrix sends street 2 back onto street 3 (random U-turns allowed by "
+          "default)") {
+        dynamics.setTransitionMatrix({{2, {{3, 1.}}}});
+        dynamics.initTurnCounts();
+        for (auto i{0}; i < nAgents; ++i) {
+          dynamics.addAgent(std::nullopt, 2);
+        }
+        for (auto i{0}; i < nSteps; ++i) {
+          dynamics.evolve();
+        }
+        THEN("The agents make the U-turn and no other turn out of street 2") {
+          auto const& turnCounts = dynamics.turnCounts();
+          REQUIRE(turnCounts.find(2) != turnCounts.end());
+          CHECK(turnCounts.at(2).at(3) > 0);
+          CHECK_EQ(turnCounts.at(2).at(4), 0);
+          CHECK_EQ(turnCounts.at(2).at(6), 0);
+        }
+      }
+      WHEN(
+          "Random U-turns are not allowed and the matrix sends street 2 back onto street "
+          "3") {
+        dynamics.setAllowRandomUTurns(false);
+        dynamics.setTransitionMatrix({{2, {{3, 0.5}, {4, 0.5}}}});
+        dynamics.initTurnCounts();
+        for (auto i{0}; i < nAgents; ++i) {
+          dynamics.addAgent(std::nullopt, 2);
+        }
+        for (auto i{0}; i < nSteps; ++i) {
+          dynamics.evolve();
+        }
+        THEN("No agent makes the U-turn: its weight went to street 4") {
+          auto const& turnCounts = dynamics.turnCounts();
+          REQUIRE(turnCounts.find(2) != turnCounts.end());
+          CHECK_EQ(turnCounts.at(2).at(3), 0);
+          CHECK(turnCounts.at(2).at(4) > 0);
         }
       }
       WHEN("The matrix leaves all the probability mass to the END entry") {

@@ -12,7 +12,7 @@
 
 inline constexpr std::uint8_t DSF_VERSION_MAJOR = 8;
 inline constexpr std::uint8_t DSF_VERSION_MINOR = 0;
-inline constexpr std::uint8_t DSF_VERSION_PATCH = 3;
+inline constexpr std::uint8_t DSF_VERSION_PATCH = 4;
 
 namespace dsf::detail {
   constexpr std::size_t digitCount(std::uint8_t value) noexcept {
