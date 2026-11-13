@@ -215,6 +215,24 @@ def test_dynamics_transition_matrix_set_and_get(dynamics):
     assert matrix[2] == pytest.approx({4: 0.6, 6: 0.2})
 
 
+def test_dynamics_transition_matrix_keeps_uturns_by_default(dynamics):
+    # Street 3 (1 -> 0) is the U-turn of street 2 (0 -> 1)
+    assert dynamics.allowRandomUTurns()
+
+    dynamics.setTransitionMatrix({2: {3: 0.2, 4: 0.4, 6: 0.4}})
+
+    assert dynamics.transitionMatrix()[2] == pytest.approx({3: 0.2, 4: 0.4, 6: 0.4})
+
+
+def test_dynamics_transition_matrix_redistributes_uturns_if_not_allowed(dynamics):
+    dynamics.setAllowRandomUTurns(False)
+    assert not dynamics.allowRandomUTurns()
+
+    dynamics.setTransitionMatrix({2: {3: 0.2, 4: 0.4, 6: 0.4}})
+
+    assert dynamics.transitionMatrix()[2] == pytest.approx({4: 0.5, 6: 0.5})
+
+
 def test_dynamics_transition_matrix_rejects_rows_summing_above_one(dynamics):
     with pytest.raises(ValueError):
         dynamics.setTransitionMatrix({2: {4: 0.8, 6: 0.4}})

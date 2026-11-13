@@ -263,6 +263,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
     "route_algorithm": "DIJKSTRA",
     "seed": 42,
     "max_concurrency": 2,
+    "allow_uturns": false,
     "mode": "EDGES",
     "agent_insertion_method": "RANDOM_ODS",
     "kill_stagnant_agents": 10.0,
@@ -282,6 +283,7 @@ TEST_CASE("TrafficSimulator JSON config - all options") {
   CHECK_EQ(simulator.dynamics()->origins().size(), 1);
   CHECK_EQ(simulator.dynamics()->destinations().size(), 1);
   CHECK_EQ(simulator.dynamics()->intelligentAgentsFraction(), 0.5);
+  CHECK_FALSE(simulator.dynamics()->allowRandomUTurns());
   CHECK_EQ(simulator.dynamics()->router().algorithm(), RouteAlgorithm::DIJKSTRA);
   CHECK_EQ(simulator.dynamics()->router().distanceCost(), 0.05);
   CHECK_EQ(simulator.dynamics()->router().pathRandomness(), 0.5);

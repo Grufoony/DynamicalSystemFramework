@@ -1252,6 +1252,27 @@ NB_MODULE(dsf_cpp, m) {
 
       Returns:
         None)doc")
+      .def("setAllowRandomUTurns",
+           &dsf::mobility::FirstOrderDynamics::setAllowRandomUTurns,
+           nb::arg("allow"),
+           R"doc(Let random agents take the U-turns of their transition-matrix row.
+
+      Set it before the transition matrix: by default, U-turn entries are kept as normal entries;
+      with False, they are redistributed over the row like forbidden turns. Streets without a
+      matrix row keep the uniform behaviour, which never takes a U-turn. In a JSON config:
+      dynamics.allow_uturns.
+
+      Args:
+        allow (bool): Whether random agents follow the matrix's U-turn entries (default True).
+
+      Returns:
+        None)doc")
+      .def("allowRandomUTurns",
+           &dsf::mobility::FirstOrderDynamics::allowRandomUTurns,
+           R"doc(Whether random agents take the U-turns of their transition-matrix row.
+
+      Returns:
+        bool)doc")
       .def(
           "setDataUpdatePeriod",
           [](dsf::mobility::FirstOrderDynamics& self, int dataUpdatePeriod) {
