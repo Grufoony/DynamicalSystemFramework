@@ -6,12 +6,16 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <latch>
 #include <limits>
 #include <string>
+#include <thread>
+#include <vector>
 
 using namespace dsf;
 using namespace dsf::mobility;
@@ -682,6 +686,53 @@ TEST_CASE("TrafficSimulator SQL persistence of two simulations in one database")
   }
 
   std::filesystem::remove(edgesPath);
+  std::filesystem::remove(dbPath);
+  std::filesystem::remove(dbPath.string() + "-wal");
+  std::filesystem::remove(dbPath.string() + "-shm");
+}
+
+TEST_CASE("TrafficSimulator SQL persistence of simulations starting together") {
+  // Each simulation has its own connection, as separate processes would
+  auto const dbPath = makeUniquePath("traffic_simulator_together_", ".db");
+  std::filesystem::remove(dbPath);
+  auto const dataDir = std::filesystem::current_path().parent_path() / "test" / "data";
+  auto const edgesPath = (dataDir / "manhattan_edges.csv").string();
+  auto const nodesPath = (dataDir / "manhattan_nodes.csv").string();
+
+  constexpr std::size_t nSimulations{8};
+  std::atomic<std::size_t> nFailures{0};
+  std::size_t nEdges{0}, nNodes{0};
+  {
+    std::latch start{1};
+    std::vector<std::jthread> threads;
+    for (std::size_t i{0}; i < nSimulations; ++i) {
+      threads.emplace_back([&, i] {
+        try {
+          TrafficSimulator simulator;
+          simulator.setId(i + 1);
+          start.wait();
+          simulator.connectDataBase(dbPath.string());
+          simulator.saveData(1, true, true, false, false);
+          simulator.importRoadNetwork(edgesPath, nodesPath);
+          if (i == 0) {
+            nEdges = simulator.dynamics()->graph().nEdges();
+            nNodes = simulator.dynamics()->graph().nNodes();
+          }
+        } catch (std::exception const& e) {
+          MESSAGE("Simulation " << i << " failed: " << e.what());
+          ++nFailures;
+        }
+      });
+    }
+    start.count_down();
+  }
+  CHECK_EQ(nFailures.load(), 0);
+
+  SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+  CHECK_EQ(static_cast<std::size_t>(rowCount(db, "edges")), nEdges);
+  CHECK_EQ(static_cast<std::size_t>(rowCount(db, "nodes")), nNodes);
+  CHECK_EQ(static_cast<std::size_t>(rowCount(db, "simulation_info")), nSimulations);
+
   std::filesystem::remove(dbPath);
   std::filesystem::remove(dbPath.string() + "-wal");
   std::filesystem::remove(dbPath.string() + "-shm");

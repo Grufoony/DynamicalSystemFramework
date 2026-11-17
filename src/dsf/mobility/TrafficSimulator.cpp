@@ -3,6 +3,7 @@
 #include "../utility/progress_bar.hpp"
 
 #include <simdjson.h>
+#include <sqlite3.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -13,6 +14,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
 namespace dsf::mobility {
@@ -738,7 +740,25 @@ namespace dsf::mobility {
                                          std::string_view const queries) {
     m_database = std::make_unique<SQLite::Database>(
         dbPath, SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
-    m_database->exec(std::string(queries));
+    // Several simulations may connect to a new database together.
+    auto const strQueries = std::string(queries);
+    auto const start = std::chrono::steady_clock::now();
+    while (true) {
+      try {
+        m_database->exec(strQueries);
+        break;
+      } catch (SQLite::Exception const& e) {
+        auto const busyTimeout = std::chrono::milliseconds{
+            m_database->execAndGet("PRAGMA busy_timeout;").getInt()};
+        if (e.getErrorCode() != SQLITE_BUSY ||
+            std::chrono::steady_clock::now() - start >= busyTimeout) {
+          throw;
+        }
+        spdlog::debug("Database {} is busy, running the connection queries again.",
+                      dbPath);
+        std::this_thread::sleep_for(std::chrono::milliseconds{20});
+      }
+    }
     m_preparePersistence();
   }
 
@@ -1489,6 +1509,11 @@ namespace dsf::mobility {
     if (m_database == nullptr) {
       return;
     }
+    // One write transaction for the whole setup, taken at once (IMMEDIATE): several simulations
+    // may start together on the same database, and each of them must see the tables either
+    // missing or complete. It also keeps the write lock for a single short commit instead of
+    // one per network row, which made the other simulations wait past the busy timeout
+    SQLite::Transaction transaction(*m_database, SQLite::TransactionBehavior::IMMEDIATE);
     if (m_saveStreetData) {
       m_initStreetTable();
     }
@@ -1506,6 +1531,7 @@ namespace dsf::mobility {
     }
     m_dumpSimInfoSQL();
     m_dumpNetwork();
+    transaction.commit();
   }
 
   void TrafficSimulator::m_flushStepData(StepDataResult stepData) {
