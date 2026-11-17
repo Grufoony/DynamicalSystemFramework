@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 
 using namespace dsf;
@@ -636,6 +637,52 @@ TEST_CASE("TrafficSimulator SQL persistence") {
   std::filesystem::remove(edgesPath);
   std::filesystem::remove(dbPath);
   // Remove eventually generated .db-wal and .db-shm files
+  std::filesystem::remove(dbPath.string() + "-wal");
+  std::filesystem::remove(dbPath.string() + "-shm");
+}
+
+TEST_CASE("TrafficSimulator id") {
+  TrafficSimulator simulator;
+  CHECK(simulator.id() > 0);
+  simulator.setId(42);
+  CHECK_EQ(simulator.id(), 42);
+  CHECK_THROWS_AS(simulator.setId(std::numeric_limits<Id>::max()), std::invalid_argument);
+  CHECK_EQ(simulator.id(), 42);
+}
+
+TEST_CASE("TrafficSimulator SQL persistence of two simulations in one database") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_edges_", ".csv");
+  auto const dbPath = makeUniquePath("traffic_simulator_shared_", ".db");
+  writeTinyEdgesCsv(edgesPath);
+  std::filesystem::remove(dbPath);
+
+  // Both are created within the same second, so only setId tells them apart
+  TrafficSimulator first, second;
+  first.setId(1);
+  second.setId(2);
+  for (auto* pSimulator : {&first, &second}) {
+    pSimulator->connectDataBase(dbPath.string());
+    pSimulator->importRoadNetwork(edgesPath.string());
+    REQUIRE(pSimulator->dynamics() != nullptr);
+    pSimulator->dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
+    pSimulator->saveData(1, true, true, false, false);
+    pSimulator->setTimeFrame(0, 6);
+    pSimulator->setAgentInsertionMethod(AgentInsertionMethod::ODS);
+  }
+  first.run(std::vector<std::size_t>{1, 0, 0, 0, 0, 0});
+  second.run(std::vector<std::size_t>{1, 0, 0, 0, 0, 0});
+
+  SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+  CHECK(rowCount(db, "simulation_info") == 2);
+  for (auto const* table : {"road_data", "avg_stats"}) {
+    SQLite::Statement query(
+        db, std::string("SELECT COUNT(DISTINCT simulation_id) FROM ") + table);
+    REQUIRE(query.executeStep());
+    CHECK(query.getColumn(0).getInt() == 2);
+  }
+
+  std::filesystem::remove(edgesPath);
+  std::filesystem::remove(dbPath);
   std::filesystem::remove(dbPath.string() + "-wal");
   std::filesystem::remove(dbPath.string() + "-shm");
 }

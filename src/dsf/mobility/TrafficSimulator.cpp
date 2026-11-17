@@ -13,6 +13,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 
 namespace dsf::mobility {
   namespace {
@@ -845,6 +846,13 @@ namespace dsf::mobility {
     m_name = std::string(name);
     m_safeName = std::string(name);
     std::ranges::replace(m_safeName, ' ', '_');
+  }
+  void TrafficSimulator::setId(Id const id) {
+    if (!std::in_range<std::int64_t>(id)) {
+      throw std::invalid_argument(std::format(
+          "The simulation id ({}) does not fit in a 64-bit signed integer.", id));
+    }
+    m_id = id;
   }
   void TrafficSimulator::setOutputPrefix(std::string_view const prefix) {
     // Check if prefix is a path to an existing directory. If so, be sure it has a trailing separator

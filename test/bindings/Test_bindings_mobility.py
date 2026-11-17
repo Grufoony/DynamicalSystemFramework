@@ -24,6 +24,8 @@ def test_traffic_simulator_configuration():
     simulator.setTimeFrame(10, 16)
 
     assert simulator.id() > 0
+    simulator.setId(7)
+    assert simulator.id() == 7
     assert simulator.initTime() == 10
     assert simulator.endTime() == 16
     assert simulator.name() == "traffic simulator test"

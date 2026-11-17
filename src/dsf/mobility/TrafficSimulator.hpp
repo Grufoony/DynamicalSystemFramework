@@ -279,6 +279,11 @@ namespace dsf::mobility {
     /// @brief Set the name of the simulation
     /// @param name The name of the simulation
     void setName(std::string_view const name);
+    /// @brief Set the id of the simulation
+    /// @param id The id of the simulation
+    /// @details The default id is the creation time (YYYYMMDDHHMMSS)
+    /// @throws std::invalid_argument if the id does not fit in a SQLite INTEGER (64-bit signed)
+    void setId(Id const id);
 
     /// @brief Set the output prefix used for generated CSV files and database paths.
     /// @param prefix The prefix or directory path.

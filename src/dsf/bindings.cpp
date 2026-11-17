@@ -1853,6 +1853,20 @@ Returns:
 
       Returns:
         None)doc")
+      .def("setId",
+           &dsf::mobility::TrafficSimulator::setId,
+           nb::arg("id"),
+           R"doc(Set the simulator instance identifier.
+
+      The default id is the creation time (YYYYMMDDHHMMSS), so simulators created in the
+      same second share it. Give each one its own id, before running, when several
+      simulations write to the same database: their rows are told apart by simulation_id.
+
+      Args:
+        id (int): New identifier, at most 2**63 - 1.
+
+      Returns:
+        None)doc")
       .def(
           "setTimeFrame",
           [](dsf::mobility::TrafficSimulator& self,
