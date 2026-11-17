@@ -257,6 +257,8 @@ namespace dsf::mobility {
     /// @brief Connect to a SQLite database, creating it if it doesn't exist, and executing optional initialization queries
     /// @param dbPath The path to the SQLite database file
     /// @param queries Optional SQL queries to execute upon connecting to the database (default is a set of pragmas for performance optimization : "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
+    /// @details If the database is busy, e.g. another simulation is connecting to it at the
+    /// same time, the queries are run again, for as long as the busy timeout they set
     void connectDataBase(
         std::string_view const dbPath,
         std::string_view const queries =
