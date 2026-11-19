@@ -1347,7 +1347,8 @@ TEST_CASE("TrafficSimulator SQL layout") {
 
   SUBCASE("Scheduled street status changes are stored when they are made") {
     TrafficSimulator simulator;
-    simulator.scheduleStreetStatusById(2, {2, 3}, RoadStatus::CLOSED);
+    // A repeated id gives one row
+    simulator.scheduleStreetStatusById(2, {3, 2, 3}, RoadStatus::CLOSED);
     simulator.scheduleStreetStatusByName(4, "edge_3", RoadStatus::OPEN);
     runSavingSimulation(simulator, dbPath, edgesPath);
 

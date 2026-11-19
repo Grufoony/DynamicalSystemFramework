@@ -1252,8 +1252,11 @@ namespace dsf::mobility {
             streetIds.push_back(streetId);
           }
         }
-        std::ranges::sort(streetIds);
       }
+      // One row per street, even if its id is listed more than once
+      std::ranges::sort(streetIds);
+      auto const duplicates{std::ranges::unique(streetIds)};
+      streetIds.erase(duplicates.begin(), duplicates.end());
       SQLite::Transaction transaction(*m_database);
       SQLite::Statement insertStmt(*m_database,
                                    "INSERT INTO street_status (simulation_id, time_step, "
