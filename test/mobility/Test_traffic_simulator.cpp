@@ -1,3 +1,4 @@
+#include "dsf/dsf.hpp"
 #include "dsf/mobility/TrafficSimulator.hpp"
 
 #include <SQLiteCpp/SQLiteCpp.h>
@@ -15,6 +16,7 @@
 #include <limits>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 using namespace dsf;
@@ -1096,4 +1098,274 @@ TEST_CASE("TrafficSimulator slow charge with travel and agent data") {
   std::filesystem::remove(edgesPath);
   std::filesystem::remove(travelCsv);
   std::filesystem::remove(agentCsv);
+}
+
+namespace {
+  void removeDatabase(std::filesystem::path const& dbPath) {
+    std::filesystem::remove(dbPath);
+    std::filesystem::remove(dbPath.string() + "-wal");
+    std::filesystem::remove(dbPath.string() + "-shm");
+  }
+
+  std::int64_t queryInt(SQLite::Database& db, std::string const& sql) {
+    SQLite::Statement query(db, sql);
+    REQUIRE(query.executeStep());
+    return query.getColumn(0).getInt64();
+  }
+
+  /// @brief Run a short simulation saving street data and average stats in the database
+  void runSavingSimulation(TrafficSimulator& simulator,
+                           std::filesystem::path const& dbPath,
+                           std::filesystem::path const& edgesPath) {
+    simulator.connectDataBase(dbPath.string());
+    simulator.importRoadNetwork(edgesPath.string());
+    REQUIRE(simulator.dynamics() != nullptr);
+    simulator.dynamics()->setODs(std::vector<dsf::mobility::ODEntry>{{0, 1, 1.0}});
+    simulator.saveData(1, true, true, false, false);
+    simulator.setTimeFrame(0, 6);
+    simulator.setAgentInsertionMethod(AgentInsertionMethod::ODS);
+    simulator.run(std::vector<std::size_t>{1, 0, 0, 0, 0, 0});
+  }
+
+  /// @brief Turn a database written by runSavingSimulation into the layout before
+  ///   versioning (version 1), as an older dsf wrote it
+  void downgradeToV1(std::filesystem::path const& dbPath) {
+    SQLite::Database db(dbPath.string(), SQLite::OPEN_READWRITE);
+    db.exec(R"sql(
+      DROP VIEW road_data_view;
+      DROP VIEW avg_stats_view;
+      CREATE TABLE edges_v1 (id INTEGER PRIMARY KEY, source INTEGER NOT NULL,
+        target INTEGER NOT NULL, length REAL NOT NULL, maxspeed REAL NOT NULL, name TEXT,
+        nlanes INTEGER NOT NULL, coilcode TEXT, geometry TEXT NOT NULL);
+      INSERT INTO edges_v1 SELECT id, source, target, length, maxspeed, name, nlanes,
+        coilcode, geometry FROM edges;
+      DROP TABLE edges;
+      ALTER TABLE edges_v1 RENAME TO edges;
+      CREATE TABLE nodes_v1 (id INTEGER PRIMARY KEY, type TEXT, geometry TEXT);
+      INSERT INTO nodes_v1 SELECT id, type, geometry FROM nodes;
+      DROP TABLE nodes;
+      ALTER TABLE nodes_v1 RENAME TO nodes;
+      CREATE TABLE simulation_info_v1 (id INTEGER PRIMARY KEY, name TEXT, init_time TEXT,
+        end_time TEXT, agent_insertion_method TEXT);
+      INSERT INTO simulation_info_v1 SELECT id, name, init_time, end_time,
+        agent_insertion_method FROM simulation_info;
+      DROP TABLE simulation_info;
+      ALTER TABLE simulation_info_v1 RENAME TO simulation_info;
+      CREATE TABLE road_data_v1 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        simulation_id INTEGER NOT NULL, datetime TEXT NOT NULL, time_step INTEGER NOT NULL,
+        street_id INTEGER NOT NULL, coil TEXT, density_vpk REAL, avg_speed_kph REAL,
+        std_speed_kph REAL, n_observations INTEGER, counts INTEGER, queue_length INTEGER);
+      INSERT INTO road_data_v1 SELECT id, simulation_id, '1970-01-01 00:00:00', time_step,
+        street_id, NULL, density_vpk, avg_speed_kph, std_speed_kph, n_observations, counts,
+        queue_length FROM road_data;
+      DROP TABLE road_data;
+      ALTER TABLE road_data_v1 RENAME TO road_data;
+      PRAGMA user_version = 0;
+    )sql");
+  }
+}  // namespace
+
+TEST_CASE("TrafficSimulator SQL layout") {
+  auto const edgesPath = makeUniquePath("traffic_simulator_layout_edges_", ".csv");
+  auto const dbPath = makeUniquePath("traffic_simulator_layout_", ".db");
+  writeTinyEdgesCsv(edgesPath);
+  removeDatabase(dbPath);
+
+  SUBCASE("A new database gets the current layout version and the dsf version") {
+    TrafficSimulator simulator;
+    runSavingSimulation(simulator, dbPath, edgesPath);
+    SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+    CHECK_EQ(queryInt(db, "PRAGMA user_version"), DB_SCHEMA_VERSION);
+    SQLite::Statement info(db, "SELECT dsf_version, network_id FROM simulation_info");
+    REQUIRE(info.executeStep());
+    CHECK_EQ(info.getColumn(0).getString(), std::string(DSF_VERSION));
+    CHECK_EQ(info.getColumn(1).getInt64(), simulator.networkId());
+    CHECK_GE(simulator.networkId(), 0);
+    // The views give back the columns the tables no longer store
+    CHECK_EQ(queryInt(db, "SELECT COUNT(*) FROM road_data_view WHERE datetime IS NULL"),
+             0);
+    CHECK_EQ(queryInt(db, "SELECT COUNT(*) FROM road_data_view"),
+             rowCount(db, "road_data"));
+    CHECK_EQ(queryInt(db, "SELECT COUNT(*) FROM avg_stats_view"),
+             rowCount(db, "avg_stats"));
+    // The datetime of the first step is the initial time, as the simulator writes it
+    SQLite::Statement datetime(db,
+                               "SELECT datetime FROM avg_stats_view WHERE time_step = 0");
+    REQUIRE(datetime.executeStep());
+    CHECK_EQ(datetime.getColumn(0).getString(), simulator.strInitTime());
+    CHECK_EQ(queryInt(db,
+                      "SELECT unixepoch(v.datetime) - unixepoch(s.init_time) "
+                      "FROM avg_stats_view v JOIN simulation_info s "
+                      "ON s.id = v.simulation_id WHERE v.time_step = 5"),
+             5);
+    SQLite::Statement indexes(
+        db, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name LIKE ?");
+    indexes.bind(1, "%_simulation_idx");
+    REQUIRE(indexes.executeStep());
+    CHECK_EQ(indexes.getColumn(0).getInt(), 2);  // road_data and avg_stats
+  }
+
+  SUBCASE("The network id depends on the network, not on the order of its rows") {
+    auto const shuffledPath =
+        makeUniquePath("traffic_simulator_layout_shuffled_", ".csv");
+    writeFile(shuffledPath,
+              "id;source;target;length;maxspeed;name;type;nlanes\n"
+              "3;2;1;13.8888888889;50;edge_3;residential;1\n"
+              "1;1;0;13.8888888889;50;edge_1;residential;1\n"
+              "2;1;2;13.8888888889;50;edge_2;residential;1\n"
+              "0;0;1;13.8888888889;50;edge_0;residential;1\n");
+    TrafficSimulator first, second;
+    CHECK_THROWS_AS(static_cast<void>(first.networkId()), std::runtime_error);
+    first.importRoadNetwork(edgesPath.string());
+    second.importRoadNetwork(shuffledPath.string());
+    CHECK_EQ(first.networkId(), second.networkId());
+    second.dynamics()->graph().changeStreetNLanesById(0, 2);
+    CHECK_NE(first.networkId(), second.networkId());
+    std::filesystem::remove(shuffledPath);
+  }
+
+  SUBCASE("Simulations on the same network share it, on different networks keep theirs") {
+    auto const fastEdgesPath = makeUniquePath("traffic_simulator_layout_fast_", ".csv");
+    writeFile(fastEdgesPath,
+              "id;source;target;length;maxspeed;name;type;nlanes\n"
+              "0;0;1;13.8888888889;70;edge_0;residential;1\n"
+              "1;1;0;13.8888888889;50;edge_1;residential;1\n"
+              "2;1;2;13.8888888889;50;edge_2;residential;1\n"
+              "3;2;1;13.8888888889;50;edge_3;residential;1\n");
+    TrafficSimulator first, second, third;
+    first.setId(1);
+    second.setId(2);
+    third.setId(3);
+    runSavingSimulation(first, dbPath, edgesPath);
+    runSavingSimulation(second, dbPath, edgesPath);
+    runSavingSimulation(third, dbPath, fastEdgesPath);
+    CHECK_EQ(first.networkId(), second.networkId());
+    CHECK_NE(first.networkId(), third.networkId());
+
+    SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+    CHECK_EQ(rowCount(db, "edges"), 8);
+    CHECK_EQ(rowCount(db, "nodes"), 6);
+    CHECK_EQ(queryInt(db, "SELECT COUNT(DISTINCT network_id) FROM simulation_info"), 2);
+    // Every street row finds its street in the network of its simulation
+    CHECK_EQ(
+        queryInt(db,
+                 "SELECT COUNT(*) FROM road_data r "
+                 "JOIN simulation_info s ON s.id = r.simulation_id "
+                 "JOIN edges e ON e.network_id = s.network_id AND e.id = r.street_id"),
+        rowCount(db, "road_data"));
+    CHECK_EQ(
+        queryInt(db,
+                 "SELECT DISTINCT ROUND(e.maxspeed * 3.6) FROM road_data r "
+                 "JOIN simulation_info s ON s.id = r.simulation_id "
+                 "JOIN edges e ON e.network_id = s.network_id AND e.id = r.street_id "
+                 "WHERE r.simulation_id = 3 AND r.street_id = 0"),
+        70);
+    std::filesystem::remove(fastEdgesPath);
+  }
+
+  SUBCASE("A database without a version is migrated") {
+    std::int64_t networkId{0};
+    std::int64_t nRoadRows{0};
+    {
+      TrafficSimulator old;
+      old.setId(1);
+      runSavingSimulation(old, dbPath, edgesPath);
+      networkId = old.networkId();
+    }
+    downgradeToV1(dbPath);
+    {
+      SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+      nRoadRows = rowCount(db, "road_data");
+      REQUIRE_GT(nRoadRows, 0);
+    }
+
+    SUBCASE("by one simulation") {
+      TrafficSimulator simulator;
+      simulator.setId(2);
+      runSavingSimulation(simulator, dbPath, edgesPath);
+    }
+    SUBCASE("by simulations connecting together") {
+      constexpr std::size_t nSimulations{4};
+      std::atomic<std::size_t> nFailures{0};
+      std::latch start{1};
+      {
+        std::vector<std::jthread> threads;
+        for (std::size_t i{0}; i < nSimulations; ++i) {
+          threads.emplace_back([&, i] {
+            try {
+              TrafficSimulator simulator;
+              simulator.setId(i + 2);
+              start.wait();
+              simulator.connectDataBase(dbPath.string());
+              simulator.importRoadNetwork(edgesPath.string());
+            } catch (std::exception const& e) {
+              MESSAGE("Simulation " << i << " failed: " << e.what());
+              ++nFailures;
+            }
+          });
+        }
+        start.count_down();
+      }
+      CHECK_EQ(nFailures.load(), 0);
+    }
+
+    SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+    CHECK_EQ(queryInt(db, "PRAGMA user_version"), DB_SCHEMA_VERSION);
+    // The stored network gets the id the same network has now, so it is not stored again
+    CHECK_EQ(rowCount(db, "edges"), 4);
+    CHECK_EQ(rowCount(db, "nodes"), 3);
+    CHECK_EQ(queryInt(db, "SELECT MIN(network_id) FROM edges"), networkId);
+    CHECK_EQ(queryInt(db, "SELECT MAX(network_id) FROM edges"), networkId);
+    CHECK_EQ(queryInt(db, "SELECT network_id FROM simulation_info WHERE id = 1"),
+             networkId);
+    CHECK_EQ(queryInt(db, "SELECT COUNT(*) FROM road_data WHERE simulation_id = 1"),
+             nRoadRows);
+    CHECK_FALSE(db.tableExists("road_data_old"));
+    // The rebuilt tables get their indexes back
+    CHECK_EQ(queryInt(db,
+                      "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' "
+                      "AND tbl_name IN ('road_data', 'avg_stats') "
+                      "AND name LIKE '%_simulation_idx'"),
+             2);
+    CHECK_EQ(queryInt(db,
+                      "SELECT COUNT(*) FROM pragma_table_info('road_data') "
+                      "WHERE name IN ('datetime', 'coil')"),
+             0);
+    CHECK_EQ(queryInt(db, "SELECT COUNT(*) FROM road_data_view WHERE simulation_id = 1"),
+             nRoadRows);
+  }
+
+  SUBCASE("A database with a newer layout is refused") {
+    {
+      SQLite::Database db(dbPath.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+      db.exec(std::format("PRAGMA user_version = {}", DB_SCHEMA_VERSION + 1));
+    }
+    TrafficSimulator simulator;
+    CHECK_THROWS_AS(simulator.connectDataBase(dbPath.string()), std::runtime_error);
+    CHECK(simulator.database() == nullptr);
+  }
+
+  SUBCASE("Scheduled street status changes are stored when they are made") {
+    TrafficSimulator simulator;
+    simulator.scheduleStreetStatusById(2, {2, 3}, RoadStatus::CLOSED);
+    simulator.scheduleStreetStatusByName(4, "edge_3", RoadStatus::OPEN);
+    runSavingSimulation(simulator, dbPath, edgesPath);
+
+    SQLite::Database db(dbPath.string(), SQLite::OPEN_READONLY);
+    SQLite::Statement rows(
+        db, "SELECT time_step, street_id, status FROM street_status ORDER BY id");
+    std::vector<std::tuple<std::int64_t, std::int64_t, std::string>> stored;
+    while (rows.executeStep()) {
+      stored.emplace_back(rows.getColumn(0).getInt64(),
+                          rows.getColumn(1).getInt64(),
+                          rows.getColumn(2).getString());
+    }
+    CHECK_EQ(stored,
+             std::vector<std::tuple<std::int64_t, std::int64_t, std::string>>{
+                 {2, 2, "closed"}, {2, 3, "closed"}, {4, 3, "open"}});
+    CHECK_EQ(rowCount(db, "street_status_view"), 3);
+  }
+
+  removeDatabase(dbPath);
+  std::filesystem::remove(edgesPath);
 }

@@ -205,6 +205,15 @@ def test_traffic_simulator_smoke_run_with_linear_speed(tmp_path):
         cursor.execute("SELECT COUNT(*) FROM avg_stats")
         assert cursor.fetchone()[0] > 0
 
+        cursor.execute("PRAGMA user_version")
+        assert cursor.fetchone()[0] == mobility.DB_SCHEMA_VERSION
+
+        cursor.execute("SELECT network_id FROM simulation_info")
+        assert cursor.fetchone()[0] == simulator.networkId()
+
+        cursor.execute("SELECT COUNT(*) FROM road_data_view WHERE datetime IS NOT NULL")
+        assert cursor.fetchone()[0] > 0
+
 
 def test_dynamics_transition_matrix_set_and_get(dynamics):
     # Street 2 goes 0 -> 1; node 1 has the outgoing streets 3 (the U-turn), 4 and 6
