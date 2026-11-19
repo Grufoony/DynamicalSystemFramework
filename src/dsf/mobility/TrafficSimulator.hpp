@@ -21,6 +21,13 @@
 #endif
 
 namespace dsf::mobility {
+  /// @brief The layout version of the SQLite output, stored as PRAGMA user_version.
+  /// @details 1: the layout before versioning (user_version 0 with dsf tables).
+  ///   2: networks keyed by network_id, no datetime/coil columns (rebuilt by the *_view
+  ///   views), indexes on (simulation_id, time_step), street_status table.
+  ///   connectDataBase migrates older databases and refuses newer ones.
+  inline constexpr int DB_SCHEMA_VERSION = 2;
+
   class TrafficSimulator {
     std::unique_ptr<FirstOrderDynamics> m_dynamics;
     std::unique_ptr<SQLite::Database> m_database;
@@ -83,29 +90,14 @@ namespace dsf::mobility {
     /// @brief Assign a unique id to the simulation using the current time in the format YYYYMMDDHHMMSS
     void m_createId();
 
-    void m_dumpSimInfoSQL() const;
-    /// @brief Initialize the street data table.
-    /// This table contains the data of each street. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - datetime: The datetime of the data entry
-    /// - time_step: The time step of the data entry
-    /// - street_id: The id of the street
-    /// - coil: The name of the coil on the street (can be null)
-    /// - density_vpk: The density in vehicles per kilometer
-    /// - avg_speed_kph: The average speed in kilometers per hour
-    /// - std_speed_kph: The standard deviation of the speed in kilometers per hour
-    /// - n_observations: The number of speed observations used to compute avg/std (0 if none)
-    /// - counts: The counts of the coil sensor (can be null)
-    /// - queue_length: The length of the queue on the street
-    void m_initStreetTable() const;
+    /// @brief Write (or replace) the row of this simulation in simulation_info
+    /// @param networkId The id of the network the simulation runs on
+    void m_dumpSimInfoSQL(std::int64_t const networkId) const;
     /// @brief Save street data to the database using a batch insert.
-    /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
     /// @param streetDataRecords A map of StreetDataRecord containing the data to be saved
     void m_saveStreetDataSQL(
-        const std::string& datetime,
         const std::int64_t time_step,
         const std::int64_t simulation_id,
         tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
@@ -113,21 +105,7 @@ namespace dsf::mobility {
         const std::string& datetime,
         const std::int64_t time_step,
         tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const;
-    /// @brief Initialize the average stats table.
-    /// This table contains the average stats of the simulation at each time step. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - datetime: The datetime of the data entry
-    /// - time_step: The time step of the data entry
-    /// - n_ghost_agents: The number of ghost agents
-    /// - n_agents: The number of agents
-    /// - mean_speed_kph: The mean speed of the agents in kilometers per hour
-    /// - std_speed_kph: The standard deviation of the speed of the agents in kilometers per hour
-    /// - mean_density_vpk: The mean density of the streets in vehicles per kilometer
-    /// - std_density_vpk: The standard deviation of the density of the streets in vehicles per kilometer
-    void m_initAvgStatsTable() const;
     /// @brief Save average stats to the database.
-    /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
     /// @param n_valid_edges The number of valid edges (i.e. edges with speed observations)
@@ -137,8 +115,7 @@ namespace dsf::mobility {
     /// @param std_density The standard deviation of the density of the streets in vehicles per kilometer
     /// @param mean_traveltime The mean travel time of the agents in seconds
     /// @param meanQueueLength The mean queue length of the streets
-    void m_saveAvgStatsSQL(const std::string& datetime,
-                           const std::int64_t time_step,
+    void m_saveAvgStatsSQL(const std::int64_t time_step,
                            const std::int64_t simulation_id,
                            const AverageStatsRecord& averageStats) const;
     /// @brief Save average stats to a CSV file.
@@ -154,22 +131,11 @@ namespace dsf::mobility {
     void m_saveAvgStatsCSV(const std::string& datetime,
                            const std::int64_t time_step,
                            const AverageStatsRecord& averageStats) const;
-    /// @brief Initialize the travel data table.
-    /// This table contains the travel data of the agents. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - datetime: The datetime of the data entry
-    /// - time_step: The time step of the data entry
-    /// - distance_m: The distance travelled by the agent in meters
-    /// - travel_time_s: The travel time of the agent in seconds
-    void m_initTravelDataTable() const;
     /// @brief Save travel data to the database using a batch insert.
-    /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
     /// @param travelDTs A vector of pairs containing the distance travelled by the agent in meters and the travel time of the agent in seconds
-    void m_saveTravelDataSQL(const std::string& datetime,
-                             const std::int64_t time_step,
+    void m_saveTravelDataSQL(const std::int64_t time_step,
                              const std::int64_t simulation_id,
                              tbb::concurrent_vector<TravelRecord> travelDTs) const;
     /// @brief Save travel data to a CSV file.
@@ -179,15 +145,6 @@ namespace dsf::mobility {
     void m_saveTravelDataCSV(const std::string& datetime,
                              const std::int64_t time_step,
                              tbb::concurrent_vector<TravelRecord> travelDTs) const;
-    /// @brief Initialize the agent data table.
-    /// This table contains the agent data of the agents. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - agent_id: The id of the agent
-    /// - edge_id: The id of the edge
-    /// - time_step_in: The time step of the data entry
-    /// - time_step_out: The time step of the data entry
-    void m_initAgentDataTable() const;
     /// @brief Save agent data to the database using a batch insert.
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
@@ -202,23 +159,11 @@ namespace dsf::mobility {
     void m_saveAgentDataCSV(
         const std::int64_t time_step,
         tbb::concurrent_unordered_map<Id, std::vector<AgentStreetRecord>> agentData) const;
-    /// @brief Initialize the turn counts table.
-    /// This table contains the turn counts of the agents. Columns are:
-    /// - id: The entry id (auto-incremented)
-    /// - simulation_id: The simulation id
-    /// - datetime: The datetime of the data entry
-    /// - time_step: The time step of the data entry
-    /// - source_edge_id: The id of the source edge
-    /// - target_edge_id: The id of the target edge
-    /// - counts: The turn counts from the source edge to the target edge
-    void m_initTurnCountsTable() const;
     /// @brief Save turn counts to the database using a batch insert.
-    /// @param datetime The datetime of the data entry
     /// @param time_step The time step of the data entry
     /// @param simulation_id The id of the simulation
     /// @param turnCounts A map of maps containing the turn counts to be saved, where the key of the outer map is the edge id, the key of the inner map is the next edge id and the value is the number of counts
-    void m_saveTurnCountsSQL(const std::string& datetime,
-                             const std::int64_t time_step,
+    void m_saveTurnCountsSQL(const std::int64_t time_step,
                              const std::int64_t simulation_id,
                              TurnCountsDict turnCounts) const;
     /// @brief Save turn counts to a CSV file.
@@ -233,7 +178,11 @@ namespace dsf::mobility {
                          std::size_t const nArrived,
                          std::size_t const nKilled,
                          std::size_t const nRemaining) const;
-    void m_dumpNetwork() const;
+    /// @brief Store the network in the edges and nodes tables, unless a network with the
+    ///   same id is already there
+    void m_dumpNetwork(std::int64_t const networkId) const;
+    /// @brief Create the tables needed by the saving options and write simulation_info and
+    ///   the network, in a single write transaction
     void m_preparePersistence();
     void m_flushStepData(StepDataResult stepData);
 
@@ -258,7 +207,9 @@ namespace dsf::mobility {
     /// @param dbPath The path to the SQLite database file
     /// @param queries Optional SQL queries to execute upon connecting to the database (default is a set of pragmas for performance optimization : "PRAGMA busy_timeout = 5000;PRAGMA journal_mode = WAL;PRAGMA synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;")
     /// @details If the database is busy, e.g. another simulation is connecting to it at the
-    /// same time, the queries are run again, for as long as the busy timeout they set
+    /// same time, the queries are run again, for as long as the busy timeout they set.
+    /// A database with an older layout is migrated to DB_SCHEMA_VERSION.
+    /// @throws std::runtime_error if the database layout is newer than DB_SCHEMA_VERSION
     void connectDataBase(
         std::string_view const dbPath,
         std::string_view const queries =
@@ -357,6 +308,12 @@ namespace dsf::mobility {
     /// @brief Get the database connection (const version)
     /// @return const SQLite::Database const*, The database connection
     inline auto* database() const { return m_database.get(); }
+
+    /// @brief Get the id of the current network: a hash of the rows stored in the edges
+    ///   and nodes tables, so equal networks have equal ids in any database
+    /// @return std::int64_t, The network id (non-negative)
+    /// @throws std::runtime_error if no road network is imported
+    std::int64_t networkId() const;
 
     /// @brief Get the dynamics engine managed by this simulator.
     inline auto const* dynamics() const { return m_dynamics.get(); }

@@ -28,6 +28,7 @@ NB_MODULE(dsf_cpp, m) {
   auto mobility = m.def_submodule("mobility",
                                   "Bindings for mobility-related classes and functions, "
                                   "under the dsf::mobility C++ namespace.");
+  mobility.attr("DB_SCHEMA_VERSION") = dsf::mobility::DB_SCHEMA_VERSION;
   auto mdt = m.def_submodule("mdt",
                              "Bindings for movement data tools (MDT) related classes and "
                              "functions, under the dsf::mdt C++ namespace.");
@@ -1790,9 +1791,17 @@ Returns:
               "synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-20000;",
           R"doc(Connect the simulator to a SQLite database and configure connection pragmas.
 
+    The database layout version is stored as ``PRAGMA user_version``
+    (``dsf.mobility.DB_SCHEMA_VERSION``). A database with an older layout is migrated.
+    Per-step tables store ``time_step`` only: the ``*_view`` views (e.g. ``road_data_view``)
+    add the ``datetime`` column, and ``road_data_view`` adds the ``coil`` column too.
+
     Args:
       dbPath (str): Path to the SQLite database file.
       queries (str, optional): Initialization PRAGMA statements to run on connect.
+
+    Raises:
+      RuntimeError: If the database layout is newer than this dsf version supports.
 
     Returns:
       None)doc")
@@ -2010,6 +2019,20 @@ Returns:
 
 Returns:
     int: Simulator id.)doc")
+      .def("networkId",
+           &dsf::mobility::TrafficSimulator::networkId,
+           R"doc(Get the id of the current road network, as stored in the database.
+
+It is a hash of the rows of the edges and nodes tables, so equal networks have equal
+ids, in any database. Join the data tables with the network through simulation_info:
+``road_data.simulation_id = simulation_info.id`` and
+``edges.network_id = simulation_info.network_id``.
+
+Returns:
+    int: Network id (non-negative).
+
+Raises:
+    RuntimeError: If no road network is imported.)doc")
       .def("initTime",
            &dsf::mobility::TrafficSimulator::initTime,
            R"doc(Get the configured simulation start time as epoch seconds.

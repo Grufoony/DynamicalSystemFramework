@@ -1,12 +1,15 @@
 #include "TrafficSimulator.hpp"
 #include "../utility/csv_writer.hpp"
 #include "../utility/progress_bar.hpp"
+#include "../dsf.hpp"
 
 #include <simdjson.h>
 #include <sqlite3.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cctype>
 #include <chrono>
 #include <filesystem>
@@ -24,6 +27,402 @@ namespace dsf::mobility {
                                std::size_t const total) noexcept {
       return total == 0 ? 0.
                         : static_cast<double>(value) * 100. / static_cast<double>(total);
+    }
+
+    // ----- SQLite layout, version DB_SCHEMA_VERSION -----
+    // Per-step rows carry no datetime (init_time + time_step, see the *_view views) and no
+    // data repeated from the network tables. Rows are keyed by simulation_id, and the
+    // networks by network_id (see networkFingerprint), so one database holds any number of
+    // simulations on any number of networks.
+    struct TableSchema {
+      std::string_view name;
+      std::string_view columns;
+      /// @brief The columns of the <name>_simulation_idx index, empty for none
+      std::string_view indexColumns;
+      /// @brief The SELECT of the <name>_view view, empty for none
+      std::string_view view;
+    };
+
+    /// @brief One row per simulation id (the last configuration written for it)
+    constexpr TableSchema kSimulationInfo{
+        "simulation_info",
+        "id INTEGER PRIMARY KEY, name TEXT, init_time TEXT, end_time TEXT, "
+        "agent_insertion_method TEXT, network_id INTEGER, dsf_version TEXT",
+        "",
+        ""};
+    /// @brief The streets of every network stored, coilcode is NULL without a counter
+    constexpr TableSchema kEdges{
+        "edges",
+        "network_id INTEGER NOT NULL, id INTEGER NOT NULL, source INTEGER NOT NULL, "
+        "target INTEGER NOT NULL, length REAL NOT NULL, maxspeed REAL NOT NULL, "
+        "name TEXT, nlanes INTEGER NOT NULL, coilcode TEXT, geometry TEXT NOT NULL, "
+        "PRIMARY KEY (network_id, id)",
+        "",
+        ""};
+    /// @brief The nodes of every network stored, type is traffic_light, roundabout or NULL
+    constexpr TableSchema kNodes{"nodes",
+                                 "network_id INTEGER NOT NULL, id INTEGER NOT NULL, "
+                                 "type TEXT, geometry TEXT, PRIMARY KEY (network_id, id)",
+                                 "",
+                                 ""};
+    /// @brief Street data. avg/std speed are NULL without observations, counts without a
+    ///   counter
+    constexpr TableSchema kRoadData{
+        "road_data",
+        "id INTEGER PRIMARY KEY, simulation_id INTEGER NOT NULL, "
+        "time_step INTEGER NOT NULL, street_id INTEGER NOT NULL, density_vpk REAL, "
+        "avg_speed_kph REAL, std_speed_kph REAL, n_observations INTEGER, counts INTEGER, "
+        "queue_length INTEGER",
+        "simulation_id, time_step",
+        "SELECT t.*, datetime(s.init_time, '+' || t.time_step || ' seconds') AS "
+        "datetime, "
+        "e.coilcode AS coil FROM road_data t "
+        "JOIN simulation_info s ON s.id = t.simulation_id "
+        "LEFT JOIN edges e ON e.network_id = s.network_id AND e.id = t.street_id"};
+    /// @brief Network averages. Speeds and travel time are NULL without observations
+    constexpr TableSchema kAvgStats{
+        "avg_stats",
+        "id INTEGER PRIMARY KEY, simulation_id INTEGER NOT NULL, "
+        "time_step INTEGER NOT NULL, n_ghost_agents INTEGER NOT NULL, "
+        "n_agents INTEGER NOT NULL, mean_speed_kph REAL, std_speed_kph REAL, "
+        "mean_density_vpk REAL NOT NULL, std_density_vpk REAL NOT NULL, "
+        "mean_travel_time_s REAL, mean_queue_length REAL NOT NULL",
+        "simulation_id, time_step",
+        "SELECT t.*, datetime(s.init_time, '+' || t.time_step || ' seconds') AS datetime "
+        "FROM avg_stats t JOIN simulation_info s ON s.id = t.simulation_id"};
+    /// @brief One row per trip ended in the saving interval
+    constexpr TableSchema kTravelData{
+        "travel_data",
+        "id INTEGER PRIMARY KEY, simulation_id INTEGER NOT NULL, "
+        "time_step INTEGER NOT NULL, distance_m REAL NOT NULL, "
+        "travel_time_s REAL NOT NULL",
+        "simulation_id, time_step",
+        "SELECT t.*, datetime(s.init_time, '+' || t.time_step || ' seconds') AS datetime "
+        "FROM travel_data t JOIN simulation_info s ON s.id = t.simulation_id"};
+    /// @brief One row per agent and street travelled
+    constexpr TableSchema kAgentData{
+        "agent_data",
+        "id INTEGER PRIMARY KEY, simulation_id INTEGER NOT NULL, "
+        "agent_id INTEGER NOT NULL, edge_id INTEGER NOT NULL, "
+        "time_step_in INTEGER NOT NULL, time_step_out INTEGER NOT NULL",
+        "simulation_id, time_step_in",
+        ""};
+    /// @brief Turn counts from source to target street, zero counts are not stored
+    constexpr TableSchema kTurnCounts{
+        "turn_counts",
+        "id INTEGER PRIMARY KEY, simulation_id INTEGER NOT NULL, "
+        "time_step INTEGER NOT NULL, source_edge_id INTEGER NOT NULL, "
+        "target_edge_id INTEGER NOT NULL, counts INTEGER NOT NULL",
+        "simulation_id, time_step",
+        "SELECT t.*, datetime(s.init_time, '+' || t.time_step || ' seconds') AS datetime "
+        "FROM turn_counts t JOIN simulation_info s ON s.id = t.simulation_id"};
+    /// @brief The scheduled street status changes, when they were made (status is open or
+    ///   closed)
+    constexpr TableSchema kStreetStatus{
+        "street_status",
+        "id INTEGER PRIMARY KEY, simulation_id INTEGER NOT NULL, "
+        "time_step INTEGER NOT NULL, street_id INTEGER NOT NULL, status TEXT NOT NULL",
+        "simulation_id, time_step",
+        "SELECT t.*, datetime(s.init_time, '+' || t.time_step || ' seconds') AS datetime "
+        "FROM street_status t JOIN simulation_info s ON s.id = t.simulation_id"};
+
+    constexpr std::array kAllTables{&kSimulationInfo,
+                                    &kEdges,
+                                    &kNodes,
+                                    &kRoadData,
+                                    &kAvgStats,
+                                    &kTravelData,
+                                    &kAgentData,
+                                    &kTurnCounts,
+                                    &kStreetStatus};
+
+    void createTable(SQLite::Database& db, TableSchema const& table) {
+      db.exec(
+          std::format("CREATE TABLE IF NOT EXISTS {} ({})", table.name, table.columns));
+      if (!table.indexColumns.empty()) {
+        db.exec(std::format("CREATE INDEX IF NOT EXISTS {0}_simulation_idx ON {0} ({1})",
+                            table.name,
+                            table.indexColumns));
+      }
+      if (!table.view.empty()) {
+        db.exec(std::format(
+            "CREATE VIEW IF NOT EXISTS {}_view AS {}", table.name, table.view));
+      }
+    }
+
+    // ----- Network rows and fingerprint -----
+    struct EdgeRow {
+      std::int64_t id, source, target;
+      double length, maxSpeed;
+      std::string name;
+      std::int64_t nLanes;
+      std::optional<std::string> coilCode;
+      std::string geometry;
+    };
+    struct NodeRow {
+      std::int64_t id;
+      std::optional<std::string> type, geometry;
+    };
+    struct NetworkRows {
+      std::vector<EdgeRow> edges;  // Sorted by id
+      std::vector<NodeRow> nodes;  // Sorted by id
+    };
+
+    /// @brief The rows of the edges and nodes tables for a network, sorted by id
+    NetworkRows networkRows(RoadNetwork const& network) {
+      NetworkRows rows;
+      rows.edges.reserve(network.nEdges());
+      for (auto const& [edgeId, pEdge] : network.edges()) {
+        auto const counterName{pEdge->counterName()};
+        rows.edges.push_back(
+            EdgeRow{.id = static_cast<std::int64_t>(edgeId),
+                    .source = static_cast<std::int64_t>(pEdge->source()->id()),
+                    .target = static_cast<std::int64_t>(pEdge->target()->id()),
+                    .length = pEdge->length(),
+                    .maxSpeed = pEdge->maxSpeed(),
+                    .name = pEdge->name(),
+                    .nLanes = static_cast<std::int64_t>(pEdge->nLanes()),
+                    .coilCode = counterName != "N/A"
+                                    ? std::make_optional(std::string(counterName))
+                                    : std::nullopt,
+                    .geometry = std::format("{}", pEdge->geometry())});
+      }
+      rows.nodes.reserve(network.nNodes());
+      for (auto const& [nodeId, pNode] : network.nodes()) {
+        std::optional<std::string> type;
+        if (pNode->isTrafficLight()) {
+          type = "traffic_light";
+        } else if (pNode->isRoundabout()) {
+          type = "roundabout";
+        }
+        rows.nodes.push_back(NodeRow{
+            .id = static_cast<std::int64_t>(nodeId),
+            .type = std::move(type),
+            .geometry = pNode->geometry().has_value()
+                            ? std::make_optional(std::format("{}", *pNode->geometry()))
+                            : std::nullopt});
+      }
+      // The network maps are unordered, and their order differs between standard libraries
+      std::ranges::sort(rows.edges, {}, &EdgeRow::id);
+      std::ranges::sort(rows.nodes, {}, &NodeRow::id);
+      return rows;
+    }
+
+    /// @brief The rows of edges and nodes tables of the version 1 layout (no network_id)
+    NetworkRows legacyNetworkRows(SQLite::Database& db) {
+      auto optionalText = [](SQLite::Column const& column) {
+        return column.isNull() ? std::nullopt : std::make_optional(column.getString());
+      };
+      NetworkRows rows;
+      SQLite::Statement edges(
+          db,
+          "SELECT id, source, target, length, maxspeed, name, nlanes, "
+          "coilcode, geometry FROM edges ORDER BY id");
+      while (edges.executeStep()) {
+        rows.edges.push_back(EdgeRow{.id = edges.getColumn(0).getInt64(),
+                                     .source = edges.getColumn(1).getInt64(),
+                                     .target = edges.getColumn(2).getInt64(),
+                                     .length = edges.getColumn(3).getDouble(),
+                                     .maxSpeed = edges.getColumn(4).getDouble(),
+                                     .name = edges.getColumn(5).getString(),
+                                     .nLanes = edges.getColumn(6).getInt64(),
+                                     .coilCode = optionalText(edges.getColumn(7)),
+                                     .geometry = edges.getColumn(8).getString()});
+      }
+      if (db.tableExists("nodes")) {
+        SQLite::Statement nodes(db, "SELECT id, type, geometry FROM nodes ORDER BY id");
+        while (nodes.executeStep()) {
+          rows.nodes.push_back(NodeRow{.id = nodes.getColumn(0).getInt64(),
+                                       .type = optionalText(nodes.getColumn(1)),
+                                       .geometry = optionalText(nodes.getColumn(2))});
+        }
+      }
+      return rows;
+    }
+
+    /// @brief A 64-bit FNV-1a hash of the network rows, cleared of its sign bit
+    /// @details Stable across platforms and runs: every value is hashed with a type tag,
+    ///   integers and doubles by their bits (little-endian), strings with their length.
+    ///   std::hash is not used, as it differs between standard libraries
+    std::int64_t networkFingerprint(NetworkRows const& rows) {
+      std::uint64_t hash{14695981039346656037ULL};
+      auto byte = [&hash](std::uint8_t const value) {
+        hash ^= value;
+        hash *= 1099511628211ULL;
+      };
+      auto word = [&byte](std::uint64_t const value) {
+        for (int shift{0}; shift < 64; shift += 8) {
+          byte(static_cast<std::uint8_t>(value >> shift));
+        }
+      };
+      auto integer = [&](std::int64_t const value) {
+        byte('i');
+        word(std::bit_cast<std::uint64_t>(value));
+      };
+      auto real = [&](double const value) {
+        byte('d');
+        word(std::bit_cast<std::uint64_t>(value));
+      };
+      auto text = [&](std::string_view const value) {
+        byte('s');
+        word(value.size());
+        for (auto const c : value) {
+          byte(static_cast<std::uint8_t>(c));
+        }
+      };
+      auto optionalText = [&](std::optional<std::string> const& value) {
+        if (value.has_value()) {
+          text(*value);
+        } else {
+          byte('n');
+        }
+      };
+      for (auto const& edge : rows.edges) {
+        byte('E');
+        integer(edge.id);
+        integer(edge.source);
+        integer(edge.target);
+        real(edge.length);
+        real(edge.maxSpeed);
+        text(edge.name);
+        integer(edge.nLanes);
+        optionalText(edge.coilCode);
+        text(edge.geometry);
+      }
+      for (auto const& node : rows.nodes) {
+        byte('N');
+        integer(node.id);
+        optionalText(node.type);
+        optionalText(node.geometry);
+      }
+      return static_cast<std::int64_t>(hash & 0x7FFF'FFFF'FFFF'FFFFULL);
+    }
+
+    // ----- Schema migrations -----
+    /// @brief Rebuild a table with its current layout, keeping the columns it shares with
+    ///   the old one, and setting network_id to the given value if the new layout has it
+    void rebuildTable(SQLite::Database& db,
+                      TableSchema const& table,
+                      std::optional<std::int64_t> const networkId = std::nullopt) {
+      if (!db.tableExists(std::string(table.name))) {
+        return;
+      }
+      auto const oldName{std::format("{}_old", table.name)};
+      // An index keeps its name when its table is renamed: drop it, or it would stop the
+      // new table from getting its own
+      db.exec(std::format("DROP INDEX IF EXISTS {}_simulation_idx", table.name));
+      db.exec(std::format("ALTER TABLE {} RENAME TO {}", table.name, oldName));
+      createTable(db, table);
+      auto columnNames = [&db](std::string_view const tableName) {
+        std::vector<std::string> names;
+        SQLite::Statement query(db, std::format("PRAGMA table_info({})", tableName));
+        while (query.executeStep()) {
+          names.push_back(query.getColumn(1).getString());
+        }
+        return names;
+      };
+      auto const oldColumns{columnNames(oldName)};
+      std::string columns, values;
+      for (auto const& column : columnNames(table.name)) {
+        if (column == "network_id" && networkId.has_value()) {
+          columns += columns.empty() ? "network_id" : ", network_id";
+          values += values.empty() ? "?" : ", ?";
+        } else if (std::ranges::find(oldColumns, column) != oldColumns.end()) {
+          columns += columns.empty() ? column : ", " + column;
+          values += values.empty() ? column : ", " + column;
+        }
+      }
+      SQLite::Statement copy(db,
+                             std::format("INSERT INTO {} ({}) SELECT {} FROM {}",
+                                         table.name,
+                                         columns,
+                                         values,
+                                         oldName));
+      if (networkId.has_value()) {
+        copy.bind(1, *networkId);
+      }
+      auto const nRows{copy.exec()};
+      db.exec(std::format("DROP TABLE {}", oldName));
+      spdlog::info("Migrated {} rows of table {}.", nRows, table.name);
+    }
+
+    /// @brief Version 1 (the layout before versioning) to version 2
+    void migrateV1ToV2(SQLite::Database& db) {
+      // The stored network gets the id a dump of the same network computes now
+      std::optional<std::int64_t> networkId;
+      if (db.tableExists("edges")) {
+        try {
+          networkId = networkFingerprint(legacyNetworkRows(db));
+        } catch (SQLite::Exception const& e) {
+          spdlog::warn("The network tables have an unknown layout ({}).", e.what());
+        }
+      }
+      if (!networkId.has_value()) {
+        // Without an id their rows cannot be keyed: keep them aside
+        for (auto const* name : {"edges", "nodes"}) {
+          if (db.tableExists(name)) {
+            spdlog::warn("Table {0} is kept as {0}_legacy, without a network id.", name);
+            db.exec(std::format("ALTER TABLE {0} RENAME TO {0}_legacy", name));
+          }
+        }
+      }
+      for (auto const* pTable : kAllTables) {
+        auto const isNetworkTable{pTable == &kEdges || pTable == &kNodes};
+        rebuildTable(db, *pTable, isNetworkTable ? networkId : std::nullopt);
+      }
+      if (networkId.has_value() && db.tableExists("simulation_info")) {
+        SQLite::Statement update(db, "UPDATE simulation_info SET network_id = ?");
+        update.bind(1, *networkId);
+        update.exec();
+        // Version 1 kept the first network only: later simulations on other networks
+        // can no longer be told apart
+        spdlog::info(
+            "Simulations stored before the migration are assigned the stored network "
+            "({}).",
+            *networkId);
+      }
+    }
+
+    /// @brief Bring the database to DB_SCHEMA_VERSION, within the caller's transaction
+    /// @throws std::runtime_error if the database is newer than DB_SCHEMA_VERSION
+    void migrateSchema(SQLite::Database& db) {
+      // migrations[v - 1] brings version v to v + 1
+      constexpr std::array<void (*)(SQLite::Database&), DB_SCHEMA_VERSION - 1> migrations{
+          &migrateV1ToV2};
+      auto version{db.execAndGet("PRAGMA user_version").getInt()};
+      if (version > DB_SCHEMA_VERSION) {
+        throw std::runtime_error(
+            std::format("The database has layout version {}, newer than the one of this "
+                        "dsf version ({}): use a newer dsf version or another database.",
+                        version,
+                        DB_SCHEMA_VERSION));
+      }
+      if (version == DB_SCHEMA_VERSION) {
+        return;
+      }
+      if (version == 0) {
+        // Before versioning, or a new database
+        version = std::ranges::any_of(kAllTables,
+                                      [&db](auto const* pTable) {
+                                        return db.tableExists(std::string(pTable->name));
+                                      })
+                      ? 1
+                      : DB_SCHEMA_VERSION;
+      }
+      if (version < DB_SCHEMA_VERSION) {
+        spdlog::info("Migrating the database from layout version {} to {}.",
+                     version,
+                     DB_SCHEMA_VERSION);
+        // Views name the tables they read: drop them before tables are renamed, they are
+        // created again with the tables
+        for (auto const* pTable : kAllTables) {
+          db.exec(std::format("DROP VIEW IF EXISTS {}_view", pTable->name));
+        }
+        for (; version < DB_SCHEMA_VERSION; ++version) {
+          migrations[static_cast<std::size_t>(version - 1)](db);
+        }
+      }
+      db.exec(std::format("PRAGMA user_version = {}", DB_SCHEMA_VERSION));
     }
   }  // namespace
 
@@ -759,6 +1158,16 @@ namespace dsf::mobility {
         std::this_thread::sleep_for(std::chrono::milliseconds{20});
       }
     }
+    try {
+      // Taken at once, so simulations connecting together migrate the database only once
+      SQLite::Transaction transaction(*m_database,
+                                      SQLite::TransactionBehavior::IMMEDIATE);
+      migrateSchema(*m_database);
+      transaction.commit();
+    } catch (...) {
+      m_database.reset();
+      throw;
+    }
     m_preparePersistence();
   }
 
@@ -833,6 +1242,34 @@ namespace dsf::mobility {
       } else {
         network.setStreetStatusById(update.streetIds, update.status);
       }
+      if (m_database == nullptr) {
+        continue;
+      }
+      auto streetIds{update.streetIds};
+      if (update.streetName.has_value()) {
+        for (auto const& [streetId, pStreet] : network.edges()) {
+          if (pStreet->name().find(*update.streetName) != std::string::npos) {
+            streetIds.push_back(streetId);
+          }
+        }
+      }
+      // One row per street, even if its id is listed more than once
+      std::ranges::sort(streetIds);
+      auto const duplicates{std::ranges::unique(streetIds)};
+      streetIds.erase(duplicates.begin(), duplicates.end());
+      SQLite::Transaction transaction(*m_database);
+      SQLite::Statement insertStmt(*m_database,
+                                   "INSERT INTO street_status (simulation_id, time_step, "
+                                   "street_id, status) VALUES (?, ?, ?, ?)");
+      for (auto const streetId : streetIds) {
+        insertStmt.bind(1, static_cast<std::int64_t>(m_id));
+        insertStmt.bind(2, static_cast<std::int64_t>(m_dynamics->time_step()));
+        insertStmt.bind(3, static_cast<std::int64_t>(streetId));
+        insertStmt.bind(4, update.status == RoadStatus::CLOSED ? "closed" : "open");
+        insertStmt.exec();
+        insertStmt.reset();
+      }
+      transaction.commit();
     }
   }
   void TrafficSimulator::m_checkStreetStatusUpdates() const {
@@ -909,22 +1346,11 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::m_dumpSimInfoSQL() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS simulation_info ("
-        "id INTEGER PRIMARY KEY, "
-        "name TEXT, "
-        "init_time TEXT, "
-        "end_time TEXT, "
-        "agent_insertion_method TEXT)");
+  void TrafficSimulator::m_dumpSimInfoSQL(std::int64_t const networkId) const {
     SQLite::Statement insertStmt(
         *this->database(),
         "INSERT OR REPLACE INTO simulation_info (id, name, init_time, end_time, "
-        "agent_insertion_method) VALUES (?, ?, ?, ?, ?)");
+        "agent_insertion_method, network_id, dsf_version) VALUES (?, ?, ?, ?, ?, ?, ?)");
     insertStmt.bind(1, static_cast<std::int64_t>(m_id));
     insertStmt.bind(2, m_name);
     insertStmt.bind(3, strInitTime());
@@ -953,36 +1379,12 @@ namespace dsf::mobility {
         insertionMethodStr = "unknown";
     }
     insertStmt.bind(5, insertionMethodStr);
+    insertStmt.bind(6, networkId);
+    insertStmt.bind(7, std::string(DSF_VERSION));
     insertStmt.exec();
-  }
-  void TrafficSimulator::m_initStreetTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    if (this->database()->tableExists("road_data")) {
-      spdlog::debug("road_data table already exists in the database. Skipping creation.");
-      return;
-    }
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS road_data ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "datetime TEXT NOT NULL, "
-        "time_step INTEGER NOT NULL, "
-        "street_id INTEGER NOT NULL, "
-        "coil TEXT, "
-        "density_vpk REAL, "
-        "avg_speed_kph REAL, "
-        "std_speed_kph REAL, "
-        "n_observations INTEGER, "
-        "counts INTEGER, "
-        "queue_length INTEGER)");
-    spdlog::info("Initialized road_data table in the database.");
   }
 
   void TrafficSimulator::m_saveStreetDataSQL(
-      const std::string& datetime,
       const std::int64_t time_step,
       const std::int64_t simulation_id,
       tbb::concurrent_map<Id, StreetDataRecord> streetDataRecords) const {
@@ -992,36 +1394,30 @@ namespace dsf::mobility {
     }
     SQLite::Statement insertStmt(
         *this->database(),
-        "INSERT INTO road_data (datetime, time_step, simulation_id, street_id, "
-        "coil, density_vpk, avg_speed_kph, std_speed_kph, n_observations, counts, "
-        "queue_length) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        "INSERT INTO road_data (time_step, simulation_id, street_id, density_vpk, "
+        "avg_speed_kph, std_speed_kph, n_observations, counts, queue_length) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
     for (auto const& [streetId, record] : streetDataRecords) {
-      insertStmt.bind(1, datetime);
-      insertStmt.bind(2, time_step);
-      insertStmt.bind(3, simulation_id);
-      insertStmt.bind(4, static_cast<std::int64_t>(streetId));
-      if (record.coilName.has_value()) {
-        insertStmt.bind(5, record.coilName.value());
+      // The coil name is edges.coilcode (see road_data_view)
+      insertStmt.bind(1, time_step);
+      insertStmt.bind(2, simulation_id);
+      insertStmt.bind(3, static_cast<std::int64_t>(streetId));
+      insertStmt.bind(4, record.density);
+      if (record.avgSpeed.has_value()) {
+        insertStmt.bind(5, record.avgSpeed.value());
+        insertStmt.bind(6, record.stdSpeed.value());
       } else {
         insertStmt.bind(5);
+        insertStmt.bind(6);
       }
-      insertStmt.bind(6, record.density);
-      if (record.avgSpeed.has_value()) {
-        insertStmt.bind(7, record.avgSpeed.value());
-        insertStmt.bind(8, record.stdSpeed.value());
+      insertStmt.bind(7, static_cast<std::int64_t>(record.nObservations.value_or(0)));
+      if (record.counts.has_value()) {
+        insertStmt.bind(8, static_cast<std::int64_t>(record.counts.value()));
       } else {
-        insertStmt.bind(7);
         insertStmt.bind(8);
       }
-      insertStmt.bind(9, static_cast<std::int64_t>(record.nObservations.value_or(0)));
-      if (record.counts.has_value()) {
-        insertStmt.bind(10, static_cast<std::int64_t>(record.counts.value()));
-      } else {
-        insertStmt.bind(10);
-      }
-      insertStmt.bind(11, static_cast<std::int64_t>(record.queueLength));
+      insertStmt.bind(9, static_cast<std::int64_t>(record.queueLength));
       insertStmt.exec();
       insertStmt.reset();
     }
@@ -1078,61 +1474,33 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::m_initAvgStatsTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    if (this->database()->tableExists("avg_stats")) {
-      spdlog::debug("avg_stats table already exists in the database. Skipping creation.");
-      return;
-    }
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS avg_stats ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "datetime TEXT NOT NULL, "
-        "time_step INTEGER NOT NULL, "
-        "n_ghost_agents INTEGER NOT NULL, "
-        "n_agents INTEGER NOT NULL, "
-        "mean_speed_kph REAL, "
-        "std_speed_kph REAL, "
-        "mean_density_vpk REAL NOT NULL, "
-        "std_density_vpk REAL NOT NULL, "
-        "mean_travel_time_s REAL, "
-        "mean_queue_length REAL NOT NULL)");
-    spdlog::info("Initialized avg_stats table in the database.");
-  }
-
-  void TrafficSimulator::m_saveAvgStatsSQL(const std::string& datetime,
-                                           const std::int64_t time_step,
+  void TrafficSimulator::m_saveAvgStatsSQL(const std::int64_t time_step,
                                            const std::int64_t simulation_id,
                                            const AverageStatsRecord& averageStats) const {
     SQLite::Statement insertStmt(
         *this->database(),
         "INSERT INTO avg_stats ("
-        "simulation_id, datetime, time_step, n_ghost_agents, n_agents, "
+        "simulation_id, time_step, n_ghost_agents, n_agents, "
         "mean_speed_kph, std_speed_kph, mean_density_vpk, std_density_vpk, "
         "mean_travel_time_s, mean_queue_length) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     insertStmt.bind(1, simulation_id);
-    insertStmt.bind(2, datetime);
-    insertStmt.bind(3, time_step);
-    insertStmt.bind(4, static_cast<std::int64_t>(m_dynamics->ghostAgents()));
-    insertStmt.bind(5, static_cast<std::int64_t>(m_dynamics->nAgents()));
+    insertStmt.bind(2, time_step);
+    insertStmt.bind(3, static_cast<std::int64_t>(m_dynamics->ghostAgents()));
+    insertStmt.bind(4, static_cast<std::int64_t>(m_dynamics->nAgents()));
 
     if (averageStats.nValidEdges > 0) {
-      insertStmt.bind(6, averageStats.meanSpeed);
-      insertStmt.bind(7, averageStats.stdSpeed);
-      insertStmt.bind(10, averageStats.meanTravelTime);
+      insertStmt.bind(5, averageStats.meanSpeed);
+      insertStmt.bind(6, averageStats.stdSpeed);
+      insertStmt.bind(9, averageStats.meanTravelTime);
     } else {
+      insertStmt.bind(5);
       insertStmt.bind(6);
-      insertStmt.bind(7);
-      insertStmt.bind(10);
+      insertStmt.bind(9);
     }
-    insertStmt.bind(8, averageStats.meanDensity);
-    insertStmt.bind(9, averageStats.stdDensity);
-    insertStmt.bind(11, averageStats.meanQueueLength);
+    insertStmt.bind(7, averageStats.meanDensity);
+    insertStmt.bind(8, averageStats.stdDensity);
+    insertStmt.bind(10, averageStats.meanQueueLength);
     insertStmt.exec();
   }
 
@@ -1182,29 +1550,7 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::m_initTravelDataTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    if (this->database()->tableExists("travel_data")) {
-      spdlog::debug(
-          "travel_data table already exists in the database. Skipping creation.");
-      return;
-    }
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS travel_data ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "datetime TEXT NOT NULL, "
-        "time_step INTEGER NOT NULL, "
-        "distance_m REAL NOT NULL, "
-        "travel_time_s REAL NOT NULL)");
-    spdlog::info("Initialized travel_data table in the database.");
-  }
-
   void TrafficSimulator::m_saveTravelDataSQL(
-      const std::string& datetime,
       const std::int64_t time_step,
       const std::int64_t simulation_id,
       tbb::concurrent_vector<TravelRecord> travelDTs) const {
@@ -1213,16 +1559,14 @@ namespace dsf::mobility {
       return;
     }
     SQLite::Statement insertStmt(*this->database(),
-                                 "INSERT INTO travel_data (datetime, time_step, "
-                                 "simulation_id, distance_m, travel_time_s) "
-                                 "VALUES (?, ?, ?, ?, ?)");
+                                 "INSERT INTO travel_data (time_step, simulation_id, "
+                                 "distance_m, travel_time_s) VALUES (?, ?, ?, ?)");
 
     for (auto const& [distance, time] : travelDTs) {
-      insertStmt.bind(1, datetime);
-      insertStmt.bind(2, time_step);
-      insertStmt.bind(3, simulation_id);
-      insertStmt.bind(4, distance);
-      insertStmt.bind(5, time);
+      insertStmt.bind(1, time_step);
+      insertStmt.bind(2, simulation_id);
+      insertStmt.bind(3, distance);
+      insertStmt.bind(4, time);
       insertStmt.exec();
       insertStmt.reset();
     }
@@ -1257,26 +1601,6 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::m_initAgentDataTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    if (this->database()->tableExists("agent_data")) {
-      spdlog::debug(
-          "agent_data table already exists in the database. Skipping creation.");
-      return;
-    }
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS agent_data ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "agent_id INTEGER NOT NULL, "
-        "edge_id INTEGER NOT NULL, "
-        "time_step_in INTEGER NOT NULL, "
-        "time_step_out INTEGER NOT NULL)");
-    spdlog::info("Initialized agent_data table in the database.");
-  }
   void TrafficSimulator::m_saveAgentDataSQL(
       const std::int64_t time_step,
       const std::int64_t simulation_id,
@@ -1330,29 +1654,7 @@ namespace dsf::mobility {
       spdlog::error("Failed to write agent data CSV: {}", e.what());
     }
   }
-  void TrafficSimulator::m_initTurnCountsTable() const {
-    if (!this->database()) {
-      throw std::runtime_error(
-          "No database connected. Call connectDataBase() before saving data.");
-    }
-    if (this->database()->tableExists("turn_counts")) {
-      spdlog::debug(
-          "turn_counts table already exists in the database. Skipping creation.");
-      return;
-    }
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS turn_counts ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "simulation_id INTEGER NOT NULL, "
-        "datetime TEXT NOT NULL, "
-        "time_step INTEGER NOT NULL, "
-        "source_edge_id INTEGER NOT NULL, "
-        "target_edge_id INTEGER NOT NULL, "
-        "counts INTEGER NOT NULL)");
-    spdlog::info("Initialized turn_counts table in the database.");
-  }
-  void TrafficSimulator::m_saveTurnCountsSQL(const std::string& datetime,
-                                             const std::int64_t time_step,
+  void TrafficSimulator::m_saveTurnCountsSQL(const std::int64_t time_step,
                                              const std::int64_t simulation_id,
                                              TurnCountsDict turnCountsRecords) const {
     if (turnCountsRecords.empty()) {
@@ -1363,21 +1665,20 @@ namespace dsf::mobility {
                   turnCountsRecords.size(),
                   time_step);
     SQLite::Statement insertStmt(*this->database(),
-                                 "INSERT INTO turn_counts (datetime, time_step, "
-                                 "simulation_id, source_edge_id, target_edge_id, counts) "
-                                 "VALUES (?, ?, ?, ?, ?, ?)");
+                                 "INSERT INTO turn_counts (time_step, simulation_id, "
+                                 "source_edge_id, target_edge_id, counts) "
+                                 "VALUES (?, ?, ?, ?, ?)");
 
     for (auto const& [edgeId, turnCounts] : turnCountsRecords) {
       for (auto const& [nextEdgeId, count] : turnCounts) {
         if (count == 0) {
           continue;  // Skip inserting records with zero counts to save memory
         }
-        insertStmt.bind(1, datetime);
-        insertStmt.bind(2, time_step);
-        insertStmt.bind(3, simulation_id);
-        insertStmt.bind(4, static_cast<std::int64_t>(edgeId));
-        insertStmt.bind(5, static_cast<std::int64_t>(nextEdgeId));
-        insertStmt.bind(6, static_cast<std::int64_t>(count));
+        insertStmt.bind(1, time_step);
+        insertStmt.bind(2, simulation_id);
+        insertStmt.bind(3, static_cast<std::int64_t>(edgeId));
+        insertStmt.bind(4, static_cast<std::int64_t>(nextEdgeId));
+        insertStmt.bind(5, static_cast<std::int64_t>(count));
         insertStmt.exec();
         insertStmt.reset();
       }
@@ -1416,84 +1717,70 @@ namespace dsf::mobility {
     }
   }
 
-  void TrafficSimulator::m_dumpNetwork() const {
-    if (!this->database()) {
+  std::int64_t TrafficSimulator::networkId() const {
+    if (m_dynamics == nullptr) {
+      throw std::runtime_error("No road network imported: it has no id.");
+    }
+    return networkFingerprint(networkRows(m_dynamics->graph()));
+  }
+
+  void TrafficSimulator::m_dumpNetwork(std::int64_t const networkId) const {
+    auto& db{*this->database()};
+    SQLite::Statement stored(
+        db,
+        "SELECT EXISTS (SELECT 1 FROM edges WHERE network_id = ?) OR "
+        "EXISTS (SELECT 1 FROM nodes WHERE network_id = ?)");
+    stored.bind(1, networkId);
+    stored.bind(2, networkId);
+    if (stored.executeStep() && stored.getColumn(0).getInt() != 0) {
+      spdlog::debug("Network {} is already in the database.", networkId);
       return;
     }
-    SQLite::Statement edgesQuery(
-        *this->database(),
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='edges';");
-    SQLite::Statement nodesQuery(
-        *this->database(),
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='nodes';");
-    bool edgesTableExists = edgesQuery.executeStep();
-    bool nodesTableExists = nodesQuery.executeStep();
-    if (edgesTableExists || nodesTableExists) {
-      spdlog::debug(
-          "Edges and/or nodes tables already exist in the database. Skipping network "
-          "dump.");
-      return;
-    }
-
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS edges ("
-        "id INTEGER PRIMARY KEY, "
-        "source INTEGER NOT NULL, "
-        "target INTEGER NOT NULL, "
-        "length REAL NOT NULL, "
-        "maxspeed REAL NOT NULL, "
-        "name TEXT, "
-        "nlanes INTEGER NOT NULL, "
-        "coilcode TEXT, "
-        "geometry TEXT NOT NULL)");
-    this->database()->exec(
-        "CREATE TABLE IF NOT EXISTS nodes ("
-        "id INTEGER PRIMARY KEY, "
-        "type TEXT, "
-        "geometry TEXT)");
-
-    SQLite::Statement insertEdgeStmt(*this->database(),
-                                     "INSERT INTO edges (id, source, target, length, "
-                                     "maxspeed, name, nlanes, coilcode, geometry) "
-                                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
-    for (const auto& [edgeId, pEdge] : m_dynamics->graph().edges()) {
-      insertEdgeStmt.bind(1, static_cast<std::int64_t>(edgeId));
-      insertEdgeStmt.bind(2, static_cast<std::int64_t>(pEdge->source()->id()));
-      insertEdgeStmt.bind(3, static_cast<std::int64_t>(pEdge->target()->id()));
-      insertEdgeStmt.bind(4, pEdge->length());
-      insertEdgeStmt.bind(5, pEdge->maxSpeed());
-      insertEdgeStmt.bind(6, pEdge->name());
-      insertEdgeStmt.bind(7, pEdge->nLanes());
-      auto const& counterName{pEdge->counterName()};
-      if (counterName != "N/A") {
-        insertEdgeStmt.bind(8, counterName);
+    auto const rows{networkRows(m_dynamics->graph())};
+    SQLite::Statement insertEdgeStmt(
+        db,
+        "INSERT INTO edges (network_id, id, source, target, length, maxspeed, name, "
+        "nlanes, coilcode, geometry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    for (auto const& edge : rows.edges) {
+      insertEdgeStmt.bind(1, networkId);
+      insertEdgeStmt.bind(2, edge.id);
+      insertEdgeStmt.bind(3, edge.source);
+      insertEdgeStmt.bind(4, edge.target);
+      insertEdgeStmt.bind(5, edge.length);
+      insertEdgeStmt.bind(6, edge.maxSpeed);
+      insertEdgeStmt.bind(7, edge.name);
+      insertEdgeStmt.bind(8, edge.nLanes);
+      if (edge.coilCode.has_value()) {
+        insertEdgeStmt.bind(9, *edge.coilCode);
       } else {
-        insertEdgeStmt.bind(8);
+        insertEdgeStmt.bind(9);
       }
-      insertEdgeStmt.bind(9, std::format("{}", pEdge->geometry()));
+      insertEdgeStmt.bind(10, edge.geometry);
       insertEdgeStmt.exec();
       insertEdgeStmt.reset();
     }
-
     SQLite::Statement insertNodeStmt(
-        *this->database(), "INSERT INTO nodes (id, type, geometry) VALUES (?, ?, ?);");
-    for (const auto& [nodeId, pNode] : m_dynamics->graph().nodes()) {
-      insertNodeStmt.bind(1, static_cast<std::int64_t>(nodeId));
-      if (pNode->isTrafficLight()) {
-        insertNodeStmt.bind(2, "traffic_light");
-      } else if (pNode->isRoundabout()) {
-        insertNodeStmt.bind(2, "roundabout");
-      } else {
-        insertNodeStmt.bind(2);
-      }
-      if (pNode->geometry().has_value()) {
-        insertNodeStmt.bind(3, std::format("{}", *pNode->geometry()));
+        db, "INSERT INTO nodes (network_id, id, type, geometry) VALUES (?, ?, ?, ?)");
+    for (auto const& node : rows.nodes) {
+      insertNodeStmt.bind(1, networkId);
+      insertNodeStmt.bind(2, node.id);
+      if (node.type.has_value()) {
+        insertNodeStmt.bind(3, *node.type);
       } else {
         insertNodeStmt.bind(3);
+      }
+      if (node.geometry.has_value()) {
+        insertNodeStmt.bind(4, *node.geometry);
+      } else {
+        insertNodeStmt.bind(4);
       }
       insertNodeStmt.exec();
       insertNodeStmt.reset();
     }
+    spdlog::info("Stored network {} ({} edges, {} nodes) in the database.",
+                 networkId,
+                 rows.edges.size(),
+                 rows.nodes.size());
   }
 
   void TrafficSimulator::m_preparePersistence() {
@@ -1514,23 +1801,31 @@ namespace dsf::mobility {
     // missing or complete. It also keeps the write lock for a single short commit instead of
     // one per network row, which made the other simulations wait past the busy timeout
     SQLite::Transaction transaction(*m_database, SQLite::TransactionBehavior::IMMEDIATE);
+    // The views of the data tables read these
+    createTable(*m_database, kSimulationInfo);
+    createTable(*m_database, kEdges);
+    createTable(*m_database, kNodes);
+    auto const currentNetworkId{networkId()};
+    m_dumpSimInfoSQL(currentNetworkId);
+    m_dumpNetwork(currentNetworkId);
     if (m_saveStreetData) {
-      m_initStreetTable();
+      createTable(*m_database, kRoadData);
     }
     if (m_saveAverageStats) {
-      m_initAvgStatsTable();
+      createTable(*m_database, kAvgStats);
     }
     if (m_saveTravelData) {
-      m_initTravelDataTable();
+      createTable(*m_database, kTravelData);
     }
     if (m_saveAgentData) {
-      m_initAgentDataTable();
+      createTable(*m_database, kAgentData);
     }
     if (m_saveTurnCounts) {
-      m_initTurnCountsTable();
+      createTable(*m_database, kTurnCounts);
     }
-    m_dumpSimInfoSQL();
-    m_dumpNetwork();
+    if (!m_streetStatusUpdates.empty()) {
+      createTable(*m_database, kStreetStatus);
+    }
     transaction.commit();
   }
 
@@ -1541,34 +1836,31 @@ namespace dsf::mobility {
       return;
     }
 
-    auto const datetime = m_timeToStr(m_initTime + stepData.timeStep);
     auto const timeStep = static_cast<std::int64_t>(stepData.timeStep);
-    auto const simulationId = static_cast<std::int64_t>(m_id);
 
     if (m_database != nullptr) {
-      std::optional<SQLite::Transaction> transaction;
-      transaction.emplace(*m_database);
+      auto const simulationId = static_cast<std::int64_t>(m_id);
+      SQLite::Transaction transaction(*m_database);
       if (stepData.streetData.has_value()) {
-        m_saveStreetDataSQL(
-            datetime, timeStep, simulationId, std::move(*stepData.streetData));
+        m_saveStreetDataSQL(timeStep, simulationId, std::move(*stepData.streetData));
       }
       if (stepData.travelData.has_value()) {
-        m_saveTravelDataSQL(
-            datetime, timeStep, simulationId, std::move(*stepData.travelData));
+        m_saveTravelDataSQL(timeStep, simulationId, std::move(*stepData.travelData));
       }
       if (stepData.agentData.has_value()) {
         m_saveAgentDataSQL(timeStep, simulationId, std::move(*stepData.agentData));
       }
       if (stepData.averageStats.has_value()) {
-        m_saveAvgStatsSQL(datetime, timeStep, simulationId, *stepData.averageStats);
+        m_saveAvgStatsSQL(timeStep, simulationId, *stepData.averageStats);
       }
       if (!stepData.turnCounts.empty()) {
-        m_saveTurnCountsSQL(
-            datetime, timeStep, simulationId, std::move(stepData.turnCounts));
+        m_saveTurnCountsSQL(timeStep, simulationId, std::move(stepData.turnCounts));
       }
-      transaction->commit();
+      transaction.commit();
       return;
     }
+
+    auto const datetime = m_timeToStr(m_initTime + stepData.timeStep);
 
     if (stepData.streetData.has_value()) {
       m_saveStreetDataCSV(datetime, timeStep, std::move(*stepData.streetData));
